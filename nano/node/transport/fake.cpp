@@ -14,7 +14,7 @@ nano::transport::fake::channel::channel (nano::node & node) :
 /**
  * The send function behaves like a null device, it throws the data away and returns success.
  */
-void nano::transport::fake::channel::send_buffer (nano::shared_const_buffer const & buffer_a, std::function<void (boost::system::error_code const &, std::size_t)> const & callback_a, nano::transport::buffer_drop_policy drop_policy_a, nano::transport::traffic_type traffic_type)
+bool nano::transport::fake::channel::send_buffer (nano::shared_const_buffer const & buffer_a, std::function<void (boost::system::error_code const &, std::size_t)> const & callback_a, nano::transport::buffer_drop_policy drop_policy_a, nano::transport::traffic_type traffic_type)
 {
 	// auto bytes = buffer_a.to_bytes ();
 	auto size = buffer_a.size ();
@@ -24,6 +24,7 @@ void nano::transport::fake::channel::send_buffer (nano::shared_const_buffer cons
 			callback_a (boost::system::errc::make_error_code (boost::system::errc::success), size);
 		});
 	}
+	return true;
 }
 
 std::string nano::transport::fake::channel::to_string () const
