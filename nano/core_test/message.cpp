@@ -4,6 +4,7 @@
 #include <nano/node/endpoint.hpp>
 #include <nano/node/network.hpp>
 #include <nano/secure/vote.hpp>
+#include <nano/test_common/random.hpp>
 #include <nano/test_common/testutil.hpp>
 
 #include <gtest/gtest.h>

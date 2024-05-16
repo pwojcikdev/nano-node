@@ -8,6 +8,8 @@ add_library(
   make_store.cpp
   network.hpp
   network.cpp
+  random.hpp
+  random.cpp
   rate_observer.cpp
   rate_observer.hpp
   system.hpp
