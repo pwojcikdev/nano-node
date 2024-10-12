@@ -1,5 +1,7 @@
 #pragma once
 
+#include <nano/lib/locks.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <mutex>
@@ -23,8 +25,8 @@ class token_bucket
 public:
 	/**
 	 * Set up a token bucket.
-	 * @param max_token_count Maximum number of tokens in this bucket, which limits bursts.
-	 * @param refill_rate Token refill rate, which limits the long term rate (tokens per seconds)
+	 * @param max_token_count Maximum number of tokens in this bucket, which limits bursts. 0 is unlimited.
+	 * @param refill_rate Token refill rate, which limits the long term rate (tokens per seconds). 0 is unlimited (everything passes).
 	 */
 	token_bucket (std::size_t max_token_count, std::size_t refill_rate);
 
@@ -36,22 +38,24 @@ public:
 	 */
 	bool try_consume (unsigned tokens_required = 1);
 
-	/** Returns the largest burst observed */
-	std::size_t largest_burst () const;
-
 	/** Update the max_token_count and/or refill_rate_a parameters */
 	void reset (std::size_t max_token_count, std::size_t refill_rate);
 
-private:
+	/** Returns the current number of tokens in the bucket */
+	std::size_t size () const;
+
+	/** Returns the largest burst observed */
+	std::size_t largest_burst () const;
+
 	void refill ();
 
 private:
-	std::size_t max_token_count;
-	std::size_t refill_rate;
+	std::size_t max_token_count{ 0 };
+	std::size_t refill_rate{ 0 };
 
 	std::size_t current_size{ 0 };
-	/** The minimum observed bucket size, from which the largest burst can be derived */
-	std::size_t smallest_size{ 0 };
+	std::size_t smallest_size{ 0 }; // The minimum observed bucket size, from which the largest burst can be derived
+	std::size_t largest_size{ 0 }; // The largest observed bucket size, from which the largest burst can be derived
 	std::chrono::steady_clock::time_point last_refill;
 
 	static std::size_t constexpr unlimited_rate_sentinel{ static_cast<std::size_t> (1e9) };
@@ -68,6 +72,7 @@ public:
 
 	bool should_pass (std::size_t buffer_size);
 	void reset (std::size_t limit, double burst_ratio);
+	std::size_t size () const;
 
 private:
 	nano::rate::token_bucket bucket;
