@@ -76,10 +76,10 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	node_initialized_latch (1),
 	network_params{ config.network_params },
 	stats{ logger, config.stats_config },
-	workers{ config.background_threads, nano::thread_role::name::worker },
-	bootstrap_workers{ config.bootstrap_serving_threads, nano::thread_role::name::bootstrap_worker },
-	wallet_workers{ 1, nano::thread_role::name::wallet_worker },
-	election_workers{ 1, nano::thread_role::name::election_worker },
+	workers{ config.background_threads, nano::thread_role::name::worker, /* start immediately */ true },
+	bootstrap_workers{ config.bootstrap_serving_threads, nano::thread_role::name::bootstrap_worker, /* start immediately */ true },
+	wallet_workers{ 1, nano::thread_role::name::wallet_worker, /* start immediately */ true },
+	election_workers{ 1, nano::thread_role::name::election_worker, /* start immediately */ true },
 	flags (flags_a),
 	work (work_a),
 	distributed_work (*this),
@@ -653,9 +653,7 @@ void nano::node::stop ()
 	logger.info (nano::log::type::node, "Node stopping...");
 
 	tcp_listener.stop ();
-	bootstrap_workers.stop ();
-	wallet_workers.stop ();
-	election_workers.stop ();
+
 	vote_router.stop ();
 	peer_history.stop ();
 	// Cancels ongoing work generation tasks, which may be blocking other threads
@@ -683,11 +681,15 @@ void nano::node::stop ()
 	wallets.stop ();
 	stats.stop ();
 	epoch_upgrader.stop ();
-	workers.stop ();
 	local_block_broadcaster.stop ();
 	message_processor.stop ();
 	network.stop (); // Stop network last to avoid killing in-use sockets
 	monitor.stop ();
+
+	bootstrap_workers.stop ();
+	wallet_workers.stop ();
+	election_workers.stop ();
+	workers.stop ();
 
 	// work pool is not stopped on purpose due to testing setup
 
