@@ -39,6 +39,7 @@ add_executable(
   optimistic_scheduler.cpp
   processing_queue.cpp
   processor_service.cpp
+  random_pool.cpp
   rep_crawler.cpp
   receivable.cpp
   peer_history.cpp
