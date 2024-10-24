@@ -165,10 +165,6 @@ class block_hash final : public uint256_union
 public:
 	using uint256_union::uint256_union;
 
-	operator nano::link const & () const;
-	operator nano::root const & () const;
-	operator nano::hash_or_account const & () const;
-
 public: // Keep operators inlined
 	auto operator<=> (nano::block_hash const & other) const
 	{
@@ -181,6 +177,18 @@ public: // Keep operators inlined
 	operator nano::uint256_t () const
 	{
 		return number ();
+	}
+	operator nano::link () const
+	{
+		return nano::link{ *this };
+	}
+	operator nano::root () const
+	{
+		return nano::root{ *this };
+	}
+	operator nano::hash_or_account () const
+	{
+		return nano::hash_or_account{ *this };
 	}
 };
 

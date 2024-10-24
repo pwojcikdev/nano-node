@@ -892,33 +892,3 @@ double nano::difficulty::to_multiplier (uint64_t const difficulty_a, uint64_t co
 #ifdef _WIN32
 #pragma warning(pop)
 #endif
-
-nano::public_key::operator nano::link const & () const
-{
-	return reinterpret_cast<nano::link const &> (*this);
-}
-
-nano::public_key::operator nano::root const & () const
-{
-	return reinterpret_cast<nano::root const &> (*this);
-}
-
-nano::public_key::operator nano::hash_or_account const & () const
-{
-	return reinterpret_cast<nano::hash_or_account const &> (*this);
-}
-
-nano::block_hash::operator nano::link const & () const
-{
-	return reinterpret_cast<nano::link const &> (*this);
-}
-
-nano::block_hash::operator nano::root const & () const
-{
-	return reinterpret_cast<nano::root const &> (*this);
-}
-
-nano::block_hash::operator nano::hash_or_account const & () const
-{
-	return reinterpret_cast<nano::hash_or_account const &> (*this);
-}
