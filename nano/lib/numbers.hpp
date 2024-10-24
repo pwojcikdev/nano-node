@@ -234,7 +234,8 @@ class hash_or_account
 {
 public:
 	hash_or_account ();
-	hash_or_account (uint64_t value_a);
+	hash_or_account (uint64_t);
+	explicit hash_or_account (uint256_union const &);
 
 	bool is_zero () const;
 	void clear ();
@@ -278,6 +279,10 @@ public: // Keep operators inlined
 	{
 		return hash;
 	}
+	nano::uint256_union const & as_union () const
+	{
+		return raw;
+	}
 };
 
 // A link can either be a destination account or source hash
@@ -285,6 +290,16 @@ class link final : public hash_or_account
 {
 public:
 	using hash_or_account::hash_or_account;
+
+public: // Keep operators inlined
+	auto operator<=> (nano::link const & other) const
+	{
+		return hash_or_account::operator<=> (other);
+	}
+	bool operator== (nano::link const & other) const
+	{
+		return *this <=> other == 0;
+	}
 };
 
 // A root can either be an open block hash or a previous hash
@@ -293,7 +308,20 @@ class root final : public hash_or_account
 public:
 	using hash_or_account::hash_or_account;
 
-	nano::block_hash const & previous () const;
+	nano::block_hash const & previous () const
+	{
+		return hash;
+	}
+
+public: // Keep operators inlined
+	auto operator<=> (nano::root const & other) const
+	{
+		return hash_or_account::operator<=> (other);
+	}
+	bool operator== (nano::root const & other) const
+	{
+		return *this <=> other == 0;
+	}
 };
 
 // The seed or private key
@@ -364,13 +392,13 @@ class qualified_root : public uint512_union
 public:
 	using uint512_union::uint512_union;
 
-	nano::root const & root () const
+	nano::root root () const
 	{
-		return reinterpret_cast<nano::root const &> (uint256s[0]);
+		return nano::root{ uint256s[0] };
 	}
-	nano::block_hash const & previous () const
+	nano::block_hash previous () const
 	{
-		return reinterpret_cast<nano::block_hash const &> (uint256s[1]);
+		return nano::block_hash{ uint256s[1] };
 	}
 };
 

@@ -747,7 +747,12 @@ nano::hash_or_account::hash_or_account () :
 }
 
 nano::hash_or_account::hash_or_account (uint64_t value_a) :
-	raw (value_a)
+	raw{ value_a }
+{
+}
+
+nano::hash_or_account::hash_or_account (uint256_union const & value_a) :
+	raw{ value_a }
 {
 }
 
@@ -779,11 +784,6 @@ std::string nano::hash_or_account::to_string () const
 std::string nano::hash_or_account::to_account () const
 {
 	return account.to_account ();
-}
-
-nano::block_hash const & nano::root::previous () const
-{
-	return hash;
 }
 
 std::string nano::to_string_hex (uint64_t const value_a)
