@@ -1,5 +1,5 @@
+#include <nano/lib/numbers.hpp>
 #include <nano/secure/common.hpp>
-#include <nano/test_common/testutil.hpp>
 
 #include <gtest/gtest.h>
 
@@ -451,6 +451,11 @@ TEST (uint256_union, bounds)
 TEST (uint256_union, operator_less_than)
 {
 	test_union_operator_less_than<nano::uint256_union, nano::uint256_t> ();
+}
+
+TEST (uint256_union, operator_greater_than)
+{
+	test_union_operator_greater_than<nano::uint256_union, nano::uint256_t> ();
 }
 
 TEST (uint64_t, parse)

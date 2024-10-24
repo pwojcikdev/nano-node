@@ -13,6 +13,7 @@ namespace nano
 using uint128_t = boost::multiprecision::uint128_t;
 using uint256_t = boost::multiprecision::uint256_t;
 using uint512_t = boost::multiprecision::uint512_t;
+
 // SI dividers
 nano::uint128_t const Knano_ratio = nano::uint128_t ("1000000000000000000000000000000000"); // 10^33 = 1000 nano
 nano::uint128_t const nano_ratio = nano::uint128_t ("1000000000000000000000000000000"); // 10^30 = 1 nano
@@ -112,6 +113,10 @@ inline bool operator!= (nano::uint256_union const & lhs, nano::uint256_union con
 inline bool operator< (nano::uint256_union const & lhs, nano::uint256_union const & rhs)
 {
 	return std::memcmp (lhs.bytes.data (), rhs.bytes.data (), 32) < 0;
+}
+inline bool operator> (nano::uint256_union const & lhs, nano::uint256_union const & rhs)
+{
+	return std::memcmp (lhs.bytes.data (), rhs.bytes.data (), 32) > 0;
 }
 static_assert (std::is_nothrow_move_constructible<uint256_union>::value, "uint256_union should be noexcept MoveConstructible");
 
