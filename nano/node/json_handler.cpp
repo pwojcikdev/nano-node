@@ -2462,7 +2462,7 @@ public:
 			// Report opens as a receive
 			tree.put ("type", "receive");
 		}
-		if (block_a.hashables.source != handler.node.ledger.constants.genesis->account ())
+		if (block_a.hashables.source != handler.node.ledger.constants.genesis->account ().as_union ())
 		{
 			bool error_or_pruned (false);
 			auto amount = handler.node.ledger.any.block_amount (transaction, hash);

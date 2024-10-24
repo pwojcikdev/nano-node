@@ -4,6 +4,7 @@
 #include <boost/multiprecision/cpp_int.hpp>
 
 #include <array>
+#include <compare>
 #include <ostream>
 
 #include <fmt/ostream.h>
@@ -23,29 +24,32 @@ class uint128_union
 {
 public:
 	uint128_union () = default;
+	uint128_union (uint64_t);
+	uint128_union (nano::uint128_t const &);
+
 	/**
 	 * Decode from hex string
 	 * @warning Aborts at runtime if the input is invalid
 	 */
-	uint128_union (std::string const &);
-	uint128_union (uint64_t);
-	uint128_union (nano::uint128_t const &);
-	bool operator== (nano::uint128_union const &) const;
-	bool operator!= (nano::uint128_union const &) const;
-	bool operator< (nano::uint128_union const &) const;
-	bool operator> (nano::uint128_union const &) const;
+	explicit uint128_union (std::string const &);
+
 	void encode_hex (std::string &) const;
 	bool decode_hex (std::string const &);
 	void encode_dec (std::string &) const;
 	bool decode_dec (std::string const &, bool = false);
 	bool decode_dec (std::string const &, nano::uint128_t);
+
 	std::string format_balance (nano::uint128_t scale, int precision, bool group_digits) const;
 	std::string format_balance (nano::uint128_t scale, int precision, bool group_digits, std::locale const & locale) const;
+
 	nano::uint128_t number () const;
 	void clear ();
 	bool is_zero () const;
+
 	std::string to_string () const;
 	std::string to_string_dec () const;
+
+public:
 	union
 	{
 		std::array<uint8_t, 16> bytes;
@@ -53,6 +57,24 @@ public:
 		std::array<uint32_t, 4> dwords;
 		std::array<uint64_t, 2> qwords;
 	};
+
+public: // Keep operators inlined
+	std::strong_ordering operator<=> (nano::uint128_union const & other) const
+	{
+		return std::memcmp (bytes.data (), other.bytes.data (), 16) <=> 0;
+	};
+	bool operator== (nano::uint128_union const & other) const
+	{
+		return *this <=> other == 0;
+	}
+	operator nano::uint128_t () const
+	{
+		return number ();
+	}
+	uint128_union const & as_union () const
+	{
+		return *this;
+	}
 };
 static_assert (std::is_nothrow_move_constructible<uint128_union>::value, "uint128_union should be noexcept MoveConstructible");
 
@@ -62,37 +84,48 @@ class amount : public uint128_union
 public:
 	using uint128_union::uint128_union;
 
+	auto operator<=> (nano::amount const & other) const
+	{
+		return uint128_union::operator<=> (other);
+	}
 	operator nano::uint128_t () const
 	{
 		return number ();
 	}
 };
+
 class raw_key;
 
 class uint256_union
 {
 public:
 	uint256_union () = default;
+	uint256_union (uint64_t);
+	uint256_union (uint256_t const &);
+
 	/**
 	 * Decode from hex string
 	 * @warning Aborts at runtime if the input is invalid
 	 */
 	explicit uint256_union (std::string const &);
-	uint256_union (uint64_t);
-	uint256_union (nano::uint256_t const &);
+
 	void encrypt (nano::raw_key const &, nano::raw_key const &, uint128_union const &);
-	uint256_union & operator^= (nano::uint256_union const &);
-	uint256_union operator^ (nano::uint256_union const &) const;
+
+	uint256_union & operator^= (uint256_union const &);
+	uint256_union operator^ (uint256_union const &) const;
+
 	void encode_hex (std::string &) const;
 	bool decode_hex (std::string const &);
 	void encode_dec (std::string &) const;
 	bool decode_dec (std::string const &);
 
+	nano::uint256_t number () const;
 	void clear ();
 	bool is_zero () const;
-	std::string to_string () const;
-	nano::uint256_t number () const;
 
+	std::string to_string () const;
+
+public:
 	union
 	{
 		std::array<uint8_t, 32> bytes;
@@ -101,23 +134,25 @@ public:
 		std::array<uint64_t, 4> qwords;
 		std::array<uint128_union, 2> owords;
 	};
+
+public: // Keep operators inlined
+	std::strong_ordering operator<=> (nano::uint256_union const & other) const
+	{
+		return std::memcmp (bytes.data (), other.bytes.data (), 32) <=> 0;
+	};
+	bool operator== (nano::uint256_union const & other) const
+	{
+		return *this <=> other == 0;
+	}
+	operator nano::uint256_t () const
+	{
+		return number ();
+	}
+	uint256_union const & as_union () const
+	{
+		return *this;
+	}
 };
-inline bool operator== (nano::uint256_union const & lhs, nano::uint256_union const & rhs)
-{
-	return lhs.bytes == rhs.bytes;
-}
-inline bool operator!= (nano::uint256_union const & lhs, nano::uint256_union const & rhs)
-{
-	return !(lhs == rhs);
-}
-inline bool operator< (nano::uint256_union const & lhs, nano::uint256_union const & rhs)
-{
-	return std::memcmp (lhs.bytes.data (), rhs.bytes.data (), 32) < 0;
-}
-inline bool operator> (nano::uint256_union const & lhs, nano::uint256_union const & rhs)
-{
-	return std::memcmp (lhs.bytes.data (), rhs.bytes.data (), 32) > 0;
-}
 static_assert (std::is_nothrow_move_constructible<uint256_union>::value, "uint256_union should be noexcept MoveConstructible");
 
 class link;
@@ -129,9 +164,24 @@ class block_hash final : public uint256_union
 {
 public:
 	using uint256_union::uint256_union;
+
 	operator nano::link const & () const;
 	operator nano::root const & () const;
 	operator nano::hash_or_account const & () const;
+
+public: // Keep operators inlined
+	auto operator<=> (nano::block_hash const & other) const
+	{
+		return uint256_union::operator<=> (other);
+	}
+	bool operator== (nano::block_hash const & other) const
+	{
+		return *this <=> other == 0;
+	}
+	operator nano::uint256_t () const
+	{
+		return number ();
+	}
 };
 
 class public_key final : public uint256_union
@@ -152,8 +202,24 @@ public:
 	operator nano::link const & () const;
 	operator nano::root const & () const;
 	operator nano::hash_or_account const & () const;
-	bool operator== (std::nullptr_t) const;
-	bool operator!= (std::nullptr_t) const;
+
+public: // Keep operators inlined
+	auto operator<=> (nano::public_key const & other) const
+	{
+		return uint256_union::operator<=> (other);
+	}
+	bool operator== (nano::public_key const & other) const
+	{
+		return *this <=> other == 0;
+	}
+	bool operator== (std::nullptr_t) const
+	{
+		return *this == null ();
+	}
+	operator nano::uint256_t () const
+	{
+		return number ();
+	}
 };
 
 class wallet_id : public uint256_union
@@ -172,19 +238,13 @@ public:
 
 	bool is_zero () const;
 	void clear ();
+
 	std::string to_string () const;
 	bool decode_hex (std::string const &);
 	bool decode_account (std::string const &);
 	std::string to_account () const;
 
-	nano::account const & as_account () const;
-	nano::block_hash const & as_block_hash () const;
-
-	operator nano::uint256_union const & () const;
-
-	bool operator== (nano::hash_or_account const &) const;
-	bool operator!= (nano::hash_or_account const &) const;
-
+public:
 	union
 	{
 		std::array<uint8_t, 32> bytes;
@@ -192,6 +252,32 @@ public:
 		nano::account account;
 		nano::block_hash hash;
 	};
+
+public: // Keep operators inlined
+	auto operator<=> (nano::hash_or_account const & other) const
+	{
+		return raw <=> other.raw;
+	};
+	bool operator== (nano::hash_or_account const & other) const
+	{
+		return *this <=> other == 0;
+	}
+	operator nano::uint256_t () const
+	{
+		return raw.number ();
+	}
+	operator nano::uint256_union () const
+	{
+		return raw;
+	}
+	nano::account const & as_account () const
+	{
+		return account;
+	}
+	nano::block_hash const & as_block_hash () const
+	{
+		return hash;
+	}
 };
 
 // A link can either be a destination account or source hash
@@ -218,22 +304,27 @@ public:
 	~raw_key ();
 	void decrypt (nano::uint256_union const &, nano::raw_key const &, uint128_union const &);
 };
+
 class uint512_union
 {
 public:
 	uint512_union () = default;
 	uint512_union (nano::uint256_union const &, nano::uint256_union const &);
 	uint512_union (nano::uint512_t const &);
-	bool operator== (nano::uint512_union const &) const;
-	bool operator!= (nano::uint512_union const &) const;
+
 	nano::uint512_union & operator^= (nano::uint512_union const &);
+
 	void encode_hex (std::string &) const;
 	bool decode_hex (std::string const &);
+
 	void clear ();
 	bool is_zero () const;
+
 	nano::uint512_t number () const;
+
 	std::string to_string () const;
 
+public:
 	union
 	{
 		std::array<uint8_t, 64> bytes;
@@ -241,6 +332,24 @@ public:
 		std::array<uint64_t, 8> qwords;
 		std::array<uint256_union, 2> uint256s;
 	};
+
+public: // Keep operators inlined
+	std::strong_ordering operator<=> (nano::uint512_union const & other) const
+	{
+		return std::memcmp (bytes.data (), other.bytes.data (), 64) <=> 0;
+	};
+	bool operator== (nano::uint512_union const & other) const
+	{
+		return *this <=> other == 0;
+	}
+	operator nano::uint512_t () const
+	{
+		return number ();
+	}
+	uint512_union const & as_union () const
+	{
+		return *this;
+	}
 };
 static_assert (std::is_nothrow_move_constructible<uint512_union>::value, "uint512_union should be noexcept MoveConstructible");
 
@@ -379,15 +488,6 @@ struct hash<::nano::qualified_root>
 	size_t operator() (::nano::qualified_root const & data_a) const
 	{
 		return hash<::nano::uint512_union> () (data_a);
-	}
-};
-
-template <>
-struct equal_to<std::reference_wrapper<::nano::block_hash const>>
-{
-	bool operator() (std::reference_wrapper<::nano::block_hash const> const & lhs, std::reference_wrapper<::nano::block_hash const> const & rhs) const
-	{
-		return lhs.get () == rhs.get ();
 	}
 };
 }
