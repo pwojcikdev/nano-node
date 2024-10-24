@@ -2628,7 +2628,7 @@ TEST (rpc, wallet_frontiers)
 		frontiers.push_back (nano::account (i->second.get<std::string> ("")));
 	}
 	ASSERT_EQ (1, frontiers.size ());
-	ASSERT_EQ (node->latest (nano::dev::genesis_key.pub), frontiers[0]);
+	ASSERT_EQ (node->latest (nano::dev::genesis_key.pub), frontiers[0].as_union ());
 }
 
 TEST (rpc, work_validate)
