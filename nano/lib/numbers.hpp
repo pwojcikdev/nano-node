@@ -24,8 +24,13 @@ class uint128_union
 {
 public:
 	uint128_union () = default;
-	uint128_union (uint64_t);
-	uint128_union (nano::uint128_t const &);
+	uint128_union (uint64_t value) :
+		uint128_union (nano::uint128_t{ value }){};
+	uint128_union (nano::uint128_t const & value)
+	{
+		bytes.fill (0);
+		boost::multiprecision::export_bits (value, bytes.rbegin (), 8, false);
+	}
 
 	/**
 	 * Decode from hex string
@@ -42,9 +47,21 @@ public:
 	std::string format_balance (nano::uint128_t scale, int precision, bool group_digits) const;
 	std::string format_balance (nano::uint128_t scale, int precision, bool group_digits, std::locale const & locale) const;
 
-	nano::uint128_t number () const;
-	void clear ();
-	bool is_zero () const;
+	void clear ()
+	{
+		qwords.fill (0);
+	}
+	bool is_zero () const
+	{
+		return qwords[0] == 0 && qwords[1] == 0;
+	}
+
+	nano::uint128_t number () const
+	{
+		nano::uint128_t result;
+		boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
+		return result;
+	}
 
 	std::string to_string () const;
 	std::string to_string_dec () const;
@@ -100,8 +117,13 @@ class uint256_union
 {
 public:
 	uint256_union () = default;
-	uint256_union (uint64_t);
-	uint256_union (uint256_t const &);
+	uint256_union (uint64_t value) :
+		uint256_union (nano::uint256_t{ value }){};
+	uint256_union (uint256_t const & value)
+	{
+		bytes.fill (0);
+		boost::multiprecision::export_bits (value, bytes.rbegin (), 8, false);
+	}
 
 	/**
 	 * Decode from hex string
@@ -119,9 +141,21 @@ public:
 	void encode_dec (std::string &) const;
 	bool decode_dec (std::string const &);
 
-	nano::uint256_t number () const;
-	void clear ();
-	bool is_zero () const;
+	void clear ()
+	{
+		qwords.fill (0);
+	}
+	bool is_zero () const
+	{
+		return owords[0].is_zero () && owords[1].is_zero ();
+	}
+
+	nano::uint256_t number () const
+	{
+		nano::uint256_t result;
+		boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
+		return result;
+	}
 
 	std::string to_string () const;
 
@@ -197,19 +231,17 @@ class public_key final : public uint256_union
 public:
 	using uint256_union::uint256_union;
 
-	public_key ();
+	public_key () :
+		uint256_union{ 0 } {};
 
 	static const public_key & null ();
 
-	std::string to_node_id () const;
-	bool decode_node_id (std::string const & source_a);
+	bool decode_node_id (std::string const &);
 	void encode_account (std::string &) const;
-	std::string to_account () const;
 	bool decode_account (std::string const &);
 
-	operator nano::link const & () const;
-	operator nano::root const & () const;
-	operator nano::hash_or_account const & () const;
+	std::string to_node_id () const;
+	std::string to_account () const;
 
 public: // Keep operators inlined
 	auto operator<=> (nano::public_key const & other) const
@@ -228,6 +260,18 @@ public: // Keep operators inlined
 	{
 		return number ();
 	}
+	operator nano::link () const
+	{
+		return nano::link{ *this };
+	}
+	operator nano::root () const
+	{
+		return nano::root{ *this };
+	}
+	operator nano::hash_or_account () const
+	{
+		return nano::hash_or_account{ *this };
+	}
 };
 
 class wallet_id : public uint256_union
@@ -241,16 +285,26 @@ using account = public_key;
 class hash_or_account
 {
 public:
-	hash_or_account ();
-	hash_or_account (uint64_t);
-	explicit hash_or_account (uint256_union const &);
+	hash_or_account () :
+		account{} {};
+	hash_or_account (uint64_t value) :
+		raw{ value } {};
+	explicit hash_or_account (uint256_union const & value) :
+		raw{ value } {};
 
-	bool is_zero () const;
-	void clear ();
+	void clear ()
+	{
+		raw.clear ();
+	}
+	bool is_zero () const
+	{
+		return raw.is_zero ();
+	}
 
-	std::string to_string () const;
 	bool decode_hex (std::string const &);
 	bool decode_account (std::string const &);
+
+	std::string to_string () const;
 	std::string to_account () const;
 
 public:
@@ -345,18 +399,39 @@ class uint512_union
 {
 public:
 	uint512_union () = default;
-	uint512_union (nano::uint256_union const &, nano::uint256_union const &);
-	uint512_union (nano::uint512_t const &);
+	uint512_union (nano::uint256_union const & upper, nano::uint256_union const & lower) :
+		uint256s{ upper, lower } {};
+	uint512_union (nano::uint512_t const & value)
+	{
+		bytes.fill (0);
+		boost::multiprecision::export_bits (value, bytes.rbegin (), 8, false);
+	}
 
-	nano::uint512_union & operator^= (nano::uint512_union const &);
+	nano::uint512_union & operator^= (nano::uint512_union const & other)
+	{
+		uint256s[0] ^= other.uint256s[0];
+		uint256s[1] ^= other.uint256s[1];
+		return *this;
+	}
 
 	void encode_hex (std::string &) const;
 	bool decode_hex (std::string const &);
 
-	void clear ();
-	bool is_zero () const;
+	void clear ()
+	{
+		bytes.fill (0);
+	}
+	bool is_zero () const
+	{
+		return uint256s[0].is_zero () && uint256s[1].is_zero ();
+	}
 
-	nano::uint512_t number () const;
+	nano::uint512_t number () const
+	{
+		nano::uint512_t result;
+		boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
+		return result;
+	}
 
 	std::string to_string () const;
 
