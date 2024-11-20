@@ -6,6 +6,7 @@
 
 #include <boost/lexical_cast.hpp>
 
+#include <deque>
 #include <functional>
 #include <sstream>
 #include <vector>
@@ -63,6 +64,28 @@ size_t erase_if (Container & container, Pred pred)
 		}
 	}
 	return result;
+}
+
+/**
+ * Erase elements from container when predicate returns true and return erased elements as a std::deque
+ */
+template <class Container, class Pred>
+std::deque<typename Container::value_type> erase_if_and_collect (Container & container, Pred pred)
+{
+	std::deque<typename Container::value_type> removed_elements;
+	for (auto it = container.begin (); it != container.end ();)
+	{
+		if (pred (*it))
+		{
+			removed_elements.push_back (*it);
+			it = container.erase (it);
+		}
+		else
+		{
+			++it;
+		}
+	}
+	return removed_elements;
 }
 
 /** Safe narrowing cast which silences warnings and asserts on data loss in debug builds. This is optimized away. */
