@@ -35,9 +35,12 @@ enum class type
 	http_callbacks_ec,
 	ipc,
 	tcp,
-	tcp_server,
 	tcp_socket,
 	tcp_socket_timeout,
+	tcp_server,
+	tcp_server_message,
+	tcp_server_read,
+	tcp_server_error,
 	tcp_channel,
 	tcp_channel_queued,
 	tcp_channel_send,
@@ -183,6 +186,7 @@ enum class detail
 	sent,
 	reset,
 	close,
+	read,
 
 	// processing queue
 	queue,
@@ -239,9 +243,10 @@ enum class detail
 	forced,
 	election,
 
-	// message specific
+	// message types
 	not_a_type,
 	invalid,
+	header,
 	keepalive,
 	publish,
 	confirm_req,
@@ -410,6 +415,8 @@ enum class detail
 	outdated,
 
 	// tcp_server
+	read_header,
+	read_payload,
 	handshake,
 	handshake_abort,
 	handshake_error,
@@ -417,6 +424,8 @@ enum class detail
 	handshake_initiate,
 	handshake_response,
 	handshake_response_invalid,
+	message_queued,
+	message_dropped,
 
 	// ipc
 	invocations,

@@ -1313,8 +1313,6 @@ TEST (telemetry, ongoing_requests)
 	auto node_client = system.add_node (node_flags);
 	auto node_server = system.add_node (node_flags);
 
-	nano::test::wait_peer_connections (system);
-
 	ASSERT_EQ (0, node_client->telemetry.size ());
 	ASSERT_EQ (0, node_server->telemetry.size ());
 	ASSERT_EQ (0, node_client->stats.count (nano::stat::type::bootstrap, nano::stat::detail::telemetry_ack, nano::stat::dir::in));
@@ -1347,8 +1345,6 @@ namespace transport
 		{
 			system.add_node (node_flags);
 		}
-
-		nano::test::wait_peer_connections (system);
 
 		std::vector<std::thread> threads;
 		auto const num_threads = 4;
@@ -1499,8 +1495,6 @@ TEST (telemetry, cache_read_and_timeout)
 	nano::node_flags node_flags;
 	auto node_client = system.add_node (node_flags);
 	auto node_server = system.add_node (node_flags);
-
-	nano::test::wait_peer_connections (system);
 
 	// Request telemetry metrics
 	std::optional<nano::telemetry_data> telemetry_data;

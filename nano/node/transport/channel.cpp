@@ -39,6 +39,20 @@ nano::endpoint nano::transport::channel::get_peering_endpoint () const
 	return get_remote_endpoint ();
 }
 
+void nano::transport::channel::set_last_keepalive (nano::keepalive const & message)
+{
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	last_keepalive = message;
+}
+
+std::optional<nano::keepalive> nano::transport::channel::pop_last_keepalive ()
+{
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	auto result = last_keepalive;
+	last_keepalive.reset ();
+	return result;
+}
+
 std::shared_ptr<nano::node> nano::transport::channel::owner () const
 {
 	return node.shared ();

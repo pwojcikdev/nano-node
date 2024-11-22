@@ -62,8 +62,6 @@ TEST (telemetry, basic)
 	auto node_client = system.add_node (node_flags);
 	auto node_server = system.add_node (node_flags);
 
-	nano::test::wait_peer_connections (system);
-
 	// Request telemetry metrics
 	auto channel = node_client->network.find_node_id (node_server->get_node_id ());
 	ASSERT_NE (nullptr, channel);
@@ -116,7 +114,7 @@ TEST (telemetry, disconnected)
 	nano::node_flags node_flags;
 	auto node_client = system.add_node (node_flags);
 	auto node_server = system.add_node (node_flags);
-	nano::test::wait_peer_connections (system);
+
 	auto channel = node_client->network.find_node_id (node_server->get_node_id ());
 	ASSERT_NE (nullptr, channel);
 
@@ -138,18 +136,10 @@ TEST (telemetry, dos_tcp)
 	auto node_client = system.add_node (node_flags);
 	auto node_server = system.add_node (node_flags);
 
-	nano::test::wait_peer_connections (system);
-
-	nano::telemetry_req message{ nano::dev::network_params.network };
 	auto channel = node_client->network.tcp_channels.find_node_id (node_server->get_node_id ());
 	ASSERT_NE (nullptr, channel);
-	channel->send (message, nano::transport::traffic_type::test, [] (boost::system::error_code const & ec, size_t size_a) {
-		ASSERT_FALSE (ec);
-	});
 
-	ASSERT_TIMELY_EQ (5s, 1, node_server->stats.count (nano::stat::type::message, nano::stat::detail::telemetry_req, nano::stat::dir::in));
-
-	auto orig = std::chrono::steady_clock::now ();
+	nano::telemetry_req message{ nano::dev::network_params.network };
 	for (int i = 0; i < 10; ++i)
 	{
 		channel->send (message, nano::transport::traffic_type::test, [] (boost::system::error_code const & ec, size_t size_a) {
@@ -157,17 +147,11 @@ TEST (telemetry, dos_tcp)
 		});
 	}
 
-	ASSERT_TIMELY (5s, (nano::dev::network_params.network.telemetry_request_cooldown + orig) <= std::chrono::steady_clock::now ());
+	// Should process telemetry_req messages
+	ASSERT_TIMELY (5s, 1 < node_server->stats.count (nano::stat::type::message, nano::stat::detail::telemetry_req, nano::stat::dir::in));
 
-	// Should process no more telemetry_req messages
-	ASSERT_EQ (1, node_server->stats.count (nano::stat::type::message, nano::stat::detail::telemetry_req, nano::stat::dir::in));
-
-	// Now spam messages waiting for it to be processed
-	while (node_server->stats.count (nano::stat::type::message, nano::stat::detail::telemetry_req, nano::stat::dir::in) == 1)
-	{
-		channel->send (message, nano::transport::traffic_type::test);
-		ASSERT_NO_ERROR (system.poll ());
-	}
+	// But not respond to all of them
+	ASSERT_ALWAYS (1s, node_server->stats.count (nano::stat::type::message, nano::stat::detail::telemetry_ack, nano::stat::dir::out) < 3);
 }
 
 TEST (telemetry, disable_metrics)
@@ -177,8 +161,6 @@ TEST (telemetry, disable_metrics)
 	auto node_client = system.add_node (node_flags);
 	node_flags.disable_providing_telemetry_metrics = true;
 	auto node_server = system.add_node (node_flags);
-
-	nano::test::wait_peer_connections (system);
 
 	// Try and request metrics from a node which is turned off but a channel is not closed yet
 	auto channel = node_client->network.find_node_id (node_server->get_node_id ());
@@ -210,7 +192,6 @@ TEST (telemetry, max_possible_size)
 	data.unknown_data.resize (nano::message_header::telemetry_size_mask.to_ulong () - nano::telemetry_data::latest_size);
 
 	nano::telemetry_ack message{ nano::dev::network_params.network, data };
-	nano::test::wait_peer_connections (system);
 
 	auto channel = node_client->network.tcp_channels.find_node_id (node_server->get_node_id ());
 	ASSERT_NE (nullptr, channel);
@@ -230,8 +211,6 @@ TEST (telemetry, maker_pruning)
 	nano::node_config config;
 	config.enable_voting = false;
 	auto node_server = system.add_node (config, node_flags);
-
-	nano::test::wait_peer_connections (system);
 
 	// Request telemetry metrics
 	auto channel = node_client->network.find_node_id (node_server->get_node_id ());

@@ -55,7 +55,6 @@ public:
 		nano::lock_guard<nano::mutex> lock{ mutex };
 		return last_bootstrap_attempt;
 	}
-
 	void set_last_bootstrap_attempt (std::chrono::steady_clock::time_point const time_a)
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
@@ -67,7 +66,6 @@ public:
 		nano::lock_guard<nano::mutex> lock{ mutex };
 		return last_packet_received;
 	}
-
 	void set_last_packet_received (std::chrono::steady_clock::time_point const time_a)
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
@@ -79,7 +77,6 @@ public:
 		nano::lock_guard<nano::mutex> lock{ mutex };
 		return last_packet_sent;
 	}
-
 	void set_last_packet_sent (std::chrono::steady_clock::time_point const time_a)
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
@@ -91,13 +88,11 @@ public:
 		nano::lock_guard<nano::mutex> lock{ mutex };
 		return node_id;
 	}
-
 	nano::account get_node_id () const
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
 		return node_id.value_or (0);
 	}
-
 	void set_node_id (nano::account node_id_a)
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
@@ -108,7 +103,6 @@ public:
 	{
 		return network_version;
 	}
-
 	void set_network_version (uint8_t network_version_a)
 	{
 		network_version = network_version_a;
@@ -116,6 +110,9 @@ public:
 
 	nano::endpoint get_peering_endpoint () const;
 	void set_peering_endpoint (nano::endpoint endpoint);
+
+	void set_last_keepalive (nano::keepalive const & message);
+	std::optional<nano::keepalive> pop_last_keepalive ();
 
 	std::shared_ptr<nano::node> owner () const;
 
@@ -133,6 +130,7 @@ private:
 	std::optional<nano::account> node_id{};
 	std::atomic<uint8_t> network_version{ 0 };
 	std::optional<nano::endpoint> peering_endpoint{};
+	std::optional<nano::keepalive> last_keepalive{};
 
 public: // Logging
 	virtual void operator() (nano::object_stream &) const;

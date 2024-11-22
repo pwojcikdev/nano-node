@@ -30,7 +30,11 @@ void nano::transport::tcp_channel::close ()
 {
 	stop ();
 	socket->close ();
-	closed = true;
+}
+
+void nano::transport::tcp_channel::close_async ()
+{
+	socket->close_async ();
 }
 
 void nano::transport::tcp_channel::start ()
@@ -57,6 +61,9 @@ asio::awaitable<void> nano::transport::tcp_channel::start_sending (nano::async::
 		release_assert (false, "unexpected exception");
 	}
 	debug_assert (strand.running_in_this_thread ());
+
+	// Ensure socket gets closed if task is stopped
+	close_async ();
 }
 
 void nano::transport::tcp_channel::stop ()

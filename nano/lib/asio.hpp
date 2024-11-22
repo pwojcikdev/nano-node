@@ -4,11 +4,13 @@
 #include <nano/boost/asio/strand.hpp>
 #include <nano/boost/asio/write.hpp>
 
+#include <span>
+
 namespace nano
 {
+using buffer_view = std::span<const uint8_t>;
 using shared_buffer = std::shared_ptr<std::vector<uint8_t>>;
 
-// TODO: Replace with just shared_buffer
 class shared_const_buffer
 {
 public:

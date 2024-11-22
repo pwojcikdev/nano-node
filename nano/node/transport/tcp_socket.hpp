@@ -25,7 +25,7 @@ public:
 	~tcp_socket ();
 
 	void close ();
-	void close_async ();
+	void close_async (); // Safe to call from io context
 
 	nano::endpoint get_remote_endpoint () const;
 	nano::endpoint get_local_endpoint () const;

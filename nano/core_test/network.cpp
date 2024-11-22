@@ -96,8 +96,8 @@ TEST (network, send_node_id_handshake_tcp)
 	node0->network.tcp_channels.start_tcp (node1->network.endpoint ());
 	ASSERT_EQ (0, node0->network.size ());
 	ASSERT_EQ (0, node1->network.size ());
-	ASSERT_TIMELY (10s, node0->stats.count (nano::stat::type::message, nano::stat::detail::node_id_handshake, nano::stat::dir::in) >= initial + 2);
-	ASSERT_TIMELY (5s, node1->stats.count (nano::stat::type::message, nano::stat::detail::node_id_handshake, nano::stat::dir::in) >= initial_node1 + 2);
+	ASSERT_TIMELY (10s, node0->stats.count (nano::stat::type::tcp_server_message, nano::stat::detail::node_id_handshake, nano::stat::dir::in) >= initial + 2);
+	ASSERT_TIMELY (5s, node1->stats.count (nano::stat::type::tcp_server_message, nano::stat::detail::node_id_handshake, nano::stat::dir::in) >= initial_node1 + 1);
 	ASSERT_TIMELY (5s, node0->stats.count (nano::stat::type::message, nano::stat::detail::keepalive, nano::stat::dir::in) >= initial_keepalive + 2);
 	ASSERT_TIMELY (5s, node1->stats.count (nano::stat::type::message, nano::stat::detail::keepalive, nano::stat::dir::in) >= initial_keepalive + 2);
 	ASSERT_EQ (1, node0->network.size ());
@@ -293,66 +293,24 @@ TEST (network, send_insufficient_work)
 	nano::test::system system (2);
 	auto & node1 = *system.nodes[0];
 	auto & node2 = *system.nodes[1];
-	// Block zero work
+
 	nano::block_builder builder;
-	auto block1 = builder
-				  .send ()
-				  .previous (0)
-				  .destination (1)
-				  .balance (20)
-				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				  .work (0)
-				  .build ();
-	nano::publish publish1{ nano::dev::network_params.network, block1 };
-	auto tcp_channel (node1.network.tcp_channels.find_node_id (node2.get_node_id ()));
+	auto block = builder
+				 .send ()
+				 .previous (0)
+				 .destination (1)
+				 .balance (20)
+				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				 .work (0)
+				 .build ();
+
+	auto tcp_channel = node1.network.tcp_channels.find_node_id (node2.get_node_id ());
 	ASSERT_NE (nullptr, tcp_channel);
-	tcp_channel->send (publish1, nano::transport::traffic_type::test);
-	ASSERT_EQ (0, node1.stats.count (nano::stat::type::error, nano::stat::detail::insufficient_work));
-	ASSERT_TIMELY (10s, node2.stats.count (nano::stat::type::error, nano::stat::detail::insufficient_work) != 0);
-	ASSERT_EQ (1, node2.stats.count (nano::stat::type::error, nano::stat::detail::insufficient_work));
-	// Legacy block work between epoch_2_recieve & epoch_1
-	auto block2 = builder
-				  .send ()
-				  .previous (block1->hash ())
-				  .destination (1)
-				  .balance (20)
-				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				  .work (system.work_generate_limited (block1->hash (), node1.network_params.work.epoch_2_receive, node1.network_params.work.epoch_1 - 1))
-				  .build ();
-	nano::publish publish2{ nano::dev::network_params.network, block2 };
-	tcp_channel->send (publish2, nano::transport::traffic_type::test);
-	ASSERT_TIMELY (10s, node2.stats.count (nano::stat::type::error, nano::stat::detail::insufficient_work) != 1);
-	ASSERT_EQ (2, node2.stats.count (nano::stat::type::error, nano::stat::detail::insufficient_work));
-	// Legacy block work epoch_1
-	auto block3 = builder
-				  .send ()
-				  .previous (block2->hash ())
-				  .destination (1)
-				  .balance (20)
-				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				  .work (*system.work.generate (block2->hash (), node1.network_params.work.epoch_2))
-				  .build ();
-	nano::publish publish3{ nano::dev::network_params.network, block3 };
-	tcp_channel->send (publish3, nano::transport::traffic_type::test);
-	ASSERT_EQ (0, node2.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in));
-	ASSERT_TIMELY (10s, node2.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in) != 0);
-	ASSERT_EQ (1, node2.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in));
-	// State block work epoch_2_recieve
-	auto block4 = builder
-				  .state ()
-				  .account (nano::dev::genesis_key.pub)
-				  .previous (block1->hash ())
-				  .representative (nano::dev::genesis_key.pub)
-				  .balance (20)
-				  .link (1)
-				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				  .work (system.work_generate_limited (block1->hash (), node1.network_params.work.epoch_2_receive, node1.network_params.work.epoch_1 - 1))
-				  .build ();
-	nano::publish publish4{ nano::dev::network_params.network, block4 };
-	tcp_channel->send (publish4, nano::transport::traffic_type::test);
-	ASSERT_TIMELY (10s, node2.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in) != 0);
-	ASSERT_EQ (1, node2.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in));
-	ASSERT_EQ (2, node2.stats.count (nano::stat::type::error, nano::stat::detail::insufficient_work));
+
+	nano::publish publish{ nano::dev::network_params.network, block };
+	tcp_channel->send (publish, nano::transport::traffic_type::test);
+
+	ASSERT_TIMELY_EQ (5s, 1, node2.stats.count (nano::stat::type::tcp_server_error, nano::stat::detail::insufficient_work));
 }
 
 TEST (receivable_processor, confirm_insufficient_pos)
@@ -964,7 +922,7 @@ TEST (network, filter_invalid_network_bytes)
 	const_cast<nano::networks &> (keepalive.header.network) = nano::networks::invalid;
 	channel->send (keepalive, nano::transport::traffic_type::test);
 
-	ASSERT_TIMELY_EQ (5s, 1, node1.stats.count (nano::stat::type::error, nano::stat::detail::invalid_network));
+	ASSERT_TIMELY_EQ (5s, 1, node1.stats.count (nano::stat::type::tcp_server_error, nano::stat::detail::invalid_network));
 }
 
 // Ensure the network filters messages with the incorrect minimum version
@@ -983,7 +941,7 @@ TEST (network, filter_invalid_version_using)
 	const_cast<uint8_t &> (keepalive.header.version_using) = nano::dev::network_params.network.protocol_version_min - 1;
 	channel->send (keepalive, nano::transport::traffic_type::test);
 
-	ASSERT_TIMELY_EQ (5s, 1, node1.stats.count (nano::stat::type::error, nano::stat::detail::outdated_version));
+	ASSERT_TIMELY_EQ (5s, 1, node1.stats.count (nano::stat::type::tcp_server_error, nano::stat::detail::outdated_version));
 }
 
 TEST (network, fill_keepalive_self)

@@ -64,15 +64,10 @@ void nano::transport::tcp_socket::close ()
 
 void nano::transport::tcp_socket::close_async ()
 {
-	if (closed) // Avoid closing the socket multiple times
-	{
-		return;
-	}
-
 	// Node context must be running to gracefully stop async tasks
 	debug_assert (!node.io_ctx.stopped ());
 
-	asio::post (strand, [this, /* lifetime guard */ this_s = shared_from_this ()] () {
+	asio::dispatch (strand, [this, /* lifetime guard */ this_s = shared_from_this ()] () {
 		close_impl ();
 	});
 }
