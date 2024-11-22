@@ -154,7 +154,7 @@ void nano::transport::tcp_listener::stop ()
 	for (auto & connection : connections_l)
 	{
 		connection.socket->close ();
-		connection.server->stop ();
+		connection.server->close ();
 	}
 
 	logger.debug (nano::log::type::tcp_listener, "Stopped");
@@ -305,9 +305,6 @@ auto nano::transport::tcp_listener::connect_impl (asio::ip::tcp::endpoint endpoi
 		{
 			stats.inc (nano::stat::type::tcp_listener, nano::stat::detail::connect_success, nano::stat::dir::out);
 			logger.debug (nano::log::type::tcp_listener, "Successfully connected to: {}", endpoint);
-
-			release_assert (result.server);
-			result.server->initiate_handshake ();
 		}
 		else
 		{
@@ -431,13 +428,11 @@ auto nano::transport::tcp_listener::accept_one (asio::ip::tcp::socket raw_socket
 	logger.debug (nano::log::type::tcp_listener, "Accepted connection: {} ({})", remote_endpoint, to_string (type));
 
 	auto socket = std::make_shared<nano::transport::tcp_socket> (node, std::move (raw_socket), to_socket_endpoint (type));
-	auto server = std::make_shared<nano::transport::tcp_server> (socket, node.shared (), true);
+	auto server = std::make_shared<nano::transport::tcp_server> (node, socket);
 
 	connections.emplace_back (connection{ type, remote_endpoint, socket, server });
 
 	lock.unlock ();
-
-	server->start ();
 
 	connection_accepted.notify (socket, server);
 

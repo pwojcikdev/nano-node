@@ -1,63 +1,66 @@
 #pragma once
 
+#include <nano/lib/stream.hpp>
 #include <nano/node/endpoint.hpp>
+#include <nano/node/fwd.hpp>
 #include <nano/node/messages.hpp>
 #include <nano/node/transport/fwd.hpp>
 #include <nano/node/transport/tcp_socket.hpp>
 
 #include <atomic>
 
-namespace nano
-{
-class message;
-}
-
 namespace nano::transport
 {
-class message_deserializer;
-class tcp_server;
-
 class tcp_server final : public std::enable_shared_from_this<tcp_server>
 {
 public:
-	tcp_server (std::shared_ptr<nano::transport::tcp_socket>, std::shared_ptr<nano::node>, bool allow_bootstrap = true);
+	tcp_server (nano::node &, std::shared_ptr<nano::transport::tcp_socket>);
 	~tcp_server ();
 
+	void close ();
+	void close_async (); // Safe to call from io context
+
+	bool alive () const;
+
+	// void start ();
+	// void stop ();
+
+	// void initiate_handshake ();
+	// void timeout ();
+
+	// std::shared_ptr<nano::transport::tcp_socket> const socket;
+	// nano::mutex mutex;
+	// std::atomic<bool> stopped{ false };
+	// std::atomic<bool> handshake_received{ false };
+	// // Remote endpoint used to remove response channel even after socket closing
+	// nano::tcp_endpoint remote_endpoint{ boost::asio::ip::address_v6::any (), 0 };
+	// std::chrono::steady_clock::time_point last_telemetry_req{};
+
+	nano::endpoint get_remote_endpoint () const
+	{
+		return socket->get_remote_endpoint ();
+	}
+	nano::endpoint get_local_endpoint () const
+	{
+		return socket->get_local_endpoint ();
+	}
+
+private:
 	void start ();
 	void stop ();
 
-	void initiate_handshake ();
-	void timeout ();
-	void set_last_keepalive (nano::keepalive const & message);
-	std::optional<nano::keepalive> pop_last_keepalive ();
+	asio::awaitable<void> start_impl ();
+	asio::awaitable<void> do_handshake ();
+	asio::awaitable<void> run_receiving ();
+	asio::awaitable<nano::deserialize_message_result> receive_message ();
+	asio::awaitable<nano::buffer_view> read_socket (size_t size);
 
-	std::shared_ptr<nano::transport::tcp_socket> const socket;
-	std::weak_ptr<nano::node> const node;
-	nano::mutex mutex;
-	std::atomic<bool> stopped{ false };
-	std::atomic<bool> handshake_received{ false };
-	// Remote endpoint used to remove response channel even after socket closing
-	nano::tcp_endpoint remote_endpoint{ boost::asio::ip::address_v6::any (), 0 };
-	std::chrono::steady_clock::time_point last_telemetry_req{};
-
-private:
 	enum class process_result
 	{
 		abort,
 		progress,
-		pause,
 	};
-
-	void receive_message ();
-	void received_message (std::unique_ptr<nano::message> message);
-	process_result process_message (std::unique_ptr<nano::message> message);
-	void queue_realtime (std::unique_ptr<nano::message> message);
-
-	bool to_bootstrap_connection ();
-	bool to_realtime_connection (nano::account const & node_id);
-	bool is_undefined_connection () const;
-	bool is_bootstrap_connection () const;
-	bool is_realtime_connection () const;
+	asio::awaitable<process_result> process_message (std::unique_ptr<nano::message> message);
 
 	enum class handshake_status
 	{
@@ -67,43 +70,48 @@ private:
 		bootstrap,
 	};
 
-	handshake_status process_handshake (nano::node_id_handshake const & message);
-	void send_handshake_response (nano::node_id_handshake::query_payload const & query, bool v2);
+	asio::awaitable<handshake_status> process_handshake (nano::node_id_handshake const & message);
+	asio::awaitable<void> send_handshake_response (nano::node_id_handshake::query_payload const & query, bool v2);
+	asio::awaitable<void> send_handshake_request ();
 
 private:
-	bool const allow_bootstrap;
-	std::shared_ptr<nano::transport::message_deserializer> message_deserializer;
-	std::optional<nano::keepalive> last_keepalive;
+	std::weak_ptr<nano::node> node_w;
+	nano::node & node;
 
-	// Every realtime connection must have an associated channel
-	std::shared_ptr<nano::transport::tcp_channel> channel;
+	std::shared_ptr<nano::transport::tcp_socket> socket;
+	std::shared_ptr<nano::transport::tcp_channel> channel; // Every realtime connection must have an associated channel
+
+	nano::async::strand strand;
+	nano::async::task task;
+
+	nano::shared_buffer buffer;
+	static size_t constexpr max_buffer_size = 64 * 1024; // 64 KB
+
+	std::atomic<bool> handshake_received{ false };
+
+private:
+	void received_message (std::unique_ptr<nano::message> message);
+
+	bool to_bootstrap_connection ();
+	bool to_realtime_connection (nano::account const & node_id);
+	bool is_undefined_connection () const;
+	bool is_bootstrap_connection () const;
+	bool is_realtime_connection () const;
 
 private: // Visitors
 	class handshake_message_visitor : public nano::message_visitor
 	{
 	public:
-		handshake_status result{ handshake_status::abort };
-
-		explicit handshake_message_visitor (tcp_server & server) :
-			server{ server } {};
+		bool process{ false };
+		std::optional<nano::node_id_handshake> handshake;
 
 		void node_id_handshake (nano::node_id_handshake const &) override;
-		void bulk_pull (nano::bulk_pull const &) override;
-		void bulk_pull_account (nano::bulk_pull_account const &) override;
-		void bulk_push (nano::bulk_push const &) override;
-		void frontier_req (nano::frontier_req const &) override;
-
-	private:
-		tcp_server & server;
 	};
 
 	class realtime_message_visitor : public nano::message_visitor
 	{
 	public:
 		bool process{ false };
-
-		explicit realtime_message_visitor (tcp_server & server) :
-			server{ server } {};
 
 		void keepalive (nano::keepalive const &) override;
 		void publish (nano::publish const &) override;
@@ -114,9 +122,6 @@ private: // Visitors
 		void telemetry_ack (nano::telemetry_ack const &) override;
 		void asc_pull_req (nano::asc_pull_req const &) override;
 		void asc_pull_ack (nano::asc_pull_ack const &) override;
-
-	private:
-		tcp_server & server;
 	};
 
 	friend class handshake_message_visitor;

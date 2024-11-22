@@ -10,400 +10,601 @@
  * tcp_server
  */
 
-nano::transport::tcp_server::tcp_server (std::shared_ptr<nano::transport::tcp_socket> socket_a, std::shared_ptr<nano::node> node_a, bool allow_bootstrap_a) :
-	socket{ socket_a },
+nano::transport::tcp_server::tcp_server (nano::node & node_a, std::shared_ptr<nano::transport::tcp_socket> socket_a) :
+	node_w{ node_a.shared () },
 	node{ node_a },
-	allow_bootstrap{ allow_bootstrap_a },
-	message_deserializer{
-		std::make_shared<nano::transport::message_deserializer> (node_a->network_params.network, node_a->network.filter, node_a->block_uniquer, node_a->vote_uniquer,
-		[socket_l = socket] (std::shared_ptr<std::vector<uint8_t>> const & data_a, size_t size_a, std::function<void (boost::system::error_code const &, std::size_t)> callback_a) {
-			debug_assert (socket_l != nullptr);
-			socket_l->async_read (data_a, size_a, callback_a);
-		})
-	}
+	socket{ socket_a },
+	strand{ node_a.io_ctx.get_executor () },
+	task{ strand },
+	buffer{ std::make_shared<nano::shared_buffer::element_type> (max_buffer_size) }
 {
-	debug_assert (socket != nullptr);
+	start ();
 }
 
 nano::transport::tcp_server::~tcp_server ()
 {
-	auto node = this->node.lock ();
-	if (!node)
-	{
-		return;
-	}
+	close ();
+}
 
-	node->logger.debug (nano::log::type::tcp_server, "Exiting server: {}", remote_endpoint);
-
+void nano::transport::tcp_server::close ()
+{
 	stop ();
+	socket->close ();
+}
+
+void nano::transport::tcp_server::close_async ()
+{
+	socket->close_async ();
 }
 
 void nano::transport::tcp_server::start ()
 {
-	// Set remote_endpoint
-	if (remote_endpoint.port () == 0)
-	{
-		remote_endpoint = socket->get_remote_endpoint ();
-		debug_assert (remote_endpoint.port () != 0);
-	}
-
-	auto node = this->node.lock ();
-	if (!node)
-	{
-		return;
-	}
-
-	node->logger.debug (nano::log::type::tcp_server, "Starting server: {}", remote_endpoint);
-
-	receive_message ();
+	task = nano::async::task (strand, start_impl ());
 }
 
 void nano::transport::tcp_server::stop ()
 {
-	if (!stopped.exchange (true))
+	if (task.running ())
 	{
-		socket->close_async ();
+		// Node context must be running to gracefully stop async tasks
+		debug_assert (!node.io_ctx.stopped ());
+		// Ensure that we are not trying to await the task while running on the same thread / io_context
+		debug_assert (!node.io_ctx.get_executor ().running_in_this_thread ());
+
+		task.cancel ();
+		task.join ();
 	}
 }
 
-void nano::transport::tcp_server::receive_message ()
+asio::awaitable<void> nano::transport::tcp_server::start_impl ()
 {
-	if (stopped)
+	debug_assert (strand.running_in_this_thread ());
+	try
 	{
-		return;
+		// Initiate handshake if we are the ones initiating the connection
+		if (socket->get_endpoint_type () == nano::transport::socket_endpoint::client)
+		{
+			co_await send_handshake_request ();
+		}
+		co_await run_receiving ();
 	}
+	catch (boost::system::system_error const & ex)
+	{
+		node.stats.inc (nano::stat::type::tcp_server_error, nano::to_stat_detail (ex.code ()), nano::stat::dir::in);
+		node.logger.debug (nano::log::type::tcp_server, "Server stopped due to error: {} ({})", ex.code (), get_remote_endpoint ());
+	}
+	catch (...)
+	{
+		release_assert (false, "unexpected exception");
+	}
+	debug_assert (strand.running_in_this_thread ());
 
-	message_deserializer->read ([this_l = shared_from_this ()] (boost::system::error_code ec, std::unique_ptr<nano::message> message) {
-		auto node = this_l->node.lock ();
-		if (!node)
-		{
-			return;
-		}
-		if (ec)
-		{
-			// IO error or critical error when deserializing message
-			node->stats.inc (nano::stat::type::error, to_stat_detail (this_l->message_deserializer->status));
-			node->logger.debug (nano::log::type::tcp_server, "Error reading message: {}, status: {} ({})",
-			ec.message (),
-			to_string (this_l->message_deserializer->status),
-			this_l->remote_endpoint);
-
-			this_l->stop ();
-		}
-		else
-		{
-			this_l->received_message (std::move (message));
-		}
-	});
+	// Ensure socket gets closed if task is stopped
+	close_async ();
 }
 
-void nano::transport::tcp_server::received_message (std::unique_ptr<nano::message> message)
+bool nano::transport::tcp_server::alive () const
 {
-	auto node = this->node.lock ();
-	if (!node)
-	{
-		return;
-	}
+	return socket->alive ();
+}
 
-	process_result result = process_result::progress;
-	if (message)
-	{
-		result = process_message (std::move (message));
-	}
-	else
-	{
-		// Error while deserializing message
-		debug_assert (message_deserializer->status != transport::parse_status::success);
+// asio::awaitable<void> nano::transport::tcp_server::do_handshake ()
+// {
+// 	debug_assert (strand.running_in_this_thread ());
+//
+// 	auto message = co_await receive_message ();
+// 	if (!message)
+// 	{
+// 		throw std::runtime_error ("tcp_server::do_handshake: initial message is null");
+// 	}
+//
+// 	handshake_message_visitor handshake_visitor{ *this };
+// 	message->visit (handshake_visitor);
+//
+// 	switch (handshake_visitor.result)
+// 	{
+// 		case handshake_status::abort:
+// 		case handshake_status::bootstrap:
+// 		{
+// 			node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_abort);
+// 			node.logger.debug (nano::log::type::tcp_server, "Aborting handshake: {} ({})",
+// 			to_string (message->type ()),
+// 			socket->get_remote_endpoint ());
+//
+// 			close_impl ();
+// 		}
+// 		break;
+// 		case handshake_status::handshake:
+// 		{
+// 			// Continue handshake
+// 		}
+// 		break;
+// 		case handshake_status::realtime:
+// 		{
+// 			queue_realtime (std::move (message));
+// 		}
+// 		break;
+// 	}
+// }
 
-		node->stats.inc (nano::stat::type::error, to_stat_detail (message_deserializer->status));
+auto nano::transport::tcp_server::run_receiving () -> asio::awaitable<void>
+{
+	while (!co_await nano::async::cancelled ())
+	{
+		debug_assert (strand.running_in_this_thread ());
 
-		switch (message_deserializer->status)
+		process_result result = process_result::progress;
+		auto [message, status] = co_await receive_message ();
+		if (message)
 		{
-			// Avoid too much noise about `duplicate_publish_message` errors
-			case nano::transport::parse_status::duplicate_publish_message:
+			result = co_await process_message (std::move (message));
+		}
+		else // Error while deserializing message
+		{
+			debug_assert (status != nano::deserialize_message_status::success);
+
+			node.stats.inc (nano::stat::type::tcp_server_error, to_stat_detail (status));
+
+			switch (status)
 			{
-				node->stats.inc (nano::stat::type::filter, nano::stat::detail::duplicate_publish_message);
-			}
-			break;
-			case nano::transport::parse_status::duplicate_confirm_ack_message:
-			{
-				node->stats.inc (nano::stat::type::filter, nano::stat::detail::duplicate_confirm_ack_message);
-			}
-			break;
-			default:
-			{
-				node->logger.debug (nano::log::type::tcp_server, "Error deserializing message: {} ({})",
-				to_string (message_deserializer->status),
-				remote_endpoint);
-			}
-			break;
-		}
-	}
+				// Avoid too much noise about `duplicate_publish_message` errors
+				case nano::deserialize_message_status::duplicate_publish_message:
+				{
+					node.stats.inc (nano::stat::type::filter, nano::stat::detail::duplicate_publish_message);
+				}
+				break;
+				case nano::deserialize_message_status::duplicate_confirm_ack_message:
+				{
+					node.stats.inc (nano::stat::type::filter, nano::stat::detail::duplicate_confirm_ack_message);
+				}
+				break;
+				default:
+				{
+					node.logger.debug (nano::log::type::tcp_server, "Error deserializing message: {} ({})",
+					to_string (status),
+					get_remote_endpoint ());
 
-	switch (result)
-	{
-		case process_result::progress:
-		{
-			receive_message ();
+					result = process_result::abort;
+				}
+				break;
+			}
 		}
-		break;
-		case process_result::abort:
+
+		if (result == process_result::abort)
 		{
-			stop ();
+			node.logger.debug (nano::log::type::tcp_server, "Aborting further receiving: {} ({})",
+			to_string (status),
+			get_remote_endpoint ());
+
+			break;
 		}
-		break;
-		case process_result::pause:
-		{
-			// Do nothing
-		}
-		break;
 	}
 }
 
-auto nano::transport::tcp_server::process_message (std::unique_ptr<nano::message> message) -> process_result
+auto nano::transport::tcp_server::receive_message () -> asio::awaitable<nano::deserialize_message_result>
 {
-	auto node = this->node.lock ();
-	if (!node)
+	debug_assert (strand.running_in_this_thread ());
+
+	node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::read_header, nano::stat::dir::in);
+	node.stats.inc (nano::stat::type::tcp_server_read, nano::stat::detail::header, nano::stat::dir::in);
+
+	auto header_payload = co_await read_socket (nano::message_header::size);
+	auto header_stream = nano::bufferstream{ header_payload.data (), header_payload.size () };
+
+	bool error = false;
+	nano::message_header header{ error, header_stream };
+
+	if (error)
 	{
-		return process_result::abort;
+		co_return nano::deserialize_message_result{ nullptr, nano::deserialize_message_status::invalid_header };
+	}
+	if (!header.is_valid_message_type ())
+	{
+		co_return nano::deserialize_message_result{ nullptr, nano::deserialize_message_status::invalid_message_type };
+	}
+	if (header.network != node.config.network_params.network.current_network)
+	{
+		co_return nano::deserialize_message_result{ nullptr, nano::deserialize_message_status::invalid_network };
+	}
+	if (header.version_using < node.config.network_params.network.protocol_version_min)
+	{
+		co_return nano::deserialize_message_result{ nullptr, nano::deserialize_message_status::outdated_version };
 	}
 
-	node->stats.inc (nano::stat::type::tcp_server, to_stat_detail (message->type ()), nano::stat::dir::in);
+	auto const payload_size = header.payload_length_bytes ();
 
+	node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::read_payload, nano::stat::dir::in);
+	node.stats.inc (nano::stat::type::tcp_server_read, to_stat_detail (header.type), nano::stat::dir::in);
+
+	auto payload_buffer = payload_size > 0 ? co_await read_socket (payload_size) : nano::buffer_view{ buffer->data (), 0 };
+
+	auto result = nano::deserialize_message (payload_buffer, header,
+	node.network_params.network,
+	&node.network.filter,
+	&node.block_uniquer,
+	&node.vote_uniquer);
+
+	co_return result;
+}
+
+auto nano::transport::tcp_server::read_socket (size_t size) -> asio::awaitable<nano::buffer_view>
+{
+	debug_assert (strand.running_in_this_thread ());
+
+	auto [ec, size_read] = co_await socket->co_read (buffer, size);
+	debug_assert (ec || size_read == size);
+	debug_assert (strand.running_in_this_thread ());
+
+	if (ec)
+	{
+		throw boost::system::system_error (ec);
+	}
+
+	release_assert (size_read == size);
+	co_return nano::buffer_view{ buffer->data (), size_read };
+}
+
+auto nano::transport::tcp_server::process_message (std::unique_ptr<nano::message> message) -> asio::awaitable<process_result>
+{
+	release_assert (message != nullptr);
 	debug_assert (is_undefined_connection () || is_realtime_connection () || is_bootstrap_connection ());
 
-	/*
-	 * Server initially starts in undefined state, where it waits for either a handshake or booststrap request message
-	 * If the server receives a handshake (and it is successfully validated) it will switch to a realtime mode.
-	 * In realtime mode messages are deserialized and queued to `tcp_message_manager` for further processing.
-	 * In realtime mode any bootstrap requests are ignored.
-	 *
-	 * If the server receives a bootstrap request before receiving a handshake, it will switch to a bootstrap mode.
-	 * In bootstrap mode once a valid bootstrap request message is received, the server will start a corresponding bootstrap server and pass control to that server.
-	 * Once that server finishes its task, control is passed back to this server to read and process any subsequent messages.
-	 * In bootstrap mode any realtime messages are ignored
-	 */
+	node.stats.inc (nano::stat::type::tcp_server_message, to_stat_detail (message->type ()), nano::stat::dir::in);
+
 	if (is_undefined_connection ())
 	{
-		handshake_message_visitor handshake_visitor{ *this };
+		handshake_message_visitor handshake_visitor{};
 		message->visit (handshake_visitor);
 
-		switch (handshake_visitor.result)
+		handshake_status status = handshake_status::abort;
+		if (handshake_visitor.process)
+		{
+			release_assert (handshake_visitor.handshake.has_value ());
+			status = co_await process_handshake (*handshake_visitor.handshake);
+		}
+		switch (status)
 		{
 			case handshake_status::abort:
+			case handshake_status::bootstrap: // Legacy bootstrap is no longer supported
 			{
-				node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_abort);
-				node->logger.debug (nano::log::type::tcp_server, "Aborting handshake: {} ({})", to_string (message->type ()), remote_endpoint);
+				node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_abort);
+				node.logger.debug (nano::log::type::tcp_server, "Aborting handshake: {} ({})", to_string (message->type ()), get_remote_endpoint ());
 
-				return process_result::abort;
+				co_return process_result::abort;
 			}
 			case handshake_status::handshake:
 			{
-				return process_result::progress; // Continue handshake
+				co_return process_result::progress; // Continue handshake
 			}
 			case handshake_status::realtime:
 			{
-				queue_realtime (std::move (message));
-				return process_result::progress; // Continue receiving new messages
-			}
-			case handshake_status::bootstrap:
-			{
-				bool success = to_bootstrap_connection ();
-				if (!success)
-				{
-					node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
-					node->logger.debug (nano::log::type::tcp_server, "Error switching to bootstrap mode: {} ({})", to_string (message->type ()), remote_endpoint);
-
-					return process_result::abort; // Switch failed, abort
-				}
-				else
-				{
-					// Fall through to process the bootstrap message
-				}
+				co_return process_result::progress; // Continue receiving new messages
 			}
 		}
 	}
 	else if (is_realtime_connection ())
 	{
-		realtime_message_visitor realtime_visitor{ *this };
+		realtime_message_visitor realtime_visitor{};
 		message->visit (realtime_visitor);
 
 		if (realtime_visitor.process)
 		{
-			queue_realtime (std::move (message));
+			release_assert (channel != nullptr);
+			channel->set_last_packet_received (std::chrono::steady_clock::now ());
+
+			// TODO: Throttle if not added
+			bool added = node.message_processor.put (std::move (message), channel);
+			node.stats.inc (nano::stat::type::tcp_server, added ? nano::stat::detail::message_queued : nano::stat::detail::message_dropped);
 		}
 
-		return process_result::progress;
+		co_return process_result::progress;
 	}
 	// The server will switch to bootstrap mode immediately after processing the first bootstrap message, thus no `else if`
 	if (is_bootstrap_connection ())
 	{
-		return process_result::abort;
+		co_return process_result::abort;
 	}
 
 	debug_assert (false);
-	return process_result::abort;
+	co_return process_result::abort;
 }
 
-void nano::transport::tcp_server::queue_realtime (std::unique_ptr<nano::message> message)
+/////
+
+// void nano::transport::tcp_server::receive_message ()
+// {
+// 	if (stopped)
+// 	{
+// 		return;
+// 	}
+//
+// 	message_deserializer->read ([this_l = shared_from_this ()] (boost::system::error_code ec, std::unique_ptr<nano::message> message) {
+// 		auto node = this_l->node_w.lock ();
+// 		if (!node)
+// 		{
+// 			return;
+// 		}
+// 		if (ec)
+// 		{
+// 			// IO error or critical error when deserializing message
+// 			node->stats.inc (nano::stat::type::error, to_stat_detail (this_l->message_deserializer->status));
+// 			node->logger.debug (nano::log::type::tcp_server, "Error reading message: {}, status: {} ({})",
+// 			ec.message (),
+// 			to_string (this_l->message_deserializer->status),
+// 			this_l->remote_endpoint);
+//
+// 			this_l->stop ();
+// 		}
+// 		else
+// 		{
+// 			this_l->received_message (std::move (message));
+// 		}
+// 	});
+// }
+
+// void nano::transport::tcp_server::received_message (std::unique_ptr<nano::message> message)
+// {
+// 	auto node = this->node_w.lock ();
+// 	if (!node)
+// 	{
+// 		return;
+// 	}
+//
+// 	process_result result = process_result::progress;
+// 	if (message)
+// 	{
+// 		result = process_message (std::move (message));
+// 	}
+// 	else
+// 	{
+// 		// Error while deserializing message
+// 		debug_assert (message_deserializer->status != transport::parse_status::success);
+//
+// 		node->stats.inc (nano::stat::type::error, to_stat_detail (message_deserializer->status));
+//
+// 		switch (message_deserializer->status)
+// 		{
+// 			// Avoid too much noise about `duplicate_publish_message` errors
+// 			case nano::transport::parse_status::duplicate_publish_message:
+// 			{
+// 				node->stats.inc (nano::stat::type::filter, nano::stat::detail::duplicate_publish_message);
+// 			}
+// 			break;
+// 			case nano::transport::parse_status::duplicate_confirm_ack_message:
+// 			{
+// 				node->stats.inc (nano::stat::type::filter, nano::stat::detail::duplicate_confirm_ack_message);
+// 			}
+// 			break;
+// 			default:
+// 			{
+// 				node->logger.debug (nano::log::type::tcp_server, "Error deserializing message: {} ({})",
+// 				to_string (message_deserializer->status),
+// 				remote_endpoint);
+// 			}
+// 			break;
+// 		}
+// 	}
+//
+// 	switch (result)
+// 	{
+// 		case process_result::progress:
+// 		{
+// 			receive_message ();
+// 		}
+// 		break;
+// 		case process_result::abort:
+// 		{
+// 			stop ();
+// 		}
+// 		break;
+// 		case process_result::pause:
+// 		{
+// 			// Do nothing
+// 		}
+// 		break;
+// 	}
+// }
+
+// auto nano::transport::tcp_server::process_message (std::unique_ptr<nano::message> message) -> process_result
+// {
+// 	auto node = this->node_w.lock ();
+// 	if (!node)
+// 	{
+// 		return process_result::abort;
+// 	}
+//
+// 	node->stats.inc (nano::stat::type::tcp_server, to_stat_detail (message->type ()), nano::stat::dir::in);
+//
+// 	debug_assert (is_undefined_connection () || is_realtime_connection () || is_bootstrap_connection ());
+//
+// 	/*
+// 	 * Server initially starts in undefined state, where it waits for either a handshake or booststrap request message
+// 	 * If the server receives a handshake (and it is successfully validated) it will switch to a realtime mode.
+// 	 * In realtime mode messages are deserialized and queued to `tcp_message_manager` for further processing.
+// 	 * In realtime mode any bootstrap requests are ignored.
+// 	 *
+// 	 * If the server receives a bootstrap request before receiving a handshake, it will switch to a bootstrap mode.
+// 	 * In bootstrap mode once a valid bootstrap request message is received, the server will start a corresponding bootstrap server and pass control to that server.
+// 	 * Once that server finishes its task, control is passed back to this server to read and process any subsequent messages.
+// 	 * In bootstrap mode any realtime messages are ignored
+// 	 */
+// 	if (is_undefined_connection ())
+// 	{
+// 		handshake_message_visitor handshake_visitor{ *this };
+// 		message->visit (handshake_visitor);
+//
+// 		switch (handshake_visitor.result)
+// 		{
+// 			case handshake_status::abort:
+// 			{
+// 				node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_abort);
+// 				node->logger.debug (nano::log::type::tcp_server, "Aborting handshake: {} ({})", to_string (message->type ()), get_remote_endpoint ());
+//
+// 				return process_result::abort;
+// 			}
+// 			case handshake_status::handshake:
+// 			{
+// 				return process_result::progress; // Continue handshake
+// 			}
+// 			case handshake_status::realtime:
+// 			{
+// 				queue_realtime (std::move (message));
+// 				return process_result::progress; // Continue receiving new messages
+// 			}
+// 			case handshake_status::bootstrap:
+// 			{
+// 				bool success = to_bootstrap_connection ();
+// 				if (!success)
+// 				{
+// 					node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
+// 					node->logger.debug (nano::log::type::tcp_server, "Error switching to bootstrap mode: {} ({})", to_string (message->type ()), get_remote_endpoint ());
+//
+// 					return process_result::abort; // Switch failed, abort
+// 				}
+// 				else
+// 				{
+// 					// Fall through to process the bootstrap message
+// 				}
+// 			}
+// 		}
+// 	}
+// 	else if (is_realtime_connection ())
+// 	{
+// 		realtime_message_visitor realtime_visitor{ *this };
+// 		message->visit (realtime_visitor);
+//
+// 		if (realtime_visitor.process)
+// 		{
+// 			queue_realtime (std::move (message));
+// 		}
+//
+// 		return process_result::progress;
+// 	}
+// 	// The server will switch to bootstrap mode immediately after processing the first bootstrap message, thus no `else if`
+// 	if (is_bootstrap_connection ())
+// 	{
+// 		return process_result::abort;
+// 	}
+//
+// 	debug_assert (false);
+// 	return process_result::abort;
+// }
+
+auto nano::transport::tcp_server::process_handshake (nano::node_id_handshake const & message) -> asio::awaitable<handshake_status>
 {
-	auto node = this->node.lock ();
-	if (!node)
+	if (node.flags.disable_tcp_realtime)
 	{
-		return;
-	}
+		node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
+		node.logger.debug (nano::log::type::tcp_server, "Handshake attempted with disabled realtime mode ({})", get_remote_endpoint ());
 
-	release_assert (channel != nullptr);
-
-	channel->set_last_packet_received (std::chrono::steady_clock::now ());
-
-	bool added = node->message_processor.put (std::move (message), channel);
-	// TODO: Throttle if not added
-}
-
-auto nano::transport::tcp_server::process_handshake (nano::node_id_handshake const & message) -> handshake_status
-{
-	auto node = this->node.lock ();
-	if (!node)
-	{
-		return handshake_status::abort;
-	}
-
-	if (node->flags.disable_tcp_realtime)
-	{
-		node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
-		node->logger.debug (nano::log::type::tcp_server, "Handshake attempted with disabled realtime mode ({})", remote_endpoint);
-
-		return handshake_status::abort;
+		co_return handshake_status::abort;
 	}
 	if (!message.query && !message.response)
 	{
-		node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
-		node->logger.debug (nano::log::type::tcp_server, "Invalid handshake message received ({})", remote_endpoint);
+		node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
+		node.logger.debug (nano::log::type::tcp_server, "Invalid handshake message received ({})", get_remote_endpoint ());
 
-		return handshake_status::abort;
+		co_return handshake_status::abort;
 	}
 	if (message.query && handshake_received) // Second handshake message should be a response only
 	{
-		node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
-		node->logger.debug (nano::log::type::tcp_server, "Detected multiple handshake queries ({})", remote_endpoint);
+		node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
+		node.logger.debug (nano::log::type::tcp_server, "Detected multiple handshake queries ({})", get_remote_endpoint ());
 
-		return handshake_status::abort;
+		co_return handshake_status::abort;
 	}
 
 	handshake_received = true;
 
-	node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::node_id_handshake, nano::stat::dir::in);
-	node->logger.debug (nano::log::type::tcp_server, "Handshake message received: {} ({})",
+	node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::node_id_handshake, nano::stat::dir::in);
+	node.logger.debug (nano::log::type::tcp_server, "Handshake message received: {} ({})",
 	message.query ? (message.response ? "query + response" : "query") : (message.response ? "response" : "none"),
-	remote_endpoint);
+	get_remote_endpoint ());
 
 	if (message.query)
 	{
 		// Sends response + our own query
-		send_handshake_response (*message.query, message.is_v2 ());
+		co_await send_handshake_response (*message.query, message.is_v2 ());
 		// Fall through and continue handshake
 	}
 	if (message.response)
 	{
-		if (node->network.verify_handshake_response (*message.response, nano::transport::map_tcp_to_endpoint (remote_endpoint)))
+		if (node.network.verify_handshake_response (*message.response, get_remote_endpoint ()))
 		{
 			bool success = to_realtime_connection (message.response->node_id);
 			if (success)
 			{
-				return handshake_status::realtime; // Switched to realtime
+				co_return handshake_status::realtime; // Switched to realtime
 			}
 			else
 			{
-				node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
-				node->logger.debug (nano::log::type::tcp_server, "Error switching to realtime mode ({})", remote_endpoint);
+				node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
+				node.logger.debug (nano::log::type::tcp_server, "Error switching to realtime mode ({})", get_remote_endpoint ());
 
-				return handshake_status::abort;
+				co_return handshake_status::abort;
 			}
 		}
 		else
 		{
-			node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response_invalid);
-			node->logger.debug (nano::log::type::tcp_server, "Invalid handshake response received ({})", remote_endpoint);
+			node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response_invalid);
+			node.logger.debug (nano::log::type::tcp_server, "Invalid handshake response received ({})", get_remote_endpoint ());
 
-			return handshake_status::abort;
+			co_return handshake_status::abort;
 		}
 	}
 
-	return handshake_status::handshake; // Handshake is in progress
+	co_return handshake_status::handshake; // Handshake is in progress
 }
 
-void nano::transport::tcp_server::initiate_handshake ()
+auto nano::transport::tcp_server::send_handshake_request () -> asio::awaitable<void>
 {
-	auto node = this->node.lock ();
-	if (!node)
-	{
-		return;
-	}
+	auto query = node.network.prepare_handshake_query (get_remote_endpoint ());
+	nano::node_id_handshake message{ node.network_params.network, query };
 
-	auto query = node->network.prepare_handshake_query (nano::transport::map_tcp_to_endpoint (remote_endpoint));
-	nano::node_id_handshake message{ node->network_params.network, query };
-
-	node->logger.debug (nano::log::type::tcp_server, "Initiating handshake query ({})", remote_endpoint);
+	node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_initiate, nano::stat::dir::out);
+	node.logger.debug (nano::log::type::tcp_server, "Initiating handshake query ({})", get_remote_endpoint ());
 
 	auto shared_const_buffer = message.to_shared_const_buffer ();
-	socket->async_write (shared_const_buffer, [this_l = shared_from_this ()] (boost::system::error_code const & ec, std::size_t size_a) {
-		auto node = this_l->node.lock ();
-		if (!node)
-		{
-			return;
-		}
-		if (ec)
-		{
-			node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_network_error);
-			node->logger.debug (nano::log::type::tcp_server, "Error sending handshake query: {} ({})", ec.message (), this_l->remote_endpoint);
 
-			// Stop invalid handshake
-			this_l->stop ();
-		}
-		else
-		{
-			node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake, nano::stat::dir::out);
-			node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_initiate, nano::stat::dir::out);
-		}
-	});
+	auto [ec, size] = co_await socket->co_write (shared_const_buffer, shared_const_buffer.size ());
+	debug_assert (ec || size == shared_const_buffer.size ());
+	if (ec)
+	{
+		node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_network_error);
+		node.logger.debug (nano::log::type::tcp_server, "Error sending handshake query: {} ({})", ec.message (), get_remote_endpoint ());
+
+		throw boost::system::system_error (ec); // Abort further processing
+	}
+	else
+	{
+		node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake, nano::stat::dir::out);
+	}
 }
 
-void nano::transport::tcp_server::send_handshake_response (nano::node_id_handshake::query_payload const & query, bool v2)
+auto nano::transport::tcp_server::send_handshake_response (nano::node_id_handshake::query_payload const & query, bool v2) -> asio::awaitable<void>
 {
-	auto node = this->node.lock ();
-	if (!node)
-	{
-		return;
-	}
+	auto response = node.network.prepare_handshake_response (query, v2);
+	auto own_query = node.network.prepare_handshake_query (get_remote_endpoint ());
+	nano::node_id_handshake handshake_response{ node.network_params.network, own_query, response };
 
-	auto response = node->network.prepare_handshake_response (query, v2);
-	auto own_query = node->network.prepare_handshake_query (nano::transport::map_tcp_to_endpoint (remote_endpoint));
-	nano::node_id_handshake handshake_response{ node->network_params.network, own_query, response };
-
-	node->logger.debug (nano::log::type::tcp_server, "Responding to handshake ({})", remote_endpoint);
+	node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response, nano::stat::dir::out);
+	node.logger.debug (nano::log::type::tcp_server, "Responding to handshake ({})", get_remote_endpoint ());
 
 	auto shared_const_buffer = handshake_response.to_shared_const_buffer ();
-	socket->async_write (shared_const_buffer, [this_l = shared_from_this ()] (boost::system::error_code const & ec, std::size_t size_a) {
-		auto node = this_l->node.lock ();
-		if (!node)
-		{
-			return;
-		}
-		if (ec)
-		{
-			node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_network_error);
-			node->logger.debug (nano::log::type::tcp_server, "Error sending handshake response: {} ({})", ec.message (), this_l->remote_endpoint);
 
-			// Stop invalid handshake
-			this_l->stop ();
-		}
-		else
-		{
-			node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake, nano::stat::dir::out);
-			node->stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response, nano::stat::dir::out);
-		}
-	});
+	auto [ec, size] = co_await socket->co_write (shared_const_buffer, shared_const_buffer.size ());
+	debug_assert (ec || size == shared_const_buffer.size ());
+	if (ec)
+	{
+		node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_network_error);
+		node.logger.debug (nano::log::type::tcp_server, "Error sending handshake response: {} ({})", ec.message (), get_remote_endpoint ());
+
+		throw boost::system::system_error (ec); // Abort further processing
+	}
+	else
+	{
+		node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response, nano::stat::dir::out);
+	}
 }
 
 /*
@@ -412,27 +613,8 @@ void nano::transport::tcp_server::send_handshake_response (nano::node_id_handsha
 
 void nano::transport::tcp_server::handshake_message_visitor::node_id_handshake (const nano::node_id_handshake & message)
 {
-	result = server.process_handshake (message);
-}
-
-void nano::transport::tcp_server::handshake_message_visitor::bulk_pull (const nano::bulk_pull & message)
-{
-	result = handshake_status::bootstrap;
-}
-
-void nano::transport::tcp_server::handshake_message_visitor::bulk_pull_account (const nano::bulk_pull_account & message)
-{
-	result = handshake_status::bootstrap;
-}
-
-void nano::transport::tcp_server::handshake_message_visitor::bulk_push (const nano::bulk_push & message)
-{
-	result = handshake_status::bootstrap;
-}
-
-void nano::transport::tcp_server::handshake_message_visitor::frontier_req (const nano::frontier_req & message)
-{
-	result = handshake_status::bootstrap;
+	process = true;
+	handshake = message;
 }
 
 /*
@@ -442,7 +624,6 @@ void nano::transport::tcp_server::handshake_message_visitor::frontier_req (const
 void nano::transport::tcp_server::realtime_message_visitor::keepalive (const nano::keepalive & message)
 {
 	process = true;
-	server.set_last_keepalive (message);
 }
 
 void nano::transport::tcp_server::realtime_message_visitor::publish (const nano::publish & message)
@@ -467,21 +648,7 @@ void nano::transport::tcp_server::realtime_message_visitor::frontier_req (const 
 
 void nano::transport::tcp_server::realtime_message_visitor::telemetry_req (const nano::telemetry_req & message)
 {
-	auto node = server.node.lock ();
-	if (!node)
-	{
-		return;
-	}
-	// Only handle telemetry requests if they are outside the cooldown period
-	if (server.last_telemetry_req + node->network_params.network.telemetry_request_cooldown < std::chrono::steady_clock::now ())
-	{
-		server.last_telemetry_req = std::chrono::steady_clock::now ();
-		process = true;
-	}
-	else
-	{
-		node->stats.inc (nano::stat::type::telemetry, nano::stat::detail::request_within_protection_cache_zone);
-	}
+	process = true;
 }
 
 void nano::transport::tcp_server::realtime_message_visitor::telemetry_ack (const nano::telemetry_ack & message)
@@ -503,48 +670,10 @@ void nano::transport::tcp_server::realtime_message_visitor::asc_pull_ack (const 
  *
  */
 
-// TODO: We could periodically call this (from a dedicated timeout thread for eg.) but socket already handles timeouts,
-//  and since we only ever store tcp_server as weak_ptr, socket timeout will automatically trigger tcp_server cleanup
-void nano::transport::tcp_server::timeout ()
-{
-	auto node = this->node.lock ();
-	if (!node)
-	{
-		return;
-	}
-	if (socket->has_timed_out ())
-	{
-		node->logger.debug (nano::log::type::tcp_server, "Closing TCP server due to timeout ({})", remote_endpoint);
-
-		socket->close_async ();
-	}
-}
-
-void nano::transport::tcp_server::set_last_keepalive (nano::keepalive const & message)
-{
-	std::lock_guard<nano::mutex> lock{ mutex };
-	if (!last_keepalive)
-	{
-		last_keepalive = message;
-	}
-}
-
-std::optional<nano::keepalive> nano::transport::tcp_server::pop_last_keepalive ()
-{
-	std::lock_guard<nano::mutex> lock{ mutex };
-	auto result = last_keepalive;
-	last_keepalive = std::nullopt;
-	return result;
-}
-
 bool nano::transport::tcp_server::to_bootstrap_connection ()
 {
-	auto node = this->node.lock ();
+	auto node = this->node_w.lock ();
 	if (!node)
-	{
-		return false;
-	}
-	if (!allow_bootstrap)
 	{
 		return false;
 	}
@@ -563,14 +692,14 @@ bool nano::transport::tcp_server::to_bootstrap_connection ()
 
 	socket->type_set (nano::transport::socket_type::bootstrap);
 
-	node->logger.debug (nano::log::type::tcp_server, "Switched to bootstrap mode ({})", remote_endpoint);
+	node->logger.debug (nano::log::type::tcp_server, "Switched to bootstrap mode ({})", get_remote_endpoint ());
 
 	return true;
 }
 
 bool nano::transport::tcp_server::to_realtime_connection (nano::account const & node_id)
 {
-	auto node = this->node.lock ();
+	auto node = this->node_w.lock ();
 	if (!node)
 	{
 		return false;
@@ -593,7 +722,7 @@ bool nano::transport::tcp_server::to_realtime_connection (nano::account const & 
 
 	socket->type_set (nano::transport::socket_type::realtime);
 
-	node->logger.debug (nano::log::type::tcp_server, "Switched to realtime mode ({})", remote_endpoint);
+	node->logger.debug (nano::log::type::tcp_server, "Switched to realtime mode ({})", get_remote_endpoint ());
 
 	return true;
 }

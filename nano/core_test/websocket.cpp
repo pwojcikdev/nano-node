@@ -1047,8 +1047,6 @@ TEST (websocket, telemetry)
 	config.websocket_config.port = system.get_available_port ();
 	auto node2 (system.add_node (config, node_flags));
 
-	nano::test::wait_peer_connections (system);
-
 	std::atomic<bool> done{ false };
 	auto task = ([config = node1->config, &node1, &done] () {
 		fake_websocket_client client (node1->websocket.server->listening_port ());

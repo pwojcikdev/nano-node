@@ -39,7 +39,7 @@ void nano::transport::tcp_channels::close ()
 	for (auto const & entry : channels)
 	{
 		entry.socket->close ();
-		entry.server->stop ();
+		entry.server->close ();
 		entry.channel->close ();
 	}
 
@@ -400,9 +400,9 @@ std::optional<nano::keepalive> nano::transport::tcp_channels::sample_keepalive (
 	while (counter++ < channels.size ())
 	{
 		auto index = rng.random (channels.size ());
-		if (auto server = channels.get<random_access_tag> ()[index].server)
+		if (auto channel = channels.get<random_access_tag> ()[index].channel)
 		{
-			if (auto keepalive = server->pop_last_keepalive ())
+			if (auto keepalive = channel->pop_last_keepalive ())
 			{
 				return keepalive;
 			}
