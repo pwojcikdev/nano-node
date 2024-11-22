@@ -185,6 +185,7 @@ public:
 			nano::endpoint peering_endpoint{ channel->get_remote_endpoint ().address (), self_report.port () };
 			channel->set_peering_endpoint (peering_endpoint);
 		}
+		channel->set_last_keepalive (message);
 	}
 
 	void publish (nano::publish const & message) override

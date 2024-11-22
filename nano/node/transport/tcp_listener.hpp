@@ -25,9 +25,6 @@ namespace asio = boost::asio;
 
 namespace nano::transport
 {
-/**
- * Server side portion of tcp sessions. Listens for new socket connections and spawns tcp_server objects when connected.
- */
 class tcp_listener final
 {
 public:

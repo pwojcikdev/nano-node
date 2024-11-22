@@ -49,6 +49,7 @@ public:
 	~tcp_channel () override;
 
 	void close () override;
+	void close_async (); // Safe to call from io context
 
 	bool max (nano::transport::traffic_type traffic_type) override;
 	bool alive () const override;
@@ -87,8 +88,6 @@ private:
 	mutable nano::mutex mutex;
 	tcp_channel_queue queue;
 	std::atomic<size_t> allocated_bandwidth{ 0 };
-
-	std::atomic<bool> closed{ false };
 
 public: // Logging
 	void operator() (nano::object_stream &) const override;
