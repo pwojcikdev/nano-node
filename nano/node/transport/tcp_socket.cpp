@@ -36,6 +36,7 @@ nano::transport::tcp_socket::tcp_socket (nano::node & node_a, boost::asio::ip::t
 	default_timeout{ node_a.config.tcp_io_timeout },
 	silent_connection_tolerance_time{ node_a.network_params.network.silent_connection_tolerance_time }
 {
+	time_connected = std::chrono::steady_clock::now ();
 }
 
 nano::transport::tcp_socket::~tcp_socket ()
@@ -77,6 +78,7 @@ void nano::transport::tcp_socket::async_connect (nano::tcp_endpoint const & endp
 			}
 			else
 			{
+				this_l->time_connected = std::chrono::steady_clock::now ();
 				this_l->set_last_completion ();
 				{
 					// Best effort attempt to get endpoint address
