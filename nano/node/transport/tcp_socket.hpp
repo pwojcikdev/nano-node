@@ -140,6 +140,10 @@ public:
 	{
 		return !is_closed ();
 	}
+	std::chrono::steady_clock::time_point get_time_connected () const
+	{
+		return time_connected.load ();
+	}
 
 private:
 	size_t const queue_size;
@@ -187,6 +191,8 @@ protected:
 
 	/** Updated only from strand, but stored as atomic so it can be read from outside */
 	std::atomic<bool> write_in_progress{ false };
+
+	std::atomic<std::chrono::steady_clock::time_point> time_connected;
 
 	void close_internal ();
 	void write_queued_messages ();
