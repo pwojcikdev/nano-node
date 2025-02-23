@@ -175,6 +175,7 @@ enum class detail
 	failed,
 	refresh,
 	sent,
+	churn,
 
 	// processing queue
 	queue,

@@ -33,7 +33,7 @@ public:
 	bool enable{ true };
 
 	/** Minimum difference between confirmation frontier and account frontier to become a candidate for optimistic confirmation */
-	std::size_t gap_threshold{ 32 };
+	std::size_t gap_threshold{ 2 };
 
 	/** Maximum number of candidates stored in memory */
 	std::size_t max_size{ 1024 * 64 };
@@ -81,18 +81,22 @@ private:
 	struct entry
 	{
 		nano::account account;
-		nano::clock::time_point timestamp;
+		uint64_t gap;
+		std::chrono::steady_clock::time_point timestamp;
 	};
 
 	// clang-format off
 	class tag_sequenced {};
 	class tag_account {};
+	class tag_gap {};
 
 	using ordered_candidates = boost::multi_index_container<entry,
 	mi::indexed_by<
 		mi::sequenced<mi::tag<tag_sequenced>>,
 		mi::hashed_unique<mi::tag<tag_account>,
-			mi::member<entry, nano::account, &entry::account>>
+			mi::member<entry, nano::account, &entry::account>>,
+		mi::ordered_non_unique<mi::tag<tag_gap>,
+			mi::member<entry, uint64_t, &entry::gap>, std::greater<>> // Descending order
 	>>;
 	// clang-format on
 

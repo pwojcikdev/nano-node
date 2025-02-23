@@ -58,7 +58,7 @@ void nano::scheduler::optimistic::notify ()
 bool nano::scheduler::optimistic::activate_predicate (const nano::account_info & account_info, const nano::confirmation_height_info & conf_info) const
 {
 	// Chain with a big enough gap between account frontier and confirmation frontier
-	if (account_info.block_count - conf_info.height > config.gap_threshold)
+	if (account_info.block_count - conf_info.height >= config.gap_threshold)
 	{
 		return true;
 	}
@@ -72,32 +72,31 @@ bool nano::scheduler::optimistic::activate_predicate (const nano::account_info &
 
 bool nano::scheduler::optimistic::activate (const nano::account & account, const nano::account_info & account_info, const nano::confirmation_height_info & conf_info)
 {
+	release_assert (account_info.block_count >= conf_info.height);
+
 	if (!config.enable)
 	{
 		return false;
 	}
 
-	debug_assert (account_info.block_count >= conf_info.height);
 	if (activate_predicate (account_info, conf_info))
 	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+
+		auto const gap = account_info.block_count - conf_info.height;
+		auto [it, added] = candidates.push_back ({ account, gap, nano::clock::now () });
+		if (added)
 		{
-			nano::lock_guard<nano::mutex> lock{ mutex };
-
-			// Prevent duplicate candidate accounts
-			if (candidates.get<tag_account> ().contains (account))
-			{
-				return false; // Not activated
-			}
-			// Limit candidates container size
-			if (candidates.size () >= config.max_size)
-			{
-				return false; // Not activated
-			}
-
 			stats.inc (nano::stat::type::optimistic_scheduler, nano::stat::detail::activated);
-			candidates.push_back ({ account, nano::clock::now () });
+
+			while (candidates.size () > config.max_size)
+			{
+				stats.inc (nano::stat::type::optimistic_scheduler, nano::stat::detail::churn);
+				candidates.pop_front (); // Remove oldest candidate
+			}
+
+			return true; // Activated
 		}
-		return true; // Activated
 	}
 	return false; // Not activated
 }
@@ -125,10 +124,19 @@ void nano::scheduler::optimistic::run ()
 	nano::unique_lock<nano::mutex> lock{ mutex };
 	while (!stopped)
 	{
-		stats.inc (nano::stat::type::optimistic_scheduler, nano::stat::detail::loop);
+		condition.wait_for (lock, network_constants.optimistic_activation_delay / 2, [this] () {
+			return stopped || predicate ();
+		});
+
+		if (stopped)
+		{
+			return;
+		}
 
 		if (predicate ())
 		{
+			stats.inc (nano::stat::type::optimistic_scheduler, nano::stat::detail::loop);
+
 			auto transaction = ledger.tx_begin_read ();
 
 			while (predicate ())
@@ -141,13 +149,11 @@ void nano::scheduler::optimistic::run ()
 
 				run_one (transaction, candidate);
 
+				transaction.refresh_if_needed ();
+
 				lock.lock ();
 			}
 		}
-
-		condition.wait_for (lock, network_constants.optimistic_activation_delay / 2, [this] () {
-			return stopped || predicate ();
-		});
 	}
 }
 
