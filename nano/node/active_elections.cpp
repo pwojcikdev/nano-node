@@ -406,12 +406,7 @@ nano::election_insertion_result nano::active_elections::insert (std::shared_ptr<
 		if (!recently_confirmed.exists (root))
 		{
 			result.inserted = true;
-			auto observe_rep_cb = [&node = node] (auto const & rep_a) {
-				// TODO: Is this neccessary? Move this outside of the election class
-				// Representative is defined as online if replying to live votes or rep_crawler queries
-				node.online_reps.observe (rep_a);
-			};
-			result.election = nano::make_shared<nano::election> (node, block_a, nullptr, observe_rep_cb, election_behavior_a);
+			result.election = nano::make_shared<nano::election> (node, block_a, nullptr, nullptr, election_behavior_a);
 			roots.get<tag_root> ().emplace (entry{ root, result.election, std::move (erased_callback_a) });
 			node.vote_router.connect (hash, result.election);
 

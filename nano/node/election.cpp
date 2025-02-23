@@ -538,10 +538,15 @@ nano::vote_code nano::election::vote (nano::account const & rep, uint64_t timest
 		}
 	}
 
+	// Update voter list entry
 	last_votes[rep] = { std::chrono::steady_clock::now (), timestamp_a, block_hash_a };
+
 	if (vote_source_a != vote_source::cache)
 	{
-		live_vote_action (rep);
+		if (live_vote_action)
+		{
+			live_vote_action (rep);
+		}
 	}
 
 	node.stats.inc (nano::stat::type::election, nano::stat::detail::vote);

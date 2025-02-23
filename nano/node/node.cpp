@@ -250,6 +250,27 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 		}
 	});
 
+	// Representative is defined as online if replying to live votes or rep crawler queries
+	observers.vote.add ([this] (std::shared_ptr<nano::vote> vote, std::shared_ptr<nano::transport::channel> const & channel, nano::vote_source source, nano::vote_code code) {
+		release_assert (vote != nullptr);
+		release_assert (channel != nullptr);
+		debug_assert (code != nano::vote_code::invalid);
+
+		// Track rep weight voting on live elections
+		bool should_observe = (code != nano::vote_code::indeterminate);
+
+		// Ignore republished votes when rep crawling
+		if (source == nano::vote_source::live)
+		{
+			should_observe |= rep_crawler.process (vote, channel);
+		}
+
+		if (should_observe)
+		{
+			online_reps.observe (vote->account);
+		}
+	});
+
 	if (!init_error ())
 	{
 		wallets.observer = [this] (bool active) {
@@ -261,25 +282,6 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 
 		observers.channel_connected.add ([this] (std::shared_ptr<nano::transport::channel> const & channel) {
 			network.send_keepalive_self (channel);
-		});
-
-		observers.vote.add ([this] (std::shared_ptr<nano::vote> vote, std::shared_ptr<nano::transport::channel> const & channel, nano::vote_source source, nano::vote_code code) {
-			debug_assert (vote != nullptr);
-			debug_assert (code != nano::vote_code::invalid);
-			if (channel == nullptr)
-			{
-				return; // Channel expired when waiting for vote to be processed
-			}
-			// Ignore republished votes
-			if (source == nano::vote_source::live)
-			{
-				bool active_in_rep_crawler = rep_crawler.process (vote, channel);
-				if (active_in_rep_crawler)
-				{
-					// Representative is defined as online if replying to live votes or rep_crawler queries
-					online_reps.observe (vote->account);
-				}
-			}
 		});
 
 		// Cancelling local work generation
