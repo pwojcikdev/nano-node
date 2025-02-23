@@ -125,6 +125,7 @@ void nano::online_reps::sample ()
 		nano::lock_guard<nano::mutex> lock{ mutex };
 		cached_trended = trended_l;
 	}
+
 	logger.info (nano::log::type::online_reps, "Updated trended weight: {}", trended_l);
 }
 
@@ -281,12 +282,14 @@ void nano::online_reps::force_online_weight (nano::uint128_t const & online_weig
 	release_assert (nano::is_dev_run ());
 	nano::lock_guard<nano::mutex> lock{ mutex };
 	cached_online = online_weight;
+	logger.debug (nano::log::type::online_reps, "Forced online weight: {}", online_weight);
 }
 
 void nano::online_reps::force_sample ()
 {
 	release_assert (nano::is_dev_run ());
 	sample ();
+	logger.debug (nano::log::type::online_reps, "Forced sample call");
 }
 
 nano::container_info nano::online_reps::container_info () const
