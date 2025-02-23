@@ -19,7 +19,7 @@ TEST (election, construction)
 	nano::test::system system (1);
 	auto & node = *system.nodes[0];
 	auto election = std::make_shared<nano::election> (
-	node, nano::dev::genesis, [] (auto const &) {}, [] (auto const &) {}, nano::election_behavior::priority);
+	node, nano::dev::genesis, [] (auto const &) { }, [] (auto const &) { }, nano::election_behavior::priority);
 }
 
 TEST (election, behavior)
@@ -198,8 +198,6 @@ TEST (election, quorum_minimum_confirm_fail)
 	ASSERT_FALSE (election->confirmed ());
 }
 
-namespace nano
-{
 // FIXME: this test fails on rare occasions. It needs a review.
 TEST (election, quorum_minimum_update_weight_before_quorum_checks)
 {
@@ -223,10 +221,23 @@ TEST (election, quorum_minimum_update_weight_before_quorum_checks)
 					   .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 					   .work (*system.work.generate (latest))
 					   .build ();
+
+	std::cout << "Send1: " << send1->hash ().to_string () << std::endl;
+
 	node1.process_active (send1);
 	ASSERT_TIMELY (5s, node1.block (send1->hash ()) != nullptr);
 
-	auto const open1 = nano::open_block_builder{}.make_block ().account (key1.pub).source (send1->hash ()).representative (key1.pub).sign (key1.prv, key1.pub).work (*system.work.generate (key1.pub)).build ();
+	auto const open1 = nano::open_block_builder{}
+					   .make_block ()
+					   .account (key1.pub)
+					   .source (send1->hash ())
+					   .representative (key1.pub)
+					   .sign (key1.prv, key1.pub)
+					   .work (*system.work.generate (key1.pub))
+					   .build ();
+
+	std::cout << "Open1: " << open1->hash ().to_string () << std::endl;
+
 	ASSERT_EQ (nano::block_status::progress, node1.process (open1));
 
 	nano::keypair key2;
@@ -237,6 +248,9 @@ TEST (election, quorum_minimum_update_weight_before_quorum_checks)
 					   .sign (key1.prv, key1.pub)
 					   .work (*system.work.generate (open1->hash ()))
 					   .build ();
+
+	std::cout << "Send2: " << send2->hash ().to_string () << std::endl;
+
 	ASSERT_EQ (nano::block_status::progress, node1.process (send2));
 	ASSERT_TIMELY_EQ (5s, node1.ledger.block_count (), 4);
 
@@ -266,7 +280,6 @@ TEST (election, quorum_minimum_update_weight_before_quorum_checks)
 	ASSERT_EQ (nano::vote_code::vote, node1.vote_router.vote (vote2).at (send1->hash ()));
 	ASSERT_TIMELY (5s, election->confirmed ());
 	ASSERT_NE (nullptr, node1.block (send1->hash ()));
-}
 }
 
 TEST (election, continuous_voting)
