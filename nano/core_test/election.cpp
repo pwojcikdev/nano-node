@@ -209,9 +209,13 @@ TEST (election, quorum_minimum_update_weight_before_quorum_checks)
 	auto & node1 = *system.add_node (node_config);
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 
-	nano::keypair key1;
+	nano::keypair key1, key2;
 	nano::send_block_builder builder;
+
+	// Amount is just below the minimum quorum
 	auto const amount = ((nano::uint256_t (node_config.online_weight_minimum.number ()) * nano::online_reps::online_weight_quorum) / 100).convert_to<nano::uint128_t> () - 1;
+
+	std::cout << "Amount: " << amount << std::endl;
 
 	auto const latest = node1.latest (nano::dev::genesis_key.pub);
 	auto const send1 = builder.make_block ()
@@ -240,7 +244,6 @@ TEST (election, quorum_minimum_update_weight_before_quorum_checks)
 
 	ASSERT_EQ (nano::block_status::progress, node1.process (open1));
 
-	nano::keypair key2;
 	auto const send2 = builder.make_block ()
 					   .previous (open1->hash ())
 					   .destination (key2.pub)
@@ -253,6 +256,10 @@ TEST (election, quorum_minimum_update_weight_before_quorum_checks)
 
 	ASSERT_EQ (nano::block_status::progress, node1.process (send2));
 	ASSERT_TIMELY_EQ (5s, node1.ledger.block_count (), 4);
+
+	std::cout << "Genesis balance: " << node1.balance (nano::dev::genesis_key.pub) << std::endl;
+	std::cout << "Key1 balance: " << node1.balance (key1.pub) << std::endl;
+	std::cout << "Key2 balance: " << node1.balance (key2.pub) << std::endl;
 
 	node_config.peering_port = system.get_available_port ();
 	auto & node2 = *system.add_node (node_config);
