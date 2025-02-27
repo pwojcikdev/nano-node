@@ -66,26 +66,40 @@ void nano::online_reps::observe (nano::account const & rep)
 
 		stats.inc (nano::stat::type::online_reps, new_insert ? nano::stat::detail::rep_new : nano::stat::detail::rep_update);
 
-		bool trimmed = trim ();
-
 		// Update current online weight if anything changed
-		if (new_insert || trimmed)
+		if (new_insert)
 		{
 			stats.inc (nano::stat::type::online_reps, nano::stat::detail::update_online);
+			logger.debug (nano::log::type::online_reps, "Observed new representative: {}", rep.to_account ());
 			cached_online = calculate_online ();
 		}
 	}
 }
 
-bool nano::online_reps::trim ()
+void nano::online_reps::trim ()
 {
 	debug_assert (!mutex.try_lock ());
 
-	auto now = std::chrono::steady_clock::now ();
-	auto cutoff = reps.get<tag_time> ().lower_bound (now - config.network_params.node.weight_interval);
-	auto trimmed = reps.get<tag_time> ().begin () != cutoff;
-	reps.get<tag_time> ().erase (reps.get<tag_time> ().begin (), cutoff);
-	return trimmed;
+	auto const now = std::chrono::steady_clock::now ();
+	auto const cutoff = now - config.network_params.node.weight_interval;
+
+	while (reps.get<tag_time> ().begin () != reps.get<tag_time> ().end ())
+	{
+		auto oldest = reps.get<tag_time> ().begin ();
+		if (oldest->time < cutoff)
+		{
+			stats.inc (nano::stat::type::online_reps, nano::stat::detail::rep_trim);
+			logger.debug (nano::log::type::online_reps, "Removing representative: {}, last observed: {}s ago",
+			oldest->account.to_account (),
+			nano::log::seconds_delta (oldest->time, now));
+
+			reps.get<tag_time> ().erase (oldest);
+		}
+		else
+		{
+			break; // Entries are ordered by timestamp, break early
+		}
+	}
 }
 
 void nano::online_reps::run ()
@@ -100,6 +114,7 @@ void nano::online_reps::run ()
 		});
 		if (!stopped)
 		{
+			trim ();
 			lock.unlock ();
 			sample ();
 			lock.lock ();

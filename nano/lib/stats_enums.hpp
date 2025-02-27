@@ -635,6 +635,7 @@ enum class detail
 	sample,
 	rep_new,
 	rep_update,
+	rep_trim,
 	update_online,
 
 	// error codes

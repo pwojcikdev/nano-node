@@ -57,7 +57,7 @@ private:
 	void run ();
 	/** Called periodically to sample online weight */
 	void sample ();
-	bool trim ();
+	void trim ();
 	/** Remove old records from the database */
 	void trim_trended (nano::store::write_transaction const &);
 	/** Iterate over all database samples and remove invalid records. This is meant to clean potential leftovers from previous versions. */
