@@ -5,30 +5,6 @@
 
 #include <boost/dll/runtime_symbol_info.hpp>
 
-nano::error nano::rpc_secure_config::serialize_toml (nano::tomlconfig & toml) const
-{
-	toml.put ("enable", enable, "Enable or disable TLS support.\ntype:bool");
-	toml.put ("verbose_logging", verbose_logging, "Enable or disable verbose logging.\ntype:bool");
-	toml.put ("server_key_passphrase", server_key_passphrase, "Server key passphrase.\ntype:string");
-	toml.put ("server_cert_path", server_cert_path, "Directory containing certificates.\ntype:string,path");
-	toml.put ("server_key_path", server_key_path, "Path to server key PEM file.\ntype:string,path");
-	toml.put ("server_dh_path", server_dh_path, "Path to Diffie-Hellman params file.\ntype:string,path");
-	toml.put ("client_certs_path", client_certs_path, "Directory containing client certificates.\ntype:string");
-	return toml.get_error ();
-}
-
-nano::error nano::rpc_secure_config::deserialize_toml (nano::tomlconfig & toml)
-{
-	toml.get<bool> ("enable", enable);
-	toml.get<bool> ("verbose_logging", verbose_logging);
-	toml.get<std::string> ("server_key_passphrase", server_key_passphrase);
-	toml.get<std::string> ("server_cert_path", server_cert_path);
-	toml.get<std::string> ("server_key_path", server_key_path);
-	toml.get<std::string> ("server_dh_path", server_dh_path);
-	toml.get<std::string> ("client_certs_path", client_certs_path);
-	return toml.get_error ();
-}
-
 nano::rpc_config::rpc_config (nano::network_constants & network_constants) :
 	rpc_process{ network_constants },
 	address{ boost::asio::ip::address_v6::loopback ().to_string () }
@@ -68,12 +44,6 @@ nano::error nano::rpc_config::deserialize_toml (nano::tomlconfig & toml)
 {
 	if (!toml.empty ())
 	{
-		auto rpc_secure_l (toml.get_optional_child ("secure"));
-		if (rpc_secure_l)
-		{
-			return nano::error ("The RPC secure configuration has moved to config-tls.toml. Please update the configuration.");
-		}
-
 		boost::asio::ip::address_v6 address_l;
 		toml.get_optional<boost::asio::ip::address_v6> ("address", address_l, boost::asio::ip::address_v6::loopback ());
 		address = address_l.to_string ();
@@ -111,7 +81,7 @@ nano::rpc_process_config::rpc_process_config (nano::network_constants & network_
 
 namespace nano
 {
-nano::error read_rpc_config_toml (boost::filesystem::path const & data_path_a, nano::rpc_config & config_a, std::vector<std::string> const & config_overrides)
+nano::error read_rpc_config_toml (std::filesystem::path const & data_path_a, nano::rpc_config & config_a, std::vector<std::string> const & config_overrides)
 {
 	nano::error error;
 	auto toml_config_path = nano::get_rpc_toml_config_path (data_path_a);
@@ -129,7 +99,7 @@ nano::error read_rpc_config_toml (boost::filesystem::path const & data_path_a, n
 	// Make sure we don't create an empty toml file if it doesn't exist. Running without a toml file is the default.
 	if (!error)
 	{
-		if (boost::filesystem::exists (toml_config_path))
+		if (std::filesystem::exists (toml_config_path))
 		{
 			error = toml.read (config_overrides_stream, toml_config_path);
 		}

@@ -1,16 +1,27 @@
 #include <nano/crypto_lib/random_pool.hpp>
+#include <nano/lib/block_type.hpp>
+#include <nano/lib/block_uniquer.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/enum_util.hpp>
 #include <nano/lib/memory.hpp>
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/stream.hpp>
 #include <nano/lib/threading.hpp>
+#include <nano/lib/work_version.hpp>
 #include <nano/secure/common.hpp>
-
-#include <crypto/cryptopp/words.h>
 
 #include <boost/endian/conversion.hpp>
 #include <boost/property_tree/json_parser.hpp>
 
 #include <bitset>
+
+#include <cryptopp/words.h>
+
+size_t constexpr nano::send_block::size;
+size_t constexpr nano::receive_block::size;
+size_t constexpr nano::open_block::size;
+size_t constexpr nano::change_block::size;
+size_t constexpr nano::state_block::size;
 
 /** Compare blocks, first by type, then content. This is an optimization over dynamic_cast, which is very slow on some platforms. */
 namespace
@@ -43,6 +54,10 @@ void nano::block_memory_pool_purge ()
 	nano::purge_shared_ptr_singleton_pool_memory<nano::send_block> ();
 	nano::purge_shared_ptr_singleton_pool_memory<nano::change_block> ();
 }
+
+/*
+ * block
+ */
 
 std::string nano::block::to_json () const
 {
@@ -90,7 +105,7 @@ nano::block_hash nano::block::generate_hash () const
 	blake2b_state hash_l;
 	auto status (blake2b_init (&hash_l, sizeof (result.bytes)));
 	debug_assert (status == 0);
-	hash (hash_l);
+	generate_hash (hash_l);
 	status = blake2b_final (&hash_l, result.bytes.data (), sizeof (result.bytes));
 	debug_assert (status == 0);
 	return result;
@@ -101,6 +116,65 @@ void nano::block::refresh ()
 	if (!cached_hash.is_zero ())
 	{
 		cached_hash = generate_hash ();
+	}
+}
+
+bool nano::block::is_send () const noexcept
+{
+	release_assert (has_sideband ());
+	switch (type ())
+	{
+		case nano::block_type::send:
+			return true;
+		case nano::block_type::state:
+			return sideband ().details.is_send;
+		default:
+			return false;
+	}
+}
+
+bool nano::block::is_receive () const noexcept
+{
+	release_assert (has_sideband ());
+	switch (type ())
+	{
+		case nano::block_type::receive:
+		case nano::block_type::open:
+			return true;
+		case nano::block_type::state:
+			return sideband ().details.is_receive;
+		default:
+			return false;
+	}
+}
+
+bool nano::block::is_change () const noexcept
+{
+	release_assert (has_sideband ());
+	switch (type ())
+	{
+		case nano::block_type::change:
+			return true;
+		case nano::block_type::state:
+			if (link_field ().value ().is_zero ())
+			{
+				return true;
+			}
+			return false;
+		default:
+			return false;
+	}
+}
+
+bool nano::block::is_epoch () const noexcept
+{
+	release_assert (has_sideband ());
+	switch (type ())
+	{
+		case nano::block_type::state:
+			return sideband ().details.is_epoch;
+		default:
+			return false;
 	}
 }
 
@@ -136,7 +210,7 @@ nano::block_hash nano::block::full_hash () const
 
 nano::block_sideband const & nano::block::sideband () const
 {
-	debug_assert (sideband_m.is_initialized ());
+	release_assert (sideband_m.is_initialized ());
 	return *sideband_m;
 }
 
@@ -150,46 +224,134 @@ bool nano::block::has_sideband () const
 	return sideband_m.is_initialized ();
 }
 
-nano::account const & nano::block::representative () const
+std::optional<nano::account> nano::block::representative_field () const
 {
-	static nano::account representative{};
-	return representative;
+	return std::nullopt;
 }
 
-nano::block_hash const & nano::block::source () const
+std::optional<nano::block_hash> nano::block::source_field () const
 {
-	static nano::block_hash source{ 0 };
-	return source;
+	return std::nullopt;
 }
 
-nano::account const & nano::block::destination () const
+std::optional<nano::account> nano::block::destination_field () const
 {
-	static nano::account destination{};
-	return destination;
+	return std::nullopt;
 }
 
-nano::link const & nano::block::link () const
+std::optional<nano::link> nano::block::link_field () const
 {
-	static nano::link link{ 0 };
-	return link;
+	return std::nullopt;
 }
 
-nano::account const & nano::block::account () const
+nano::account nano::block::account () const noexcept
 {
-	static nano::account account{};
-	return account;
+	release_assert (has_sideband ());
+	switch (type ())
+	{
+		case block_type::open:
+		case block_type::state:
+			return account_field ().value ();
+		case block_type::change:
+		case block_type::send:
+		case block_type::receive:
+			return sideband ().account;
+		default:
+			release_assert (false);
+	}
+}
+
+nano::amount nano::block::balance () const noexcept
+{
+	release_assert (has_sideband ());
+	switch (type ())
+	{
+		case nano::block_type::open:
+		case nano::block_type::receive:
+		case nano::block_type::change:
+			return sideband ().balance;
+		case nano::block_type::send:
+		case nano::block_type::state:
+			return balance_field ().value ();
+		default:
+			release_assert (false);
+	}
+}
+
+nano::account nano::block::destination () const noexcept
+{
+	release_assert (has_sideband ());
+	switch (type ())
+	{
+		case nano::block_type::send:
+			return destination_field ().value ();
+		case nano::block_type::state:
+			release_assert (sideband ().details.is_send);
+			return link_field ().value ().as_account ();
+		default:
+			release_assert (false);
+	}
+}
+
+nano::block_hash nano::block::source () const noexcept
+{
+	release_assert (has_sideband ());
+	switch (type ())
+	{
+		case nano::block_type::open:
+		case nano::block_type::receive:
+			return source_field ().value ();
+		case nano::block_type::state:
+			release_assert (sideband ().details.is_receive);
+			return link_field ().value ().as_block_hash ();
+		default:
+			release_assert (false);
+	}
+}
+
+// TODO - Remove comments below and fixup usages to not need to check .is_zero ()
+// std::optional<nano::block_hash> nano::block::previous () const
+nano::block_hash nano::block::previous () const noexcept
+{
+	std::optional<nano::block_hash> result = previous_field ();
+	/*
+	if (result && result.value ().is_zero ())
+	{
+		return std::nullopt;
+	}
+	return result;*/
+	return result.value_or (0);
+}
+
+std::optional<nano::account> nano::block::account_field () const
+{
+	return std::nullopt;
 }
 
 nano::qualified_root nano::block::qualified_root () const
 {
-	return nano::qualified_root (root (), previous ());
+	return { root (), previous () };
 }
 
-nano::amount const & nano::block::balance () const
+std::optional<nano::amount> nano::block::balance_field () const
 {
-	static nano::amount amount{ 0 };
-	return amount;
+	return std::nullopt;
 }
+
+void nano::block::operator() (nano::object_stream & obs) const
+{
+	obs.write ("type", type ());
+	obs.write ("hash", hash ());
+
+	if (has_sideband ())
+	{
+		obs.write ("sideband", sideband ());
+	}
+}
+
+/*
+ * send_block
+ */
 
 void nano::send_block::visit (nano::block_visitor & visitor_a) const
 {
@@ -201,7 +363,7 @@ void nano::send_block::visit (nano::mutable_block_visitor & visitor_a)
 	visitor_a.send_block (*this);
 }
 
-void nano::send_block::hash (blake2b_state & hash_a) const
+void nano::send_block::generate_hash (blake2b_state & hash_a) const
 {
 	hashables.hash (hash_a);
 }
@@ -310,17 +472,11 @@ void nano::send_block::serialize_json (std::string & string_a, bool single_line)
 void nano::send_block::serialize_json (boost::property_tree::ptree & tree) const
 {
 	tree.put ("type", "send");
-	std::string previous;
-	hashables.previous.encode_hex (previous);
-	tree.put ("previous", previous);
+	tree.put ("previous", hashables.previous.to_string ());
 	tree.put ("destination", hashables.destination.to_account ());
-	std::string balance;
-	hashables.balance.encode_hex (balance);
-	tree.put ("balance", balance);
-	std::string signature_l;
-	signature.encode_hex (signature_l);
+	tree.put ("balance", hashables.balance.to_string ());
 	tree.put ("work", nano::to_string_hex (work));
-	tree.put ("signature", signature_l);
+	tree.put ("signature", signature.to_string ());
 }
 
 bool nano::send_block::deserialize_json (boost::property_tree::ptree const & tree_a)
@@ -407,6 +563,11 @@ nano::send_block::send_block (bool & error_a, boost::property_tree::ptree const 
 	}
 }
 
+std::shared_ptr<nano::block> nano::send_block::clone () const
+{
+	return std::make_shared<nano::send_block> (*this);
+}
+
 bool nano::send_block::operator== (nano::block const & other_a) const
 {
 	return blocks_equal (*this, other_a);
@@ -441,22 +602,22 @@ bool nano::send_block::operator== (nano::send_block const & other_a) const
 	return result;
 }
 
-nano::block_hash const & nano::send_block::previous () const
+std::optional<nano::block_hash> nano::send_block::previous_field () const
 {
 	return hashables.previous;
 }
 
-nano::account const & nano::send_block::destination () const
+std::optional<nano::account> nano::send_block::destination_field () const
 {
 	return hashables.destination;
 }
 
-nano::root const & nano::send_block::root () const
+nano::root nano::send_block::root () const
 {
 	return hashables.previous;
 }
 
-nano::amount const & nano::send_block::balance () const
+std::optional<nano::amount> nano::send_block::balance_field () const
 {
 	return hashables.balance;
 }
@@ -470,6 +631,21 @@ void nano::send_block::signature_set (nano::signature const & signature_a)
 {
 	signature = signature_a;
 }
+
+void nano::send_block::operator() (nano::object_stream & obs) const
+{
+	nano::block::operator() (obs); // Write common data
+
+	obs.write ("previous", hashables.previous);
+	obs.write ("destination", hashables.destination);
+	obs.write ("balance", hashables.balance);
+	obs.write ("signature", signature);
+	obs.write ("work", work);
+}
+
+/*
+ * open_block
+ */
 
 nano::open_hashables::open_hashables (nano::block_hash const & source_a, nano::account const & representative_a, nano::account const & account_a) :
 	source (source_a),
@@ -581,7 +757,12 @@ nano::open_block::open_block (bool & error_a, boost::property_tree::ptree const 
 	}
 }
 
-void nano::open_block::hash (blake2b_state & hash_a) const
+std::shared_ptr<nano::block> nano::open_block::clone () const
+{
+	return std::make_shared<nano::open_block> (*this);
+}
+
+void nano::open_block::generate_hash (blake2b_state & hash_a) const
 {
 	hashables.hash (hash_a);
 }
@@ -596,13 +777,12 @@ void nano::open_block::block_work_set (uint64_t work_a)
 	work = work_a;
 }
 
-nano::block_hash const & nano::open_block::previous () const
+std::optional<nano::block_hash> nano::open_block::previous_field () const
 {
-	static nano::block_hash result{ 0 };
-	return result;
+	return std::nullopt;
 }
 
-nano::account const & nano::open_block::account () const
+std::optional<nano::account> nano::open_block::account_field () const
 {
 	return hashables.account;
 }
@@ -648,12 +828,10 @@ void nano::open_block::serialize_json (boost::property_tree::ptree & tree) const
 {
 	tree.put ("type", "open");
 	tree.put ("source", hashables.source.to_string ());
-	tree.put ("representative", representative ().to_account ());
+	tree.put ("representative", hashables.representative.to_account ());
 	tree.put ("account", hashables.account.to_account ());
-	std::string signature_l;
-	signature.encode_hex (signature_l);
 	tree.put ("work", nano::to_string_hex (work));
-	tree.put ("signature", signature_l);
+	tree.put ("signature", signature.to_string ());
 }
 
 bool nano::open_block::deserialize_json (boost::property_tree::ptree const & tree_a)
@@ -722,17 +900,17 @@ bool nano::open_block::valid_predecessor (nano::block const & block_a) const
 	return false;
 }
 
-nano::block_hash const & nano::open_block::source () const
+std::optional<nano::block_hash> nano::open_block::source_field () const
 {
 	return hashables.source;
 }
 
-nano::root const & nano::open_block::root () const
+nano::root nano::open_block::root () const
 {
 	return hashables.account;
 }
 
-nano::account const & nano::open_block::representative () const
+std::optional<nano::account> nano::open_block::representative_field () const
 {
 	return hashables.representative;
 }
@@ -746,6 +924,21 @@ void nano::open_block::signature_set (nano::signature const & signature_a)
 {
 	signature = signature_a;
 }
+
+void nano::open_block::operator() (nano::object_stream & obs) const
+{
+	nano::block::operator() (obs); // Write common data
+
+	obs.write ("source", hashables.source);
+	obs.write ("representative", hashables.representative);
+	obs.write ("account", hashables.account);
+	obs.write ("signature", signature);
+	obs.write ("work", work);
+}
+
+/*
+ * change_block
+ */
 
 nano::change_hashables::change_hashables (nano::block_hash const & previous_a, nano::account const & representative_a) :
 	previous (previous_a),
@@ -838,7 +1031,12 @@ nano::change_block::change_block (bool & error_a, boost::property_tree::ptree co
 	}
 }
 
-void nano::change_block::hash (blake2b_state & hash_a) const
+std::shared_ptr<nano::block> nano::change_block::clone () const
+{
+	return std::make_shared<nano::change_block> (*this);
+}
+
+void nano::change_block::generate_hash (blake2b_state & hash_a) const
 {
 	hashables.hash (hash_a);
 }
@@ -853,7 +1051,7 @@ void nano::change_block::block_work_set (uint64_t work_a)
 	work = work_a;
 }
 
-nano::block_hash const & nano::change_block::previous () const
+std::optional<nano::block_hash> nano::change_block::previous_field () const
 {
 	return hashables.previous;
 }
@@ -897,11 +1095,9 @@ void nano::change_block::serialize_json (boost::property_tree::ptree & tree) con
 {
 	tree.put ("type", "change");
 	tree.put ("previous", hashables.previous.to_string ());
-	tree.put ("representative", representative ().to_account ());
+	tree.put ("representative", hashables.representative.to_account ());
 	tree.put ("work", nano::to_string_hex (work));
-	std::string signature_l;
-	signature.encode_hex (signature_l);
-	tree.put ("signature", signature_l);
+	tree.put ("signature", signature.to_string ());
 }
 
 bool nano::change_block::deserialize_json (boost::property_tree::ptree const & tree_a)
@@ -978,12 +1174,12 @@ bool nano::change_block::valid_predecessor (nano::block const & block_a) const
 	return result;
 }
 
-nano::root const & nano::change_block::root () const
+nano::root nano::change_block::root () const
 {
 	return hashables.previous;
 }
 
-nano::account const & nano::change_block::representative () const
+std::optional<nano::account> nano::change_block::representative_field () const
 {
 	return hashables.representative;
 }
@@ -997,6 +1193,20 @@ void nano::change_block::signature_set (nano::signature const & signature_a)
 {
 	signature = signature_a;
 }
+
+void nano::change_block::operator() (nano::object_stream & obs) const
+{
+	nano::block::operator() (obs); // Write common data
+
+	obs.write ("previous", hashables.previous);
+	obs.write ("representative", hashables.representative);
+	obs.write ("signature", signature);
+	obs.write ("work", work);
+}
+
+/*
+ * state_block
+ */
 
 nano::state_hashables::state_hashables (nano::account const & account_a, nano::block_hash const & previous_a, nano::account const & representative_a, nano::amount const & balance_a, nano::link const & link_a) :
 	account (account_a),
@@ -1121,7 +1331,12 @@ nano::state_block::state_block (bool & error_a, boost::property_tree::ptree cons
 	}
 }
 
-void nano::state_block::hash (blake2b_state & hash_a) const
+std::shared_ptr<nano::block> nano::state_block::clone () const
+{
+	return std::make_shared<nano::state_block> (*this);
+}
+
+void nano::state_block::generate_hash (blake2b_state & hash_a) const
 {
 	nano::uint256_union preamble (static_cast<uint64_t> (nano::block_type::state));
 	blake2b_update (&hash_a, preamble.bytes.data (), preamble.bytes.size ());
@@ -1138,12 +1353,12 @@ void nano::state_block::block_work_set (uint64_t work_a)
 	work = work_a;
 }
 
-nano::block_hash const & nano::state_block::previous () const
+std::optional<nano::block_hash> nano::state_block::previous_field () const
 {
 	return hashables.previous;
 }
 
-nano::account const & nano::state_block::account () const
+std::optional<nano::account> nano::state_block::account_field () const
 {
 	return hashables.account;
 }
@@ -1195,13 +1410,11 @@ void nano::state_block::serialize_json (boost::property_tree::ptree & tree) cons
 	tree.put ("type", "state");
 	tree.put ("account", hashables.account.to_account ());
 	tree.put ("previous", hashables.previous.to_string ());
-	tree.put ("representative", representative ().to_account ());
+	tree.put ("representative", hashables.representative.to_account ());
 	tree.put ("balance", hashables.balance.to_string_dec ());
 	tree.put ("link", hashables.link.to_string ());
 	tree.put ("link_as_account", hashables.link.to_account ());
-	std::string signature_l;
-	signature.encode_hex (signature_l);
-	tree.put ("signature", signature_l);
+	tree.put ("signature", signature.to_string ());
 	tree.put ("work", nano::to_string_hex (work));
 }
 
@@ -1281,7 +1494,7 @@ bool nano::state_block::valid_predecessor (nano::block const & block_a) const
 	return true;
 }
 
-nano::root const & nano::state_block::root () const
+nano::root nano::state_block::root () const
 {
 	if (!hashables.previous.is_zero ())
 	{
@@ -1293,17 +1506,17 @@ nano::root const & nano::state_block::root () const
 	}
 }
 
-nano::link const & nano::state_block::link () const
+std::optional<nano::link> nano::state_block::link_field () const
 {
 	return hashables.link;
 }
 
-nano::account const & nano::state_block::representative () const
+std::optional<nano::account> nano::state_block::representative_field () const
 {
 	return hashables.representative;
 }
 
-nano::amount const & nano::state_block::balance () const
+std::optional<nano::amount> nano::state_block::balance_field () const
 {
 	return hashables.balance;
 }
@@ -1317,6 +1530,23 @@ void nano::state_block::signature_set (nano::signature const & signature_a)
 {
 	signature = signature_a;
 }
+
+void nano::state_block::operator() (nano::object_stream & obs) const
+{
+	nano::block::operator() (obs); // Write common data
+
+	obs.write ("account", hashables.account);
+	obs.write ("previous", hashables.previous);
+	obs.write ("representative", hashables.representative);
+	obs.write ("balance", hashables.balance);
+	obs.write ("link", hashables.link);
+	obs.write ("signature", signature);
+	obs.write ("work", work);
+}
+
+/*
+ *
+ */
 
 std::shared_ptr<nano::block> nano::deserialize_block_json (boost::property_tree::ptree const & tree_a, nano::block_uniquer * uniquer_a)
 {
@@ -1362,6 +1592,12 @@ std::shared_ptr<nano::block> nano::deserialize_block_json (boost::property_tree:
 	return result;
 }
 
+void nano::serialize_block (nano::stream & stream_a, nano::block const & block_a)
+{
+	nano::write (stream_a, block_a.type ());
+	block_a.serialize (stream_a);
+}
+
 std::shared_ptr<nano::block> nano::deserialize_block (nano::stream & stream_a)
 {
 	nano::block_type type;
@@ -1405,17 +1641,20 @@ std::shared_ptr<nano::block> nano::deserialize_block (nano::stream & stream_a, n
 			break;
 		}
 		default:
-#ifndef NANO_FUZZER_TEST
-			debug_assert (false);
-#endif
-			break;
+		{
+			return {};
+		}
 	}
-	if (uniquer_a != nullptr)
+	if (result && uniquer_a != nullptr)
 	{
 		result = uniquer_a->unique (result);
 	}
 	return result;
 }
+
+/*
+ * receive_block
+ */
 
 void nano::receive_block::visit (nano::block_visitor & visitor_a) const
 {
@@ -1471,16 +1710,10 @@ void nano::receive_block::serialize_json (std::string & string_a, bool single_li
 void nano::receive_block::serialize_json (boost::property_tree::ptree & tree) const
 {
 	tree.put ("type", "receive");
-	std::string previous;
-	hashables.previous.encode_hex (previous);
-	tree.put ("previous", previous);
-	std::string source;
-	hashables.source.encode_hex (source);
-	tree.put ("source", source);
-	std::string signature_l;
-	signature.encode_hex (signature_l);
+	tree.put ("previous", hashables.previous.to_string ());
+	tree.put ("source", hashables.source.to_string ());
 	tree.put ("work", nano::to_string_hex (work));
-	tree.put ("signature", signature_l);
+	tree.put ("signature", signature.to_string ());
 }
 
 bool nano::receive_block::deserialize_json (boost::property_tree::ptree const & tree_a)
@@ -1561,7 +1794,12 @@ nano::receive_block::receive_block (bool & error_a, boost::property_tree::ptree 
 	}
 }
 
-void nano::receive_block::hash (blake2b_state & hash_a) const
+std::shared_ptr<nano::block> nano::receive_block::clone () const
+{
+	return std::make_shared<nano::receive_block> (*this);
+}
+
+void nano::receive_block::generate_hash (blake2b_state & hash_a) const
 {
 	hashables.hash (hash_a);
 }
@@ -1599,17 +1837,17 @@ bool nano::receive_block::valid_predecessor (nano::block const & block_a) const
 	return result;
 }
 
-nano::block_hash const & nano::receive_block::previous () const
+std::optional<nano::block_hash> nano::receive_block::previous_field () const
 {
 	return hashables.previous;
 }
 
-nano::block_hash const & nano::receive_block::source () const
+std::optional<nano::block_hash> nano::receive_block::source_field () const
 {
 	return hashables.source;
 }
 
-nano::root const & nano::receive_block::root () const
+nano::root nano::receive_block::root () const
 {
 	return hashables.previous;
 }
@@ -1672,241 +1910,12 @@ void nano::receive_hashables::hash (blake2b_state & hash_a) const
 	blake2b_update (&hash_a, source.bytes.data (), sizeof (source.bytes));
 }
 
-nano::block_details::block_details (nano::epoch const epoch_a, bool const is_send_a, bool const is_receive_a, bool const is_epoch_a) :
-	epoch (epoch_a), is_send (is_send_a), is_receive (is_receive_a), is_epoch (is_epoch_a)
+void nano::receive_block::operator() (nano::object_stream & obs) const
 {
-}
+	nano::block::operator() (obs); // Write common data
 
-bool nano::block_details::operator== (nano::block_details const & other_a) const
-{
-	return epoch == other_a.epoch && is_send == other_a.is_send && is_receive == other_a.is_receive && is_epoch == other_a.is_epoch;
-}
-
-uint8_t nano::block_details::packed () const
-{
-	std::bitset<8> result (static_cast<uint8_t> (epoch));
-	result.set (7, is_send);
-	result.set (6, is_receive);
-	result.set (5, is_epoch);
-	return static_cast<uint8_t> (result.to_ulong ());
-}
-
-void nano::block_details::unpack (uint8_t details_a)
-{
-	constexpr std::bitset<8> epoch_mask{ 0b00011111 };
-	auto as_bitset = static_cast<std::bitset<8>> (details_a);
-	is_send = as_bitset.test (7);
-	is_receive = as_bitset.test (6);
-	is_epoch = as_bitset.test (5);
-	epoch = static_cast<nano::epoch> ((as_bitset & epoch_mask).to_ulong ());
-}
-
-void nano::block_details::serialize (nano::stream & stream_a) const
-{
-	nano::write (stream_a, packed ());
-}
-
-bool nano::block_details::deserialize (nano::stream & stream_a)
-{
-	bool result (false);
-	try
-	{
-		uint8_t packed{ 0 };
-		nano::read (stream_a, packed);
-		unpack (packed);
-	}
-	catch (std::runtime_error &)
-	{
-		result = true;
-	}
-
-	return result;
-}
-
-std::string nano::state_subtype (nano::block_details const details_a)
-{
-	debug_assert (details_a.is_epoch + details_a.is_receive + details_a.is_send <= 1);
-	if (details_a.is_send)
-	{
-		return "send";
-	}
-	else if (details_a.is_receive)
-	{
-		return "receive";
-	}
-	else if (details_a.is_epoch)
-	{
-		return "epoch";
-	}
-	else
-	{
-		return "change";
-	}
-}
-
-nano::block_sideband::block_sideband (nano::account const & account_a, nano::block_hash const & successor_a, nano::amount const & balance_a, uint64_t const height_a, uint64_t const timestamp_a, nano::block_details const & details_a, nano::epoch const source_epoch_a) :
-	successor (successor_a),
-	account (account_a),
-	balance (balance_a),
-	height (height_a),
-	timestamp (timestamp_a),
-	details (details_a),
-	source_epoch (source_epoch_a)
-{
-}
-
-nano::block_sideband::block_sideband (nano::account const & account_a, nano::block_hash const & successor_a, nano::amount const & balance_a, uint64_t const height_a, uint64_t const timestamp_a, nano::epoch const epoch_a, bool const is_send, bool const is_receive, bool const is_epoch, nano::epoch const source_epoch_a) :
-	successor (successor_a),
-	account (account_a),
-	balance (balance_a),
-	height (height_a),
-	timestamp (timestamp_a),
-	details (epoch_a, is_send, is_receive, is_epoch),
-	source_epoch (source_epoch_a)
-{
-}
-
-size_t nano::block_sideband::size (nano::block_type type_a)
-{
-	size_t result (0);
-	result += sizeof (successor);
-	if (type_a != nano::block_type::state && type_a != nano::block_type::open)
-	{
-		result += sizeof (account);
-	}
-	if (type_a != nano::block_type::open)
-	{
-		result += sizeof (height);
-	}
-	if (type_a == nano::block_type::receive || type_a == nano::block_type::change || type_a == nano::block_type::open)
-	{
-		result += sizeof (balance);
-	}
-	result += sizeof (timestamp);
-	if (type_a == nano::block_type::state)
-	{
-		static_assert (sizeof (nano::epoch) == nano::block_details::size (), "block_details is larger than the epoch enum");
-		result += nano::block_details::size () + sizeof (nano::epoch);
-	}
-	return result;
-}
-
-void nano::block_sideband::serialize (nano::stream & stream_a, nano::block_type type_a) const
-{
-	nano::write (stream_a, successor.bytes);
-	if (type_a != nano::block_type::state && type_a != nano::block_type::open)
-	{
-		nano::write (stream_a, account.bytes);
-	}
-	if (type_a != nano::block_type::open)
-	{
-		nano::write (stream_a, boost::endian::native_to_big (height));
-	}
-	if (type_a == nano::block_type::receive || type_a == nano::block_type::change || type_a == nano::block_type::open)
-	{
-		nano::write (stream_a, balance.bytes);
-	}
-	nano::write (stream_a, boost::endian::native_to_big (timestamp));
-	if (type_a == nano::block_type::state)
-	{
-		details.serialize (stream_a);
-		nano::write (stream_a, static_cast<uint8_t> (source_epoch));
-	}
-}
-
-bool nano::block_sideband::deserialize (nano::stream & stream_a, nano::block_type type_a)
-{
-	bool result (false);
-	try
-	{
-		nano::read (stream_a, successor.bytes);
-		if (type_a != nano::block_type::state && type_a != nano::block_type::open)
-		{
-			nano::read (stream_a, account.bytes);
-		}
-		if (type_a != nano::block_type::open)
-		{
-			nano::read (stream_a, height);
-			boost::endian::big_to_native_inplace (height);
-		}
-		else
-		{
-			height = 1;
-		}
-		if (type_a == nano::block_type::receive || type_a == nano::block_type::change || type_a == nano::block_type::open)
-		{
-			nano::read (stream_a, balance.bytes);
-		}
-		nano::read (stream_a, timestamp);
-		boost::endian::big_to_native_inplace (timestamp);
-		if (type_a == nano::block_type::state)
-		{
-			result = details.deserialize (stream_a);
-			uint8_t source_epoch_uint8_t{ 0 };
-			nano::read (stream_a, source_epoch_uint8_t);
-			source_epoch = static_cast<nano::epoch> (source_epoch_uint8_t);
-		}
-	}
-	catch (std::runtime_error &)
-	{
-		result = true;
-	}
-
-	return result;
-}
-
-std::shared_ptr<nano::block> nano::block_uniquer::unique (std::shared_ptr<nano::block> const & block_a)
-{
-	auto result (block_a);
-	if (result != nullptr)
-	{
-		nano::uint256_union key (block_a->full_hash ());
-		nano::lock_guard<nano::mutex> lock (mutex);
-		auto & existing (blocks[key]);
-		if (auto block_l = existing.lock ())
-		{
-			result = block_l;
-		}
-		else
-		{
-			existing = block_a;
-		}
-		release_assert (std::numeric_limits<CryptoPP::word32>::max () > blocks.size ());
-		for (auto i (0); i < cleanup_count && !blocks.empty (); ++i)
-		{
-			auto random_offset (nano::random_pool::generate_word32 (0, static_cast<CryptoPP::word32> (blocks.size () - 1)));
-			auto existing (std::next (blocks.begin (), random_offset));
-			if (existing == blocks.end ())
-			{
-				existing = blocks.begin ();
-			}
-			if (existing != blocks.end ())
-			{
-				if (auto block_l = existing->second.lock ())
-				{
-					// Still live
-				}
-				else
-				{
-					blocks.erase (existing);
-				}
-			}
-		}
-	}
-	return result;
-}
-
-size_t nano::block_uniquer::size ()
-{
-	nano::lock_guard<nano::mutex> lock (mutex);
-	return blocks.size ();
-}
-
-std::unique_ptr<nano::container_info_component> nano::collect_container_info (block_uniquer & block_uniquer, std::string const & name)
-{
-	auto count = block_uniquer.size ();
-	auto sizeof_element = sizeof (block_uniquer::value_type);
-	auto composite = std::make_unique<container_info_composite> (name);
-	composite->add_component (std::make_unique<container_info_leaf> (container_info{ "blocks", count, sizeof_element }));
-	return composite;
+	obs.write ("previous", hashables.previous);
+	obs.write ("source", hashables.source);
+	obs.write ("signature", signature);
+	obs.write ("work", work);
 }

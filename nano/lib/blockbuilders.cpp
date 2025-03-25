@@ -1,8 +1,11 @@
 #include <nano/lib/blockbuilders.hpp>
-
-#include <crypto/cryptopp/osrng.h>
+#include <nano/lib/blocks.hpp>
+#include <nano/lib/errors.hpp>
+#include <nano/lib/utility.hpp>
 
 #include <unordered_map>
+
+#include <cryptopp/osrng.h>
 
 namespace
 {
@@ -513,6 +516,21 @@ nano::send_block_builder::send_block_builder ()
 	make_block ();
 }
 
+nano::send_block_builder & nano::send_block_builder::from (nano::send_block const & other_block)
+{
+	block->work = other_block.work;
+	build_state |= build_flags::work_present;
+	block->signature = other_block.signature;
+	build_state |= build_flags::signature_present;
+	block->hashables.balance = other_block.hashables.balance;
+	build_state |= build_flags::balance_present;
+	block->hashables.destination = other_block.hashables.destination;
+	build_state |= build_flags::link_present;
+	block->hashables.previous = other_block.hashables.previous;
+	build_state |= build_flags::previous_present;
+	return *this;
+}
+
 nano::send_block_builder & nano::send_block_builder::make_block ()
 {
 	construct_block ();
@@ -652,7 +670,7 @@ nano::receive_block_builder & nano::receive_block_builder::source_hex (std::stri
 }
 
 template <typename BLOCKTYPE, typename BUILDER>
-std::unique_ptr<BLOCKTYPE> nano::abstract_builder<BLOCKTYPE, BUILDER>::build ()
+std::shared_ptr<BLOCKTYPE> nano::abstract_builder<BLOCKTYPE, BUILDER>::build ()
 {
 	if (!ec)
 	{
@@ -663,7 +681,7 @@ std::unique_ptr<BLOCKTYPE> nano::abstract_builder<BLOCKTYPE, BUILDER>::build ()
 }
 
 template <typename BLOCKTYPE, typename BUILDER>
-std::unique_ptr<BLOCKTYPE> nano::abstract_builder<BLOCKTYPE, BUILDER>::build (std::error_code & ec)
+std::shared_ptr<BLOCKTYPE> nano::abstract_builder<BLOCKTYPE, BUILDER>::build (std::error_code & ec)
 {
 	if (!this->ec)
 	{
@@ -671,18 +689,6 @@ std::unique_ptr<BLOCKTYPE> nano::abstract_builder<BLOCKTYPE, BUILDER>::build (st
 	}
 	ec = this->ec;
 	return std::move (block);
-}
-
-template <typename BLOCKTYPE, typename BUILDER>
-std::shared_ptr<BLOCKTYPE> nano::abstract_builder<BLOCKTYPE, BUILDER>::build_shared ()
-{
-	return std::move (build ());
-}
-
-template <typename BLOCKTYPE, typename BUILDER>
-std::shared_ptr<BLOCKTYPE> nano::abstract_builder<BLOCKTYPE, BUILDER>::build_shared (std::error_code & ec)
-{
-	return std::move (build (ec));
 }
 
 template <typename BLOCKTYPE, typename BUILDER>

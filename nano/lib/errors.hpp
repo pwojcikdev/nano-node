@@ -1,8 +1,5 @@
 #pragma once
 
-#include <boost/filesystem/operations.hpp>
-#include <boost/system/error_code.hpp>
-
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -123,7 +120,8 @@ enum class error_rpc
 	requires_port_and_address,
 	rpc_control_disabled,
 	sign_hash_disabled,
-	source_not_found
+	source_not_found,
+	stopped
 };
 
 /** process_result related errors */
@@ -138,7 +136,7 @@ enum class error_process
 	gap_previous, // Block marked as previous is unknown
 	gap_source, // Block marked as source is unknown
 	gap_epoch_open_pending, // Block marked as pending blocks required for epoch open block are unknown
-	opened_burn_account, // The impossible happened, someone found the private key associated with the public key '0'.
+	opened_burn_account, // Block attempts to open the burn account
 	balance_mismatch, // Balance and amount delta don't match
 	block_position, // This block cannot follow the previous block
 	insufficient_work, // Insufficient work for this block, even though it passed the minimal validation
@@ -196,43 +194,6 @@ REGISTER_ERROR_CODES (nano, error_rpc);
 REGISTER_ERROR_CODES (nano, error_process);
 REGISTER_ERROR_CODES (nano, error_config);
 
-/* boost->std error_code bridge */
-namespace nano
-{
-namespace error_conversion
-{
-	std::error_category const & generic_category ();
-}
-}
-
-namespace std
-{
-template <>
-struct is_error_code_enum<boost::system::errc::errc_t>
-	: public std::true_type
-{
-};
-
-std::error_code make_error_code (boost::system::errc::errc_t const & e);
-}
-namespace nano
-{
-namespace error_conversion
-{
-	namespace detail
-	{
-		class generic_category : public std::error_category
-		{
-		public:
-			char const * name () const noexcept override;
-			std::string message (int value) const override;
-		};
-	}
-	std::error_category const & generic_category ();
-	std::error_code convert (boost::system::error_code const & error);
-}
-}
-
 namespace nano
 {
 /** Adapter for std/boost::error_code, std::exception and bool flags to facilitate unified error handling */
@@ -244,18 +205,14 @@ public:
 	error (nano::error && error_a) = default;
 
 	error (std::error_code code_a);
-	error (boost::system::error_code const & code_a);
 	error (std::string message_a);
 	error (std::exception const & exception_a);
 	error & operator= (nano::error const & err_a);
 	error & operator= (nano::error && err_a);
 	error & operator= (std::error_code code_a);
-	error & operator= (boost::system::error_code const & code_a);
-	error & operator= (boost::system::errc::errc_t const & code_a);
 	error & operator= (std::string message_a);
 	error & operator= (std::exception const & exception_a);
 	bool operator== (std::error_code code_a) const;
-	bool operator== (boost::system::error_code code_a) const;
 	error & then (std::function<nano::error &()> next);
 	template <typename... ErrorCode>
 	error & accept (ErrorCode... err)

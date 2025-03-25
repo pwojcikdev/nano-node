@@ -1,66 +1,10 @@
-#include <nano/node/common.hpp>
+#include <nano/node/endpoint.hpp>
 #include <nano/node/node.hpp>
 #include <nano/node/transport/transport.hpp>
 
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/address_v6.hpp>
-#include <boost/format.hpp>
-
-#include <numeric>
-
-namespace
-{
-class callback_visitor : public nano::message_visitor
-{
-public:
-	void keepalive (nano::keepalive const & message_a) override
-	{
-		result = nano::stat::detail::keepalive;
-	}
-	void publish (nano::publish const & message_a) override
-	{
-		result = nano::stat::detail::publish;
-	}
-	void confirm_req (nano::confirm_req const & message_a) override
-	{
-		result = nano::stat::detail::confirm_req;
-	}
-	void confirm_ack (nano::confirm_ack const & message_a) override
-	{
-		result = nano::stat::detail::confirm_ack;
-	}
-	void bulk_pull (nano::bulk_pull const & message_a) override
-	{
-		result = nano::stat::detail::bulk_pull;
-	}
-	void bulk_pull_account (nano::bulk_pull_account const & message_a) override
-	{
-		result = nano::stat::detail::bulk_pull_account;
-	}
-	void bulk_push (nano::bulk_push const & message_a) override
-	{
-		result = nano::stat::detail::bulk_push;
-	}
-	void frontier_req (nano::frontier_req const & message_a) override
-	{
-		result = nano::stat::detail::frontier_req;
-	}
-	void node_id_handshake (nano::node_id_handshake const & message_a) override
-	{
-		result = nano::stat::detail::node_id_handshake;
-	}
-	void telemetry_req (nano::telemetry_req const & message_a) override
-	{
-		result = nano::stat::detail::telemetry_req;
-	}
-	void telemetry_ack (nano::telemetry_ack const & message_a) override
-	{
-		result = nano::stat::detail::telemetry_ack;
-	}
-	nano::stat::detail result;
-};
-}
 
 nano::endpoint nano::transport::map_endpoint_to_v6 (nano::endpoint const & endpoint_a)
 {
@@ -74,91 +18,38 @@ nano::endpoint nano::transport::map_endpoint_to_v6 (nano::endpoint const & endpo
 
 nano::endpoint nano::transport::map_tcp_to_endpoint (nano::tcp_endpoint const & endpoint_a)
 {
-	return nano::endpoint (endpoint_a.address (), endpoint_a.port ());
+	return { endpoint_a.address (), endpoint_a.port () };
 }
 
 nano::tcp_endpoint nano::transport::map_endpoint_to_tcp (nano::endpoint const & endpoint_a)
 {
-	return nano::tcp_endpoint (endpoint_a.address (), endpoint_a.port ());
+	return { endpoint_a.address (), endpoint_a.port () };
 }
 
-boost::asio::ip::address nano::transport::map_address_to_subnetwork (boost::asio::ip::address const & address_a)
+boost::asio::ip::address nano::transport::map_address_to_subnetwork (boost::asio::ip::address address_a)
 {
-	debug_assert (address_a.is_v6 ());
+	address_a = mapped_from_v4_or_v6 (address_a);
 	static short const ipv6_subnet_prefix_length = 32; // Equivalent to network prefix /32.
-	static short const ipv4_subnet_prefix_length = (128 - 32) + 24; // Limits for /24 IPv4 subnetwork
+	static short const ipv4_subnet_prefix_length = (128 - 32) + 24; // Limits for /24 IPv4 subnetwork (we're using mapped IPv4 to IPv6 addresses, hence (128 - 32))
 	return address_a.to_v6 ().is_v4_mapped () ? boost::asio::ip::make_network_v6 (address_a.to_v6 (), ipv4_subnet_prefix_length).network () : boost::asio::ip::make_network_v6 (address_a.to_v6 (), ipv6_subnet_prefix_length).network ();
 }
 
-boost::asio::ip::address nano::transport::ipv4_address_or_ipv6_subnet (boost::asio::ip::address const & address_a)
+boost::asio::ip::address nano::transport::ipv4_address_or_ipv6_subnet (boost::asio::ip::address address_a)
 {
-	debug_assert (address_a.is_v6 ());
+	address_a = mapped_from_v4_or_v6 (address_a);
+	// Assuming /48 subnet prefix for IPv6 as it's relatively easy to acquire such a /48 address range
 	static short const ipv6_address_prefix_length = 48; // /48 IPv6 subnetwork
 	return address_a.to_v6 ().is_v4_mapped () ? address_a : boost::asio::ip::make_network_v6 (address_a.to_v6 (), ipv6_address_prefix_length).network ();
 }
 
-nano::transport::channel::channel (nano::node & node_a) :
-	node (node_a)
+bool nano::transport::is_same_ip (boost::asio::ip::address const & address_a, boost::asio::ip::address const & address_b)
 {
-	set_network_version (node_a.network_params.network.protocol_version);
+	return ipv4_address_or_ipv6_subnet (address_a) == ipv4_address_or_ipv6_subnet (address_b);
 }
 
-void nano::transport::channel::send (nano::message & message_a, std::function<void (boost::system::error_code const &, std::size_t)> const & callback_a, nano::buffer_drop_policy drop_policy_a)
+bool nano::transport::is_same_subnetwork (boost::asio::ip::address const & address_a, boost::asio::ip::address const & address_b)
 {
-	callback_visitor visitor;
-	message_a.visit (visitor);
-	auto buffer (message_a.to_shared_const_buffer ());
-	auto detail (visitor.result);
-	auto is_droppable_by_limiter = drop_policy_a == nano::buffer_drop_policy::limiter;
-	auto should_drop (node.network.limiter.should_drop (buffer.size ()));
-	if (!is_droppable_by_limiter || !should_drop)
-	{
-		send_buffer (buffer, callback_a, drop_policy_a);
-		node.stats.inc (nano::stat::type::message, detail, nano::stat::dir::out);
-	}
-	else
-	{
-		if (callback_a)
-		{
-			node.background ([callback_a] () {
-				callback_a (boost::system::errc::make_error_code (boost::system::errc::not_supported), 0);
-			});
-		}
-
-		node.stats.inc (nano::stat::type::drop, detail, nano::stat::dir::out);
-		if (node.config.logging.network_packet_logging ())
-		{
-			node.logger.always_log (boost::str (boost::format ("%1% of size %2% dropped") % node.stats.detail_to_string (detail) % buffer.size ()));
-		}
-	}
-}
-
-nano::transport::channel_loopback::channel_loopback (nano::node & node_a) :
-	channel (node_a), endpoint (node_a.network.endpoint ())
-{
-	set_node_id (node_a.node_id.pub);
-	set_network_version (node_a.network_params.network.protocol_version);
-}
-
-std::size_t nano::transport::channel_loopback::hash_code () const
-{
-	std::hash<::nano::endpoint> hash;
-	return hash (endpoint);
-}
-
-bool nano::transport::channel_loopback::operator== (nano::transport::channel const & other_a) const
-{
-	return endpoint == other_a.get_endpoint ();
-}
-
-void nano::transport::channel_loopback::send_buffer (nano::shared_const_buffer const & buffer_a, std::function<void (boost::system::error_code const &, std::size_t)> const & callback_a, nano::buffer_drop_policy drop_policy_a)
-{
-	release_assert (false && "sending to a loopback channel is not supported");
-}
-
-std::string nano::transport::channel_loopback::to_string () const
-{
-	return boost::str (boost::format ("%1%") % endpoint);
+	return map_address_to_subnetwork (address_a) == map_address_to_subnetwork (address_b);
 }
 
 boost::asio::ip::address_v6 nano::transport::mapped_from_v4_bytes (unsigned long address_a)
@@ -275,19 +166,60 @@ bool nano::transport::reserved_address (nano::endpoint const & endpoint_a, bool 
 	return result;
 }
 
-using namespace std::chrono_literals;
-
-nano::bandwidth_limiter::bandwidth_limiter (double const limit_burst_ratio_a, std::size_t const limit_a) :
-	bucket (static_cast<std::size_t> (limit_a * limit_burst_ratio_a), limit_a)
+nano::stat::detail nano::to_stat_detail (boost::system::error_code const & ec)
 {
+	switch (ec.value ())
+	{
+		case boost::system::errc::success:
+			return nano::stat::detail::success;
+		case boost::system::errc::no_buffer_space:
+			return nano::stat::detail::no_buffer_space;
+		case boost::system::errc::timed_out:
+			return nano::stat::detail::timed_out;
+		case boost::system::errc::host_unreachable:
+			return nano::stat::detail::host_unreachable;
+		case boost::system::errc::not_supported:
+			return nano::stat::detail::not_supported;
+		default:
+			return nano::stat::detail::other;
+	}
 }
 
-bool nano::bandwidth_limiter::should_drop (std::size_t const & message_size_a)
+/*
+ * socket_functions
+ */
+
+boost::asio::ip::network_v6 nano::transport::socket_functions::get_ipv6_subnet_address (boost::asio::ip::address_v6 const & ip_address, std::size_t network_prefix)
 {
-	return !bucket.try_consume (nano::narrow_cast<unsigned int> (message_size_a));
+	return boost::asio::ip::make_network_v6 (ip_address, static_cast<unsigned short> (network_prefix));
 }
 
-void nano::bandwidth_limiter::reset (double const limit_burst_ratio_a, std::size_t const limit_a)
+boost::asio::ip::address nano::transport::socket_functions::first_ipv6_subnet_address (boost::asio::ip::address_v6 const & ip_address, std::size_t network_prefix)
 {
-	bucket.reset (static_cast<std::size_t> (limit_a * limit_burst_ratio_a), limit_a);
+	auto range = get_ipv6_subnet_address (ip_address, network_prefix).hosts ();
+	debug_assert (!range.empty ());
+	return *(range.begin ());
+}
+
+boost::asio::ip::address nano::transport::socket_functions::last_ipv6_subnet_address (boost::asio::ip::address_v6 const & ip_address, std::size_t network_prefix)
+{
+	auto range = get_ipv6_subnet_address (ip_address, network_prefix).hosts ();
+	debug_assert (!range.empty ());
+	return *(--range.end ());
+}
+
+std::size_t nano::transport::socket_functions::count_subnetwork_connections (
+nano::transport::address_socket_mmap const & per_address_connections,
+boost::asio::ip::address_v6 const & remote_address,
+std::size_t network_prefix)
+{
+	auto range = get_ipv6_subnet_address (remote_address, network_prefix).hosts ();
+	if (range.empty ())
+	{
+		return 0;
+	}
+	auto const first_ip = first_ipv6_subnet_address (remote_address, network_prefix);
+	auto const last_ip = last_ipv6_subnet_address (remote_address, network_prefix);
+	auto const counted_connections = std::distance (per_address_connections.lower_bound (first_ip), per_address_connections.upper_bound (last_ip));
+	return counted_connections;
 }

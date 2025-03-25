@@ -1,8 +1,10 @@
 #include <nano/lib/cli.hpp>
 #include <nano/lib/errors.hpp>
+#include <nano/lib/files.hpp>
+#include <nano/lib/logging.hpp>
 #include <nano/lib/signal_manager.hpp>
+#include <nano/lib/thread_runner.hpp>
 #include <nano/lib/threading.hpp>
-#include <nano/lib/tlsconfig.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/node/cli.hpp>
 #include <nano/node/ipc/ipc_server.hpp>
@@ -11,34 +13,23 @@
 #include <nano/secure/utility.hpp>
 
 #include <boost/filesystem.hpp>
-#include <boost/log/utility/setup/common_attributes.hpp>
-#include <boost/log/utility/setup/file.hpp>
 #include <boost/program_options.hpp>
+
+#include <latch>
 
 namespace
 {
-void logging_init (boost::filesystem::path const & application_path_a)
+nano::logger logger{ "rpc_daemon" };
+
+void run (std::filesystem::path const & data_path, std::vector<std::string> const & config_overrides)
 {
-	static std::atomic_flag logging_already_added = ATOMIC_FLAG_INIT;
-	if (!logging_already_added.test_and_set ())
-	{
-		boost::log::add_common_attributes ();
-		auto path = application_path_a / "log";
+	logger.info (nano::log::type::daemon_rpc, "Daemon started (RPC)");
 
-		uintmax_t max_size{ 128 * 1024 * 1024 };
-		uintmax_t rotation_size{ 4 * 1024 * 1024 };
-		bool flush{ true };
-		boost::log::add_file_log (boost::log::keywords::target = path, boost::log::keywords::file_name = path / "rpc_log_%Y-%m-%d_%H-%M-%S.%N.log", boost::log::keywords::rotation_size = rotation_size, boost::log::keywords::auto_flush = flush, boost::log::keywords::scan_method = boost::log::sinks::file::scan_method::scan_matching, boost::log::keywords::max_size = max_size, boost::log::keywords::format = "[%TimeStamp%]: %Message%");
-	}
-}
+	std::filesystem::create_directories (data_path);
 
-volatile sig_atomic_t sig_int_or_term = 0;
-
-void run (boost::filesystem::path const & data_path, std::vector<std::string> const & config_overrides)
-{
-	boost::filesystem::create_directories (data_path);
 	boost::system::error_code error_chmod;
 	nano::set_secure_perm_directory (data_path, error_chmod);
+
 	std::unique_ptr<nano::thread_runner> runner;
 
 	nano::network_params network_params{ nano::network_constants::active_network };
@@ -46,61 +37,56 @@ void run (boost::filesystem::path const & data_path, std::vector<std::string> co
 	auto error = nano::read_rpc_config_toml (data_path, rpc_config, config_overrides);
 	if (!error)
 	{
-		logging_init (data_path);
-		nano::logger_mt logger;
+		std::shared_ptr<boost::asio::io_context> io_ctx = std::make_shared<boost::asio::io_context> ();
 
-		auto tls_config (std::make_shared<nano::tls_config> ());
-		error = nano::read_tls_config_toml (data_path, *tls_config, logger);
-		if (error)
-		{
-			std::cerr << error.get_message () << std::endl;
-			std::exit (1);
-		}
-		else
-		{
-			rpc_config.tls_config = tls_config;
-		}
+		runner = std::make_unique<nano::thread_runner> (io_ctx, logger, rpc_config.rpc_process.io_threads, nano::thread_role::name::io_daemon);
 
-		boost::asio::io_context io_ctx;
-		nano::signal_manager sigman;
 		try
 		{
-			nano::ipc_rpc_processor ipc_rpc_processor (io_ctx, rpc_config);
+			nano::ipc_rpc_processor ipc_rpc_processor (*io_ctx, rpc_config);
 			auto rpc = nano::get_rpc (io_ctx, rpc_config, ipc_rpc_processor);
 			rpc->start ();
 
-			debug_assert (!nano::signal_handler_impl);
-			nano::signal_handler_impl = [&io_ctx] () {
-				io_ctx.stop ();
-				sig_int_or_term = 1;
+			std::atomic stopped{ false };
+
+			auto signal_handler = [&stopped] (int signum) {
+				logger.warn (nano::log::type::daemon_rpc, "Interrupt signal received ({}), stopping...", nano::to_signal_name (signum));
+				stopped = true;
+				stopped.notify_all ();
 			};
 
-			sigman.register_signal_handler (SIGINT, &nano::signal_handler, true);
-			sigman.register_signal_handler (SIGTERM, &nano::signal_handler, false);
+			nano::signal_manager sigman;
+			sigman.register_signal_handler (SIGINT, signal_handler, true);
+			sigman.register_signal_handler (SIGTERM, signal_handler, false);
 
-			runner = std::make_unique<nano::thread_runner> (io_ctx, rpc_config.rpc_process.io_threads);
+			// Keep running until stopped flag is set
+			stopped.wait (false);
+
+			logger.info (nano::log::type::daemon_rpc, "Stopping...");
+
+			rpc->stop ();
+			io_ctx->stop ();
 			runner->join ();
-
-			if (sig_int_or_term == 1)
-			{
-				rpc->stop ();
-			}
 		}
 		catch (std::runtime_error const & e)
 		{
-			std::cerr << "Error while running rpc (" << e.what () << ")\n";
+			logger.critical (nano::log::type::daemon_rpc, "Error while running RPC: {}", e.what ());
 		}
 	}
 	else
 	{
-		std::cerr << "Error deserializing config: " << error.get_message () << std::endl;
+		logger.critical (nano::log::type::daemon_rpc, "Error deserializing config: {}", error.get_message ());
 	}
+
+	logger.info (nano::log::type::daemon_rpc, "Daemon stopped (RPC)");
 }
 }
 
 int main (int argc, char * const * argv)
 {
-	nano::set_umask ();
+	nano::set_umask (); // Make sure the process umask is set before any files are created
+	nano::initialize_file_descriptor_limit ();
+	nano::logger::initialize (nano::log_config::cli_default ());
 
 	boost::program_options::options_description description ("Command line options");
 
@@ -132,13 +118,13 @@ int main (int argc, char * const * argv)
 		auto err (nano::network_constants::set_active_network (network->second.as<std::string> ()));
 		if (err)
 		{
-			std::cerr << nano::network_constants::active_network_err_msg << std::endl;
+			std::cerr << "Invalid network. Valid values are live, test, beta and dev." << std::endl;
 			std::exit (1);
 		}
 	}
 
 	auto data_path_it = vm.find ("data_path");
-	boost::filesystem::path data_path ((data_path_it != vm.end ()) ? data_path_it->second.as<std::string> () : nano::working_path ());
+	std::filesystem::path data_path ((data_path_it != vm.end ()) ? std::filesystem::path (data_path_it->second.as<std::string> ()) : nano::working_path ());
 	if (vm.count ("daemon") > 0)
 	{
 		std::vector<std::string> config_overrides;
@@ -156,7 +142,11 @@ int main (int argc, char * const * argv)
 	}
 	else
 	{
-		std::cout << description << std::endl;
+		// Issue #3748
+		// Regardless how the options were added, output the options in alphabetical order so they are easy to find.
+		boost::program_options::options_description sorted_description ("Command line options");
+		nano::sort_options_description (description, sorted_description);
+		std::cout << sorted_description << std::endl;
 	}
 
 	return 1;

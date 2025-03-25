@@ -3,17 +3,22 @@
 #include <nano/lib/config.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/observer_set.hpp>
 #include <nano/lib/utility.hpp>
+#include <nano/node/openclwork.hpp>
 
 #include <boost/optional.hpp>
-#include <boost/thread/thread.hpp>
 
 #include <atomic>
 #include <memory>
+#include <thread>
 
 namespace nano
 {
 std::string to_string (nano::work_version const version_a);
+
+// type of function that does the work generation with an optional return value
+using opencl_work_func_t = std::function<boost::optional<uint64_t> (nano::work_version const, nano::root const &, uint64_t, std::atomic<int> &)>;
 
 class block;
 class block_details;
@@ -35,7 +40,7 @@ public:
 class work_pool final
 {
 public:
-	work_pool (nano::network_constants & network_constants, unsigned, std::chrono::nanoseconds = std::chrono::nanoseconds (0), std::function<boost::optional<uint64_t> (nano::work_version const, nano::root const &, uint64_t, std::atomic<int> &)> = nullptr);
+	work_pool (nano::network_constants & network_constants, unsigned, std::chrono::nanoseconds = std::chrono::nanoseconds (0), nano::opencl_work_func_t = nullptr);
 	~work_pool ();
 	void loop (uint64_t);
 	void stop ();
@@ -49,14 +54,14 @@ public:
 	nano::network_constants & network_constants;
 	std::atomic<int> ticket;
 	bool done;
-	std::vector<boost::thread> threads;
+	std::vector<std::thread> threads;
 	std::list<nano::work_item> pending;
-	nano::mutex mutex{ mutex_identifier (mutexes::work_pool) };
+	mutable nano::mutex mutex{ mutex_identifier (mutexes::work_pool) };
 	nano::condition_variable producer_condition;
 	std::chrono::nanoseconds pow_rate_limiter;
-	std::function<boost::optional<uint64_t> (nano::work_version const, nano::root const &, uint64_t, std::atomic<int> &)> opencl;
+	nano::opencl_work_func_t opencl;
 	nano::observer_set<bool> work_observers;
-};
 
-std::unique_ptr<container_info_component> collect_container_info (work_pool & work_pool, std::string const & name);
+	nano::container_info container_info () const;
+};
 }

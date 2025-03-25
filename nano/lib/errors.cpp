@@ -223,6 +223,8 @@ std::string nano::error_rpc_messages::message (int ev) const
 			return "Signing by block hash is disabled";
 		case nano::error_rpc::source_not_found:
 			return "Source not found";
+		case nano::error_rpc::stopped:
+			return "Stopped";
 	}
 
 	return "Invalid error code";
@@ -251,7 +253,7 @@ std::string nano::error_process_messages::message (int ev) const
 		case nano::error_process::gap_epoch_open_pending:
 			return "Gap pending for open epoch block";
 		case nano::error_process::opened_burn_account:
-			return "Burning account";
+			return "Block attempts to open the burn account";
 		case nano::error_process::balance_mismatch:
 			return "Balance and amount delta do not match";
 		case nano::error_process::block_position:
@@ -280,42 +282,9 @@ std::string nano::error_config_messages::message (int ev) const
 	return "Invalid error code";
 }
 
-char const * nano::error_conversion::detail::generic_category::name () const noexcept
-{
-	return boost::system::generic_category ().name ();
-}
-
-std::string nano::error_conversion::detail::generic_category::message (int value) const
-{
-	return boost::system::generic_category ().message (value);
-}
-
-std::error_category const & nano::error_conversion::generic_category ()
-{
-	static detail::generic_category instance;
-	return instance;
-}
-
-std::error_code nano::error_conversion::convert (boost::system::error_code const & error)
-{
-	if (error.category () == boost::system::generic_category ())
-	{
-		return std::error_code (error.value (),
-		nano::error_conversion::generic_category ());
-	}
-
-	debug_assert (false);
-	return nano::error_common::invalid_type_conversion;
-}
-
 nano::error::error (std::error_code code_a)
 {
 	code = code_a;
-}
-
-nano::error::error (boost::system::error_code const & code_a)
-{
-	code = std::make_error_code (static_cast<std::errc> (code_a.value ()));
 }
 
 nano::error::error (std::string message_a)
@@ -352,22 +321,6 @@ nano::error & nano::error::operator= (std::error_code const code_a)
 	return *this;
 }
 
-/** Assign boost error code (as converted to std::error_code) */
-nano::error & nano::error::operator= (boost::system::error_code const & code_a)
-{
-	code = nano::error_conversion::convert (code_a);
-	message.clear ();
-	return *this;
-}
-
-/** Assign boost error code (as converted to std::error_code) */
-nano::error & nano::error::operator= (boost::system::errc::errc_t const & code_a)
-{
-	code = nano::error_conversion::convert (boost::system::errc::make_error_code (code_a));
-	message.clear ();
-	return *this;
-}
-
 /** Set the error to nano::error_common::generic and the error message to \p message_a */
 nano::error & nano::error::operator= (std::string message_a)
 {
@@ -388,12 +341,6 @@ nano::error & nano::error::operator= (std::exception const & exception_a)
 bool nano::error::operator== (std::error_code const code_a) const
 {
 	return code == code_a;
-}
-
-/** Return true if this#error_code equals the parameter */
-bool nano::error::operator== (boost::system::error_code const code_a) const
-{
-	return code.value () == code_a.value ();
 }
 
 /** Call the function iff the current error is zero */
@@ -426,9 +373,9 @@ nano::error::operator std::string () const
 }
 
 /**
-	 * Get error message, or an empty string if there's no error. If a custom error message is set,
-	 * that will be returned, otherwise the error_code#message() is returned.
-	 */
+ * Get error message, or an empty string if there's no error. If a custom error message is set,
+ * that will be returned, otherwise the error_code#message() is returned.
+ */
 std::string nano::error::get_message () const
 {
 	std::string res = message;
@@ -484,13 +431,4 @@ nano::error & nano::error::clear ()
 	code.clear ();
 	message.clear ();
 	return *this;
-}
-
-// TODO: theoretically, nothing besides template (partial) specializations should ever be added inside std...
-namespace std
-{
-std::error_code make_error_code (boost::system::errc::errc_t const & e)
-{
-	return std::error_code (static_cast<int> (e), ::nano::error_conversion::generic_category ());
-}
 }

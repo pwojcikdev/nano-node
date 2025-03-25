@@ -5,27 +5,23 @@
 #include <nano/lib/config.hpp>
 #include <nano/lib/ipc.hpp>
 #include <nano/lib/locks.hpp>
+#include <nano/lib/thread_runner.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/lib/timer.hpp>
-#include <nano/node/common.hpp>
 #include <nano/node/ipc/action_handler.hpp>
 #include <nano/node/ipc/flatbuffers_handler.hpp>
-#include <nano/node/ipc/flatbuffers_util.hpp>
 #include <nano/node/ipc/ipc_server.hpp>
 #include <nano/node/json_handler.hpp>
 #include <nano/node/node.hpp>
 
-#include <boost/asio/signal_set.hpp>
+#include <boost/array.hpp>
 #include <boost/endian/conversion.hpp>
 #include <boost/property_tree/json_parser.hpp>
 
 #include <atomic>
 #include <chrono>
-#include <list>
 
 #include <flatbuffers/flatbuffers.h>
-
-using namespace boost::log;
 
 namespace
 {
@@ -41,10 +37,7 @@ public:
 		server (server_a), node (server_a.node), session_id (server_a.id_dispenser.fetch_add (1)),
 		io_ctx (io_ctx_a), strand (io_ctx_a.get_executor ()), socket (io_ctx_a), config_transport (config_transport_a)
 	{
-		if (node.config.logging.log_ipc ())
-		{
-			node.logger.always_log ("IPC: created session with id: ", session_id.load ());
-		}
+		node.logger.debug (nano::log::type::ipc, "Creating session with id: {}", session_id.load ());
 	}
 
 	~session ()
@@ -129,7 +122,7 @@ public:
 		};
 
 		static nano::mutex subscriber_mutex;
-		nano::unique_lock<nano::mutex> lock (subscriber_mutex);
+		nano::unique_lock<nano::mutex> lock{ subscriber_mutex };
 
 		if (!subscriber)
 		{
@@ -164,7 +157,7 @@ public:
 	/**
 	 * Write to underlying socket. Writes goes through a queue protected by the strand. Thus, this function
 	 * can be called concurrently with other writes.
-	 * @note This function explicitely doesn't use nano::shared_const_buffer, as buffers usually originate from Flatbuffers
+	 * @note This function explicitly doesn't use nano::shared_const_buffer, as buffers usually originate from Flatbuffers
 	 * and copying into the shared_const_buffer vector would impose a significant overhead for large requests and responses.
 	 */
 	void queued_write (boost::asio::const_buffer const & buffer_a, std::function<void (boost::system::error_code const &, std::size_t)> callback_a)
@@ -236,10 +229,7 @@ public:
 			this_l->timer_cancel ();
 			if (ec == boost::asio::error::broken_pipe || ec == boost::asio::error::connection_aborted || ec == boost::asio::error::connection_reset || ec == boost::asio::error::connection_refused)
 			{
-				if (this_l->node.config.logging.log_ipc ())
-				{
-					this_l->node.logger.always_log (boost::str (boost::format ("IPC: error reading %1% ") % ec.message ()));
-				}
+				this_l->node.logger.error (nano::log::type::ipc, "Error reading: ", ec.message ());
 			}
 			else if (bytes_transferred_a > 0)
 			{
@@ -262,10 +252,11 @@ public:
 			auto buffer (std::make_shared<std::vector<uint8_t>> ());
 			buffer->insert (buffer->end (), reinterpret_cast<std::uint8_t *> (&big), reinterpret_cast<std::uint8_t *> (&big) + sizeof (std::uint32_t));
 			buffer->insert (buffer->end (), body.begin (), body.end ());
-			if (this_l->node.config.logging.log_ipc ())
-			{
-				this_l->node.logger.always_log (boost::str (boost::format ("IPC/RPC request %1% completed in: %2% %3%") % request_id_l % this_l->session_timer.stop ().count () % this_l->session_timer.unit ()));
-			}
+
+			this_l->node.logger.debug (nano::log::type::ipc, "IPC/RPC request {} completed in: {} {}",
+			request_id_l,
+			this_l->session_timer.stop ().count (),
+			this_l->session_timer.unit ());
 
 			this_l->timer_start (std::chrono::seconds (this_l->config_transport.io_timeout));
 			this_l->queued_write (boost::asio::buffer (buffer->data (), buffer->size ()), [this_l, buffer] (boost::system::error_code const & error_a, std::size_t size_a) {
@@ -274,9 +265,9 @@ public:
 				{
 					this_l->read_next_request ();
 				}
-				else if (this_l->node.config.logging.log_ipc ())
+				else
 				{
-					this_l->node.logger.always_log ("IPC: Write failed: ", error_a.message ());
+					this_l->node.logger.error (nano::log::type::ipc, "Write failed: ", error_a.message ());
 				}
 			});
 
@@ -287,11 +278,18 @@ public:
 		auto body (std::string (reinterpret_cast<char *> (buffer.data ()), buffer.size ()));
 
 		// Note that if the rpc action is async, the shared_ptr<json_handler> lifetime will be extended by the action handler
-		auto handler (std::make_shared<nano::json_handler> (node, server.node_rpc_config, body, response_handler_l, [&server = server] () {
-			server.stop ();
-			server.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (3), [&io_ctx = server.node.io_ctx] () {
-				io_ctx.stop ();
-			});
+		auto handler (std::make_shared<nano::json_handler> (node, server.node_rpc_config, body, response_handler_l, [server_w = server.weak_from_this ()] () {
+			// TODO: Previously this was stopping node.io_ctx, which was wrong. Investigate what's going on here. Why isn't it using stop_callback passed externally?
+			// This is running on the IO thread, so attempting to directly stop the server will cause it to try joining itself.
+			// This RPC/IPC system is really badly designed...
+			std::thread ([server_w] () {
+				std::this_thread::sleep_for (std::chrono::seconds (1));
+				if (auto server = server_w.lock ())
+				{
+					server->stop ();
+				}
+			})
+			.detach ();
 		}));
 		// For unsafe actions to be allowed, the unsafe encoding must be used AND the transport config must allow it
 		handler->process_request (allow_unsafe && config_transport.allow_unsafe);
@@ -309,10 +307,7 @@ public:
 			this_l->active_encoding = static_cast<nano::ipc::payload_encoding> (encoding);
 			if (this_l->buffer[nano::ipc::preamble_offset::lead] != 'N' || this_l->buffer[nano::ipc::preamble_offset::reserved_1] != 0 || this_l->buffer[nano::ipc::preamble_offset::reserved_2] != 0)
 			{
-				if (this_l->node.config.logging.log_ipc ())
-				{
-					this_l->node.logger.always_log ("IPC: Invalid preamble");
-				}
+				this_l->node.logger.error (nano::log::type::ipc, "Invalid preamble");
 			}
 			else if (encoding == static_cast<uint8_t> (nano::ipc::payload_encoding::json_v1) || encoding == static_cast<uint8_t> (nano::ipc::payload_encoding::json_v1_unsafe))
 			{
@@ -346,10 +341,9 @@ public:
 						if (encoding == static_cast<uint8_t> (nano::ipc::payload_encoding::flatbuffers_json))
 						{
 							this_l->flatbuffers_handler->process_json (this_l->buffer.data (), this_l->buffer_size, [this_l] (std::shared_ptr<std::string> const & body) {
-								if (this_l->node.config.logging.log_ipc ())
-								{
-									this_l->node.logger.always_log (boost::str (boost::format ("IPC/Flatbuffer request completed in: %1% %2%") % this_l->session_timer.stop ().count () % this_l->session_timer.unit ()));
-								}
+								this_l->node.logger.debug (nano::log::type::ipc, "IPC/Flatbuffer request completed in: {} {}",
+								this_l->session_timer.stop ().count (),
+								this_l->session_timer.unit ());
 
 								auto big_endian_length = std::make_shared<uint32_t> (boost::endian::native_to_big (static_cast<uint32_t> (body->size ())));
 								boost::array<boost::asio::const_buffer, 2> buffers = {
@@ -362,9 +356,9 @@ public:
 									{
 										this_l->read_next_request ();
 									}
-									else if (this_l->node.config.logging.log_ipc ())
+									else
 									{
-										this_l->node.logger.always_log ("IPC: Write failed: ", error_a.message ());
+										this_l->node.logger.error (nano::log::type::ipc, "Write failed: {}", error_a.message ());
 									}
 								});
 							});
@@ -372,10 +366,9 @@ public:
 						else
 						{
 							this_l->flatbuffers_handler->process (this_l->buffer.data (), this_l->buffer_size, [this_l] (std::shared_ptr<flatbuffers::FlatBufferBuilder> const & fbb) {
-								if (this_l->node.config.logging.log_ipc ())
-								{
-									this_l->node.logger.always_log (boost::str (boost::format ("IPC/Flatbuffer request completed in: %1% %2%") % this_l->session_timer.stop ().count () % this_l->session_timer.unit ()));
-								}
+								this_l->node.logger.debug (nano::log::type::ipc, "IPC/Flatbuffer request completed in: {} {}",
+								this_l->session_timer.stop ().count (),
+								this_l->session_timer.unit ());
 
 								auto big_endian_length = std::make_shared<uint32_t> (boost::endian::native_to_big (static_cast<uint32_t> (fbb->GetSize ())));
 								boost::array<boost::asio::const_buffer, 2> buffers = {
@@ -388,9 +381,9 @@ public:
 									{
 										this_l->read_next_request ();
 									}
-									else if (this_l->node.config.logging.log_ipc ())
+									else
 									{
-										this_l->node.logger.always_log ("IPC: Write failed: ", error_a.message ());
+										this_l->node.logger.error (nano::log::type::ipc, "Write failed: {}", error_a.message ());
 									}
 								});
 							});
@@ -398,9 +391,9 @@ public:
 					});
 				});
 			}
-			else if (this_l->node.config.logging.log_ipc ())
+			else
 			{
-				this_l->node.logger.always_log ("IPC: Unsupported payload encoding");
+				this_l->node.logger.error (nano::log::type::ipc, "Unsupported payload encoding");
 			}
 		});
 	}
@@ -478,13 +471,10 @@ class socket_transport : public nano::ipc::transport
 {
 public:
 	socket_transport (nano::ipc::ipc_server & server_a, ENDPOINT_TYPE endpoint_a, nano::ipc::ipc_config_transport & config_transport_a, int concurrency_a) :
-		server (server_a), config_transport (config_transport_a)
+		server (server_a),
+		config_transport (config_transport_a)
 	{
-		// Using a per-transport event dispatcher?
-		if (concurrency_a > 0)
-		{
-			io_ctx = std::make_unique<boost::asio::io_context> ();
-		}
+		io_ctx = std::make_shared<boost::asio::io_context> ();
 
 		boost::asio::socket_base::reuse_address option (true);
 		boost::asio::socket_base::keep_alive option_keepalive (true);
@@ -493,17 +483,13 @@ public:
 		acceptor->set_option (option_keepalive);
 		accept ();
 
-		// Start serving IO requests. If concurrency_a is < 1, the node's thread pool/io_context is used instead.
-		// A separate io_context for domain sockets may facilitate better performance on some systems.
-		if (concurrency_a > 0)
-		{
-			runner = std::make_unique<nano::thread_runner> (*io_ctx, static_cast<unsigned> (concurrency_a));
-		}
+		runner = std::make_unique<nano::thread_runner> (io_ctx, server.logger, static_cast<unsigned> (std::max (1, concurrency_a)), nano::thread_role::name::io_ipc);
 	}
 
 	boost::asio::io_context & context () const
 	{
-		return io_ctx ? *io_ctx : server.node.io_ctx;
+		release_assert (io_ctx);
+		return *io_ctx;
 	}
 
 	void accept ()
@@ -511,39 +497,42 @@ public:
 		// Prepare the next session
 		auto new_session (std::make_shared<session<SOCKET_TYPE>> (server, context (), config_transport));
 
-		acceptor->async_accept (new_session->get_socket (), [this, new_session] (boost::system::error_code const & ec) {
+		std::weak_ptr<nano::node> nano_weak = server.node.shared ();
+		acceptor->async_accept (new_session->get_socket (), [this, new_session, nano_weak] (boost::system::error_code const & ec) {
+			auto node = nano_weak.lock ();
+			if (!node)
+			{
+				return;
+			}
+
 			if (!ec)
 			{
 				new_session->read_next_request ();
 			}
 			else
 			{
-				server.node.logger.always_log ("IPC: acceptor error: ", ec.message ());
+				node->logger.error (nano::log::type::ipc, "Acceptor error: {}", ec.message ());
 			}
 
 			if (ec != boost::asio::error::operation_aborted && acceptor->is_open ())
 			{
-				this->accept ();
+				accept ();
 			}
 			else
 			{
-				server.node.logger.always_log ("IPC: shutting down");
+				node->logger.info (nano::log::type::ipc, "Shutting down");
 			}
 		});
 	}
 
 	void stop ()
 	{
-		acceptor->close ();
-		if (io_ctx)
-		{
-			io_ctx->stop ();
-		}
+		release_assert (io_ctx);
+		release_assert (runner);
 
-		if (runner)
-		{
-			runner->join ();
-		}
+		acceptor->close ();
+		io_ctx->stop ();
+		runner->join ();
 	}
 
 	std::optional<std::uint16_t> listening_port () const;
@@ -552,7 +541,7 @@ private:
 	nano::ipc::ipc_server & server;
 	nano::ipc::ipc_config_transport & config_transport;
 	std::unique_ptr<nano::thread_runner> runner;
-	std::unique_ptr<boost::asio::io_context> io_ctx;
+	std::shared_ptr<boost::asio::io_context> io_ctx;
 	std::unique_ptr<ACCEPTOR_TYPE> acceptor;
 };
 
@@ -575,26 +564,6 @@ std::optional<std::uint16_t> socket_transport<ACCEPTOR_TYPE, SOCKET_TYPE, ENDPOI
 
 }
 
-/**
- * Awaits SIGHUP via signal_set instead of std::signal, as this allows the handler to escape the
- * Posix signal handler restrictions
- */
-void await_hup_signal (std::shared_ptr<boost::asio::signal_set> const & signals, nano::ipc::ipc_server & server_a)
-{
-	signals->async_wait ([signals, &server_a] (boost::system::error_code const & ec, int signal_number) {
-		if (ec != boost::asio::error::operation_aborted)
-		{
-			std::cout << "Reloading access configuration..." << std::endl;
-			auto error (server_a.reload_access_config ());
-			if (!error)
-			{
-				std::cout << "Reloaded access configuration successfully" << std::endl;
-			}
-			await_hup_signal (signals, server_a);
-		}
-	});
-}
-
 nano::ipc::ipc_server::ipc_server (nano::node & node_a, nano::node_rpc_config const & node_rpc_config_a) :
 	node (node_a),
 	node_rpc_config (node_rpc_config_a),
@@ -607,11 +576,6 @@ nano::ipc::ipc_server::ipc_server (nano::node & node_a, nano::node_rpc_config co
 		{
 			std::exit (1);
 		}
-#ifndef _WIN32
-		// Hook up config reloading through the HUP signal
-		auto signals (std::make_shared<boost::asio::signal_set> (node.io_ctx, SIGHUP));
-		await_hup_signal (signals, *this);
-#endif
 		if (node_a.config.ipc_config.transport_domain.enabled)
 		{
 #if defined(BOOST_ASIO_HAS_LOCAL_SOCKETS)
@@ -620,7 +584,7 @@ nano::ipc::ipc_server::ipc_server (nano::node & node_a, nano::node_rpc_config co
 			boost::asio::local::stream_protocol::endpoint ep{ node_a.config.ipc_config.transport_domain.path };
 			transports.push_back (std::make_shared<domain_socket_transport> (*this, ep, node_a.config.ipc_config.transport_domain, threads));
 #else
-			node.logger.always_log ("IPC: Domain sockets are not supported on this platform");
+			node.logger.error (nano::log::type::ipc_server, "Domain sockets are not supported on this platform");
 #endif
 		}
 
@@ -630,7 +594,7 @@ nano::ipc::ipc_server::ipc_server (nano::node & node_a, nano::node_rpc_config co
 			transports.push_back (std::make_shared<tcp_socket_transport> (*this, boost::asio::ip::tcp::endpoint (boost::asio::ip::tcp::v6 (), node_a.config.ipc_config.transport_tcp.port), node_a.config.ipc_config.transport_tcp, threads));
 		}
 
-		node.logger.always_log ("IPC: server started");
+		node.logger.debug (nano::log::type::ipc_server, "Server started");
 
 		if (!transports.empty ())
 		{
@@ -639,13 +603,15 @@ nano::ipc::ipc_server::ipc_server (nano::node & node_a, nano::node_rpc_config co
 	}
 	catch (std::runtime_error const & ex)
 	{
-		node.logger.always_log ("IPC: ", ex.what ());
+		node.logger.error (nano::log::type::ipc_server, "Error: {}", ex.what ());
 	}
 }
 
 nano::ipc::ipc_server::~ipc_server ()
 {
-	node.logger.always_log ("IPC: server stopped");
+	node.logger.debug (nano::log::type::ipc_server, "Server stopped");
+
+	stop ();
 }
 
 void nano::ipc::ipc_server::stop ()
@@ -653,6 +619,10 @@ void nano::ipc::ipc_server::stop ()
 	for (auto & transport : transports)
 	{
 		transport->stop ();
+	}
+	if (signals)
+	{
+		signals->cancel ();
 	}
 }
 
@@ -685,9 +655,7 @@ nano::error nano::ipc::ipc_server::reload_access_config ()
 	nano::error access_config_error (nano::ipc::read_access_config_toml (node.application_path, access));
 	if (access_config_error)
 	{
-		auto error (boost::str (boost::format ("IPC: invalid access configuration file: %1%") % access_config_error.get_message ()));
-		std::cerr << error << std::endl;
-		node.logger.always_log (error);
+		node.logger.error (nano::log::type::ipc_server, "Invalid access configuration file: {}", access_config_error.get_message ());
 	}
 	return access_config_error;
 }

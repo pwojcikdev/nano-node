@@ -1,8 +1,12 @@
+#include <nano/crypto/blake2/blake2.h>
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/constants.hpp>
 #include <nano/lib/epoch.hpp>
+#include <nano/lib/thread_roles.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/lib/work.hpp>
+#include <nano/lib/work_version.hpp>
 #include <nano/node/xorshift.hpp>
 
 #include <future>
@@ -22,7 +26,7 @@ std::string nano::to_string (nano::work_version const version_a)
 	return result;
 }
 
-nano::work_pool::work_pool (nano::network_constants & network_constants, unsigned max_threads_a, std::chrono::nanoseconds pow_rate_limiter_a, std::function<boost::optional<uint64_t> (nano::work_version const, nano::root const &, uint64_t, std::atomic<int> &)> opencl_a) :
+nano::work_pool::work_pool (nano::network_constants & network_constants, unsigned max_threads_a, std::chrono::nanoseconds pow_rate_limiter_a, nano::opencl_work_func_t opencl_a) :
 	network_constants{ network_constants },
 	ticket (0),
 	done (false),
@@ -30,9 +34,8 @@ nano::work_pool::work_pool (nano::network_constants & network_constants, unsigne
 	opencl (opencl_a)
 {
 	static_assert (ATOMIC_INT_LOCK_FREE == 2, "Atomic int needed");
-	boost::thread::attributes attrs;
-	nano::thread_attributes::set (attrs);
-	auto count (network_constants.is_dev_network () ? std::min (max_threads_a, 1u) : std::min (max_threads_a, std::max (1u, boost::thread::hardware_concurrency ())));
+
+	auto count (network_constants.is_dev_network () ? std::min (max_threads_a, 1u) : std::min (max_threads_a, std::max (1u, nano::hardware_concurrency ())));
 	if (opencl)
 	{
 		// One thread to handle OpenCL
@@ -40,7 +43,7 @@ nano::work_pool::work_pool (nano::network_constants & network_constants, unsigne
 	}
 	for (auto i (0u); i < count; ++i)
 	{
-		threads.emplace_back (attrs, [this, i] () {
+		threads.emplace_back ([this, i] () {
 			nano::thread_role::set (nano::thread_role::name::work);
 			nano::work_thread_reprioritize ();
 			loop (i);
@@ -66,7 +69,7 @@ void nano::work_pool::loop (uint64_t thread)
 	uint64_t output;
 	blake2b_state hash;
 	blake2b_init (&hash, sizeof (output));
-	nano::unique_lock<nano::mutex> lock (mutex);
+	nano::unique_lock<nano::mutex> lock{ mutex };
 	auto pow_sleep = pow_rate_limiter;
 	while (!done)
 	{
@@ -146,7 +149,7 @@ void nano::work_pool::loop (uint64_t thread)
 
 void nano::work_pool::cancel (nano::root const & root_a)
 {
-	nano::lock_guard<nano::mutex> lock (mutex);
+	nano::lock_guard<nano::mutex> lock{ mutex };
 	if (!done)
 	{
 		if (!pending.empty ())
@@ -174,7 +177,7 @@ void nano::work_pool::cancel (nano::root const & root_a)
 void nano::work_pool::stop ()
 {
 	{
-		nano::lock_guard<nano::mutex> lock (mutex);
+		nano::lock_guard<nano::mutex> lock{ mutex };
 		done = true;
 		++ticket;
 	}
@@ -187,7 +190,7 @@ void nano::work_pool::generate (nano::work_version const version_a, nano::root c
 	if (!threads.empty ())
 	{
 		{
-			nano::lock_guard<nano::mutex> lock (mutex);
+			nano::lock_guard<nano::mutex> lock{ mutex };
 			pending.emplace_back (version_a, root_a, difficulty_a, callback_a);
 		}
 		producer_condition.notify_all ();
@@ -227,20 +230,16 @@ boost::optional<uint64_t> nano::work_pool::generate (nano::work_version const ve
 
 size_t nano::work_pool::size ()
 {
-	nano::lock_guard<nano::mutex> lock (mutex);
+	nano::lock_guard<nano::mutex> lock{ mutex };
 	return pending.size ();
 }
 
-std::unique_ptr<nano::container_info_component> nano::collect_container_info (work_pool & work_pool, std::string const & name)
+nano::container_info nano::work_pool::container_info () const
 {
-	size_t count;
-	{
-		nano::lock_guard<nano::mutex> guard (work_pool.mutex);
-		count = work_pool.pending.size ();
-	}
-	auto sizeof_element = sizeof (decltype (work_pool.pending)::value_type);
-	auto composite = std::make_unique<container_info_composite> (name);
-	composite->add_component (std::make_unique<container_info_leaf> (container_info{ "pending", count, sizeof_element }));
-	composite->add_component (collect_container_info (work_pool.work_observers, "work_observers"));
-	return composite;
+	nano::lock_guard<nano::mutex> guard{ mutex };
+
+	nano::container_info info;
+	info.put ("pending", pending);
+	info.add ("work_observers", work_observers.container_info ());
+	return info;
 }

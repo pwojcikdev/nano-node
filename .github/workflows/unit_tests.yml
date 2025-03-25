@@ -1,0 +1,147 @@
+name: Unit Tests
+
+on: [push, pull_request]
+
+jobs:
+  macos_test:
+    name: macOS [${{ matrix.BACKEND }}]
+    strategy:
+      fail-fast: false
+      matrix:
+        BACKEND: [lmdb, rocksdb]
+        RELEASE:
+          - ${{ startsWith(github.ref, 'refs/tags/') }}
+    env:
+      NANO_BACKEND: ${{ matrix.BACKEND }}
+      BUILD_TYPE: ${{ matrix.RELEASE && 'RelWithDebInfo' || 'Debug' }}
+      TEST_USE_ROCKSDB: ${{ matrix.BACKEND == 'rocksdb' && '1' || '0' }}
+      DEADLINE_SCALE_FACTOR: ${{ matrix.BACKEND == 'rocksdb' && '2' || '1' }}
+    runs-on: macos-14
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: Prepare
+        run: ci/prepare/macos/prepare.sh
+
+      - name: Build Tests
+        id: build
+        run: ci/build-tests.sh
+
+      - name: Core Tests
+        if: steps.build.outcome == 'success' && (success() || failure())
+        run: ../ci/tests/run-core-tests.sh
+        working-directory: build
+
+      - name: RPC Tests
+        if: steps.build.outcome == 'success' && (success() || failure())
+        run: ../ci/tests/run-rpc-tests.sh
+        working-directory: build
+
+      - name: System Tests
+        if: steps.build.outcome == 'success' && (success() || failure())
+        run: ../ci/tests/run-system-tests.sh
+        working-directory: build
+
+  linux_test:
+    name: Linux [${{ matrix.BACKEND }} | ${{ matrix.COMPILER }}]
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        BACKEND: [lmdb, rocksdb]
+        COMPILER: [gcc, clang]
+        RELEASE:
+          - ${{ startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-22.04
+    env:
+      COMPILER: ${{ matrix.COMPILER }}
+      BACKEND: ${{ matrix.BACKEND }}
+      BUILD_TYPE: ${{ matrix.RELEASE && 'RelWithDebInfo' || 'Debug' }}
+      TEST_USE_ROCKSDB: ${{ matrix.BACKEND == 'rocksdb' && '1' || '0' }}
+      DEADLINE_SCALE_FACTOR: ${{ matrix.BACKEND == 'rocksdb' && '2' || '1' }}
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: Prepare
+        run: sudo -E ci/prepare/linux/prepare.sh
+
+      - name: Build Tests
+        id: build
+        run: ci/build-tests.sh
+
+      - name: Core Tests
+        if: steps.build.outcome == 'success' && (success() || failure())
+        run: ../ci/tests/run-core-tests.sh
+        working-directory: build
+
+      - name: RPC Tests
+        if: steps.build.outcome == 'success' && (success() || failure())
+        run: ../ci/tests/run-rpc-tests.sh
+        working-directory: build
+
+      - name: System Tests
+        if: steps.build.outcome == 'success' && (success() || failure())
+        run: ../ci/tests/run-system-tests.sh
+        working-directory: build
+
+      - name: QT Tests
+        if: steps.build.outcome == 'success' && (success() || failure())
+        run: ../ci/tests/run-qt-tests.sh
+        working-directory: build
+
+  windows_test:
+    name: Windows [${{ matrix.BACKEND }}]
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        BACKEND: [lmdb, rocksdb]
+        RELEASE:
+          - ${{ startsWith(github.ref, 'refs/tags/') }}
+    runs-on: windows-latest
+    env:
+      BACKEND: ${{ matrix.BACKEND }}
+      BUILD_TYPE: ${{ matrix.RELEASE && 'RelWithDebInfo' || 'Debug' }}
+      TEST_USE_ROCKSDB: ${{ matrix.BACKEND == 'rocksdb' && '1' || '0' }}
+      DEADLINE_SCALE_FACTOR: ${{ matrix.BACKEND == 'rocksdb' && '2' || '1' }}
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: Prepare
+        run: ci/prepare/windows/prepare.ps1
+
+      - name: Build Tests
+        id: build
+        run: ci/build-tests.sh
+        shell: bash
+
+      - name: Core Tests
+        if: steps.build.outcome == 'success' && (success() || failure())
+        run: ../ci/tests/run-core-tests.sh
+        working-directory: build
+        shell: bash
+
+      - name: RPC Tests
+        if: steps.build.outcome == 'success' && (success() || failure())
+        run: ../ci/tests/run-rpc-tests.sh
+        working-directory: build
+        shell: bash
+
+      - name: System Tests
+        if: steps.build.outcome == 'success' && (success() || failure())
+        run: ../ci/tests/run-system-tests.sh
+        working-directory: build
+        shell: bash
+        continue-on-error: true # FIXME: Investigate why this fails on Windows

@@ -1,15 +1,18 @@
 #include <nano/node/node_observers.hpp>
 
-std::unique_ptr<nano::container_info_component> nano::collect_container_info (nano::node_observers & node_observers, std::string const & name)
+nano::container_info nano::node_observers::container_info () const
 {
-	auto composite = std::make_unique<nano::container_info_composite> (name);
-	composite->add_component (collect_container_info (node_observers.blocks, "blocks"));
-	composite->add_component (collect_container_info (node_observers.wallet, "wallet"));
-	composite->add_component (collect_container_info (node_observers.vote, "vote"));
-	composite->add_component (collect_container_info (node_observers.active_stopped, "active_stopped"));
-	composite->add_component (collect_container_info (node_observers.account_balance, "account_balance"));
-	composite->add_component (collect_container_info (node_observers.endpoint, "endpoint"));
-	composite->add_component (collect_container_info (node_observers.disconnect, "disconnect"));
-	composite->add_component (collect_container_info (node_observers.work_cancel, "work_cancel"));
-	return composite;
+	nano::container_info info;
+	info.put ("blocks", blocks.size ());
+	info.put ("wallet", wallet.size ());
+	info.put ("vote", vote.size ());
+	info.put ("active_started", active_started.size ());
+	info.put ("active_stopped", active_stopped.size ());
+	info.put ("account_balance", account_balance.size ());
+	info.put ("disconnect", disconnect.size ());
+	info.put ("work_cancel", work_cancel.size ());
+	info.put ("telemetry", telemetry.size ());
+	info.put ("socket_connected", socket_connected.size ());
+	info.put ("channel_connected", channel_connected.size ());
+	return info;
 }

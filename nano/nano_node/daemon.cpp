@@ -1,7 +1,9 @@
 #include <nano/boost/process/child.hpp>
+#include <nano/lib/files.hpp>
 #include <nano/lib/signal_manager.hpp>
+#include <nano/lib/stacktrace.hpp>
+#include <nano/lib/thread_runner.hpp>
 #include <nano/lib/threading.hpp>
-#include <nano/lib/tlsconfig.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/nano_node/daemon.hpp>
 #include <nano/node/cli.hpp>
@@ -12,10 +14,13 @@
 #include <nano/node/openclwork.hpp>
 #include <nano/rpc/rpc.hpp>
 
-#include <boost/format.hpp>
+#include <boost/process.hpp>
 
 #include <csignal>
 #include <iostream>
+#include <latch>
+
+#include <fmt/chrono.h>
 
 namespace
 {
@@ -50,215 +55,167 @@ void install_abort_signal_handler ()
 	sigaction (SIGABRT, &sa, NULL);
 #endif
 }
-
-volatile sig_atomic_t sig_int_or_term = 0;
-
-constexpr std::size_t OPEN_FILE_DESCRIPTORS_LIMIT = 16384;
 }
 
-static void load_and_set_bandwidth_params (std::shared_ptr<nano::node> const & node, boost::filesystem::path const & data_path, nano::node_flags const & flags)
+void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flags const & flags)
 {
-	nano::daemon_config config{ data_path, node->network_params };
+	nano::logger::initialize (nano::log_config::daemon_default (), data_path, flags.config_overrides);
 
-	auto error = nano::read_node_config_toml (data_path, config, flags.config_overrides);
-	if (!error)
-	{
-		error = nano::flags_config_conflicts (flags, config.node);
-		if (!error)
-		{
-			node->set_bandwidth_params (config.node.bandwidth_limit, config.node.bandwidth_limit_burst_ratio);
-		}
-	}
-}
+	logger.info (nano::log::type::daemon, "Daemon started");
 
-void nano_daemon::daemon::run (boost::filesystem::path const & data_path, nano::node_flags const & flags)
-{
 	install_abort_signal_handler ();
 
-	boost::filesystem::create_directories (data_path);
+	std::filesystem::create_directories (data_path);
 	boost::system::error_code error_chmod;
 	nano::set_secure_perm_directory (data_path, error_chmod);
+
 	std::unique_ptr<nano::thread_runner> runner;
+
 	nano::network_params network_params{ nano::network_constants::active_network };
 	nano::daemon_config config{ data_path, network_params };
-	auto error = nano::read_node_config_toml (data_path, config, flags.config_overrides);
-	nano::set_use_memory_pools (config.node.use_memory_pools);
-	if (!error)
+	if (auto error = nano::read_node_config_toml (data_path, config, flags.config_overrides))
 	{
-		error = nano::flags_config_conflicts (flags, config.node);
+		logger.critical (nano::log::type::daemon, "Error deserializing node config: {}", error.get_message ());
+		std::exit (1);
 	}
-	if (!error)
+	if (auto error = nano::flags_config_conflicts (flags, config.node))
 	{
-		config.node.logging.init (data_path);
-		nano::logger_mt logger{ config.node.logging.min_time_between_log_output };
+		logger.critical (nano::log::type::daemon, "Error parsing command line options: {}", error.message ());
+		std::exit (1);
+	}
 
-		auto tls_config (std::make_shared<nano::tls_config> ());
-		error = nano::read_tls_config_toml (data_path, *tls_config, logger);
-		if (error)
-		{
-			std::cerr << error.get_message () << std::endl;
-			std::exit (1);
-		}
-		else
-		{
-			config.node.websocket_config.tls_config = tls_config;
-		}
+	nano::set_use_memory_pools (config.node.use_memory_pools);
 
-		boost::asio::io_context io_ctx;
-		auto opencl (nano::opencl_work::create (config.opencl_enable, config.opencl, logger, config.node.network_params.work));
-		nano::work_pool opencl_work (config.node.network_params.network, config.node.work_threads, config.node.pow_sleep_interval, opencl ? [&opencl] (nano::work_version const version_a, nano::root const & root_a, uint64_t difficulty_a, std::atomic<int> & ticket_a) {
+	std::shared_ptr<boost::asio::io_context> io_ctx = std::make_shared<boost::asio::io_context> ();
+
+	auto opencl = nano::opencl_work::create (config.opencl_enable, config.opencl, logger, config.node.network_params.work);
+	nano::opencl_work_func_t opencl_work_func;
+	if (opencl)
+	{
+		opencl_work_func = [&opencl] (nano::work_version const version_a, nano::root const & root_a, uint64_t difficulty_a, std::atomic<int> & ticket_a) {
 			return opencl->generate_work (version_a, root_a, difficulty_a, ticket_a);
-		}
-																																		  : std::function<boost::optional<uint64_t> (nano::work_version const, nano::root const &, uint64_t, std::atomic<int> &)> (nullptr));
-		try
+		};
+	}
+	nano::work_pool opencl_work (config.node.network_params.network, config.node.work_threads, config.node.pow_sleep_interval, opencl_work_func);
+	try
+	{
+		// This avoids a blank prompt during any node initialization delays
+		logger.info (nano::log::type::daemon, "Starting up Nano node...");
+
+		// Print info about number of logical cores detected, those are used to decide how many IO, worker and signature checker threads to spawn
+		logger.info (nano::log::type::daemon, "Hardware concurrency: {} (configured: {})", std::thread::hardware_concurrency (), nano::hardware_concurrency ());
+		logger.info (nano::log::type::daemon, "File descriptors limit: {}", nano::get_file_descriptor_limit ());
+
+		// for the daemon start up, if the user hasn't specified a port in
+		// the config, we must use the default peering port for the network
+		//
+		if (!config.node.peering_port.has_value ())
 		{
-			// This avoid a blank prompt during any node initialization delays
-			auto initialization_text = "Starting up Nano node...";
-			std::cout << initialization_text << std::endl;
-			logger.always_log (initialization_text);
+			config.node.peering_port = network_params.network.default_node_port;
+		}
 
-			nano::set_file_descriptor_limit (OPEN_FILE_DESCRIPTORS_LIMIT);
-			auto const file_descriptor_limit = nano::get_file_descriptor_limit ();
-			if (file_descriptor_limit < OPEN_FILE_DESCRIPTORS_LIMIT)
+		auto node = std::make_shared<nano::node> (io_ctx, data_path, config.node, opencl_work, flags);
+		if (!node->init_error ())
+		{
+			auto network_label = node->network_params.network.get_current_network_as_string ();
+			std::time_t dateTime = std::time (nullptr);
+
+			logger.info (nano::log::type::daemon, "Network: {}", network_label);
+			logger.info (nano::log::type::daemon, "Version: {}", NANO_VERSION_STRING);
+			logger.info (nano::log::type::daemon, "Data path: '{}'", node->application_path.string ());
+			logger.info (nano::log::type::daemon, "Build info: {}", BUILD_INFO);
+			logger.info (nano::log::type::daemon, "Database backend: {}", node->store.vendor_get ());
+			logger.info (nano::log::type::daemon, "Start time: {:%c} UTC", fmt::gmtime (dateTime));
+
+			// IO context runner should be started first and stopped last to allow asio handlers to execute during node start/stop
+			runner = std::make_unique<nano::thread_runner> (io_ctx, logger, node->config.io_threads, nano::thread_role::name::io_daemon);
+
+			node->start ();
+
+			std::atomic stopped{ false };
+
+			std::unique_ptr<nano::ipc::ipc_server> ipc_server = std::make_unique<nano::ipc::ipc_server> (*node, config.rpc);
+			std::unique_ptr<boost::process::child> rpc_process;
+			std::unique_ptr<nano::rpc_handler_interface> rpc_handler;
+			std::shared_ptr<nano::rpc> rpc;
+
+			if (config.rpc_enable)
 			{
-				logger.always_log (boost::format ("WARNING: open file descriptors limit is %1%, lower than the %2% recommended. Node was unable to change it.") % file_descriptor_limit % OPEN_FILE_DESCRIPTORS_LIMIT);
-			}
-			else
-			{
-				logger.always_log (boost::format ("Open file descriptors limit is %1%") % file_descriptor_limit);
-			}
-
-			// for the daemon start up, if the user hasn't specified a port in
-			// the config, we must use the default peering port for the network
-			//
-			if (!config.node.peering_port.has_value ())
-			{
-				config.node.peering_port = network_params.network.default_node_port;
-			}
-
-			auto node (std::make_shared<nano::node> (io_ctx, data_path, config.node, opencl_work, flags));
-			if (!node->init_error ())
-			{
-				auto network_label = node->network_params.network.get_current_network_as_string ();
-				std::time_t dateTime = std::time (nullptr);
-
-				std::cout << "Network: " << network_label << ", version: " << NANO_VERSION_STRING << "\n"
-						  << "Path: " << node->application_path.string () << "\n"
-						  << "Build Info: " << BUILD_INFO << "\n"
-						  << "Database backend: " << node->store.vendor_get () << "\n"
-						  << "Start time: " << std::put_time (std::gmtime (&dateTime), "%c UTC") << std::endl;
-
-				auto voting (node->wallets.reps ().voting);
-				if (voting > 1)
+				// In process RPC
+				if (!config.rpc.child_process.enable)
 				{
-					std::cout << "Voting with more than one representative can limit performance: " << voting << " representatives are configured" << std::endl;
-				}
-				node->start ();
-				nano::ipc::ipc_server ipc_server (*node, config.rpc);
-				std::unique_ptr<boost::process::child> rpc_process;
-				std::unique_ptr<boost::process::child> nano_pow_server_process;
+					auto stop_callback = [this, &stopped] () {
+						logger.warn (nano::log::type::daemon, "RPC stop request received, stopping...");
+						stopped = true;
+						stopped.notify_all ();
+					};
 
-				/*if (config.pow_server.enable)
-				{
-					if (!boost::filesystem::exists (config.pow_server.pow_server_path))
+					// Launch rpc in-process
+					nano::rpc_config rpc_config{ config.node.network_params.network };
+					if (auto error = nano::read_rpc_config_toml (data_path, rpc_config, flags.rpc_config_overrides))
 					{
-						std::cerr << std::string ("nano_pow_server is configured to start as a child process, however the file cannot be found at: ") + config.pow_server.pow_server_path << std::endl;
+						logger.critical (nano::log::type::daemon, "Error deserializing RPC config: {}", error.get_message ());
 						std::exit (1);
 					}
 
-					nano_pow_server_process = std::make_unique<boost::process::child> (config.pow_server.pow_server_path, "--config_path", data_path / "config-nano-pow-server.toml");
-				}*/
-
-				std::unique_ptr<nano::rpc> rpc;
-				std::unique_ptr<nano::rpc_handler_interface> rpc_handler;
-				if (config.rpc_enable)
-				{
-					if (!config.rpc.child_process.enable)
-					{
-						// Launch rpc in-process
-						nano::rpc_config rpc_config{ config.node.network_params.network };
-						auto error = nano::read_rpc_config_toml (data_path, rpc_config, flags.rpc_config_overrides);
-						if (error)
-						{
-							std::cout << error.get_message () << std::endl;
-							std::exit (1);
-						}
-
-						rpc_config.tls_config = tls_config;
-						rpc_handler = std::make_unique<nano::inprocess_rpc_handler> (*node, ipc_server, config.rpc, [&ipc_server, &workers = node->workers, &io_ctx] () {
-							ipc_server.stop ();
-							workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (3), [&io_ctx] () {
-								io_ctx.stop ();
-							});
-						});
-						rpc = nano::get_rpc (io_ctx, rpc_config, *rpc_handler);
-						rpc->start ();
-					}
-					else
-					{
-						// Spawn a child rpc process
-						if (!boost::filesystem::exists (config.rpc.child_process.rpc_path))
-						{
-							throw std::runtime_error (std::string ("RPC is configured to spawn a new process however the file cannot be found at: ") + config.rpc.child_process.rpc_path);
-						}
-
-						auto network = node->network_params.network.get_current_network_as_string ();
-						rpc_process = std::make_unique<boost::process::child> (config.rpc.child_process.rpc_path, "--daemon", "--data_path", data_path, "--network", network);
-					}
+					rpc_handler = std::make_unique<nano::inprocess_rpc_handler> (*node, *ipc_server, config.rpc, stop_callback);
+					rpc = nano::get_rpc (io_ctx, rpc_config, *rpc_handler);
+					rpc->start ();
 				}
-
-				debug_assert (!nano::signal_handler_impl);
-				nano::signal_handler_impl = [&io_ctx] () {
-					io_ctx.stop ();
-					sig_int_or_term = 1;
-				};
-
-				nano::signal_manager sigman;
-
-				// keep trapping Ctrl-C to avoid a second Ctrl-C interrupting tasks started by the first
-				sigman.register_signal_handler (SIGINT, &nano::signal_handler, true);
-
-				// sigterm is less likely to come in bunches so only trap it once
-				sigman.register_signal_handler (SIGTERM, &nano::signal_handler, false);
-
-#ifndef _WIN32
-				// on sighup we should reload the bandwidth parameters
-				std::function<void (int)> sighup_signal_handler ([&node, &data_path, &flags] (int signum) {
-					debug_assert (signum == SIGHUP);
-					load_and_set_bandwidth_params (node, data_path, flags);
-				});
-				sigman.register_signal_handler (SIGHUP, sighup_signal_handler, true);
-#endif
-
-				runner = std::make_unique<nano::thread_runner> (io_ctx, node->config.io_threads);
-				runner->join ();
-
-				if (sig_int_or_term == 1)
+				else
 				{
-					ipc_server.stop ();
-					node->stop ();
-					if (rpc)
+					// Spawn a child rpc process
+					if (!std::filesystem::exists (config.rpc.child_process.rpc_path))
 					{
-						rpc->stop ();
+						throw std::runtime_error (std::string ("RPC is configured to spawn a new process however the file cannot be found at: ") + config.rpc.child_process.rpc_path);
 					}
+
+					std::string network{ node->network_params.network.get_current_network_as_string () };
+					rpc_process = std::make_unique<boost::process::child> (config.rpc.child_process.rpc_path, "--daemon", "--data_path", data_path.string (), "--network", network);
 				}
-				if (rpc_process)
-				{
-					rpc_process->wait ();
-				}
+				debug_assert (rpc || rpc_process);
 			}
-			else
+
+			auto signal_handler = [this, &stopped] (int signum) {
+				logger.warn (nano::log::type::daemon, "Interrupt signal received ({}), stopping...", to_signal_name (signum));
+				stopped = true;
+				stopped.notify_all ();
+			};
+
+			nano::signal_manager sigman;
+			// keep trapping Ctrl-C to avoid a second Ctrl-C interrupting tasks started by the first
+			sigman.register_signal_handler (SIGINT, signal_handler, true);
+			// sigterm is less likely to come in bunches so only trap it once
+			sigman.register_signal_handler (SIGTERM, signal_handler, false);
+
+			// Keep running until stopped flag is set
+			stopped.wait (false);
+
+			logger.info (nano::log::type::daemon, "Stopping...");
+
+			if (rpc)
 			{
-				std::cerr << "Error initializing node\n";
+				rpc->stop ();
+			}
+			ipc_server->stop ();
+			node->stop ();
+			io_ctx->stop ();
+			runner->join ();
+
+			if (rpc_process)
+			{
+				rpc_process->wait ();
 			}
 		}
-		catch (std::runtime_error const & e)
+		else
 		{
-			std::cerr << "Error while running node (" << e.what () << ")\n";
+			logger.critical (nano::log::type::daemon, "Error initializing node");
 		}
 	}
-	else
+	catch (std::runtime_error const & e)
 	{
-		std::cerr << "Error deserializing config: " << error.get_message () << std::endl;
+		logger.critical (nano::log::type::daemon, "Error while running node: {}", e.what ());
 	}
+
+	logger.info (nano::log::type::daemon, "Daemon stopped");
 }

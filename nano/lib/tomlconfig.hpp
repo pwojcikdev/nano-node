@@ -3,9 +3,10 @@
 #include <nano/lib/configbase.hpp>
 #include <nano/lib/utility.hpp>
 
-#include <boost/filesystem/path.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/optional.hpp>
+
+#include <filesystem>
 
 #include <cpptoml.h>
 
@@ -30,12 +31,13 @@ class tomlconfig : public nano::configbase
 public:
 	tomlconfig ();
 	tomlconfig (std::shared_ptr<cpptoml::table> const & tree_a, std::shared_ptr<nano::error> const & error_a = nullptr);
+
 	void doc (std::string const & key, std::string const & doc);
-	nano::error & read (boost::filesystem::path const & path_a);
-	nano::error & read (std::istream & stream_overrides, boost::filesystem::path const & path_a);
+	nano::error & read (std::filesystem::path const & path_a);
+	nano::error & read (std::istream & stream_overrides, std::filesystem::path const & path_a);
 	nano::error & read (std::istream & stream_a);
 	nano::error & read (std::istream & stream_first_a, std::istream & stream_second_a);
-	void write (boost::filesystem::path const & path_a);
+	void write (std::filesystem::path const & path_a);
 	void write (std::ostream & stream_a) const;
 	void open_or_create (std::fstream & stream_a, std::string const & path_a);
 	std::shared_ptr<cpptoml::table> get_tree ();
@@ -48,8 +50,8 @@ public:
 	tomlconfig & erase (std::string const & key_a);
 	std::shared_ptr<cpptoml::array> create_array (std::string const & key, boost::optional<char const *> documentation_a);
 	void erase_default_values (tomlconfig & defaults_a);
-	std::string to_string ();
-	std::string to_string_commented_entries ();
+	std::string to_string (bool comment_values);
+	std::string merge_defaults (nano::tomlconfig & current_config, nano::tomlconfig & default_config);
 
 	/** Set value for the given key. Any existing value will be overwritten. */
 	template <typename T>
@@ -143,6 +145,16 @@ public:
 		return *this;
 	}
 
+	/** Get chrono duration */
+	template <typename Duration>
+	tomlconfig & get_duration (std::string const & key, Duration & target)
+	{
+		uint64_t value = target.count ();
+		get (key, value);
+		target = Duration{ value };
+		return *this;
+	}
+
 	/**
 	 * Get value of optional key. Use default value of data type if missing.
 	 */
@@ -170,6 +182,19 @@ public:
 	{
 		get_config (false, key, target, default_value);
 		return *this;
+	}
+
+	template <typename T>
+	std::vector<std::pair<std::string, T>> get_values ()
+	{
+		std::vector<std::pair<std::string, T>> result;
+		for (auto & entry : *tree)
+		{
+			T target{};
+			get_config (true, entry.first, target, target);
+			result.push_back ({ entry.first, target });
+		}
+		return result;
 	}
 
 protected:

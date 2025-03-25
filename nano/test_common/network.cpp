@@ -10,11 +10,11 @@
 
 using namespace std::chrono_literals;
 
-std::shared_ptr<nano::transport::channel_tcp> nano::establish_tcp (nano::system & system, nano::node & node, nano::endpoint const & endpoint)
+std::shared_ptr<nano::transport::tcp_channel> nano::test::establish_tcp (nano::test::system & system, nano::node & node, nano::endpoint const & endpoint)
 {
 	debug_assert (node.network.endpoint () != endpoint && "Establishing TCP to self is not allowed");
 
-	std::shared_ptr<nano::transport::channel_tcp> result;
+	std::shared_ptr<nano::transport::tcp_channel> result;
 	debug_assert (!node.flags.disable_tcp_realtime);
 	node.network.tcp_channels.start_tcp (endpoint);
 	auto error = system.poll_until_true (2s, [&result, &node, &endpoint] {
@@ -22,4 +22,47 @@ std::shared_ptr<nano::transport::channel_tcp> nano::establish_tcp (nano::system 
 		return result != nullptr;
 	});
 	return result;
+}
+
+// TODO: merge with make_disconnected_node
+std::shared_ptr<nano::node> nano::test::add_outer_node (nano::test::system & system_a, nano::node_config const & config_a, nano::node_flags flags_a)
+{
+	auto outer_node = std::make_shared<nano::node> (system_a.io_ctx, nano::unique_path (), config_a, system_a.work, flags_a);
+	outer_node->start ();
+	system_a.disconnected_nodes.push_back (outer_node);
+	return outer_node;
+}
+
+// TODO: merge with make_disconnected_node
+std::shared_ptr<nano::node> nano::test::add_outer_node (nano::test::system & system_a, nano::node_flags flags_a)
+{
+	auto outer_node = std::make_shared<nano::node> (system_a.io_ctx, system_a.get_available_port (), nano::unique_path (), system_a.work, flags_a);
+	outer_node->start ();
+	system_a.disconnected_nodes.push_back (outer_node);
+	return outer_node;
+}
+
+// Note: this is not guaranteed to work, it is speculative
+uint16_t nano::test::speculatively_choose_a_free_tcp_bind_port ()
+{
+	/*
+	 * This works because the kernel doesn't seem to reuse port numbers until it absolutely has to.
+	 * Subsequent binds to port 0 will allocate a different port number.
+	 */
+	boost::asio::io_context io_ctx;
+	boost::asio::ip::tcp::acceptor acceptor{ io_ctx };
+	boost::asio::ip::tcp::tcp::endpoint endpoint{ boost::asio::ip::tcp::v4 (), 0 };
+	acceptor.open (endpoint.protocol ());
+
+	boost::asio::socket_base::reuse_address option{ true };
+	acceptor.set_option (option); // set SO_REUSEADDR option
+
+	acceptor.bind (endpoint);
+
+	auto actual_endpoint = acceptor.local_endpoint ();
+	auto port = actual_endpoint.port ();
+
+	acceptor.close ();
+
+	return port;
 }

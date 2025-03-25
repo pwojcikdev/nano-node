@@ -16,8 +16,8 @@ bool get_use_memory_pools ();
 void set_use_memory_pools (bool use_memory_pools);
 
 /** This makes some heuristic assumptions about the implementation defined shared_ptr internals.
-    Should only be used in the memory pool purge functions at exit, which doesn't matter much if
-    it is incorrect (other than reports from heap memory analysers) */
+	Should only be used in the memory pool purge functions at exit, which doesn't matter much if
+	it is incorrect (other than reports from heap memory analysers) */
 template <typename T>
 constexpr size_t determine_shared_ptr_pool_size ()
 {
@@ -46,6 +46,16 @@ public:
 
 private:
 	std::vector<std::function<void ()>> cleanup_funcs;
+};
+
+/** Helper guard which contains all the necessary purge (remove all memory even if used) functions */
+class node_singleton_memory_pool_purge_guard
+{
+public:
+	node_singleton_memory_pool_purge_guard ();
+
+private:
+	nano::cleanup_guard cleanup_guard;
 };
 
 template <typename T, typename... Args>

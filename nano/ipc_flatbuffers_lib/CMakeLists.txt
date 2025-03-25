@@ -21,7 +21,7 @@ mark_as_advanced(
   FLATBUFFERS_PACKAGE_DEBIAN
   FLATBUFFERS_PACKAGE_REDHAT
   FLATBUFFERS_STATIC_FLATC)
-add_subdirectory(../../flatbuffers
+add_subdirectory(../../submodules/flatbuffers
                  ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers-build EXCLUDE_FROM_ALL)
 
 # Generate Flatbuffers files into the ipc_flatbuffers_lib library, which will be
@@ -46,7 +46,8 @@ file(GLOB files
 foreach(file ${files})
   get_filename_component(flatbuffers_filename ${file} NAME_WE)
   message(
-    "Generating flatbuffers code for: ${flatbuffers_filename} into ${CMAKE_CURRENT_SOURCE_DIR}/generated/flatbuffers"
+    STATUS
+      "Generating flatbuffers code for: ${flatbuffers_filename} into ${CMAKE_CURRENT_SOURCE_DIR}/generated/flatbuffers"
   )
 
   configure_file(

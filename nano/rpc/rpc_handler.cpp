@@ -1,7 +1,6 @@
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/errors.hpp>
 #include <nano/lib/json_error_response.hpp>
-#include <nano/lib/logger_mt.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/rpc_handler_interface.hpp>
 #include <nano/lib/rpcconfig.hpp>
@@ -18,7 +17,7 @@ std::unordered_set<std::string> rpc_control_impl_set = create_rpc_control_impls 
 std::string filter_request (boost::property_tree::ptree tree_a);
 }
 
-nano::rpc_handler::rpc_handler (nano::rpc_config const & rpc_config, std::string const & body_a, std::string const & request_id_a, std::function<void (std::string const &)> const & response_a, nano::rpc_handler_interface & rpc_handler_interface_a, nano::logger_mt & logger) :
+nano::rpc_handler::rpc_handler (nano::rpc_config const & rpc_config, std::string const & body_a, std::string const & request_id_a, std::function<void (std::string const &)> const & response_a, nano::rpc_handler_interface & rpc_handler_interface_a, nano::logger & logger) :
 	body (body_a),
 	request_id (request_id_a),
 	response (response_a),
@@ -62,13 +61,10 @@ void nano::rpc_handler::process_request (nano::rpc_handler_request_params const 
 				}
 
 				auto action = request.get<std::string> ("action");
-				if (rpc_config.rpc_logging.log_rpc)
-				{
-					// Creating same string via stringstream as using it directly is generating a TSAN warning
-					std::stringstream ss;
-					ss << request_id;
-					logger.always_log (ss.str (), " ", filter_request (request));
-				}
+
+				// Bump logging level if RPC request logging is enabled
+				logger.log (rpc_config.rpc_logging.log_rpc ? nano::log::level::info : nano::log::level::debug,
+				nano::log::type::rpc_request, "Request {} : {}", request_id, filter_request (request));
 
 				// Check if this is a RPC command which requires RPC enabled control
 				std::error_code rpc_control_disabled_ec = nano::error_rpc::rpc_control_disabled;
@@ -105,8 +101,7 @@ void nano::rpc_handler::process_request (nano::rpc_handler_request_params const 
 					{
 						nano::uint128_union random_id;
 						nano::random_pool::generate_block (random_id.bytes.data (), random_id.bytes.size ());
-						std::string random_id_text;
-						random_id.encode_hex (random_id_text);
+						std::string random_id_text = random_id.to_string ();
 						request.put ("id", random_id_text);
 						std::stringstream ostream;
 						boost::property_tree::write_json (ostream, request);
@@ -153,20 +148,25 @@ std::unordered_set<std::string> create_rpc_control_impls ()
 	set.emplace ("account_remove");
 	set.emplace ("account_representative_set");
 	set.emplace ("accounts_create");
+	set.emplace ("backoff_info");
 	set.emplace ("block_create");
 	set.emplace ("bootstrap_lazy");
-	set.emplace ("confirmation_height_currently_processing");
+	set.emplace ("bootstrap_reset");
+	set.emplace ("bootstrap_priorities");
 	set.emplace ("database_txn_tracker");
 	set.emplace ("epoch_upgrade");
 	set.emplace ("keepalive");
 	set.emplace ("ledger");
 	set.emplace ("node_id");
 	set.emplace ("password_change");
+	set.emplace ("populate_backlog");
 	set.emplace ("receive");
 	set.emplace ("receive_minimum");
 	set.emplace ("receive_minimum_set");
 	set.emplace ("search_pending");
+	set.emplace ("search_receivable");
 	set.emplace ("search_pending_all");
+	set.emplace ("search_receivable_all");
 	set.emplace ("send");
 	set.emplace ("stop");
 	set.emplace ("unchecked_clear");

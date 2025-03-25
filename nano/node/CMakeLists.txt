@@ -14,38 +14,44 @@ endif()
 add_library(
   node
   ${platform_sources}
-  active_transactions.hpp
-  active_transactions.cpp
-  blockprocessor.hpp
-  blockprocessor.cpp
-  bootstrap/bootstrap_attempt.hpp
-  bootstrap/bootstrap_attempt.cpp
-  bootstrap/bootstrap_bulk_pull.hpp
-  bootstrap/bootstrap_bulk_pull.cpp
-  bootstrap/bootstrap_bulk_push.hpp
-  bootstrap/bootstrap_bulk_push.cpp
-  bootstrap/bootstrap_connections.hpp
-  bootstrap/bootstrap_connections.cpp
-  bootstrap/bootstrap_frontier.hpp
-  bootstrap/bootstrap_frontier.cpp
-  bootstrap/bootstrap_lazy.hpp
-  bootstrap/bootstrap_lazy.cpp
-  bootstrap/bootstrap_legacy.hpp
-  bootstrap/bootstrap_legacy.cpp
+  active_elections.hpp
+  active_elections.cpp
+  backlog_scan.hpp
+  backlog_scan.cpp
+  bandwidth_limiter.hpp
+  bandwidth_limiter.cpp
+  block_context.hpp
+  block_processor.hpp
+  block_processor.cpp
+  block_source.hpp
+  block_source.cpp
+  bucketing.hpp
+  bucketing.cpp
+  bounded_backlog.hpp
+  bounded_backlog.cpp
+  bootstrap_weights_beta.hpp
+  bootstrap_weights_live.hpp
+  bootstrap/account_sets.hpp
+  bootstrap/account_sets.cpp
+  bootstrap/bootstrap_config.hpp
+  bootstrap/bootstrap_config.cpp
   bootstrap/bootstrap_server.hpp
   bootstrap/bootstrap_server.cpp
-  bootstrap/bootstrap.hpp
-  bootstrap/bootstrap.cpp
+  bootstrap/bootstrap_service.hpp
+  bootstrap/bootstrap_service.cpp
+  bootstrap/common.hpp
+  bootstrap/throttle.hpp
+  bootstrap/throttle.cpp
+  bootstrap/database_scan.hpp
+  bootstrap/database_scan.cpp
+  bootstrap/frontier_scan.hpp
+  bootstrap/frontier_scan.cpp
+  bootstrap/peer_scoring.hpp
+  bootstrap/peer_scoring.cpp
   cli.hpp
   cli.cpp
-  common.hpp
-  common.cpp
-  confirmation_height_bounded.hpp
-  confirmation_height_bounded.cpp
-  confirmation_height_processor.hpp
-  confirmation_height_processor.cpp
-  confirmation_height_unbounded.hpp
-  confirmation_height_unbounded.cpp
+  confirming_set.hpp
+  confirming_set.cpp
   confirmation_solicitor.hpp
   confirmation_solicitor.cpp
   daemonconfig.hpp
@@ -56,14 +62,16 @@ add_library(
   distributed_work_factory.cpp
   election.hpp
   election.cpp
-  election_scheduler.hpp
-  election_scheduler.cpp
-  gap_cache.hpp
-  gap_cache.cpp
-  inactive_cache_information.hpp
-  inactive_cache_information.cpp
-  inactive_cache_status.hpp
-  inactive_cache_status.cpp
+  election_behavior.hpp
+  election_insertion_result.hpp
+  election_status.hpp
+  endpoint.cpp
+  endpoint.hpp
+  endpoint_templ.hpp
+  epoch_upgrader.hpp
+  epoch_upgrader.cpp
+  fair_queue.hpp
+  fwd.hpp
   ipc/action_handler.hpp
   ipc/action_handler.cpp
   ipc/flatbuffers_handler.hpp
@@ -80,19 +88,20 @@ add_library(
   ipc/ipc_server.cpp
   json_handler.hpp
   json_handler.cpp
-  ledger_walker.hpp
-  ledger_walker.cpp
-  lmdb/lmdb.hpp
-  lmdb/lmdb.cpp
-  lmdb/lmdb_env.hpp
-  lmdb/lmdb_env.cpp
-  lmdb/lmdb_iterator.hpp
-  lmdb/lmdb_txn.hpp
-  lmdb/lmdb_txn.cpp
-  lmdb/wallet_value.hpp
-  lmdb/wallet_value.cpp
-  logging.hpp
-  logging.cpp
+  ledger_notifications.hpp
+  ledger_notifications.cpp
+  local_block_broadcaster.cpp
+  local_block_broadcaster.hpp
+  local_vote_history.cpp
+  local_vote_history.hpp
+  make_store.hpp
+  make_store.cpp
+  message_processor.hpp
+  message_processor.cpp
+  messages.hpp
+  messages.cpp
+  monitor.hpp
+  monitor.cpp
   network.hpp
   network.cpp
   nodeconfig.hpp
@@ -101,6 +110,10 @@ add_library(
   node_observers.cpp
   node_rpc_config.hpp
   node_rpc_config.cpp
+  node_wrapper.hpp
+  node_wrapper.cpp
+  inactive_node.hpp
+  inactive_node.cpp
   node.hpp
   node.cpp
   online_reps.hpp
@@ -109,43 +122,86 @@ add_library(
   openclconfig.cpp
   openclwork.hpp
   openclwork.cpp
+  peer_history.hpp
+  peer_history.cpp
   peer_exclusion.hpp
   peer_exclusion.cpp
   portmapping.hpp
   portmapping.cpp
-  prioritization.cpp
-  prioritization.hpp
-  node_pow_server_config.hpp
-  node_pow_server_config.cpp
+  pruning.hpp
+  pruning.cpp
+  recently_cemented_cache.cpp
+  recently_cemented_cache.hpp
+  recently_confirmed_cache.cpp
+  recently_confirmed_cache.hpp
   repcrawler.hpp
   repcrawler.cpp
+  rep_tiers.hpp
+  rep_tiers.cpp
   request_aggregator.hpp
   request_aggregator.cpp
-  rocksdb/rocksdb.hpp
-  rocksdb/rocksdb.cpp
-  rocksdb/rocksdb_iterator.hpp
-  rocksdb/rocksdb_txn.hpp
-  rocksdb/rocksdb_txn.cpp
-  signatures.hpp
-  signatures.cpp
-  socket.hpp
-  socket.cpp
-  state_block_signature_verification.hpp
-  state_block_signature_verification.cpp
+  rpc_callbacks.hpp
+  rpc_callbacks.cpp
+  scheduler/bucket.cpp
+  scheduler/bucket.hpp
+  scheduler/component.hpp
+  scheduler/component.cpp
+  scheduler/hinted.hpp
+  scheduler/hinted.cpp
+  scheduler/manual.hpp
+  scheduler/manual.cpp
+  scheduler/optimistic.hpp
+  scheduler/optimistic.cpp
+  scheduler/priority.hpp
+  scheduler/priority.cpp
   telemetry.hpp
   telemetry.cpp
-  transport/tcp.hpp
-  transport/tcp.cpp
+  transport/block_deserializer.hpp
+  transport/block_deserializer.cpp
+  transport/channel.hpp
+  transport/channel.cpp
+  transport/tcp_channel.hpp
+  transport/tcp_channel.cpp
+  transport/fake.hpp
+  transport/fake.cpp
+  transport/fwd.hpp
+  transport/inproc.hpp
+  transport/inproc.cpp
+  transport/loopback.cpp
+  transport/loopback.hpp
+  transport/message_deserializer.hpp
+  transport/message_deserializer.cpp
+  transport/tcp_channels.hpp
+  transport/tcp_channels.cpp
+  transport/tcp_config.hpp
+  transport/tcp_config.cpp
+  transport/tcp_listener.hpp
+  transport/tcp_listener.cpp
+  transport/tcp_server.hpp
+  transport/tcp_server.cpp
+  transport/tcp_socket.hpp
+  transport/tcp_socket.cpp
+  transport/test_channel.hpp
+  transport/test_channel.cpp
+  transport/traffic_type.hpp
+  transport/traffic_type.cpp
   transport/transport.hpp
   transport/transport.cpp
-  transport/udp.hpp
-  transport/udp.cpp
   unchecked_map.cpp
   unchecked_map.hpp
+  vote_cache.hpp
+  vote_cache.cpp
+  vote_generator.hpp
+  vote_generator.cpp
   vote_processor.hpp
   vote_processor.cpp
-  voting.hpp
-  voting.cpp
+  vote_rebroadcaster.hpp
+  vote_rebroadcaster.cpp
+  vote_router.hpp
+  vote_router.cpp
+  vote_spacing.hpp
+  vote_spacing.cpp
+  vote_with_weight_info.hpp
   wallet.hpp
   wallet.cpp
   websocket.hpp
@@ -154,37 +210,25 @@ add_library(
   websocketconfig.cpp
   websocket_stream.hpp
   websocket_stream.cpp
-  write_database_queue.hpp
-  write_database_queue.cpp
   xorshift.hpp)
-
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
-  set(DISKHASH diskhash)
-endif()
 
 target_link_libraries(
   node
-  rpc
-  secure
   nano_lib
+  nano_store
+  secure
+  rpc
   libminiupnpc-static
   argon2
   lmdb
-  Boost::filesystem
-  Boost::log_setup
-  Boost::log
+  Boost::beast
   Boost::program_options
+  Boost::stacktrace
   Boost::system
   Boost::thread
-  Boost::boost
   rocksdb
-  ${DISKHASH}
   ${CMAKE_DL_LIBS}
   ${psapi_lib})
-
-if(NANO_STACKTRACE_BACKTRACE)
-  target_link_libraries(node backtrace)
-endif()
 
 target_compile_definitions(
   node PRIVATE -DTAG_VERSION_STRING=${TAG_VERSION_STRING}
@@ -193,3 +237,7 @@ target_compile_definitions(
 # This ensures that any changes to Flatbuffers source files will cause a
 # regeneration of any C++ header files.
 add_dependencies(node ipc_flatbuffers_lib)
+
+include_directories(${CMAKE_SOURCE_DIR}/submodules)
+include_directories(
+  ${CMAKE_SOURCE_DIR}/submodules/nano-pow-server/deps/cpptoml/include)

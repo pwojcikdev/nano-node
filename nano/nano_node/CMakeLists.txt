@@ -1,17 +1,8 @@
 add_executable(nano_node daemon.cpp daemon.hpp entry.cpp)
 
-target_link_libraries(
-  nano_node
-  node
-  rpc
-  secure
-  argon2
-  Boost::boost
-  ${PLATFORM_LIBS})
+target_link_libraries(nano_node node Boost::process ${PLATFORM_LIBS})
 
-if(NANO_STACKTRACE_BACKTRACE)
-  target_link_libraries(nano_node backtrace)
-endif()
+include_directories(${CMAKE_SOURCE_DIR}/submodules)
 
 target_compile_definitions(
   nano_node PRIVATE -DTAG_VERSION_STRING=${TAG_VERSION_STRING}
@@ -27,7 +18,9 @@ add_custom_command(
   COMMAND nano_node --generate_config node >
           ${PROJECT_BINARY_DIR}/config-node.toml.sample
   COMMAND nano_node --generate_config rpc >
-          ${PROJECT_BINARY_DIR}/config-rpc.toml.sample)
+          ${PROJECT_BINARY_DIR}/config-rpc.toml.sample
+  COMMAND nano_node --generate_config log >
+          ${PROJECT_BINARY_DIR}/config-log.toml.sample)
 
 if((NANO_GUI OR RAIBLOCKS_GUI) AND NOT APPLE)
   if(WIN32)

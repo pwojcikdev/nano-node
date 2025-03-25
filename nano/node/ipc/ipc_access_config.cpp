@@ -92,7 +92,7 @@ void nano::ipc::access::clear ()
 
 nano::error nano::ipc::access::deserialize_toml (nano::tomlconfig & toml)
 {
-	nano::unique_lock<nano::mutex> lock (mutex);
+	nano::unique_lock<nano::mutex> lock{ mutex };
 	clear ();
 
 	nano::error error;
@@ -208,7 +208,7 @@ nano::error nano::ipc::access::deserialize_toml (nano::tomlconfig & toml)
 
 bool nano::ipc::access::has_access (std::string const & credentials_a, nano::ipc::access_permission permssion_a) const
 {
-	nano::unique_lock<nano::mutex> lock (mutex);
+	nano::unique_lock<nano::mutex> lock{ mutex };
 	bool permitted = false;
 	auto user = users.find (credentials_a);
 	if (user != users.end ())
@@ -224,7 +224,7 @@ bool nano::ipc::access::has_access (std::string const & credentials_a, nano::ipc
 
 bool nano::ipc::access::has_access_to_all (std::string const & credentials_a, std::initializer_list<nano::ipc::access_permission> permissions_a) const
 {
-	nano::unique_lock<nano::mutex> lock (mutex);
+	nano::unique_lock<nano::mutex> lock{ mutex };
 	bool permitted = false;
 	auto user = users.find (credentials_a);
 	if (user != users.end ())
@@ -243,7 +243,7 @@ bool nano::ipc::access::has_access_to_all (std::string const & credentials_a, st
 
 bool nano::ipc::access::has_access_to_oneof (std::string const & credentials_a, std::initializer_list<nano::ipc::access_permission> permissions_a) const
 {
-	nano::unique_lock<nano::mutex> lock (mutex);
+	nano::unique_lock<nano::mutex> lock{ mutex };
 	bool permitted = false;
 	auto user = users.find (credentials_a);
 	if (user != users.end ())
@@ -279,13 +279,13 @@ namespace nano
 {
 namespace ipc
 {
-	nano::error read_access_config_toml (boost::filesystem::path const & data_path_a, nano::ipc::access & config_a)
+	nano::error read_access_config_toml (std::filesystem::path const & data_path_a, nano::ipc::access & config_a)
 	{
 		nano::error error;
 		auto toml_config_path = nano::get_access_toml_config_path (data_path_a);
 
 		nano::tomlconfig toml;
-		if (boost::filesystem::exists (toml_config_path))
+		if (std::filesystem::exists (toml_config_path))
 		{
 			error = toml.read (toml_config_path);
 		}

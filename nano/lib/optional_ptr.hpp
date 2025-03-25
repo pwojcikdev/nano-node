@@ -1,7 +1,5 @@
 #pragma once
 
-#include <nano/lib/utility.hpp>
-
 #include <cstddef>
 #include <memory>
 
@@ -55,14 +53,14 @@ public:
 		return *ptr;
 	}
 
-	T * const operator-> ()
+	T * const operator->()
 	{
-		return ptr.operator-> ();
+		return ptr.operator->();
 	}
 
-	T const * const operator-> () const
+	T const * const operator->() const
 	{
-		return ptr.operator-> ();
+		return ptr.operator->();
 	}
 
 	T const * const get () const

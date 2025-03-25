@@ -9,12 +9,9 @@
 
 #include <iostream>
 #include <sstream>
-#include <unordered_map>
 
 #include <flatbuffers/flatbuffers.h>
 #include <flatbuffers/idl.h>
-#include <flatbuffers/minireflect.h>
-#include <flatbuffers/registry.h>
 #include <flatbuffers/util.h>
 
 namespace
@@ -36,10 +33,10 @@ std::string make_error_response (std::string const & error_message)
 /**
  * Returns the 'api/flatbuffers' directory, boost::none if not found.
  */
-boost::optional<boost::filesystem::path> get_api_path ()
+boost::optional<std::filesystem::path> get_api_path ()
 {
-	boost::filesystem::path const fb_path = "api/flatbuffers";
-	if (!boost::filesystem::exists (fb_path))
+	std::filesystem::path const fb_path = "api/flatbuffers";
+	if (!std::filesystem::exists (fb_path))
 	{
 		return boost::none;
 	}
@@ -67,7 +64,8 @@ std::shared_ptr<flatbuffers::Parser> nano::ipc::flatbuffers_handler::make_flatbu
 		throw nano::error ("Internal IPC error: unable to find api path");
 	}
 
-	char const * include_directories[] = { api_path->string ().c_str (), nullptr };
+	const std::string api_path_str = api_path->string ();
+	char const * include_directories[] = { api_path_str.c_str (), nullptr };
 	std::string schemafile;
 	if (!flatbuffers::LoadFile ((*api_path / "nanoapi.fbs").string ().c_str (), false, &schemafile))
 	{

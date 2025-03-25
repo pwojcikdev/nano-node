@@ -10,71 +10,44 @@ else()
   error("Unknown platform: ${CMAKE_SYSTEM_NAME}")
 endif()
 
-# Embed bootstrap representative weights in executable. Both live and beta
-# weights are added to accommodate switching networks from the command line.
-file(READ ${CMAKE_SOURCE_DIR}/rep_weights_live.bin liveweights HEX)
-string(REGEX REPLACE "(..)" "0x\\1," liveweights ${liveweights})
-file(
-  WRITE ${CMAKE_BINARY_DIR}/bootstrap_weights_live.cpp
-  "#include <cstddef>\n"
-  "namespace nano {\n"
-  "	unsigned char nano_bootstrap_weights_live[] = {${liveweights} 0x00};\n"
-  "	size_t nano_bootstrap_weights_live_size = sizeof(nano_bootstrap_weights_live) - 1;\n"
-  "}\n")
-
-if(EXISTS ${CMAKE_SOURCE_DIR}/rep_weights_beta.bin)
-  file(READ ${CMAKE_SOURCE_DIR}/rep_weights_beta.bin betaweights HEX)
-  string(REGEX REPLACE "(..)" "0x\\1," betaweights ${betaweights})
-endif()
-file(
-  WRITE ${CMAKE_BINARY_DIR}/bootstrap_weights_beta.cpp
-  "#include <cstddef>\n"
-  "namespace nano {\n"
-  "	unsigned char nano_bootstrap_weights_beta[] = {${betaweights} 0x00};\n"
-  "	size_t nano_bootstrap_weights_beta_size = sizeof(nano_bootstrap_weights_beta) - 1;\n"
-  "}\n")
-
 add_library(
   secure
   ${PLATFORM_SECURE_SOURCE}
-  ${CMAKE_BINARY_DIR}/bootstrap_weights_live.cpp
-  ${CMAKE_BINARY_DIR}/bootstrap_weights_beta.cpp
-  store.hpp
-  store.cpp
-  store_partial.hpp
-  buffer.hpp
+  account_info.hpp
+  account_info.cpp
+  account_iterator.cpp
+  account_iterator.hpp
+  account_iterator_impl.hpp
   common.hpp
   common.cpp
+  fwd.hpp
+  generate_cache_flags.hpp
+  generate_cache_flags.cpp
   ledger.hpp
   ledger.cpp
-  network_filter.hpp
-  network_filter.cpp
+  ledger_cache.hpp
+  ledger_cache.cpp
+  ledger_set_any.hpp
+  ledger_set_any.cpp
+  ledger_set_confirmed.hpp
+  ledger_set_confirmed.cpp
+  pending_info.hpp
+  pending_info.cpp
+  receivable_iterator.cpp
+  receivable_iterator.hpp
+  receivable_iterator_impl.hpp
+  rep_weights.hpp
+  rep_weights.cpp
+  transaction.hpp
   utility.hpp
   utility.cpp
-  versioning.hpp
-  versioning.cpp
-  working.hpp
-  store/block_store_partial.hpp
-  store/frontier_store_partial.hpp
-  store/account_store_partial.hpp
-  store/pending_store_partial.hpp
-  store/online_weight_partial.hpp
-  store/pruned_store_partial.hpp
-  store/peer_store_partial.hpp
-  store/confirmation_height_store_partial.hpp
-  store/unchecked_store_partial.hpp
-  store/final_vote_store_partial.hpp
-  store/version_store_partial.hpp)
+  vote.hpp
+  vote.cpp
+  working.hpp)
 
-target_link_libraries(
-  secure
-  nano_lib
-  ed25519
-  crypto_lib
-  lmdb
-  Boost::boost
-  Boost::system
-  Boost::filesystem)
+target_link_libraries(secure nano_lib ed25519 crypto_lib Boost::system)
 
 target_compile_definitions(secure PUBLIC -DQT_NO_KEYWORDS
                                          -DBOOST_ASIO_HAS_STD_ARRAY=1)
+
+include_directories(${CMAKE_SOURCE_DIR}/submodules)

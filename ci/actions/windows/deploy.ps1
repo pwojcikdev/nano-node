@@ -1,22 +1,36 @@
 $ErrorActionPreference = "Continue"
 
-if ( ${env:BETA} -eq 1 ) {
+$env:S3_BUCKET_NAME = $env:S3_BUCKET_NAME ?? "repo.nano.org"
+if ( "${env:NETWORK}" -eq "BETA" ) {
     $network_cfg = "beta"
 }
-elseif ( ${env:TEST} -eq 1 ) {
+elseif ( "${env:NETWORK}" -eq "TEST" ) {
     $network_cfg = "test"
 }
 else {
     $network_cfg = "live"
 }
 
+if (![string]::IsNullOrEmpty($env:S3_BUILD_DIRECTORY)) {
+    $directory = "$env:S3_BUILD_DIRECTORY/$network_cfg"
+}
+else {
+    $directory = $network_cfg
+}
+
 $exe = Resolve-Path -Path $env:GITHUB_WORKSPACE\build\nano-node-*-win64.exe
 $zip = Resolve-Path -Path $env:GITHUB_WORKSPACE\build\nano-node-*-win64.zip
 
-((Get-FileHash $exe).hash)+" "+(split-path -Path $exe -Resolve -leaf) | Out-file -FilePath "$exe.sha256"
-((Get-FileHash $zip).hash)+" "+(split-path -Path $zip -Resolve -leaf) | Out-file -FilePath "$zip.sha256"
+$exe_hash = ((Get-FileHash $exe).hash)+" "+(split-path -Path $exe -Resolve -leaf)
+$zip_hash = ((Get-FileHash $zip).hash)+" "+(split-path -Path $zip -Resolve -leaf)
 
-aws s3 cp $exe s3://repo.nano.org/$network_cfg/binaries/nano-node-$env:TAG-win64.exe --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
-aws s3 cp "$exe.sha256" s3://repo.nano.org/$network_cfg/binaries/nano-node-$env:TAG-win64.exe.sha256 --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
-aws s3 cp "$zip" s3://repo.nano.org/$network_cfg/binaries/nano-node-$env:TAG-win64.zip --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
-aws s3 cp "$zip.sha256" s3://repo.nano.org/$network_cfg/binaries/nano-node-$env:TAG-win64.zip.sha256 --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+$exe_hash | Out-file -FilePath "$exe.sha256"
+$zip_hash | Out-file -FilePath "$zip.sha256"
+
+Write-Output "::notice::Hash: $exe_hash"
+Write-Output "::notice::Hash: $zip_hash"
+
+aws s3 cp "$exe" s3://$env:S3_BUCKET_NAME/$directory/binaries/nano-node-$env:TAG-win64.exe --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+aws s3 cp "$exe.sha256" s3://$env:S3_BUCKET_NAME/$directory/binaries/nano-node-$env:TAG-win64.exe.sha256 --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+aws s3 cp "$zip" s3://$env:S3_BUCKET_NAME/$directory/binaries/nano-node-$env:TAG-win64.zip --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+aws s3 cp "$zip.sha256" s3://$env:S3_BUCKET_NAME/$directory/binaries/nano-node-$env:TAG-win64.zip.sha256 --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers

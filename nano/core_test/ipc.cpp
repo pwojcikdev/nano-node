@@ -19,9 +19,9 @@ using namespace std::chrono_literals;
 
 TEST (ipc, asynchronous)
 {
-	nano::system system (1);
+	nano::test::system system (1);
 	system.nodes[0]->config.ipc_config.transport_tcp.enabled = true;
-	system.nodes[0]->config.ipc_config.transport_tcp.port = 24077;
+	system.nodes[0]->config.ipc_config.transport_tcp.port = system.get_available_port ();
 	nano::node_rpc_config node_rpc_config;
 	nano::ipc::ipc_server ipc (*system.nodes[0], node_rpc_config);
 	nano::ipc::ipc_client client (system.nodes[0]->io_ctx);
@@ -29,7 +29,7 @@ TEST (ipc, asynchronous)
 	auto req (nano::ipc::prepare_request (nano::ipc::payload_encoding::json_v1, std::string (R"({"action": "block_count"})")));
 	auto res (std::make_shared<std::vector<uint8_t>> ());
 	std::atomic<bool> call_completed{ false };
-	client.async_connect ("::1", 24077, [&client, &req, &res, &call_completed] (nano::error err) {
+	client.async_connect ("::1", ipc.listening_tcp_port ().value (), [&client, &req, &res, &call_completed] (nano::error err) {
 		client.async_write (req, [&client, &req, &res, &call_completed] (nano::error err_a, size_t size_a) {
 			ASSERT_NO_ERROR (static_cast<std::error_code> (err_a));
 			ASSERT_EQ (size_a, req.size ());
@@ -59,17 +59,17 @@ TEST (ipc, asynchronous)
 
 TEST (ipc, synchronous)
 {
-	nano::system system (1);
+	nano::test::system system (1);
 	system.nodes[0]->config.ipc_config.transport_tcp.enabled = true;
-	system.nodes[0]->config.ipc_config.transport_tcp.port = 24077;
+	system.nodes[0]->config.ipc_config.transport_tcp.port = system.get_available_port ();
 	nano::node_rpc_config node_rpc_config;
 	nano::ipc::ipc_server ipc (*system.nodes[0], node_rpc_config);
 	nano::ipc::ipc_client client (system.nodes[0]->io_ctx);
 
 	// Start blocking IPC client in a separate thread
 	std::atomic<bool> call_completed{ false };
-	std::thread client_thread ([&client, &call_completed] () {
-		client.connect ("::1", 24077);
+	std::thread client_thread ([&] () {
+		client.connect ("::1", ipc.listening_tcp_port ().value ());
 		std::string response (nano::ipc::request (nano::ipc::payload_encoding::json_v1, client, std::string (R"({"action": "block_count"})")));
 		std::stringstream ss;
 		ss << response;
@@ -192,9 +192,9 @@ TEST (ipc, permissions_default_user_order)
 
 TEST (ipc, invalid_endpoint)
 {
-	nano::system system (1);
+	nano::test::system system (1);
 	system.nodes[0]->config.ipc_config.transport_tcp.enabled = true;
-	system.nodes[0]->config.ipc_config.transport_tcp.port = 24077;
+	system.nodes[0]->config.ipc_config.transport_tcp.port = system.get_available_port ();
 	nano::node_rpc_config node_rpc_config;
 	nano::ipc::ipc_client client (system.nodes[0]->io_ctx);
 

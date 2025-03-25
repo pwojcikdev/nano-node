@@ -5,10 +5,11 @@
 #include <nano/lib/utility.hpp>
 #include <nano/secure/common.hpp>
 
-#include <crypto/cryptopp/aes.h>
-#include <crypto/cryptopp/modes.h>
+#include <boost/io/ios_state.hpp>
 
 #include <crypto/ed25519-donna/ed25519.h>
+#include <cryptopp/aes.h>
+#include <cryptopp/modes.h>
 
 namespace
 {
@@ -33,38 +34,60 @@ uint8_t account_decode (char value)
 }
 }
 
-void nano::public_key::encode_account (std::string & destination_a) const
+/*
+ * public_key
+ */
+
+nano::public_key nano::public_key::from_account (std::string const & text)
 {
-	debug_assert (destination_a.empty ());
-	destination_a.reserve (65);
-	uint64_t check (0);
+	nano::public_key result;
+	bool error = result.decode_account (text);
+	release_assert (!error);
+	return result;
+}
+
+nano::public_key nano::public_key::from_node_id (std::string const & text)
+{
+	nano::public_key result;
+	bool error = result.decode_node_id (text);
+	release_assert (!error);
+	return result;
+}
+
+void nano::public_key::encode_account (std::ostream & os) const
+{
+	uint64_t check = 0;
+
 	blake2b_state hash;
 	blake2b_init (&hash, 5);
 	blake2b_update (&hash, bytes.data (), bytes.size ());
 	blake2b_final (&hash, reinterpret_cast<uint8_t *> (&check), 5);
-	nano::uint512_t number_l (number ());
+
+	nano::uint512_t number_l{ number () };
 	number_l <<= 40;
-	number_l |= nano::uint512_t (check);
+	number_l |= nano::uint512_t{ check };
+
+	// Pre-calculate all characters in reverse order
+	std::array<char, 60> encoded{};
 	for (auto i (0); i < 60; ++i)
 	{
-		uint8_t r (number_l & static_cast<uint8_t> (0x1f));
+		uint8_t r{ number_l & static_cast<uint8_t> (0x1f) };
 		number_l >>= 5;
-		destination_a.push_back (account_encode (r));
+		encoded[59 - i] = account_encode (r);
 	}
-	destination_a.append ("_onan"); // nano_
-	std::reverse (destination_a.begin (), destination_a.end ());
+
+	// Write prefix
+	os << "nano_";
+
+	// Write encoded characters
+	os.write (encoded.data (), encoded.size ());
 }
 
 std::string nano::public_key::to_account () const
 {
-	std::string result;
-	encode_account (result);
-	return result;
-}
-
-nano::public_key::public_key () :
-	uint256_union{ 0 }
-{
+	std::stringstream stream;
+	encode_account (stream);
+	return stream.str ();
 }
 
 nano::public_key const & nano::public_key::null ()
@@ -116,14 +139,18 @@ bool nano::public_key::decode_account (std::string const & source_a)
 					}
 					if (!error)
 					{
-						*this = (number_l >> 40).convert_to<nano::uint256_t> ();
+						nano::public_key temp = (number_l >> 40).convert_to<nano::uint256_t> ();
 						uint64_t check (number_l & static_cast<uint64_t> (0xffffffffff));
 						uint64_t validation (0);
 						blake2b_state hash;
 						blake2b_init (&hash, 5);
-						blake2b_update (&hash, bytes.data (), bytes.size ());
+						blake2b_update (&hash, temp.bytes.data (), temp.bytes.size ());
 						blake2b_final (&hash, reinterpret_cast<uint8_t *> (&validation), 5);
 						error = check != validation;
+						if (!error)
+						{
+							*this = temp;
+						}
 					}
 				}
 				else
@@ -140,16 +167,9 @@ bool nano::public_key::decode_account (std::string const & source_a)
 	return error;
 }
 
-nano::uint256_union::uint256_union (nano::uint256_t const & number_a)
-{
-	bytes.fill (0);
-	boost::multiprecision::export_bits (number_a, bytes.rbegin (), 8, false);
-}
-
-bool nano::uint256_union::operator== (nano::uint256_union const & other_a) const
-{
-	return bytes == other_a.bytes;
-}
+/*
+ * uint256_union
+ */
 
 // Construct a uint256_union = AES_ENC_CTR (cleartext, key, iv)
 void nano::uint256_union::encrypt (nano::raw_key const & cleartext, nano::raw_key const & key, uint128_union const & iv)
@@ -157,23 +177,6 @@ void nano::uint256_union::encrypt (nano::raw_key const & cleartext, nano::raw_ke
 	CryptoPP::AES::Encryption alg (key.bytes.data (), sizeof (key.bytes));
 	CryptoPP::CTR_Mode_ExternalCipher::Encryption enc (alg, iv.bytes.data ());
 	enc.ProcessData (bytes.data (), cleartext.bytes.data (), sizeof (cleartext.bytes));
-}
-
-bool nano::uint256_union::is_zero () const
-{
-	return qwords[0] == 0 && qwords[1] == 0 && qwords[2] == 0 && qwords[3] == 0;
-}
-
-std::string nano::uint256_union::to_string () const
-{
-	std::string result;
-	encode_hex (result);
-	return result;
-}
-
-bool nano::uint256_union::operator< (nano::uint256_union const & other_a) const
-{
-	return std::memcmp (bytes.data (), other_a.bytes.data (), 32) < 0;
 }
 
 nano::uint256_union & nano::uint256_union::operator^= (nano::uint256_union const & other_a)
@@ -200,29 +203,14 @@ nano::uint256_union nano::uint256_union::operator^ (nano::uint256_union const & 
 nano::uint256_union::uint256_union (std::string const & hex_a)
 {
 	auto error (decode_hex (hex_a));
-
 	release_assert (!error);
 }
 
-void nano::uint256_union::clear ()
+void nano::uint256_union::encode_hex (std::ostream & stream) const
 {
-	qwords.fill (0);
-}
-
-nano::uint256_t nano::uint256_union::number () const
-{
-	nano::uint256_t result;
-	boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
-	return result;
-}
-
-void nano::uint256_union::encode_hex (std::string & text) const
-{
-	debug_assert (text.empty ());
-	std::stringstream stream;
+	boost::io::ios_flags_saver ifs{ stream };
 	stream << std::hex << std::uppercase << std::noshowbase << std::setw (64) << std::setfill ('0');
 	stream << number ();
-	text = stream.str ();
 }
 
 bool nano::uint256_union::decode_hex (std::string const & text)
@@ -254,13 +242,11 @@ bool nano::uint256_union::decode_hex (std::string const & text)
 	return error;
 }
 
-void nano::uint256_union::encode_dec (std::string & text) const
+void nano::uint256_union::encode_dec (std::ostream & stream) const
 {
-	debug_assert (text.empty ());
-	std::stringstream stream;
+	boost::io::ios_flags_saver ifs{ stream };
 	stream << std::dec << std::noshowbase;
 	stream << number ();
-	text = stream.str ();
 }
 
 bool nano::uint256_union::decode_dec (std::string const & text)
@@ -288,58 +274,29 @@ bool nano::uint256_union::decode_dec (std::string const & text)
 	return error;
 }
 
-nano::uint256_union::uint256_union (uint64_t value0)
+std::string nano::uint256_union::to_string () const
 {
-	*this = nano::uint256_t (value0);
-}
-
-bool nano::uint256_union::operator!= (nano::uint256_union const & other_a) const
-{
-	return !(*this == other_a);
-}
-
-bool nano::uint512_union::operator== (nano::uint512_union const & other_a) const
-{
-	return bytes == other_a.bytes;
-}
-
-nano::uint512_union::uint512_union (nano::uint256_union const & upper, nano::uint256_union const & lower)
-{
-	uint256s[0] = upper;
-	uint256s[1] = lower;
-}
-
-nano::uint512_union::uint512_union (nano::uint512_t const & number_a)
-{
-	bytes.fill (0);
-	boost::multiprecision::export_bits (number_a, bytes.rbegin (), 8, false);
-}
-
-bool nano::uint512_union::is_zero () const
-{
-	return qwords[0] == 0 && qwords[1] == 0 && qwords[2] == 0 && qwords[3] == 0
-	&& qwords[4] == 0 && qwords[5] == 0 && qwords[6] == 0 && qwords[7] == 0;
-}
-
-void nano::uint512_union::clear ()
-{
-	bytes.fill (0);
-}
-
-nano::uint512_t nano::uint512_union::number () const
-{
-	nano::uint512_t result;
-	boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
-	return result;
-}
-
-void nano::uint512_union::encode_hex (std::string & text) const
-{
-	debug_assert (text.empty ());
 	std::stringstream stream;
+	encode_hex (stream);
+	return stream.str ();
+}
+
+std::string nano::uint256_union::to_string_dec () const
+{
+	std::stringstream stream;
+	encode_dec (stream);
+	return stream.str ();
+}
+
+/*
+ * uint512_union
+ */
+
+void nano::uint512_union::encode_hex (std::ostream & stream) const
+{
+	boost::io::ios_flags_saver ifs{ stream };
 	stream << std::hex << std::uppercase << std::noshowbase << std::setw (128) << std::setfill ('0');
 	stream << number ();
-	text = stream.str ();
 }
 
 bool nano::uint512_union::decode_hex (std::string const & text)
@@ -367,24 +324,16 @@ bool nano::uint512_union::decode_hex (std::string const & text)
 	return error;
 }
 
-bool nano::uint512_union::operator!= (nano::uint512_union const & other_a) const
-{
-	return !(*this == other_a);
-}
-
-nano::uint512_union & nano::uint512_union::operator^= (nano::uint512_union const & other_a)
-{
-	uint256s[0] ^= other_a.uint256s[0];
-	uint256s[1] ^= other_a.uint256s[1];
-	return *this;
-}
-
 std::string nano::uint512_union::to_string () const
 {
-	std::string result;
-	encode_hex (result);
-	return result;
+	std::stringstream stream;
+	encode_hex (stream);
+	return stream.str ();
 }
+
+/*
+ * raw_key
+ */
 
 nano::raw_key::~raw_key ()
 {
@@ -440,67 +389,21 @@ bool nano::validate_message (nano::public_key const & public_key, nano::uint256_
 	return validate_message (public_key, message.bytes.data (), sizeof (message.bytes), signature);
 }
 
-bool nano::validate_message_batch (const unsigned char ** m, size_t * mlen, const unsigned char ** pk, const unsigned char ** RS, size_t num, int * valid)
-{
-	for (size_t i{ 0 }; i < num; ++i)
-	{
-		valid[i] = (0 == ed25519_sign_open (m[i], mlen[i], pk[i], RS[i]));
-	}
-	return true;
-}
+/*
+ * uint128_union
+ */
 
 nano::uint128_union::uint128_union (std::string const & string_a)
 {
 	auto error (decode_hex (string_a));
-
 	release_assert (!error);
 }
 
-nano::uint128_union::uint128_union (uint64_t value_a)
+void nano::uint128_union::encode_hex (std::ostream & stream) const
 {
-	*this = nano::uint128_t (value_a);
-}
-
-nano::uint128_union::uint128_union (nano::uint128_t const & number_a)
-{
-	bytes.fill (0);
-	boost::multiprecision::export_bits (number_a, bytes.rbegin (), 8, false);
-}
-
-bool nano::uint128_union::operator== (nano::uint128_union const & other_a) const
-{
-	return qwords[0] == other_a.qwords[0] && qwords[1] == other_a.qwords[1];
-}
-
-bool nano::uint128_union::operator!= (nano::uint128_union const & other_a) const
-{
-	return !(*this == other_a);
-}
-
-bool nano::uint128_union::operator< (nano::uint128_union const & other_a) const
-{
-	return std::memcmp (bytes.data (), other_a.bytes.data (), 16) < 0;
-}
-
-bool nano::uint128_union::operator> (nano::uint128_union const & other_a) const
-{
-	return std::memcmp (bytes.data (), other_a.bytes.data (), 16) > 0;
-}
-
-nano::uint128_t nano::uint128_union::number () const
-{
-	nano::uint128_t result;
-	boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
-	return result;
-}
-
-void nano::uint128_union::encode_hex (std::string & text) const
-{
-	debug_assert (text.empty ());
-	std::stringstream stream;
+	boost::io::ios_flags_saver ifs{ stream };
 	stream << std::hex << std::uppercase << std::noshowbase << std::setw (32) << std::setfill ('0');
 	stream << number ();
-	text = stream.str ();
 }
 
 bool nano::uint128_union::decode_hex (std::string const & text)
@@ -528,13 +431,11 @@ bool nano::uint128_union::decode_hex (std::string const & text)
 	return error;
 }
 
-void nano::uint128_union::encode_dec (std::string & text) const
+void nano::uint128_union::encode_dec (std::ostream & stream) const
 {
-	debug_assert (text.empty ());
-	std::stringstream stream;
+	boost::io::ios_flags_saver ifs{ stream };
 	stream << std::dec << std::noshowbase;
 	stream << number ();
-	text = stream.str ();
 }
 
 bool nano::uint128_union::decode_dec (std::string const & text, bool decimal)
@@ -641,6 +542,24 @@ bool nano::uint128_union::decode_dec (std::string const & text, nano::uint128_t 
 	}
 	return error;
 }
+
+std::string nano::uint128_union::to_string () const
+{
+	std::stringstream stream;
+	encode_hex (stream);
+	return stream.str ();
+}
+
+std::string nano::uint128_union::to_string_dec () const
+{
+	std::stringstream stream;
+	encode_dec (stream);
+	return stream.str ();
+}
+
+/*
+ *
+ */
 
 void format_frac (std::ostringstream & stream, nano::uint128_t value, nano::uint128_t scale, int precision)
 {
@@ -768,50 +687,6 @@ std::string nano::uint128_union::format_balance (nano::uint128_t scale, int prec
 	return ::format_balance (number (), scale, precision, group_digits, thousands_sep, decimal_point, grouping);
 }
 
-void nano::uint128_union::clear ()
-{
-	qwords.fill (0);
-}
-
-bool nano::uint128_union::is_zero () const
-{
-	return qwords[0] == 0 && qwords[1] == 0;
-}
-
-std::string nano::uint128_union::to_string () const
-{
-	std::string result;
-	encode_hex (result);
-	return result;
-}
-
-std::string nano::uint128_union::to_string_dec () const
-{
-	std::string result;
-	encode_dec (result);
-	return result;
-}
-
-nano::hash_or_account::hash_or_account () :
-	account{}
-{
-}
-
-nano::hash_or_account::hash_or_account (uint64_t value_a) :
-	raw (value_a)
-{
-}
-
-bool nano::hash_or_account::is_zero () const
-{
-	return raw.is_zero ();
-}
-
-void nano::hash_or_account::clear ()
-{
-	raw.clear ();
-}
-
 bool nano::hash_or_account::decode_hex (std::string const & text_a)
 {
 	return raw.decode_hex (text_a);
@@ -832,35 +707,9 @@ std::string nano::hash_or_account::to_account () const
 	return account.to_account ();
 }
 
-nano::block_hash const & nano::hash_or_account::as_block_hash () const
-{
-	return hash;
-}
-
-nano::account const & nano::hash_or_account::as_account () const
-{
-	return account;
-}
-
-nano::hash_or_account::operator nano::uint256_union const & () const
-{
-	return raw;
-}
-
-nano::block_hash const & nano::root::previous () const
-{
-	return hash;
-}
-
-bool nano::hash_or_account::operator== (nano::hash_or_account const & hash_or_account_a) const
-{
-	return bytes == hash_or_account_a.bytes;
-}
-
-bool nano::hash_or_account::operator!= (nano::hash_or_account const & hash_or_account_a) const
-{
-	return !(*this == hash_or_account_a);
-}
+/*
+ *
+ */
 
 std::string nano::to_string_hex (uint64_t const value_a)
 {
@@ -915,6 +764,40 @@ std::string nano::to_string (double const value_a, int const precision_a)
 	return stream.str ();
 }
 
+std::ostream & nano::operator<< (std::ostream & os, const nano::uint128_union & val)
+{
+	val.encode_hex (os);
+	return os;
+}
+
+std::ostream & nano::operator<< (std::ostream & os, const nano::uint256_union & val)
+{
+	val.encode_hex (os);
+	return os;
+}
+
+std::ostream & nano::operator<< (std::ostream & os, const nano::uint512_union & val)
+{
+	val.encode_hex (os);
+	return os;
+}
+
+std::ostream & nano::operator<< (std::ostream & os, const nano::hash_or_account & val)
+{
+	val.raw.encode_hex (os);
+	return os;
+}
+
+std::ostream & nano::operator<< (std::ostream & os, const nano::account & val)
+{
+	val.encode_account (os);
+	return os;
+}
+
+/*
+ *
+ */
+
 #ifdef _WIN32
 #pragma warning(push)
 #pragma warning(disable : 4146) // warning C4146: unary minus operator applied to unsigned type, result still unsigned
@@ -947,43 +830,3 @@ double nano::difficulty::to_multiplier (uint64_t const difficulty_a, uint64_t co
 #ifdef _WIN32
 #pragma warning(pop)
 #endif
-
-nano::public_key::operator nano::link const & () const
-{
-	return reinterpret_cast<nano::link const &> (*this);
-}
-
-nano::public_key::operator nano::root const & () const
-{
-	return reinterpret_cast<nano::root const &> (*this);
-}
-
-nano::public_key::operator nano::hash_or_account const & () const
-{
-	return reinterpret_cast<nano::hash_or_account const &> (*this);
-}
-
-bool nano::public_key::operator== (std::nullptr_t) const
-{
-	return bytes == null ().bytes;
-}
-
-bool nano::public_key::operator!= (std::nullptr_t) const
-{
-	return !(*this == nullptr);
-}
-
-nano::block_hash::operator nano::link const & () const
-{
-	return reinterpret_cast<nano::link const &> (*this);
-}
-
-nano::block_hash::operator nano::root const & () const
-{
-	return reinterpret_cast<nano::root const &> (*this);
-}
-
-nano::block_hash::operator nano::hash_or_account const & () const
-{
-	return reinterpret_cast<nano::hash_or_account const &> (*this);
-}

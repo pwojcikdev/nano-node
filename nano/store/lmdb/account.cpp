@@ -1,0 +1,69 @@
+#include <nano/secure/parallel_traversal.hpp>
+#include <nano/store/lmdb/account.hpp>
+#include <nano/store/lmdb/db_val.hpp>
+#include <nano/store/lmdb/lmdb.hpp>
+
+nano::store::lmdb::account::account (nano::store::lmdb::component & store_a) :
+	store (store_a){};
+
+void nano::store::lmdb::account::put (store::write_transaction const & transaction, nano::account const & account, nano::account_info const & info)
+{
+	auto status = store.put (transaction, tables::accounts, account, info);
+	store.release_assert_success (status);
+}
+
+bool nano::store::lmdb::account::get (store::transaction const & transaction, nano::account const & account, nano::account_info & info)
+{
+	nano::store::lmdb::db_val value;
+	auto status1 (store.get (transaction, tables::accounts, account, value));
+	release_assert (store.success (status1) || store.not_found (status1), store.error_string (status1));
+	bool result (true);
+	if (store.success (status1))
+	{
+		nano::bufferstream stream (reinterpret_cast<uint8_t const *> (value.data ()), value.size ());
+		result = info.deserialize (stream);
+	}
+	return result;
+}
+
+void nano::store::lmdb::account::del (store::write_transaction const & transaction_a, nano::account const & account_a)
+{
+	auto status = store.del (transaction_a, tables::accounts, account_a);
+	store.release_assert_success (status);
+}
+
+bool nano::store::lmdb::account::exists (store::transaction const & transaction_a, nano::account const & account_a)
+{
+	auto iterator (begin (transaction_a, account_a));
+	return iterator != end (transaction_a) && nano::account (iterator->first) == account_a;
+}
+
+size_t nano::store::lmdb::account::count (store::transaction const & transaction_a)
+{
+	return store.count (transaction_a, tables::accounts);
+}
+
+auto nano::store::lmdb::account::begin (store::transaction const & transaction, nano::account const & account) const -> iterator
+{
+	lmdb::db_val val{ account };
+	return iterator{ store::iterator{ lmdb::iterator::lower_bound (store.env.tx (transaction), accounts_handle, val) } };
+}
+
+auto nano::store::lmdb::account::begin (store::transaction const & transaction) const -> iterator
+{
+	return iterator{ store::iterator{ lmdb::iterator::begin (store.env.tx (transaction), accounts_handle) } };
+}
+
+auto nano::store::lmdb::account::end (store::transaction const & tx) const -> iterator
+{
+	return iterator{ store::iterator{ lmdb::iterator::end (store.env.tx (tx), accounts_handle) } };
+}
+
+void nano::store::lmdb::account::for_each_par (std::function<void (store::read_transaction const &, iterator, iterator)> const & action_a) const
+{
+	parallel_traversal<nano::uint256_t> (
+	[&action_a, this] (nano::uint256_t const & start, nano::uint256_t const & end, bool const is_last) {
+		auto transaction (this->store.tx_begin_read ());
+		action_a (transaction, this->begin (transaction, start), !is_last ? this->begin (transaction, end) : this->end (transaction));
+	});
+}

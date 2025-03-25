@@ -10,6 +10,11 @@
 #include <functional>
 #include <string>
 
+namespace nano::secure
+{
+class transaction;
+}
+
 namespace nano
 {
 namespace ipc
@@ -44,7 +49,9 @@ public:
 	void accounts_create ();
 	void accounts_frontiers ();
 	void accounts_pending ();
+	void accounts_receivable ();
 	void active_difficulty ();
+	void election_statistics ();
 	void available_supply ();
 	void block_info ();
 	void block_confirm ();
@@ -58,12 +65,13 @@ public:
 	void bootstrap_any ();
 	void bootstrap_lazy ();
 	void bootstrap_status ();
-	void chain (bool = false);
+	void bootstrap_priorities ();
+	void bootstrap_reset ();
+	void chain (bool successors = false);
 	void confirmation_active ();
 	void confirmation_history ();
 	void confirmation_info ();
 	void confirmation_quorum ();
-	void confirmation_height_currently_processing ();
 	void database_txn_tracker ();
 	void delegators ();
 	void delegators_count ();
@@ -74,8 +82,6 @@ public:
 	void key_create ();
 	void key_expand ();
 	void ledger ();
-	void mnano_to_raw (nano::uint128_t = nano::Mxrb_ratio);
-	void mnano_from_raw (nano::uint128_t = nano::Mxrb_ratio);
 	void nano_to_raw ();
 	void raw_to_nano ();
 	void node_id ();
@@ -86,6 +92,9 @@ public:
 	void peers ();
 	void pending ();
 	void pending_exists ();
+	void receivable ();
+	void receivable_exists ();
+	void populate_backlog ();
 	void process ();
 	void pruned_exists ();
 	void receive ();
@@ -95,7 +104,9 @@ public:
 	void representatives_online ();
 	void republish ();
 	void search_pending ();
+	void search_receivable ();
 	void search_pending_all ();
+	void search_receivable_all ();
 	void send ();
 	void sign ();
 	void stats ();
@@ -125,6 +136,7 @@ public:
 	void wallet_ledger ();
 	void wallet_lock ();
 	void wallet_pending ();
+	void wallet_receivable ();
 	void wallet_representative ();
 	void wallet_representative_set ();
 	void wallet_republish ();
@@ -147,10 +159,10 @@ public:
 	std::string action;
 	boost::property_tree::ptree response_l;
 	std::shared_ptr<nano::wallet> wallet_impl ();
-	bool wallet_locked_impl (nano::transaction const &, std::shared_ptr<nano::wallet> const &);
-	bool wallet_account_impl (nano::transaction const &, std::shared_ptr<nano::wallet> const &, nano::account const &);
+	bool wallet_locked_impl (store::transaction const &, std::shared_ptr<nano::wallet> const &);
+	bool wallet_account_impl (store::transaction const &, std::shared_ptr<nano::wallet> const &, nano::account const &);
 	nano::account account_impl (std::string = "", std::error_code = nano::error_common::bad_account_number);
-	nano::account_info account_info_impl (nano::transaction const &, nano::account const &);
+	nano::account_info account_info_impl (secure::transaction const &, nano::account const &);
 	nano::amount amount_impl ();
 	std::shared_ptr<nano::block> block_impl (bool = true);
 	nano::block_hash hash_impl (std::string = "hash");

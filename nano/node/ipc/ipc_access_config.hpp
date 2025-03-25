@@ -5,17 +5,9 @@
 #include <nano/lib/locks.hpp>
 
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
-namespace boost
-{
-namespace filesystem
-{
-	class path;
-}
-}
 namespace cpptoml
 {
 class table;
@@ -128,6 +120,6 @@ namespace ipc
 		mutable nano::mutex mutex;
 	};
 
-	nano::error read_access_config_toml (boost::filesystem::path const & data_path_a, nano::ipc::access & config_a);
+	nano::error read_access_config_toml (std::filesystem::path const & data_path_a, nano::ipc::access & config_a);
 }
 }

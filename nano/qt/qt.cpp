@@ -1,13 +1,20 @@
+#include <nano/lib/blocks.hpp>
 #include <nano/lib/config.hpp>
+#include <nano/lib/stats_sinks.hpp>
+#include <nano/node/election_status.hpp>
+#include <nano/node/vote_with_weight_info.hpp>
 #include <nano/qt/qt.hpp>
+#include <nano/secure/ledger.hpp>
+#include <nano/secure/ledger_set_any.hpp>
 
-#include <boost/foreach.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
 
 #include <cmath>
 #include <iomanip>
 #include <sstream>
+
+#include <fmt/format.h>
 
 namespace
 {
@@ -70,12 +77,14 @@ nano_qt::self_pane::self_pane (nano_qt::wallet & wallet_a, nano::account const &
 	wallet (wallet_a)
 {
 	your_account_label->setStyleSheet ("font-weight: bold;");
-	std::string network = wallet.node.network_params.network.get_current_network_as_string ();
+
+	// Capitalize the first letter
+	std::string network{ wallet.node.network_params.network.get_current_network_as_string () };
 	if (!network.empty ())
 	{
 		network[0] = std::toupper (network[0]);
 	}
-	version = new QLabel (boost::str (boost::format ("%1% %2% network") % NANO_VERSION_STRING % network).c_str ());
+	version = new QLabel (fmt::format ("{} {} network", NANO_VERSION_STRING, network).c_str ());
 
 	self_layout->addWidget (your_account_label);
 	self_layout->addStretch ();
@@ -102,7 +111,7 @@ nano_qt::self_pane::self_pane (nano_qt::wallet & wallet_a, nano::account const &
 	QObject::connect (copy_button, &QPushButton::clicked, [this] () {
 		this->wallet.application.clipboard ()->setText (QString (this->wallet.account.to_account ().c_str ()));
 		copy_button->setText ("Copied!");
-		this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (2), [this] () {
+		this->wallet.node.workers.post_delayed (std::chrono::seconds (2), [this] () {
 			this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 				copy_button->setText ("Copy");
 			}));
@@ -196,7 +205,7 @@ nano_qt::accounts::accounts (nano_qt::wallet & wallet_a) :
 				this->wallet.wallet_m->deterministic_insert (transaction);
 				show_button_success (*create_account);
 				create_account->setText ("New account was created");
-				this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+				this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 					this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 						show_button_ok (*create_account);
 						create_account->setText ("Create account");
@@ -207,7 +216,7 @@ nano_qt::accounts::accounts (nano_qt::wallet & wallet_a) :
 			{
 				show_button_error (*create_account);
 				create_account->setText ("Wallet is locked, unlock it to create account");
-				this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+				this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 					this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 						show_button_ok (*create_account);
 						create_account->setText ("Create account");
@@ -229,7 +238,7 @@ nano_qt::accounts::accounts (nano_qt::wallet & wallet_a) :
 			this->wallet.application.clipboard ()->setText (QString (seed.to_string ().c_str ()));
 			show_button_success (*backup_seed);
 			backup_seed->setText ("Seed was copied to clipboard");
-			this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+			this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 				this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 					show_button_ok (*backup_seed);
 					backup_seed->setText ("Copy wallet seed to clipboard");
@@ -241,7 +250,7 @@ nano_qt::accounts::accounts (nano_qt::wallet & wallet_a) :
 			this->wallet.application.clipboard ()->setText ("");
 			show_button_error (*backup_seed);
 			backup_seed->setText ("Wallet is locked, unlock it to enable the backup");
-			this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+			this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 				this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 					show_button_ok (*backup_seed);
 					backup_seed->setText ("Copy wallet seed to clipboard");
@@ -260,14 +269,14 @@ nano_qt::accounts::accounts (nano_qt::wallet & wallet_a) :
 void nano_qt::accounts::refresh_wallet_balance ()
 {
 	auto transaction (this->wallet.wallet_m->wallets.tx_begin_read ());
-	auto block_transaction (this->wallet.node.store.tx_begin_read ());
+	auto block_transaction = this->wallet.node.ledger.tx_begin_read ();
 	nano::uint128_t balance (0);
 	nano::uint128_t pending (0);
-	for (auto i (this->wallet.wallet_m->store.begin (transaction)), j (this->wallet.wallet_m->store.end ()); i != j; ++i)
+	for (auto i (this->wallet.wallet_m->store.begin (transaction)), j (this->wallet.wallet_m->store.end (transaction)); i != j; ++i)
 	{
 		nano::public_key const & key (i->first);
-		balance = balance + (this->wallet.node.ledger.account_balance (block_transaction, key));
-		pending = pending + (this->wallet.node.ledger.account_pending (block_transaction, key));
+		balance = balance + this->wallet.node.ledger.any.account_balance (block_transaction, key).value_or (0).number ();
+		pending = pending + (this->wallet.node.ledger.account_receivable (block_transaction, key));
 	}
 	auto final_text (std::string ("Balance: ") + wallet.format_balance (balance));
 	if (!pending.is_zero ())
@@ -275,7 +284,7 @@ void nano_qt::accounts::refresh_wallet_balance ()
 		final_text += "\nReady to receive: " + wallet.format_balance (pending);
 	}
 	wallet_balance_label->setText (QString (final_text.c_str ()));
-	this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (60), [this] () {
+	this->wallet.node.workers.post_delayed (std::chrono::seconds (60), [this] () {
 		this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 			refresh_wallet_balance ();
 		}));
@@ -286,12 +295,12 @@ void nano_qt::accounts::refresh ()
 {
 	model->removeRows (0, model->rowCount ());
 	auto transaction (wallet.wallet_m->wallets.tx_begin_read ());
-	auto block_transaction (this->wallet.node.store.tx_begin_read ());
+	auto block_transaction = this->wallet.node.ledger.tx_begin_read ();
 	QBrush brush;
-	for (auto i (wallet.wallet_m->store.begin (transaction)), j (wallet.wallet_m->store.end ()); i != j; ++i)
+	for (auto i (wallet.wallet_m->store.begin (transaction)), j (wallet.wallet_m->store.end (transaction)); i != j; ++i)
 	{
 		nano::public_key key (i->first);
-		auto balance_amount (wallet.node.ledger.account_balance (block_transaction, key));
+		auto balance_amount = wallet.node.ledger.any.account_balance (block_transaction, key).value_or (0).number ();
 		bool display (true);
 		switch (wallet.wallet_m->store.key_type (i->second))
 		{
@@ -394,18 +403,13 @@ nano_qt::import::import (nano_qt::wallet & wallet_a) :
 					{
 						this->wallet.account = this->wallet.wallet_m->change_seed (transaction, seed_l);
 						successful = true;
-						// Pending check for accounts to restore if bootstrap is in progress
-						if (this->wallet.node.bootstrap_initiator.in_progress ())
-						{
-							this->wallet.needs_deterministic_restore = true;
-						}
 					}
 					else
 					{
 						show_line_error (*seed);
 						show_button_error (*import_seed);
 						import_seed->setText ("Wallet is locked, unlock it to enable the import");
-						this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (10), [this] () {
+						this->wallet.node.workers.post_delayed (std::chrono::seconds (10), [this] () {
 							this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 								show_line_ok (*seed);
 								show_button_ok (*import_seed);
@@ -422,7 +426,7 @@ nano_qt::import::import (nano_qt::wallet & wallet_a) :
 					show_button_success (*import_seed);
 					import_seed->setText ("Successful import of seed");
 					this->wallet.refresh ();
-					this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+					this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 						this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 							show_button_ok (*import_seed);
 							import_seed->setText ("Import seed");
@@ -442,7 +446,7 @@ nano_qt::import::import (nano_qt::wallet & wallet_a) :
 				{
 					import_seed->setText ("Incorrect seed. Only HEX characters allowed");
 				}
-				this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+				this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 					this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 						show_button_ok (*import_seed);
 						import_seed->setText ("Import seed");
@@ -455,7 +459,7 @@ nano_qt::import::import (nano_qt::wallet & wallet_a) :
 			show_line_error (*clear_line);
 			show_button_error (*import_seed);
 			import_seed->setText ("Type words 'clear keys'");
-			this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+			this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 				this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 					show_button_ok (*import_seed);
 					import_seed->setText ("Import seed");
@@ -513,7 +517,7 @@ namespace
 class short_text_visitor : public nano::block_visitor
 {
 public:
-	short_text_visitor (nano::transaction const & transaction_a, nano::ledger & ledger_a) :
+	short_text_visitor (nano::secure::transaction const & transaction_a, nano::ledger & ledger_a) :
 		transaction (transaction_a),
 		ledger (ledger_a)
 	{
@@ -522,36 +526,57 @@ public:
 	{
 		type = "Send";
 		account = block_a.hashables.destination;
-		bool error_or_pruned (false);
-		amount = ledger.amount_safe (transaction, block_a.hash (), error_or_pruned);
-		if (error_or_pruned)
+		auto amount_l = ledger.any.block_amount (transaction, block_a.hash ());
+		if (!amount_l)
 		{
 			type = "Send (pruned)";
+			amount = 0;
+		}
+		else
+		{
+			amount = amount_l.value ().number ();
 		}
 	}
 	void receive_block (nano::receive_block const & block_a)
 	{
 		type = "Receive";
-		bool error_or_pruned (false);
-		account = ledger.account_safe (transaction, block_a.hashables.source, error_or_pruned);
-		amount = ledger.amount_safe (transaction, block_a.hash (), error_or_pruned);
-		if (error_or_pruned)
+		auto account_l = ledger.any.block_account (transaction, block_a.hashables.source);
+		auto amount_l = ledger.any.block_amount (transaction, block_a.hash ());
+		if (!account_l)
+		{
+			type = "Receive (pruned source)";
+		}
+		else
+		{
+			account = account_l.value ();
+		}
+		if (!amount_l)
 		{
 			type = "Receive (pruned)";
+			amount = 0;
+		}
+		else
+		{
+			amount = amount_l.value ().number ();
 		}
 	}
 	void open_block (nano::open_block const & block_a)
 	{
 		type = "Receive";
-		if (block_a.hashables.source != ledger.constants.genesis->account ())
+		if (block_a.hashables.source != ledger.constants.genesis->account ().as_union ())
 		{
-			bool error_or_pruned (false);
-			account = ledger.account_safe (transaction, block_a.hashables.source, error_or_pruned);
-			amount = ledger.amount_safe (transaction, block_a.hash (), error_or_pruned);
-			if (error_or_pruned)
+			auto account_l = ledger.any.block_account (transaction, block_a.hashables.source);
+			auto amount_l = ledger.any.block_amount (transaction, block_a.hash ());
+			if (!account_l)
 			{
-				type = "Receive (pruned)";
+				type = "Receive (pruned source)";
 			}
+			else
+			{
+				account = account_l.value ();
+			}
+			debug_assert (amount_l);
+			amount = amount_l.value ().number ();
 		}
 		else
 		{
@@ -568,62 +593,99 @@ public:
 	void state_block (nano::state_block const & block_a)
 	{
 		auto balance (block_a.hashables.balance.number ());
-		bool error_or_pruned (false);
-		auto previous_balance (ledger.balance_safe (transaction, block_a.hashables.previous, error_or_pruned));
-		if (error_or_pruned)
-		{
-			type = "Unknown (pruned)";
-			amount = 0;
-			account = block_a.hashables.account;
-		}
-		else if (balance < previous_balance)
+		auto previous_balance = ledger.any.block_balance (transaction, block_a.hashables.previous);
+		// Error to receive previous block balance means that previous block was pruned from the ledger
+		if ((!previous_balance || balance < previous_balance.value ().number ()) && block_a.sideband ().details.is_send)
 		{
 			type = "Send";
-			amount = previous_balance - balance;
 			account = block_a.hashables.link.as_account ();
-		}
-		else
-		{
-			if (block_a.hashables.link.is_zero ())
+			if (!previous_balance)
 			{
-				type = "Change";
-				account = block_a.hashables.representative;
-			}
-			else if (balance == previous_balance && ledger.is_epoch_link (block_a.hashables.link))
-			{
-				type = "Epoch";
-				account = ledger.epoch_signer (block_a.hashables.link);
+				type = "Send (pruned)";
+				amount = 0;
 			}
 			else
 			{
-				type = "Receive";
-				account = ledger.account_safe (transaction, block_a.hashables.link.as_block_hash (), error_or_pruned);
-				if (error_or_pruned)
+				amount = previous_balance.value ().number () - balance;
+			}
+		}
+		else if (block_a.hashables.link.is_zero () && !block_a.sideband ().details.is_send)
+		{
+			debug_assert (!block_a.sideband ().details.is_receive && !block_a.sideband ().details.is_epoch);
+			type = "Change";
+			account = block_a.hashables.representative;
+			amount = 0;
+			if (!previous_balance)
+			{
+				type = "Change (pruned)";
+			}
+			else
+			{
+				debug_assert (balance == previous_balance);
+			}
+		}
+		else if (ledger.is_epoch_link (block_a.hashables.link) && block_a.sideband ().details.is_epoch)
+		{
+			debug_assert (!previous_balance || balance == previous_balance);
+			type = "Epoch";
+			amount = 0;
+			if (!previous_balance && !block_a.hashables.previous.is_zero ())
+			{
+				// Epoch block with previous balance error is pruned only if it isn't open block for an account
+				type = "Epoch (pruned)";
+			}
+			account = ledger.epoch_signer (block_a.hashables.link);
+		}
+		else
+		{
+			debug_assert (block_a.sideband ().details.is_receive);
+			type = "Receive";
+			auto account_l = ledger.any.block_account (transaction, block_a.hashables.link.as_block_hash ());
+			if (!account_l)
+			{
+				type = "Receive (pruned source)";
+			}
+			else
+			{
+				account = account_l.value ();
+			}
+			if (!previous_balance)
+			{
+				if (!block_a.hashables.previous.is_zero ())
 				{
+					// Receive block with previous balance error is pruned only if it isn't open block for an account
 					type = "Receive (pruned)";
+					amount = 0;
+				}
+				else
+				{
+					amount = balance;
 				}
 			}
-			amount = balance - previous_balance;
+			else
+			{
+				amount = balance - previous_balance.value ().number ();
+			}
 		}
 	}
-	nano::transaction const & transaction;
+	nano::secure::transaction const & transaction;
 	nano::ledger & ledger;
 	std::string type;
 	nano::uint128_t amount;
-	nano::account account;
+	nano::account account{ 0 };
 };
 }
 
 void nano_qt::history::refresh ()
 {
-	auto transaction (ledger.store.tx_begin_read ());
+	auto transaction = ledger.tx_begin_read ();
 	model->removeRows (0, model->rowCount ());
-	auto hash (ledger.latest (transaction, account));
+	auto hash (ledger.any.account_head (transaction, account));
 	short_text_visitor visitor (transaction, ledger);
 	for (auto i (0), n (tx_count->value ()); i < n && !hash.is_zero (); ++i)
 	{
 		QList<QStandardItem *> items;
-		auto block (ledger.store.block.get (transaction, hash));
+		auto block (ledger.any.block_get (transaction, hash));
 		if (block != nullptr)
 		{
 			block->visit (visitor);
@@ -671,14 +733,14 @@ nano_qt::block_viewer::block_viewer (nano_qt::wallet & wallet_a) :
 		nano::block_hash hash_l;
 		if (!hash_l.decode_hex (hash->text ().toStdString ()))
 		{
-			auto transaction (this->wallet.node.store.tx_begin_read ());
-			auto block_l (this->wallet.node.store.block.get (transaction, hash_l));
+			auto transaction = this->wallet.node.ledger.tx_begin_read ();
+			auto block_l (this->wallet.node.ledger.any.block_get (transaction, hash_l));
 			if (block_l != nullptr)
 			{
 				std::string contents;
 				block_l->serialize_json (contents);
 				block->setPlainText (contents.c_str ());
-				auto successor_l (this->wallet.node.store.block.successor (transaction, hash_l));
+				auto successor_l = this->wallet.node.ledger.any.block_successor (transaction, hash_l).value_or (0);
 				successor->setText (successor_l.to_string ().c_str ());
 			}
 			else
@@ -696,11 +758,11 @@ nano_qt::block_viewer::block_viewer (nano_qt::wallet & wallet_a) :
 		auto error (block.decode_hex (hash->text ().toStdString ()));
 		if (!error)
 		{
-			auto transaction (this->wallet.node.store.tx_begin_read ());
-			if (this->wallet.node.store.block.exists (transaction, block))
+			auto transaction = this->wallet.node.ledger.tx_begin_read ();
+			if (this->wallet.node.ledger.any.block_exists (transaction, block))
 			{
 				rebroadcast->setEnabled (false);
-				this->wallet.node.background ([this, block] () {
+				this->wallet.node.workers.post ([this, block] () {
 					rebroadcast_action (block);
 				});
 			}
@@ -717,18 +779,18 @@ nano_qt::block_viewer::block_viewer (nano_qt::wallet & wallet_a) :
 void nano_qt::block_viewer::rebroadcast_action (nano::block_hash const & hash_a)
 {
 	auto done (true);
-	auto transaction (wallet.node.ledger.store.tx_begin_read ());
-	auto block (wallet.node.store.block.get (transaction, hash_a));
+	auto transaction = wallet.node.ledger.tx_begin_read ();
+	auto block (wallet.node.ledger.any.block_get (transaction, hash_a));
 	if (block != nullptr)
 	{
-		wallet.node.network.flood_block (block);
-		auto successor (wallet.node.store.block.successor (transaction, hash_a));
-		if (!successor.is_zero ())
+		wallet.node.network.flood_block (block, nano::transport::traffic_type::block_broadcast_initial);
+		auto successor = wallet.node.ledger.any.block_successor (transaction, hash_a);
+		if (successor)
 		{
 			done = false;
-			wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (1), [this, successor] () {
+			wallet.node.workers.post_delayed (std::chrono::seconds (1), [this, successor] () {
 				this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this, successor] () {
-					rebroadcast_action (successor);
+					rebroadcast_action (successor.value ());
 				}));
 			});
 		}
@@ -839,13 +901,13 @@ void nano_qt::stats_viewer::refresh_stats ()
 {
 	model->removeRows (0, model->rowCount ());
 
-	auto sink = wallet.node.stats.log_sink_json ();
-	wallet.node.stats.log_counters (*sink);
-	auto json = static_cast<boost::property_tree::ptree *> (sink->to_object ());
-	if (json)
+	nano::stat_json_writer sink;
+	wallet.node.stats.log_counters (sink);
+	auto json = sink.to_ptree ();
+	if (!json.empty ())
 	{
 		// Format the stat data to make totals and values easier to read
-		BOOST_FOREACH (boost::property_tree::ptree::value_type const & child, json->get_child ("entries"))
+		for (boost::property_tree::ptree::value_type const & child : json.get_child ("entries"))
 		{
 			auto time = child.second.get<std::string> ("time");
 			auto type = child.second.get<std::string> ("type");
@@ -858,7 +920,7 @@ void nano_qt::stats_viewer::refresh_stats ()
 				detail = "total";
 			}
 
-			if (type == "traffic_udp" || type == "traffic_tcp")
+			if (type == "traffic_tcp")
 			{
 				std::vector<std::string> const units = { " bytes", " KB", " MB", " GB", " TB", " PB" };
 				double bytes = std::stod (value);
@@ -922,9 +984,9 @@ std::string nano_qt::status::text ()
 	size_t cemented (0);
 	std::string count_string;
 	{
-		auto size (wallet.wallet_m->wallets.node.ledger.cache.block_count.load ());
-		unchecked = wallet.wallet_m->wallets.node.unchecked.count (wallet.wallet_m->wallets.node.store.tx_begin_read ());
-		cemented = wallet.wallet_m->wallets.node.ledger.cache.cemented_count.load ();
+		auto size (wallet.wallet_m->wallets.node.ledger.block_count ());
+		unchecked = wallet.wallet_m->wallets.node.unchecked.count ();
+		cemented = wallet.wallet_m->wallets.node.ledger.cemented_count ();
 		count_string = std::to_string (size);
 	}
 
@@ -957,15 +1019,13 @@ std::string nano_qt::status::text ()
 	}
 
 	result += ", Blocks: ";
-	if (unchecked != 0 && wallet.node.bootstrap_initiator.in_progress ())
-	{
-		count_string += ", Queued: " + std::to_string (unchecked);
-	}
+	count_string += ", Unchecked: " + std::to_string (unchecked);
+	count_string += ", Cemented: " + std::to_string (cemented);
 
 	if (wallet.node.flags.enable_pruning)
 	{
-		count_string += "Full: " + std::to_string (wallet.wallet_m->wallets.node.ledger.cache.block_count - wallet.wallet_m->wallets.node.ledger.cache.pruned_count);
-		count_string += ", Pruned: ", std::to_string (wallet.wallet_m->wallets.node.ledger.cache.pruned_count);
+		count_string += ", Full: " + std::to_string (wallet.wallet_m->wallets.node.ledger.block_count () - wallet.wallet_m->wallets.node.ledger.pruned_count ());
+		count_string += ", Pruned: " + std::to_string (wallet.wallet_m->wallets.node.ledger.pruned_count ());
 	}
 
 	result += count_string.c_str ();
@@ -1008,7 +1068,7 @@ std::string nano_qt::status::color ()
 }
 
 nano_qt::wallet::wallet (QApplication & application_a, nano_qt::eventloop_processor & processor_a, nano::node & node_a, std::shared_ptr<nano::wallet> const & wallet_a, nano::account & account_a) :
-	rendering_ratio (nano::Mxrb_ratio),
+	rendering_ratio (nano::nano_ratio),
 	node (node_a),
 	wallet_m (wallet_a),
 	account (account_a),
@@ -1130,7 +1190,7 @@ void nano_qt::wallet::ongoing_refresh ()
 		}
 	}));
 
-	node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [wallet_w] () {
+	node.workers.post_delayed (std::chrono::seconds (5), [wallet_w] () {
 		if (auto wallet_l = wallet_w.lock ())
 		{
 			wallet_l->ongoing_refresh ();
@@ -1182,7 +1242,7 @@ void nano_qt::wallet::start ()
 						if (this_l->wallet_m->store.valid_password (transaction))
 						{
 							this_l->send_blocks_send->setEnabled (false);
-							this_l->node.background ([this_w, account_l, actual] () {
+							this_l->node.workers.post ([this_w, account_l, actual] () {
 								if (auto this_l = this_w.lock ())
 								{
 									this_l->wallet_m->send_async (this_l->account, account_l, actual, [this_w] (std::shared_ptr<nano::block> const & block_a) {
@@ -1214,7 +1274,7 @@ void nano_qt::wallet::start ()
 						{
 							show_button_error (*this_l->send_blocks_send);
 							this_l->send_blocks_send->setText ("Wallet is locked, unlock it to send");
-							this_l->node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this_w] () {
+							this_l->node.workers.post_delayed (std::chrono::seconds (5), [this_w] () {
 								if (auto this_l = this_w.lock ())
 								{
 									this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w] () {
@@ -1233,7 +1293,7 @@ void nano_qt::wallet::start ()
 						show_line_error (*this_l->send_count);
 						show_button_error (*this_l->send_blocks_send);
 						this_l->send_blocks_send->setText ("Not enough balance");
-						this_l->node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this_w] () {
+						this_l->node.workers.post_delayed (std::chrono::seconds (5), [this_w] () {
 							if (auto this_l = this_w.lock ())
 							{
 								this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w] () {
@@ -1252,7 +1312,7 @@ void nano_qt::wallet::start ()
 					show_line_error (*this_l->send_account);
 					show_button_error (*this_l->send_blocks_send);
 					this_l->send_blocks_send->setText ("Bad destination account");
-					this_l->node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this_w] () {
+					this_l->node.workers.post_delayed (std::chrono::seconds (5), [this_w] () {
 						if (auto this_l = this_w.lock ())
 						{
 							this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w] () {
@@ -1271,7 +1331,7 @@ void nano_qt::wallet::start ()
 				show_line_error (*this_l->send_count);
 				show_button_error (*this_l->send_blocks_send);
 				this_l->send_blocks_send->setText ("Bad amount number");
-				this_l->node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this_w] () {
+				this_l->node.workers.post_delayed (std::chrono::seconds (5), [this_w] () {
 					if (auto this_l = this_w.lock ())
 					{
 						this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w] () {
@@ -1340,7 +1400,7 @@ void nano_qt::wallet::start ()
 			}));
 		}
 	});
-	node.observers.endpoint.add ([this_w] (std::shared_ptr<nano::transport::channel> const &) {
+	node.observers.channel_connected.add ([this_w] (std::shared_ptr<nano::transport::channel> const &) {
 		if (auto this_l = this_w.lock ())
 		{
 			this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w] () {
@@ -1358,31 +1418,6 @@ void nano_qt::wallet::start ()
 				if (auto this_l = this_w.lock ())
 				{
 					this_l->update_connected ();
-				}
-			}));
-		}
-	});
-	node.bootstrap_initiator.add_observer ([this_w] (bool active_a) {
-		if (auto this_l = this_w.lock ())
-		{
-			this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w, active_a] () {
-				if (auto this_l = this_w.lock ())
-				{
-					if (active_a)
-					{
-						this_l->active_status.insert (nano_qt::status_types::synchronizing);
-					}
-					else
-					{
-						this_l->active_status.erase (nano_qt::status_types::synchronizing);
-						// Check for accounts to restore
-						if (this_l->needs_deterministic_restore)
-						{
-							this_l->needs_deterministic_restore = false;
-							auto transaction (this_l->wallet_m->wallets.tx_begin_write ());
-							this_l->wallet_m->deterministic_restore (transaction);
-						}
-					}
 				}
 			}));
 		}
@@ -1447,7 +1482,7 @@ void nano_qt::wallet::update_connected ()
 
 void nano_qt::wallet::empty_password ()
 {
-	this->node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (3), [this] () {
+	this->node.workers.post_delayed (std::chrono::seconds (3), [this] () {
 		auto transaction (wallet_m->wallets.tx_begin_write ());
 		wallet_m->enter_password (transaction, std::string (""));
 	});
@@ -1549,9 +1584,9 @@ nano_qt::settings::settings (nano_qt::wallet & wallet_a) :
 					retype_password->setPlaceholderText ("Retype password");
 					show_button_success (*change);
 					change->setText ("Password was changed");
-					this->wallet.node.logger.try_log ("Wallet password changed");
+					this->wallet.node.logger.warn (nano::log::type::qt, "Wallet password changed");
 					update_locked (false, false);
-					this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+					this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 						this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 							show_button_ok (*change);
 							change->setText ("Set/Change password");
@@ -1569,7 +1604,7 @@ nano_qt::settings::settings (nano_qt::wallet & wallet_a) :
 		{
 			show_button_error (*change);
 			change->setText ("Wallet is locked, unlock it");
-			this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+			this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 				this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 					show_button_ok (*change);
 					change->setText ("Set/Change password");
@@ -1595,7 +1630,7 @@ nano_qt::settings::settings (nano_qt::wallet & wallet_a) :
 				change_rep->setText ("Representative was changed");
 				current_representative->setText (QString (representative_l.to_account ().c_str ()));
 				new_representative->clear ();
-				this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+				this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 					this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 						show_button_ok (*change_rep);
 						change_rep->setText ("Change representative");
@@ -1606,7 +1641,7 @@ nano_qt::settings::settings (nano_qt::wallet & wallet_a) :
 			{
 				show_button_error (*change_rep);
 				change_rep->setText ("Wallet is locked, unlock it");
-				this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+				this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 					this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 						show_button_ok (*change_rep);
 						change_rep->setText ("Change representative");
@@ -1619,7 +1654,7 @@ nano_qt::settings::settings (nano_qt::wallet & wallet_a) :
 			show_line_error (*new_representative);
 			show_button_error (*change_rep);
 			change_rep->setText ("Invalid account");
-			this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+			this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 				this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 					show_line_ok (*new_representative);
 					show_button_ok (*change_rep);
@@ -1642,7 +1677,7 @@ nano_qt::settings::settings (nano_qt::wallet & wallet_a) :
 			this->wallet.wallet_m->store.password.value_set (empty);
 			update_locked (true, true);
 			lock_toggle->setText ("Unlock");
-			this->wallet.node.logger.try_log ("Wallet locked");
+			this->wallet.node.logger.warn (nano::log::type::qt, "Wallet locked");
 			password->setEnabled (1);
 		}
 		else
@@ -1659,7 +1694,7 @@ nano_qt::settings::settings (nano_qt::wallet & wallet_a) :
 				show_line_error (*password);
 				show_button_error (*lock_toggle);
 				lock_toggle->setText ("Invalid password");
-				this->wallet.node.workers.add_timed_task (std::chrono::steady_clock::now () + std::chrono::seconds (5), [this] () {
+				this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 					this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 						show_line_ok (*password);
 						show_button_ok (*lock_toggle);
@@ -1768,7 +1803,6 @@ nano_qt::advanced_actions::advanced_actions (nano_qt::wallet & wallet_a) :
 	bootstrap_label (new QLabel ("IPV6:port \"::ffff:192.168.0.1:7075\"")),
 	peer_count_label (new QLabel ("")),
 	bootstrap_line (new QLineEdit),
-	peers_bootstrap (new QPushButton ("Initiate Bootstrap")),
 	peers_refresh (new QPushButton ("Refresh")),
 	peers_back (new QPushButton ("Back")),
 	wallet (wallet_a)
@@ -1810,7 +1844,6 @@ nano_qt::advanced_actions::advanced_actions (nano_qt::wallet & wallet_a) :
 	peer_summary_layout->addWidget (peer_count_label);
 	peers_layout->addLayout (peer_summary_layout);
 	peers_layout->addWidget (bootstrap_line);
-	peers_layout->addWidget (peers_bootstrap);
 	peers_layout->addWidget (peers_refresh);
 	peers_layout->addWidget (peers_back);
 	peers_layout->setContentsMargins (0, 0, 0, 0);
@@ -1834,7 +1867,7 @@ nano_qt::advanced_actions::advanced_actions (nano_qt::wallet & wallet_a) :
 	QObject::connect (nano_unit, &QRadioButton::toggled, [this] () {
 		if (nano_unit->isChecked ())
 		{
-			this->wallet.change_rendering_ratio (nano::Mxrb_ratio);
+			this->wallet.change_rendering_ratio (nano::nano_ratio);
 			QSettings ().setValue (saved_ratio_key, ratio_group->id (nano_unit));
 		}
 	});
@@ -1870,20 +1903,6 @@ nano_qt::advanced_actions::advanced_actions (nano_qt::wallet & wallet_a) :
 	QObject::connect (peers_back, &QPushButton::released, [this] () {
 		this->wallet.pop_main_stack ();
 	});
-	QObject::connect (peers_bootstrap, &QPushButton::released, [this] () {
-		nano::endpoint endpoint;
-		auto error (nano::parse_endpoint (bootstrap_line->text ().toStdString (), endpoint));
-		if (!error)
-		{
-			show_line_ok (*bootstrap_line);
-			bootstrap_line->clear ();
-			this->wallet.node.bootstrap_initiator.bootstrap (endpoint);
-		}
-		else
-		{
-			show_line_error (*bootstrap_line);
-		}
-	});
 	QObject::connect (peers_refresh, &QPushButton::released, [this] () {
 		refresh_peers ();
 	});
@@ -1894,10 +1913,9 @@ nano_qt::advanced_actions::advanced_actions (nano_qt::wallet & wallet_a) :
 		this->wallet.pop_main_stack ();
 	});
 	QObject::connect (search_for_receivables, &QPushButton::released, [this] () {
-		std::thread ([this] { this->wallet.wallet_m->search_pending (this->wallet.wallet_m->wallets.tx_begin_read ()); }).detach ();
+		std::thread ([this] { this->wallet.wallet_m->search_receivable (this->wallet.wallet_m->wallets.tx_begin_read ()); }).detach ();
 	});
 	QObject::connect (bootstrap, &QPushButton::released, [this] () {
-		std::thread ([this] { this->wallet.node.bootstrap_initiator.bootstrap (); }).detach ();
 	});
 	QObject::connect (create_block, &QPushButton::released, [this] () {
 		this->wallet.push_main_stack (this->wallet.block_creation.window);
@@ -1927,7 +1945,7 @@ void nano_qt::advanced_actions::refresh_peers ()
 	peers_model->removeRows (0, peers_model->rowCount ());
 	auto list (wallet.node.network.list (std::numeric_limits<size_t>::max ()));
 	std::sort (list.begin (), list.end (), [] (auto const & lhs, auto const & rhs) {
-		return lhs->get_endpoint () < rhs->get_endpoint ();
+		return lhs->get_remote_endpoint () < rhs->get_remote_endpoint ();
 	});
 	for (auto i (list.begin ()), n (list.end ()); i != n; ++i)
 	{
@@ -1942,9 +1960,9 @@ void nano_qt::advanced_actions::refresh_peers ()
 		items.push_back (version);
 		QString node_id ("");
 		auto node_id_l (channel->get_node_id_optional ());
-		if (node_id_l.is_initialized ())
+		if (node_id_l.has_value ())
 		{
-			node_id = node_id_l.get ().to_account ().c_str ();
+			node_id = node_id_l.value ().to_account ().c_str ();
 		}
 		items.push_back (new QStandardItem (node_id));
 		peers_model->appendRow (items);
@@ -1955,17 +1973,15 @@ void nano_qt::advanced_actions::refresh_peers ()
 void nano_qt::advanced_actions::refresh_ledger ()
 {
 	ledger_model->removeRows (0, ledger_model->rowCount ());
-	auto transaction (wallet.node.store.tx_begin_read ());
-	for (auto i (wallet.node.ledger.store.account.begin (transaction)), j (wallet.node.ledger.store.account.end ()); i != j; ++i)
+	auto transaction (wallet.node.ledger.tx_begin_read ());
+	for (auto i (wallet.node.ledger.store.account.begin (transaction)), j (wallet.node.ledger.store.account.end (transaction)); i != j; ++i)
 	{
 		QList<QStandardItem *> items;
 		items.push_back (new QStandardItem (QString (i->first.to_account ().c_str ())));
 		nano::account_info const & info (i->second);
-		std::string balance;
-		nano::amount (info.balance.number () / wallet.rendering_ratio).encode_dec (balance);
+		std::string balance = nano::amount (info.balance.number () / wallet.rendering_ratio).to_string_dec ();
 		items.push_back (new QStandardItem (QString (balance.c_str ())));
-		std::string block_hash;
-		info.head.encode_hex (block_hash);
+		std::string block_hash = info.head.to_string ();
 		items.push_back (new QStandardItem (QString (block_hash.c_str ())));
 		ledger_model->appendRow (items);
 	}
@@ -2225,11 +2241,11 @@ void nano_qt::block_creation::create_send ()
 			if (!error)
 			{
 				auto transaction (wallet.node.wallets.tx_begin_read ());
-				auto block_transaction (wallet.node.store.tx_begin_read ());
+				auto block_transaction = wallet.node.ledger.tx_begin_read ();
 				nano::raw_key key;
 				if (!wallet.wallet_m->store.fetch (transaction, account_l, key))
 				{
-					auto balance (wallet.node.ledger.account_balance (block_transaction, account_l));
+					auto balance = wallet.node.ledger.any.account_balance (block_transaction, account_l).value_or (0).number ();
 					if (amount_l.number () <= balance)
 					{
 						nano::account_info info;
@@ -2241,7 +2257,7 @@ void nano_qt::block_creation::create_send ()
 						details.is_send = true;
 						details.epoch = info.epoch ();
 						auto const required_difficulty{ wallet.node.network_params.work.threshold (send.work_version (), details) };
-						if (wallet.node.work_generate_blocking (send, required_difficulty).is_initialized ())
+						if (wallet.node.work_generate_blocking (send, required_difficulty).has_value ())
 						{
 							std::string block_l;
 							send.serialize_json (block_l);
@@ -2301,16 +2317,15 @@ void nano_qt::block_creation::create_receive ()
 	if (!error)
 	{
 		auto transaction (wallet.node.wallets.tx_begin_read ());
-		auto block_transaction (wallet.node.store.tx_begin_read ());
-		auto block_l (wallet.node.store.block.get (block_transaction, source_l));
+		auto block_transaction = wallet.node.ledger.tx_begin_read ();
+		auto block_l (wallet.node.ledger.any.block_get (block_transaction, source_l));
 		if (block_l != nullptr)
 		{
-			auto const & destination (wallet.node.ledger.block_destination (block_transaction, *block_l));
+			auto destination = block_l->destination ();
 			if (!destination.is_zero ())
 			{
 				nano::pending_key pending_key (destination, source_l);
-				nano::pending_info pending;
-				if (!wallet.node.store.pending.get (block_transaction, pending_key, pending))
+				if (auto pending = wallet.node.ledger.any.pending_get (block_transaction, pending_key))
 				{
 					nano::account_info info;
 					auto error (wallet.node.store.account.get (block_transaction, pending_key.account, info));
@@ -2320,12 +2335,12 @@ void nano_qt::block_creation::create_receive ()
 						auto error (wallet.wallet_m->store.fetch (transaction, pending_key.account, key));
 						if (!error)
 						{
-							nano::state_block receive (pending_key.account, info.head, info.representative, info.balance.number () + pending.amount.number (), source_l, key, pending_key.account, 0);
+							nano::state_block receive (pending_key.account, info.head, info.representative, info.balance.number () + pending.value ().amount.number (), source_l, key, pending_key.account, 0);
 							nano::block_details details;
 							details.is_receive = true;
-							details.epoch = std::max (info.epoch (), pending.epoch);
+							details.epoch = std::max (info.epoch (), pending.value ().epoch);
 							auto required_difficulty{ wallet.node.network_params.work.threshold (receive.work_version (), details) };
-							if (wallet.node.work_generate_blocking (receive, required_difficulty).is_initialized ())
+							if (wallet.node.work_generate_blocking (receive, required_difficulty).has_value ())
 							{
 								std::string block_l;
 								receive.serialize_json (block_l);
@@ -2408,7 +2423,7 @@ void nano_qt::block_creation::create_change ()
 					nano::block_details details;
 					details.epoch = info.epoch ();
 					auto const required_difficulty{ wallet.node.network_params.work.threshold (change.work_version (), details) };
-					if (wallet.node.work_generate_blocking (change, required_difficulty).is_initialized ())
+					if (wallet.node.work_generate_blocking (change, required_difficulty).has_value ())
 					{
 						std::string block_l;
 						change.serialize_json (block_l);
@@ -2466,16 +2481,15 @@ void nano_qt::block_creation::create_open ()
 		if (!error)
 		{
 			auto transaction (wallet.node.wallets.tx_begin_read ());
-			auto block_transaction (wallet.node.store.tx_begin_read ());
-			auto block_l (wallet.node.store.block.get (block_transaction, source_l));
+			auto block_transaction = wallet.node.ledger.tx_begin_read ();
+			auto block_l (wallet.node.ledger.any.block_get (block_transaction, source_l));
 			if (block_l != nullptr)
 			{
-				auto const & destination (wallet.node.ledger.block_destination (block_transaction, *block_l));
+				auto destination = block_l->destination ();
 				if (!destination.is_zero ())
 				{
 					nano::pending_key pending_key (destination, source_l);
-					nano::pending_info pending;
-					if (!wallet.node.store.pending.get (block_transaction, pending_key, pending))
+					if (auto pending = wallet.node.ledger.any.pending_get (block_transaction, pending_key))
 					{
 						nano::account_info info;
 						auto error (wallet.node.store.account.get (block_transaction, pending_key.account, info));
@@ -2485,12 +2499,12 @@ void nano_qt::block_creation::create_open ()
 							auto error (wallet.wallet_m->store.fetch (transaction, pending_key.account, key));
 							if (!error)
 							{
-								nano::state_block open (pending_key.account, 0, representative_l, pending.amount, source_l, key, pending_key.account, 0);
+								nano::state_block open (pending_key.account, 0, representative_l, pending.value ().amount, source_l, key, pending_key.account, 0);
 								nano::block_details details;
 								details.is_receive = true;
-								details.epoch = pending.epoch;
+								details.epoch = pending.value ().epoch;
 								auto const required_difficulty{ wallet.node.network_params.work.threshold (open.work_version (), details) };
-								if (wallet.node.work_generate_blocking (open, required_difficulty).is_initialized ())
+								if (wallet.node.work_generate_blocking (open, required_difficulty).has_value ())
 								{
 									std::string block_l;
 									open.serialize_json (block_l);
