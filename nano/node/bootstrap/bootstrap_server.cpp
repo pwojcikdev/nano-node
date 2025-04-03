@@ -37,6 +37,11 @@ void nano::bootstrap_server::start ()
 {
 	debug_assert (threads.empty ());
 
+	if (!config.enable)
+	{
+		return;
+	}
+
 	for (auto i = 0u; i < config.threads; ++i)
 	{
 		threads.push_back (std::thread ([this] () {
@@ -107,6 +112,11 @@ bool nano::bootstrap_server::verify (const nano::asc_pull_req & message) const
 
 bool nano::bootstrap_server::request (nano::asc_pull_req const & message, std::shared_ptr<nano::transport::channel> const & channel)
 {
+	if (!config.enable)
+	{
+		return false;
+	}
+
 	if (!verify (message))
 	{
 		stats.inc (nano::stat::type::bootstrap_server, nano::stat::detail::invalid);
