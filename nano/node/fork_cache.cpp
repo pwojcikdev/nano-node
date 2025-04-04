@@ -1,4 +1,5 @@
 #include <nano/lib/stats.hpp>
+#include <nano/lib/tomlconfig.hpp>
 #include <nano/node/fork_cache.hpp>
 
 #include <boost/range/iterator_range.hpp>
@@ -81,4 +82,24 @@ nano::container_info nano::fork_cache::container_info () const
 	nano::container_info result;
 	result.put ("roots", roots);
 	return result;
+}
+
+/*
+ * fork_cache_config
+ */
+
+nano::error nano::fork_cache_config::deserialize (nano::tomlconfig & toml)
+{
+	toml.get ("max_size", max_size);
+	toml.get ("max_forks_per_root", max_forks_per_root);
+
+	return toml.get_error ();
+}
+
+nano::error nano::fork_cache_config::serialize (nano::tomlconfig & toml) const
+{
+	toml.put ("max_size", max_size, "Maximum number of roots in the cache. Each root can have multiple forks. \ntype:uint64");
+	toml.put ("max_forks_per_root", max_forks_per_root, "Maximum number of forks per root. \ntype:uint64");
+
+	return toml.get_error ();
 }

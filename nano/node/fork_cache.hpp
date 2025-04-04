@@ -21,6 +21,10 @@ namespace nano
 class fork_cache_config final
 {
 public:
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
+
+public:
 	size_t max_size{ 1024 * 16 };
 	size_t max_forks_per_root{ 10 };
 };
