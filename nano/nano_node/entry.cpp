@@ -131,6 +131,7 @@ int main (int argc, char * const * argv)
 		("debug_profile_kdf", "Profile kdf function")
 		("debug_output_last_backtrace_dump", "Displays the contents of the latest backtrace in the event of a nano_node crash")
 		("debug_generate_crash_report", "Consolidates the nano_node_backtrace.dump file. Requires addr2line installed on Linux")
+		("debug_abort_signal", "Generate node crash to test signal handler")
 		("debug_sys_logging", "Test the system logger")
 		("debug_verify_profile", "Profile signature verification")
 		("debug_verify_profile_batch", "Profile batch signature verification")
@@ -904,6 +905,15 @@ int main (int argc, char * const * argv)
 				std::cerr << "Error: nano_node_backtrace.dump could not be found";
 				result = -1;
 			}
+		}
+		else if (vm.count ("debug_abort_signal"))
+		{
+			// This will cause a crash, which will be caught by the signal handler
+			std::cerr << "Generating node crash to test signal handler\n";
+
+			// Dereference a null pointer to cause a crash
+			const int * p = nullptr;
+			std::cout << *p << std::endl;
 		}
 		else if (vm.count ("debug_verify_profile"))
 		{
