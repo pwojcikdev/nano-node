@@ -17,6 +17,11 @@ void install_abort_signal_handler ();
 void dump_crash_stacktrace ();
 
 /**
+ * Loads the last crash stacktrace from the dump file
+ */
+std::string load_last_crash_stacktrace (std::chrono::seconds max_age = std::chrono::days{ 2 });
+
+/**
  * Generates the current stacktrace
  */
 std::string generate_stacktrace ();
