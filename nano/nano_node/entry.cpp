@@ -3,6 +3,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/cli.hpp>
 #include <nano/lib/files.hpp>
+#include <nano/lib/stacktrace.hpp>
 #include <nano/lib/thread_runner.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/work_version.hpp>
@@ -29,11 +30,13 @@
 #include <boost/process.hpp>
 #include <boost/program_options.hpp>
 #include <boost/range/adaptor/reversed.hpp>
+
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #endif
+
 #include <boost/stacktrace.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/unordered_set.hpp>
@@ -100,6 +103,8 @@ int main (int argc, char * const * argv)
 {
 	nano::set_umask (); // Make sure the process umask is set before any files are created
 	nano::initialize_file_descriptor_limit ();
+	nano::install_abort_signal_handler ();
+
 	nano::logger::initialize (nano::log_config::cli_default ());
 
 	nano::node_singleton_memory_pool_purge_guard memory_pool_cleanup_guard;

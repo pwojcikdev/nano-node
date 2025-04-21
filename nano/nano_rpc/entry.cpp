@@ -3,6 +3,7 @@
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/signal_manager.hpp>
+#include <nano/lib/stacktrace.hpp>
 #include <nano/lib/thread_runner.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/lib/utility.hpp>
@@ -86,6 +87,8 @@ int main (int argc, char * const * argv)
 {
 	nano::set_umask (); // Make sure the process umask is set before any files are created
 	nano::initialize_file_descriptor_limit ();
+	nano::install_abort_signal_handler ();
+
 	nano::logger::initialize (nano::log_config::cli_default ());
 
 	boost::program_options::options_description description ("Command line options");
