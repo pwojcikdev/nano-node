@@ -170,6 +170,19 @@ std::array<uint8_t, 2> nano::test_magic_number ()
 	return ret;
 }
 
+bool nano::is_relaxed_antispam ()
+{
+	static auto const val = [] () -> std::optional<bool> {
+		if (auto value = nano::env::get<bool> ("NANO_RELAXED_ANTISPAM"))
+		{
+			std::cerr << "Relaxed antispam mode overridden by NANO_RELAXED_ANTISPAM environment variable: " << (value ? "ON" : "OFF") << std::endl;
+			return *value;
+		}
+		return std::nullopt;
+	}();
+	return val.value_or (false);
+}
+
 size_t nano::queue_warning_threshold ()
 {
 	static auto const env_override = [] () -> std::optional<size_t> {

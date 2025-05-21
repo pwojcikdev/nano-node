@@ -109,6 +109,9 @@ void force_nano_dev_network ();
 /** Checks that we are running in test mode */
 bool is_dev_run ();
 
+/** Checks if we are running in releaxed antispam mode */
+bool is_relaxed_antispam ();
+
 size_t queue_warning_threshold ();
 size_t ledger_thread_stack_size ();
 size_t ledger_max_rollback_depth ();
