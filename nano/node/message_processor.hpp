@@ -14,12 +14,12 @@ namespace nano
 class message_processor_config final
 {
 public:
-	nano::error deserialize (nano::tomlconfig & toml);
-	nano::error serialize (nano::tomlconfig & toml) const;
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
 
 public:
 	size_t threads{ std::clamp (nano::hardware_concurrency () / 4, 1u, 2u) };
-	size_t max_queue{ 64 };
+	size_t max_queue{ nano::is_relaxed_antispam () ? 32768u : 64u };
 };
 
 /*

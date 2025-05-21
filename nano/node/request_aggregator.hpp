@@ -31,7 +31,7 @@ public:
 
 public:
 	size_t threads{ std::clamp (nano::hardware_concurrency () / 2, 1u, 4u) };
-	size_t max_queue{ 128 };
+	size_t max_queue{ nano::is_relaxed_antispam () ? 8192u : 128u };
 	size_t batch_size{ 16 };
 };
 

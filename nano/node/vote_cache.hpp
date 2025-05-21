@@ -29,11 +29,11 @@ namespace nano
 class vote_cache_config final
 {
 public:
-	nano::error deserialize (nano::tomlconfig & toml);
-	nano::error serialize (nano::tomlconfig & toml) const;
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
 
 public:
-	std::size_t max_size{ 1024 * 64 };
+	std::size_t max_size{ nano::is_relaxed_antispam () ? 524288u : 65536u };
 	std::size_t max_voters{ 64 };
 	std::chrono::seconds age_cutoff{ 15 * 60 };
 };

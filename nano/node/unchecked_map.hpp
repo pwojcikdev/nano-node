@@ -22,7 +22,7 @@ class stats;
 class unchecked_map
 {
 public:
-	unchecked_map (unsigned const max_unchecked_blocks, nano::stats &, bool const & do_delete);
+	unchecked_map (unsigned max_unchecked_blocks, nano::stats &, bool disable_delete);
 	~unchecked_map ();
 
 	void start ();
@@ -60,7 +60,7 @@ private: // Dependencies
 	nano::stats & stats;
 
 private:
-	bool const & disable_delete;
+	bool disable_delete;
 	std::deque<nano::hash_or_account> buffer;
 	std::deque<nano::hash_or_account> back_buffer;
 	bool writing_back_buffer{ false };

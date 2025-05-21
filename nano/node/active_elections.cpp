@@ -667,10 +667,6 @@ nano::container_info nano::active_elections::container_info () const
  * active_elections_config
  */
 
-nano::active_elections_config::active_elections_config (const nano::network_constants & network_constants)
-{
-}
-
 nano::error nano::active_elections_config::serialize (nano::tomlconfig & toml) const
 {
 	toml.put ("size", size, "Number of active elections. Elections beyond this limit have limited survival time.\nWarning: modifying this value may result in a lower confirmation rate. \ntype:uint64,[250..]");

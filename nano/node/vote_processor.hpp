@@ -20,14 +20,14 @@ namespace nano
 class vote_processor_config final
 {
 public:
-	nano::error serialize (nano::tomlconfig & toml) const;
-	nano::error deserialize (nano::tomlconfig & toml);
+	nano::error serialize (nano::tomlconfig &) const;
+	nano::error deserialize (nano::tomlconfig &);
 
 public:
 	bool enable{ true };
 
-	size_t max_pr_queue{ 256 };
-	size_t max_non_pr_queue{ 32 };
+	size_t max_pr_queue{ nano::is_relaxed_antispam () ? 32768u : 256u };
+	size_t max_non_pr_queue{ nano::is_relaxed_antispam () ? 16384u : 32 };
 	size_t pr_priority{ 3 };
 	size_t threads{ std::clamp (nano::hardware_concurrency () / 2, 1u, 4u) };
 	size_t batch_size{ 1024 };
@@ -46,9 +46,6 @@ public:
 	/** Queue vote for processing. @returns true if the vote was queued */
 	bool vote (std::shared_ptr<nano::vote> const &, std::shared_ptr<nano::transport::channel> const &, nano::vote_source = nano::vote_source::live);
 	nano::vote_code vote_blocking (std::shared_ptr<nano::vote> const &, std::shared_ptr<nano::transport::channel> const &, nano::vote_source = nano::vote_source::live);
-
-	/** Queue hash for vote cache lookup and processing. */
-	void trigger (nano::block_hash const & hash);
 
 	std::size_t size () const;
 	bool empty () const;

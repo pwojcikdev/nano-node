@@ -34,24 +34,24 @@ namespace nano
 class active_elections_config final
 {
 public:
-	explicit active_elections_config (nano::network_constants const &);
-
-	nano::error deserialize (nano::tomlconfig & toml);
-	nano::error serialize (nano::tomlconfig & toml) const;
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
 
 public:
 	// Maximum number of simultaneous active elections (AEC size)
-	std::size_t size{ 5000 };
+	std::size_t size{ nano::is_relaxed_antispam () ? 25000u : 5000u };
+
 	// Limit of hinted elections as percentage of `active_elections_size`
 	std::size_t hinted_limit_percentage{ 20 };
 	// Limit of optimistic elections as percentage of `active_elections_size`
 	std::size_t optimistic_limit_percentage{ 10 };
+
 	// Maximum confirmation history size
 	std::size_t confirmation_history_size{ 2048 };
 	// Maximum cache size for recently_confirmed
-	std::size_t confirmation_cache{ 65536 };
+	std::size_t confirmation_cache{ nano::is_relaxed_antispam () ? 262144u : 65536u };
 	// Maximum size of election winner details set
-	std::size_t max_election_winners{ 1024 * 16 };
+	std::size_t max_election_winners{ nano::is_relaxed_antispam () ? 65536u : 16384u };
 
 	std::chrono::seconds bootstrap_stale_threshold{ 60s };
 };

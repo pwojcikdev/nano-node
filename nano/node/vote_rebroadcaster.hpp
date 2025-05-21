@@ -34,11 +34,16 @@ public:
 
 public:
 	bool enable{ true };
-	size_t max_queue{ 1024 * 4 }; // Maximum number of votes to keep in queue for processing
-	size_t max_history{ 1024 * 32 }; // Maximum number of recently broadcast hashes to keep per representative
-	size_t max_representatives{ 100 }; // Maximum number of representatives to track rebroadcasts for
-	std::chrono::milliseconds rebroadcast_threshold{ 1000 * 90 }; // Minimum amount of time between rebroadcasts for the same hash from the same representative (milliseconds)
-	size_t priority_coefficient{ 2 }; // Priority coefficient for prioritizing votes from representative tiers
+	// Maximum number of votes to keep in queue for processing
+	size_t max_queue{ nano::is_relaxed_antispam () ? 32768u : 4096u };
+	// Maximum number of recently broadcast hashes to keep per representative
+	size_t max_history{ nano::is_relaxed_antispam () ? 262144u : 32768u };
+	// Maximum number of representatives to track rebroadcasts for
+	size_t max_representatives{ 100 };
+	// Minimum amount of time between rebroadcasts for the same hash from the same representative (milliseconds)
+	std::chrono::milliseconds rebroadcast_threshold{ 1000 * 90 };
+	// Priority coefficient for prioritizing votes from representative tiers
+	size_t priority_coefficient{ 2 };
 };
 
 class vote_rebroadcaster_index

@@ -24,14 +24,14 @@ class block_processor_config final
 public:
 	explicit block_processor_config (nano::network_constants const &);
 
-	nano::error deserialize (nano::tomlconfig & toml);
-	nano::error serialize (nano::tomlconfig & toml) const;
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
 
 public:
 	size_t batch_size{ 256 };
 
 	// Maximum number of blocks to queue from network peers
-	size_t max_peer_queue{ 128 };
+	size_t max_peer_queue{ nano::is_relaxed_antispam () ? 32768u : 128 };
 	// Maximum number of blocks to queue from system components (local RPC, bootstrap)
 	size_t max_system_queue{ 16 * 1024 };
 

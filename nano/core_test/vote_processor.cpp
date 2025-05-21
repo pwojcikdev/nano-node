@@ -82,9 +82,10 @@ TEST (vote_processor, invalid_signature)
 TEST (vote_processor, overflow)
 {
 	nano::test::system system;
-	nano::node_flags node_flags;
-	node_flags.vote_processor_capacity = 1;
-	auto & node (*system.add_node (node_flags));
+	nano::node_config config;
+	config.vote_processor.max_pr_queue = 1;
+	config.vote_processor.max_non_pr_queue = 1;
+	auto & node (*system.add_node (config));
 	nano::keypair key;
 	auto vote = nano::test::make_vote (key, { nano::dev::genesis }, nano::vote::timestamp_min * 1, 0);
 	auto channel (std::make_shared<nano::transport::inproc::channel> (node, node));

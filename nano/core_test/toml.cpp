@@ -313,7 +313,6 @@ TEST (toml_config, daemon_config_deserialize_defaults)
 	ASSERT_EQ (conf.node.vote_minimum, defaults.node.vote_minimum);
 	ASSERT_EQ (conf.node.work_peers, defaults.node.work_peers);
 	ASSERT_EQ (conf.node.work_threads, defaults.node.work_threads);
-	ASSERT_EQ (conf.node.max_queued_requests, defaults.node.max_queued_requests);
 	ASSERT_EQ (conf.node.request_aggregator_threads, defaults.node.request_aggregator_threads);
 	ASSERT_EQ (conf.node.max_unchecked_blocks, defaults.node.max_unchecked_blocks);
 	ASSERT_EQ (conf.node.max_backlog, defaults.node.max_backlog);
@@ -480,7 +479,6 @@ TEST (toml_config, daemon_config_deserialize_no_defaults)
 	work_peers = ["dev.org:999"]
 	work_threads = 999
 	max_work_generate_multiplier = 1.0
-	max_queued_requests = 999
 	request_aggregator_threads = 999
 	max_unchecked_blocks = 999
 	max_backlog = 999
@@ -747,7 +745,6 @@ TEST (toml_config, daemon_config_deserialize_no_defaults)
 	ASSERT_NE (conf.node.vote_minimum, defaults.node.vote_minimum);
 	ASSERT_NE (conf.node.work_peers, defaults.node.work_peers);
 	ASSERT_NE (conf.node.work_threads, defaults.node.work_threads);
-	ASSERT_NE (conf.node.max_queued_requests, defaults.node.max_queued_requests);
 	ASSERT_NE (conf.node.request_aggregator_threads, defaults.node.request_aggregator_threads);
 	ASSERT_NE (conf.node.enable_upnp, defaults.node.enable_upnp);
 

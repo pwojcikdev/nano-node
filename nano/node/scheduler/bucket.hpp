@@ -26,18 +26,18 @@ namespace nano::scheduler
 class priority_bucket_config final
 {
 public:
-	nano::error deserialize (nano::tomlconfig & toml);
-	nano::error serialize (nano::tomlconfig & toml) const;
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
 
 public:
 	// Maximum number of blocks to sort by priority per bucket.
-	std::size_t max_blocks{ 1024 * 8 };
+	std::size_t max_blocks{ nano::is_relaxed_antispam () ? 65536u : 8192u };
 
 	// Number of guaranteed slots per bucket available for election activation.
-	std::size_t reserved_elections{ 100 };
+	std::size_t reserved_elections{ nano::is_relaxed_antispam () ? 3000u : 100u };
 
 	// Maximum number of slots per bucket available for election activation if the active election count is below the configured limit. (node.active_elections.size)
-	std::size_t max_elections{ 150 };
+	std::size_t max_elections{ nano::is_relaxed_antispam () ? 5000u : 150u };
 };
 
 /**

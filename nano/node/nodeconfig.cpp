@@ -35,7 +35,6 @@ nano::node_config::node_config (const std::optional<uint16_t> & peering_port_a, 
 	ipc_config{ network_params.network },
 	external_address{ boost::asio::ip::address_v6{}.to_string () },
 	rep_crawler{ network_params.network },
-	active_elections{ network_params.network },
 	block_processor{ network_params.network },
 	peer_history{ network_params.network },
 	tcp{ network_params.network },
@@ -135,7 +134,6 @@ nano::error nano::node_config::serialize_toml (nano::tomlconfig & toml) const
 
 	toml.put ("backup_before_upgrade", backup_before_upgrade, "Backup the ledger database before performing upgrades.\nWarning: uses more disk storage and increases startup time when upgrading.\ntype:bool");
 	toml.put ("max_work_generate_multiplier", max_work_generate_multiplier, "Maximum allowed difficulty multiplier for work generation.\ntype:double,[1..]");
-	toml.put ("max_queued_requests", max_queued_requests, "Limit for number of queued confirmation requests for one channel, after which new requests are dropped until the queue drops below this value.\ntype:uint32");
 	toml.put ("request_aggregator_threads", request_aggregator_threads, "Number of threads to dedicate to request aggregator. Defaults to using all cpu threads, up to a maximum of 4");
 	toml.put ("max_unchecked_blocks", max_unchecked_blocks, "Maximum number of unchecked blocks to store in memory. Defaults to 65536. \ntype:uint64,[0..]");
 	toml.put ("max_backlog", max_backlog, "Maximum number of unconfirmed blocks to keep in the ledger. If this limit is exceeded, the node will start dropping low-priority unconfirmed blocks.\ntype:uint64");
@@ -640,7 +638,6 @@ nano::error nano::node_config::deserialize_toml (nano::tomlconfig & toml)
 
 		toml.get<double> ("max_work_generate_multiplier", max_work_generate_multiplier);
 
-		toml.get<uint32_t> ("max_queued_requests", max_queued_requests);
 		toml.get<uint32_t> ("request_aggregator_threads", request_aggregator_threads);
 
 		toml.get<unsigned> ("max_unchecked_blocks", max_unchecked_blocks);

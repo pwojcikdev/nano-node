@@ -445,6 +445,11 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 				});
 			}
 		});
+
+		if (nano::is_relaxed_antispam ())
+		{
+			logger.warn (nano::log::type::node, "WARNING: Relaxed antispam mode is enabled. This mode is not recommended when running representatives or production services on live network");
+		}
 	}
 	else
 	{

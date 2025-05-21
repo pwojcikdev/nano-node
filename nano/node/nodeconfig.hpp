@@ -135,10 +135,9 @@ public:
 	nano::bootstrap_server_config bootstrap_server;
 	bool backup_before_upgrade{ false };
 	double max_work_generate_multiplier{ 64. };
-	uint32_t max_queued_requests{ 512 };
 	unsigned request_aggregator_threads{ std::min (nano::hardware_concurrency (), 4u) }; // Max 4 threads if available
-	unsigned max_unchecked_blocks{ 65536 };
-	std::size_t max_backlog{ 100000 };
+	unsigned max_unchecked_blocks{ nano::is_relaxed_antispam () ? 524288u : 65536u };
+	std::size_t max_backlog{ nano::is_relaxed_antispam () ? 10000000u : 100000u };
 	std::chrono::seconds max_pruning_age{ !network_params.network.is_beta_network () ? std::chrono::seconds (24 * 60 * 60) : std::chrono::seconds (5 * 60) }; // 1 day; 5 minutes for beta network
 	uint64_t max_pruning_depth{ 0 };
 	nano::rocksdb_config rocksdb_config;
@@ -210,7 +209,6 @@ public:
 	std::size_t block_processor_batch_size{ 0 };
 	std::size_t block_processor_full_size{ 65536 };
 	std::size_t block_processor_verification_size{ 0 };
-	std::size_t vote_processor_capacity{ 144 * 1024 };
 	std::size_t bootstrap_interval{ 0 }; // For testing only
 };
 }
