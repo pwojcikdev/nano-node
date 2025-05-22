@@ -206,7 +206,7 @@ TEST (tcp_listener, max_peers_per_ip)
 	ASSERT_TIMELY_EQ (5s, connection_attempts, max_ip_connections + 1);
 }
 
-TEST (tcp_listener, tcp_node_id_handshake)
+TEST (tcp_listener, node_id_handshake)
 {
 	nano::test::system system (1);
 	auto socket (std::make_shared<nano::transport::tcp_socket> (*system.nodes[0]));
@@ -240,33 +240,26 @@ TEST (tcp_listener, tcp_node_id_handshake)
 	ASSERT_TIMELY (5s, done);
 }
 
-// Test disabled because it's failing intermittently.
-// PR in which it got disabled: https://github.com/nanocurrency/nano-node/pull/3611
-// Issue for investigating it: https://github.com/nanocurrency/nano-node/issues/3615
-TEST (tcp_listener, DISABLED_tcp_listener_timeout_empty)
+TEST (tcp_listener, timeout_empty)
 {
-	nano::test::system system (1);
-	auto node0 (system.nodes[0]);
+	nano::test::system system;
+	nano::node_config config;
+	config.tcp.handshake_timeout = 2s;
+	auto node0 = system.add_node (config);
 	auto socket (std::make_shared<nano::transport::tcp_socket> (*node0));
-	std::atomic<bool> connected (false);
-	socket->async_connect (node0->tcp_listener.endpoint (), [&connected] (boost::system::error_code const & ec) {
+	socket->async_connect (node0->tcp_listener.endpoint (), [] (boost::system::error_code const & ec) {
 		ASSERT_FALSE (ec);
-		connected = true;
 	});
-	ASSERT_TIMELY (5s, connected);
-	bool disconnected (false);
-	system.deadline_set (std::chrono::seconds (6));
-	while (!disconnected)
-	{
-		disconnected = node0->tcp_listener.connection_count () == 0;
-		ASSERT_NO_ERROR (system.poll ());
-	}
+	ASSERT_TIMELY_EQ (5s, node0->tcp_listener.connection_count (), 1);
+	ASSERT_TIMELY_EQ (10s, node0->tcp_listener.connection_count (), 0);
 }
 
-TEST (tcp_listener, tcp_listener_timeout_node_id_handshake)
+TEST (tcp_listener, timeout_node_id_handshake)
 {
-	nano::test::system system (1);
-	auto node0 (system.nodes[0]);
+	nano::test::system system;
+	nano::node_config config;
+	config.tcp.handshake_timeout = 2s;
+	auto node0 = system.add_node (config);
 	auto socket (std::make_shared<nano::transport::tcp_socket> (*node0));
 	auto cookie (node0->network.syn_cookies.assign (nano::transport::map_tcp_to_endpoint (node0->tcp_listener.endpoint ())));
 	ASSERT_TRUE (cookie);
@@ -280,12 +273,6 @@ TEST (tcp_listener, tcp_listener_timeout_node_id_handshake)
 		});
 	});
 	ASSERT_TIMELY (5s, node0->stats.count (nano::stat::type::tcp_server, nano::stat::detail::node_id_handshake) != 0);
-	ASSERT_EQ (node0->tcp_listener.connection_count (), 1);
-	bool disconnected (false);
-	system.deadline_set (std::chrono::seconds (20));
-	while (!disconnected)
-	{
-		disconnected = node0->tcp_listener.connection_count () == 0;
-		ASSERT_NO_ERROR (system.poll ());
-	}
+	ASSERT_TIMELY_EQ (5s, node0->tcp_listener.connection_count (), 1);
+	ASSERT_TIMELY_EQ (10s, node0->tcp_listener.connection_count (), 0);
 }
