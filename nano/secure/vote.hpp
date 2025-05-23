@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/fwd.hpp>
+#include <nano/lib/memory.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/timer.hpp>
 #include <nano/lib/uniquer.hpp>
@@ -15,9 +16,13 @@ namespace nano
 class vote final
 {
 public:
+	using hashes_container = std::deque<nano::block_hash, nano::pool_allocator<nano::block_hash>>;
+
+public:
 	vote () = default;
 	vote (nano::vote const &) = default;
 	vote (bool & error, nano::stream &);
+	vote (nano::account const &, nano::raw_key const &, uint64_t timestamp, uint8_t duration, hashes_container const & hashes);
 	vote (nano::account const &, nano::raw_key const &, nano::millis_t timestamp, uint8_t duration, std::vector<nano::block_hash> const & hashes);
 
 	void serialize (nano::stream &) const;
@@ -56,7 +61,7 @@ public:
 
 public: // Payload
 	// The hashes for which this vote directly covers
-	std::vector<nano::block_hash> hashes;
+	hashes_container hashes;
 	// Account that's voting
 	nano::account account{ 0 };
 	// Signature of timestamp + block hashes

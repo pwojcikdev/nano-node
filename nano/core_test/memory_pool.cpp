@@ -63,7 +63,7 @@ TEST (memory_pool, validate_cleanup)
 	// This might be turned off, e.g on Mac for instance, so don't do this test
 	if (!nano::get_use_memory_pools ())
 	{
-		return;
+		GTEST_SKIP () << "Memory pools are disabled";
 	}
 
 	nano::make_shared<nano::open_block> ();

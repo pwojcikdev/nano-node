@@ -496,6 +496,11 @@ nano::confirm_req::confirm_req (bool & error_a, nano::stream & stream_a, nano::m
 }
 
 nano::confirm_req::confirm_req (nano::network_constants const & constants, std::vector<std::pair<nano::block_hash, nano::root>> const & roots_hashes_a) :
+	confirm_req (constants, hash_roots_container (roots_hashes_a.begin (), roots_hashes_a.end ()))
+{
+}
+
+nano::confirm_req::confirm_req (nano::network_constants const & constants, hash_roots_container const & roots_hashes_a) :
 	message (constants, nano::message_type::confirm_req),
 	roots_hashes (roots_hashes_a)
 {
@@ -1998,7 +2003,7 @@ nano::vote_uniquer * vote_uniquer)
 		case nano::message_type::keepalive:
 		{
 			bool error = false;
-			auto message = std::make_unique<nano::keepalive> (error, stream, header);
+			auto message = nano::make_shared<nano::keepalive> (error, stream, header);
 			if (!error && at_end (stream))
 			{
 				return { std::move (message), deserialize_message_status::success };
@@ -2018,7 +2023,7 @@ nano::vote_uniquer * vote_uniquer)
 			}
 
 			bool error = false;
-			auto message = std::make_unique<nano::publish> (error, stream, header, digest, block_uniquer);
+			auto message = nano::make_shared<nano::publish> (error, stream, header, digest, block_uniquer);
 			if (!error && at_end (stream) || !message->block)
 			{
 				if (!network_constants.work.validate_entry (*message->block))
@@ -2036,7 +2041,7 @@ nano::vote_uniquer * vote_uniquer)
 		case nano::message_type::confirm_req:
 		{
 			bool error = false;
-			auto message = std::make_unique<nano::confirm_req> (error, stream, header);
+			auto message = nano::make_shared<nano::confirm_req> (error, stream, header);
 			if (!error && at_end (stream))
 			{
 				return { std::move (message), deserialize_message_status::success };
@@ -2056,7 +2061,7 @@ nano::vote_uniquer * vote_uniquer)
 			}
 
 			bool error = false;
-			auto message = std::make_unique<nano::confirm_ack> (error, stream, header, digest, vote_uniquer);
+			auto message = nano::make_shared<nano::confirm_ack> (error, stream, header, digest, vote_uniquer);
 			if (!error && at_end (stream))
 			{
 				return { std::move (message), deserialize_message_status::success };
@@ -2067,7 +2072,7 @@ nano::vote_uniquer * vote_uniquer)
 		case nano::message_type::node_id_handshake:
 		{
 			bool error = false;
-			auto message = std::make_unique<nano::node_id_handshake> (error, stream, header);
+			auto message = nano::make_shared<nano::node_id_handshake> (error, stream, header);
 			if (!error && at_end (stream))
 			{
 				return { std::move (message), deserialize_message_status::success };
@@ -2077,13 +2082,13 @@ nano::vote_uniquer * vote_uniquer)
 		break;
 		case nano::message_type::telemetry_req:
 		{
-			return { std::make_unique<nano::telemetry_req> (header), deserialize_message_status::success };
+			return { nano::make_shared<nano::telemetry_req> (header), deserialize_message_status::success };
 		}
 		break;
 		case nano::message_type::telemetry_ack:
 		{
 			bool error = false;
-			auto message = std::make_unique<nano::telemetry_ack> (error, stream, header);
+			auto message = nano::make_shared<nano::telemetry_ack> (error, stream, header);
 			if (!error) // Intentionally not checking at_end here for forward compatibility
 			{
 				return { std::move (message), deserialize_message_status::success };
@@ -2094,7 +2099,7 @@ nano::vote_uniquer * vote_uniquer)
 		case nano::message_type::bulk_pull:
 		{
 			bool error = false;
-			auto message = std::make_unique<nano::bulk_pull> (error, stream, header);
+			auto message = nano::make_shared<nano::bulk_pull> (error, stream, header);
 			if (!error && at_end (stream))
 			{
 				return { std::move (message), deserialize_message_status::success };
@@ -2105,7 +2110,7 @@ nano::vote_uniquer * vote_uniquer)
 		case nano::message_type::bulk_pull_account:
 		{
 			bool error = false;
-			auto message = std::make_unique<nano::bulk_pull_account> (error, stream, header);
+			auto message = nano::make_shared<nano::bulk_pull_account> (error, stream, header);
 			if (!error && at_end (stream))
 			{
 				return { std::move (message), deserialize_message_status::success };
@@ -2115,13 +2120,13 @@ nano::vote_uniquer * vote_uniquer)
 		break;
 		case nano::message_type::bulk_push:
 		{
-			return { std::make_unique<nano::bulk_push> (header), deserialize_message_status::success };
+			return { nano::make_shared<nano::bulk_push> (header), deserialize_message_status::success };
 		}
 		break;
 		case nano::message_type::frontier_req:
 		{
 			bool error = false;
-			auto message = std::make_unique<nano::frontier_req> (error, stream, header);
+			auto message = nano::make_shared<nano::frontier_req> (error, stream, header);
 			if (!error && at_end (stream))
 			{
 				return { std::move (message), deserialize_message_status::success };
@@ -2132,7 +2137,7 @@ nano::vote_uniquer * vote_uniquer)
 		case nano::message_type::asc_pull_req:
 		{
 			bool error = false;
-			auto message = std::make_unique<nano::asc_pull_req> (error, stream, header);
+			auto message = nano::make_shared<nano::asc_pull_req> (error, stream, header);
 			if (!error)
 			{
 				return { std::move (message), deserialize_message_status::success };
@@ -2143,7 +2148,7 @@ nano::vote_uniquer * vote_uniquer)
 		case nano::message_type::asc_pull_ack:
 		{
 			bool error = false;
-			auto message = std::make_unique<nano::asc_pull_ack> (error, stream, header);
+			auto message = nano::make_shared<nano::asc_pull_ack> (error, stream, header);
 			if (!error)
 			{
 				return { std::move (message), deserialize_message_status::success };

@@ -60,7 +60,7 @@ private:
 		abort,
 		progress,
 	};
-	asio::awaitable<process_result> process_message (std::unique_ptr<nano::message> message);
+	asio::awaitable<process_result> process_message (std::shared_ptr<nano::message> message);
 
 	enum class handshake_status
 	{
@@ -90,7 +90,7 @@ private:
 	std::atomic<bool> handshake_received{ false };
 
 private:
-	void received_message (std::unique_ptr<nano::message> message);
+	void received_message (std::shared_ptr<nano::message> message);
 
 	bool to_bootstrap_connection ();
 	bool to_realtime_connection (nano::account const & node_id);

@@ -445,6 +445,15 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 				});
 			}
 		});
+
+		if (nano::get_use_memory_pools ())
+		{
+			logger.info (nano::log::type::node, "Memory pools are enabled");
+		}
+		else
+		{
+			logger.info (nano::log::type::node, "Memory pools are disabled");
+		}
 	}
 	else
 	{

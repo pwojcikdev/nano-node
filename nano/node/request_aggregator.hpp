@@ -52,7 +52,7 @@ public:
 	void start ();
 	void stop ();
 
-	using request_type = std::vector<std::pair<nano::block_hash, nano::root>>;
+	using request_type = std::deque<std::pair<nano::block_hash, nano::root>>;
 
 	/** Add a new request by \p channel_a for hashes \p hashes_roots_a */
 	bool request (request_type const & request, std::shared_ptr<nano::transport::channel> const &);

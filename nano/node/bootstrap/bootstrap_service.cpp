@@ -1006,16 +1006,20 @@ bool nano::bootstrap_service::process (const nano::asc_pull_ack::frontiers_paylo
 			stats.inc (nano::stat::type::bootstrap_verify_frontiers, nano::stat::detail::ok);
 			stats.add (nano::stat::type::bootstrap, nano::stat::detail::frontiers, nano::stat::dir::in, response.frontiers.size ());
 
+			// TODO: Use polymorphic allocator
+			std::deque<nano::asc_pull_ack::frontiers_payload::frontier> frontiers_l;
+			frontiers_l.insert (frontiers_l.end (), response.frontiers.begin (), response.frontiers.end ());
+
 			{
 				nano::lock_guard<nano::mutex> lock{ mutex };
-				frontiers.process (tag.start.as_account (), response.frontiers);
+				frontiers.process (tag.start.as_account (), frontiers_l);
 			}
 
 			// Allow some overfill to avoid unnecessarily dropping responses
 			if (workers.queued_tasks () < config.frontier_scan.max_pending * 4)
 			{
-				workers.post ([this, frontiers = response.frontiers] {
-					process_frontiers (frontiers);
+				workers.post ([this, frontiers_l = std::move (frontiers_l)] () {
+					process_frontiers (frontiers_l);
 				});
 			}
 			else

@@ -44,7 +44,7 @@ TEST (request_aggregator, one)
 				 .work (*node.work_generate_blocking (nano::dev::genesis->hash ()))
 				 .build ();
 
-	std::vector<std::pair<nano::block_hash, nano::root>> request{ { send1->hash (), send1->root () } };
+	std::deque<std::pair<nano::block_hash, nano::root>> request{ { send1->hash (), send1->root () } };
 
 	auto dummy_channel = nano::test::fake_channel (node);
 
@@ -121,11 +121,11 @@ TEST (request_aggregator, one_update)
 
 	auto dummy_channel = nano::test::fake_channel (node);
 
-	std::vector<std::pair<nano::block_hash, nano::root>> request1{ { send2->hash (), send2->root () } };
+	std::deque<std::pair<nano::block_hash, nano::root>> request1{ { send2->hash (), send2->root () } };
 	node.aggregator.request (request1, dummy_channel);
 
 	// Update the pool of requests with another hash
-	std::vector<std::pair<nano::block_hash, nano::root>> request2{ { receive1->hash (), receive1->root () } };
+	std::deque<std::pair<nano::block_hash, nano::root>> request2{ { receive1->hash (), receive1->root () } };
 	node.aggregator.request (request2, dummy_channel);
 
 	// In the ledger but no vote generated yet
@@ -187,7 +187,7 @@ TEST (request_aggregator, two)
 	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), receive1));
 	nano::test::confirm (node.ledger, receive1);
 
-	std::vector<std::pair<nano::block_hash, nano::root>> request;
+	std::deque<std::pair<nano::block_hash, nano::root>> request;
 	request.emplace_back (send2->hash (), send2->root ());
 	request.emplace_back (receive1->hash (), receive1->root ());
 
@@ -245,7 +245,7 @@ TEST (request_aggregator, two_endpoints)
 	auto dummy_channel2 = std::make_shared<nano::transport::inproc::channel> (node2, node2);
 	ASSERT_NE (nano::transport::map_endpoint_to_v6 (dummy_channel1->get_remote_endpoint ()), nano::transport::map_endpoint_to_v6 (dummy_channel2->get_remote_endpoint ()));
 
-	std::vector<std::pair<nano::block_hash, nano::root>> request{ { send1->hash (), send1->root () } };
+	std::deque<std::pair<nano::block_hash, nano::root>> request{ { send1->hash (), send1->root () } };
 
 	// For the first request, aggregator should generate a new vote
 	node1.aggregator.request (request, dummy_channel1);
@@ -283,8 +283,8 @@ TEST (request_aggregator, split)
 	node_flags.disable_rep_crawler = true;
 	auto & node (*system.add_node (node_config, node_flags));
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	std::vector<std::pair<nano::block_hash, nano::root>> request;
-	std::vector<std::shared_ptr<nano::block>> blocks;
+	std::deque<std::pair<nano::block_hash, nano::root>> request;
+	std::deque<std::shared_ptr<nano::block>> blocks;
 	auto previous = nano::dev::genesis->hash ();
 	// Add max_vbh + 1 blocks and request votes for them
 	for (size_t i (0); i <= max_vbh; ++i)
@@ -352,7 +352,7 @@ TEST (request_aggregator, channel_max_queue)
 				 .work (*node.work_generate_blocking (nano::dev::genesis->hash ()))
 				 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1));
-	std::vector<std::pair<nano::block_hash, nano::root>> request;
+	std::deque<std::pair<nano::block_hash, nano::root>> request;
 	request.emplace_back (send1->hash (), send1->root ());
 
 	auto dummy_channel = nano::test::fake_channel (node);
@@ -382,7 +382,7 @@ TEST (request_aggregator, DISABLED_unique)
 				 .work (*node.work_generate_blocking (nano::dev::genesis->hash ()))
 				 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1));
-	std::vector<std::pair<nano::block_hash, nano::root>> request;
+	std::deque<std::pair<nano::block_hash, nano::root>> request;
 	request.emplace_back (send1->hash (), send1->root ());
 
 	auto dummy_channel = nano::test::fake_channel (node);
@@ -424,7 +424,7 @@ TEST (request_aggregator, cannot_vote)
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	ASSERT_FALSE (node.ledger.dependents_confirmed (node.ledger.tx_begin_read (), *send2));
 
-	std::vector<std::pair<nano::block_hash, nano::root>> request;
+	std::deque<std::pair<nano::block_hash, nano::root>> request;
 	// Correct hash, correct root
 	request.emplace_back (send2->hash (), send2->root ());
 	// Incorrect hash, correct root
@@ -542,7 +542,7 @@ TEST (request_aggregator, forked_open)
 	auto future = observe_confirm_ack (channel);
 
 	// Request vote for the wrong fork
-	std::vector<std::pair<nano::block_hash, nano::root>> request{ { open1->hash (), open1->root () } };
+	std::deque<std::pair<nano::block_hash, nano::root>> request{ { open1->hash (), open1->root () } };
 	ASSERT_TRUE (node.aggregator.request (request, channel));
 
 	ASSERT_EQ (future.wait_for (5s), std::future_status::ready);
@@ -637,7 +637,7 @@ TEST (request_aggregator, epoch_conflict)
 	auto channel = nano::test::test_channel (node);
 
 	// Request vote for the conflicting epoch block
-	std::vector<std::pair<nano::block_hash, nano::root>> request{ { epoch_open->hash (), epoch_open->root () } };
+	std::deque<std::pair<nano::block_hash, nano::root>> request{ { epoch_open->hash (), epoch_open->root () } };
 	auto future1 = observe_confirm_ack (channel);
 	ASSERT_TRUE (node.aggregator.request (request, channel));
 
@@ -719,7 +719,7 @@ TEST (request_aggregator, cemented_no_spacing)
 	auto channel = nano::test::test_channel (node);
 
 	// Request votes for blocks at different positions in the chain
-	std::vector<std::pair<nano::block_hash, nano::root>> request{
+	std::deque<std::pair<nano::block_hash, nano::root>> request{
 		{ send1->hash (), send1->root () },
 		{ send2->hash (), send2->root () },
 		{ send3->hash (), send3->root () }

@@ -232,7 +232,7 @@ TEST (message, confirm_ack_hash_serialization)
 	nano::confirm_ack con2 (error, stream2, header);
 	ASSERT_FALSE (error);
 	ASSERT_EQ (con1, con2);
-	ASSERT_EQ (hashes, con2.vote->hashes);
+	ASSERT_EQ (nano::vote::hashes_container (hashes.begin (), hashes.end ()), con2.vote->hashes);
 	ASSERT_FALSE (header.confirm_is_v2 ());
 	ASSERT_EQ (header.count_get (), hashes.size ());
 	ASSERT_FALSE (con2.is_rebroadcasted ());
@@ -274,7 +274,7 @@ TEST (message, confirm_ack_hash_serialization_v2)
 	nano::confirm_ack con2 (error, stream2, header);
 	ASSERT_FALSE (error);
 	ASSERT_EQ (con1, con2);
-	ASSERT_EQ (hashes, con2.vote->hashes);
+	ASSERT_EQ (nano::vote::hashes_container (hashes.begin (), hashes.end ()), con2.vote->hashes);
 	ASSERT_TRUE (header.confirm_is_v2 ());
 	ASSERT_EQ (header.count_v2_get (), hashes.size ());
 	ASSERT_FALSE (con2.is_rebroadcasted ());
@@ -334,7 +334,7 @@ TEST (message, confirm_req_hash_batch_serialization)
 {
 	nano::keypair key;
 	nano::keypair representative;
-	std::vector<std::pair<nano::block_hash, nano::root>> roots_hashes;
+	nano::confirm_req::hash_roots_container roots_hashes;
 	nano::block_builder builder;
 	auto open = builder
 				.state ()
@@ -400,7 +400,7 @@ TEST (message, confirm_req_hash_batch_serialization_v2)
 				.work (5)
 				.build ();
 
-	std::vector<std::pair<nano::block_hash, nano::root>> roots_hashes;
+	nano::confirm_req::hash_roots_container roots_hashes;
 	roots_hashes.push_back (std::make_pair (open->hash (), open->root ()));
 	for (auto i (roots_hashes.size ()); i < 255; i++)
 	{

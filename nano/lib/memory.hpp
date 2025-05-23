@@ -8,9 +8,10 @@
 
 namespace nano
 {
-#ifdef __APPLE__
-#define MEMORY_POOL_DISABLED
-#endif
+template <typename T>
+using pool_allocator = boost::pool_allocator<T>;
+template <typename T>
+using fast_pool_allocator = boost::fast_pool_allocator<T>;
 
 bool get_use_memory_pools ();
 void set_use_memory_pools (bool use_memory_pools);

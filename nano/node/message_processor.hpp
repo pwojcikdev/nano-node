@@ -18,7 +18,7 @@ public:
 	nano::error serialize (nano::tomlconfig & toml) const;
 
 public:
-	size_t threads{ std::clamp (nano::hardware_concurrency () / 4, 1u, 2u) };
+	size_t threads{ std::clamp (nano::hardware_concurrency () / 2, 1u, 4u) };
 	size_t max_queue{ 64 };
 };
 
@@ -34,7 +34,7 @@ public:
 	void start ();
 	void stop ();
 
-	bool put (std::unique_ptr<nano::message>, std::shared_ptr<nano::transport::channel> const &);
+	bool put (std::shared_ptr<nano::message>, std::shared_ptr<nano::transport::channel> const &);
 	void process (nano::message const &, std::shared_ptr<nano::transport::channel> const &);
 
 	nano::container_info container_info () const;
@@ -50,7 +50,7 @@ private: // Dependencies
 	nano::logger & logger;
 
 private:
-	using entry_t = std::pair<std::unique_ptr<nano::message>, std::shared_ptr<nano::transport::channel>>;
+	using entry_t = std::pair<std::shared_ptr<nano::message>, std::shared_ptr<nano::transport::channel>>;
 	nano::fair_queue<entry_t, nano::no_value> queue;
 
 	std::atomic<bool> stopped{ false };

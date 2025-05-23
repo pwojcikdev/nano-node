@@ -11,6 +11,11 @@ nano::vote::vote (bool & error_a, nano::stream & stream_a)
 }
 
 nano::vote::vote (nano::account const & account_a, nano::raw_key const & prv_a, uint64_t timestamp_a, uint8_t duration, std::vector<nano::block_hash> const & hashes) :
+	vote (account_a, prv_a, timestamp_a, duration, hashes_container (hashes.begin (), hashes.end ()))
+{
+}
+
+nano::vote::vote (nano::account const & account_a, nano::raw_key const & prv_a, uint64_t timestamp_a, uint8_t duration, hashes_container const & hashes) :
 	hashes{ hashes },
 	timestamp_m{ packed_timestamp (timestamp_a, duration) },
 	account{ account_a }

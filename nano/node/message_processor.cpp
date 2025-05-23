@@ -79,7 +79,7 @@ void nano::message_processor::stop ()
 	threads.clear ();
 }
 
-bool nano::message_processor::put (std::unique_ptr<nano::message> message, std::shared_ptr<nano::transport::channel> const & channel)
+bool nano::message_processor::put (std::shared_ptr<nano::message> message, std::shared_ptr<nano::transport::channel> const & channel)
 {
 	release_assert (message != nullptr);
 	release_assert (channel != nullptr);
@@ -209,7 +209,11 @@ public:
 		{
 			if (!message.roots_hashes.empty ())
 			{
-				node.aggregator.request (message.roots_hashes, channel);
+				// TODO: Use polymorphic allocator
+				nano::request_aggregator::request_type request;
+				request.insert (request.end (), message.roots_hashes.begin (), message.roots_hashes.end ());
+
+				node.aggregator.request (request, channel);
 			}
 		}
 	}

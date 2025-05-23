@@ -244,7 +244,7 @@ auto nano::transport::tcp_server::read_socket (size_t size) -> asio::awaitable<n
 	co_return nano::buffer_view{ buffer->data (), size_read };
 }
 
-auto nano::transport::tcp_server::process_message (std::unique_ptr<nano::message> message) -> asio::awaitable<process_result>
+auto nano::transport::tcp_server::process_message (std::shared_ptr<nano::message> message) -> asio::awaitable<process_result>
 {
 	release_assert (message != nullptr);
 	debug_assert (is_undefined_connection () || is_realtime_connection () || is_bootstrap_connection ());

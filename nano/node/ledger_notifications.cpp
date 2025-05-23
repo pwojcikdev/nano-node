@@ -113,16 +113,18 @@ void nano::ledger_notifications::run ()
 
 		while (!notifications.empty ())
 		{
-			auto notification = std::move (notifications.front ());
-			notifications.pop_front ();
-			lock.unlock ();
+			// Notifications might need to do some cleanup during destruction, keep it in nested scope
+			{
+				auto notification = std::move (notifications.front ());
+				notifications.pop_front ();
+				lock.unlock ();
 
-			auto & [future, callback] = notification;
-			future.wait (); // Wait for the associated transaction to be committed
-			callback (); // Notify observers
+				auto & [future, callback] = notification;
+				future.wait (); // Wait for the associated transaction to be committed
+				callback (); // Notify observers
 
-			condition.notify_all (); // Notify waiting threads about possible vacancy
-
+				condition.notify_all (); // Notify waiting threads about possible vacancy
+			}
 			lock.lock ();
 		}
 	}

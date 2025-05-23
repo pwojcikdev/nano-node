@@ -17,6 +17,7 @@
 
 #include <bitset>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <variant>
@@ -147,6 +148,7 @@ public:
 
 	virtual void serialize (nano::stream &) const = 0;
 	virtual void visit (nano::message_visitor &) const = 0;
+
 	std::shared_ptr<std::vector<uint8_t>> to_bytes () const;
 	nano::shared_const_buffer to_shared_const_buffer () const;
 
@@ -233,7 +235,12 @@ public: // Logging
 class confirm_req final : public message
 {
 public:
+	using hash_root_pair = std::pair<nano::block_hash, nano::root>;
+	using hash_roots_container = std::deque<hash_root_pair, nano::pool_allocator<hash_root_pair>>;
+
+public:
 	confirm_req (bool & error, nano::stream &, nano::message_header const &);
+	confirm_req (nano::network_constants const & constants, hash_roots_container const &);
 	confirm_req (nano::network_constants const & constants, std::vector<std::pair<nano::block_hash, nano::root>> const &);
 	confirm_req (nano::network_constants const & constants, nano::block_hash const &, nano::root const &);
 
@@ -249,7 +256,7 @@ private:
 	static uint8_t hash_count (nano::message_header const &);
 
 public: // Payload
-	std::vector<std::pair<nano::block_hash, nano::root>> roots_hashes;
+	hash_roots_container roots_hashes; // TODO: Rename to hash_roots
 
 public: // Logging
 	void operator() (nano::object_stream &) const override;
@@ -693,7 +700,7 @@ public: // Payload definitions
 		void deserialize (nano::stream &);
 
 	public: // Payload
-		std::deque<std::shared_ptr<nano::block>> blocks;
+		std::deque<std::shared_ptr<nano::block>, nano::pool_allocator<std::shared_ptr<nano::block>>> blocks;
 
 	public: // Logging
 		void operator() (nano::object_stream &) const;
@@ -730,7 +737,7 @@ public: // Payload definitions
 		static frontier deserialize_frontier (nano::stream &);
 
 	public: // Payload
-		std::deque<frontier> frontiers;
+		std::deque<frontier, nano::pool_allocator<frontier>> frontiers;
 
 	public: // Logging
 		void operator() (nano::object_stream &) const;
@@ -808,7 +815,7 @@ public:
 	{
 		default_handler (message);
 	}
-	virtual void default_handler (nano::message const &) { };
+	virtual void default_handler (nano::message const &){};
 };
 
 enum class deserialize_message_status
@@ -838,7 +845,7 @@ enum class deserialize_message_status
 nano::stat::detail to_stat_detail (deserialize_message_status);
 std::string_view to_string (deserialize_message_status);
 
-using deserialize_message_result = std::tuple<std::unique_ptr<nano::message>, nano::deserialize_message_status>;
+using deserialize_message_result = std::tuple<std::shared_ptr<nano::message>, nano::deserialize_message_status>;
 
 deserialize_message_result deserialize_message (
 nano::buffer_view buffer,

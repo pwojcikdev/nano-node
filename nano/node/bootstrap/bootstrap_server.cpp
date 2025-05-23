@@ -312,7 +312,8 @@ nano::asc_pull_ack nano::bootstrap_server::prepare_response (secure::transaction
 	response.type = nano::asc_pull_type::blocks;
 
 	nano::asc_pull_ack::blocks_payload response_payload{};
-	response_payload.blocks = blocks;
+	// TODO: Use polymorphic allocator
+	response_payload.blocks.insert (response_payload.blocks.end (), std::make_move_iterator (blocks.begin ()), std::make_move_iterator (blocks.end ()));
 	response.payload = response_payload;
 
 	response.update_header ();
