@@ -16,8 +16,8 @@ nano::transport::tcp_channel::tcp_channel (nano::node & node_a, std::shared_ptr<
 	strand{ node_a.io_ctx.get_executor () },
 	sending_task{ strand }
 {
-	remote_endpoint = socket_a->remote_endpoint ();
-	local_endpoint = socket_a->local_endpoint ();
+	remote_endpoint = socket_a->get_remote_endpoint ();
+	local_endpoint = socket_a->get_local_endpoint ();
 	start ();
 }
 
@@ -49,8 +49,12 @@ asio::awaitable<void> nano::transport::tcp_channel::start_sending (nano::async::
 	}
 	catch (boost::system::system_error const & ex)
 	{
-		// Operation aborted is expected when cancelling the acceptor
+		// Operation aborted is expected when cancelling the task
 		debug_assert (ex.code () == asio::error::operation_aborted);
+	}
+	catch (...)
+	{
+		release_assert (false, "unexpected exception");
 	}
 	debug_assert (strand.running_in_this_thread ());
 }
@@ -63,6 +67,7 @@ void nano::transport::tcp_channel::stop ()
 		debug_assert (!node.io_ctx.stopped ());
 		// Ensure that we are not trying to await the task while running on the same thread / io_context
 		debug_assert (!node.io_ctx.get_executor ().running_in_this_thread ());
+
 		sending_task.cancel ();
 		sending_task.join ();
 	}
@@ -117,7 +122,11 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 		{
 			for (auto const & [type, item] : batch)
 			{
-				co_await send_one (type, item);
+				auto ec = co_await send_one (type, item);
+				if (ec)
+				{
+					co_return; // Stop on error
+				}
 			}
 		}
 		else
@@ -127,19 +136,12 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 	}
 }
 
-asio::awaitable<void> nano::transport::tcp_channel::send_one (traffic_type type, tcp_channel_queue::entry_t const & item)
+asio::awaitable<boost::system::error_code> nano::transport::tcp_channel::send_one (traffic_type type, tcp_channel_queue::entry_t const & item)
 {
 	debug_assert (strand.running_in_this_thread ());
 
 	auto const & [buffer, callback] = item;
 	auto const size = buffer.size ();
-
-	// Wait for socket
-	while (socket->full ())
-	{
-		node.stats.inc (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_socket, nano::stat::dir::out);
-		co_await nano::async::sleep_for (100ms); // TODO: Exponential backoff
-	}
 
 	// Wait for bandwidth
 	// This is somewhat inefficient
@@ -163,21 +165,26 @@ asio::awaitable<void> nano::transport::tcp_channel::send_one (traffic_type type,
 	node.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::send, nano::stat::dir::out);
 	node.stats.inc (nano::stat::type::tcp_channel_send, to_stat_detail (type), nano::stat::dir::out);
 
-	socket->async_write (buffer, [this_w = weak_from_this (), callback, type] (boost::system::error_code const & ec, std::size_t size) {
-		if (auto this_l = this_w.lock ())
-		{
-			this_l->node.stats.inc (nano::stat::type::tcp_channel_ec, nano::to_stat_detail (ec), nano::stat::dir::out);
-			if (!ec)
-			{
-				this_l->node.stats.add (nano::stat::type::traffic_tcp_type, to_stat_detail (type), nano::stat::dir::out, size);
-				this_l->set_last_packet_sent (std::chrono::steady_clock::now ());
-			}
-		}
-		if (callback)
-		{
-			callback (ec, size);
-		}
-	});
+	auto [ec, size_written] = co_await socket->co_write (buffer, buffer.size ());
+	debug_assert (ec || size_written == size);
+	debug_assert (strand.running_in_this_thread ());
+
+	if (!ec)
+	{
+		node.stats.add (nano::stat::type::traffic_tcp_type, to_stat_detail (type), nano::stat::dir::out, size_written);
+		set_last_packet_sent (std::chrono::steady_clock::now ());
+	}
+	else
+	{
+		node.stats.inc (nano::stat::type::tcp_channel_ec, nano::to_stat_detail (ec), nano::stat::dir::out);
+	}
+
+	if (callback)
+	{
+		callback (ec, size_written);
+	}
+
+	co_return ec;
 }
 
 bool nano::transport::tcp_channel::alive () const
