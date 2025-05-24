@@ -44,8 +44,6 @@ private:
 
 class tcp_channel final : public nano::transport::channel, public std::enable_shared_from_this<tcp_channel>
 {
-	friend class nano::transport::tcp_channels;
-
 public:
 	tcp_channel (nano::node &, std::shared_ptr<nano::transport::tcp_socket>);
 	~tcp_channel () override;
@@ -74,7 +72,7 @@ private:
 
 	asio::awaitable<void> start_sending (nano::async::condition &);
 	asio::awaitable<void> run_sending (nano::async::condition &);
-	asio::awaitable<void> send_one (traffic_type, tcp_channel_queue::entry_t const &);
+	asio::awaitable<boost::system::error_code> send_one (traffic_type, tcp_channel_queue::entry_t const &);
 
 public:
 	std::shared_ptr<nano::transport::tcp_socket> socket;

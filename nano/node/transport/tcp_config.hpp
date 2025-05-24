@@ -18,7 +18,8 @@ public:
 			max_outbound_connections = 128;
 			max_attempts = 128;
 			max_attempts_per_ip = 128;
-			connect_timeout = std::chrono::seconds{ 5 };
+			connect_timeout = 5s;
+			checkup_interval = 1s;
 		}
 	}
 
@@ -31,8 +32,10 @@ public:
 	size_t max_outbound_connections{ 2048 };
 	size_t max_attempts{ 60 };
 	size_t max_attempts_per_ip{ 1 };
-	std::chrono::seconds connect_timeout{ 60 };
+	std::chrono::seconds connect_timeout{ 30 };
 	std::chrono::seconds handshake_timeout{ 30 };
 	std::chrono::seconds io_timeout{ 30 };
+	std::chrono::seconds silent_timeout{ 30 };
+	std::chrono::seconds checkup_interval{ 5 };
 };
 }
