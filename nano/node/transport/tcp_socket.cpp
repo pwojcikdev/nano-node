@@ -298,13 +298,6 @@ boost::system::error_code nano::transport::tcp_socket::blocking_connect (nano::e
 
 auto nano::transport::tcp_socket::co_read (nano::shared_buffer buffer, size_t target_size) -> asio::awaitable<std::tuple<boost::system::error_code, size_t>>
 {
-	// Dispatch operation to the strand
-	// TODO: This additional dispatch should not be necessary, but it is done during transition to coroutine based code
-	co_return co_await asio::co_spawn (strand, co_read_impl (buffer, target_size), asio::use_awaitable);
-}
-
-auto nano::transport::tcp_socket::co_read_impl (nano::shared_buffer buffer, size_t target_size) -> asio::awaitable<std::tuple<boost::system::error_code, size_t>>
-{
 	debug_assert (strand.running_in_this_thread ());
 	debug_assert (read_in_progress.exchange (true) == false);
 	release_assert (target_size <= buffer->size (), "read buffer size mismatch");
@@ -333,7 +326,7 @@ auto nano::transport::tcp_socket::co_read_impl (nano::shared_buffer buffer, size
 void nano::transport::tcp_socket::async_read (nano::shared_buffer buffer, size_t size, std::function<void (boost::system::error_code const &, size_t)> callback)
 {
 	debug_assert (callback);
-	asio::co_spawn (strand, co_read_impl (buffer, size), [callback, /* lifetime guard */ this_s = shared_from_this ()] (std::exception_ptr const & ex, auto const & result) {
+	asio::co_spawn (strand, co_read (buffer, size), [callback, /* lifetime guard */ this_s = shared_from_this ()] (std::exception_ptr const & ex, auto const & result) {
 		release_assert (!ex);
 		auto const & [ec, size] = result;
 		callback (ec, size);
@@ -342,20 +335,13 @@ void nano::transport::tcp_socket::async_read (nano::shared_buffer buffer, size_t
 
 auto nano::transport::tcp_socket::blocking_read (nano::shared_buffer buffer, size_t size) -> std::tuple<boost::system::error_code, size_t>
 {
-	auto fut = asio::co_spawn (strand, co_read_impl (buffer, size), asio::use_future);
+	auto fut = asio::co_spawn (strand, co_read (buffer, size), asio::use_future);
 	fut.wait (); // Blocking call
 	auto result = fut.get ();
 	return result;
 }
 
 auto nano::transport::tcp_socket::co_write (nano::shared_buffer buffer, size_t target_size) -> asio::awaitable<std::tuple<boost::system::error_code, size_t>>
-{
-	// Dispatch operation to the strand
-	// TODO: This additional dispatch should not be necessary, but it is done during transition to coroutine based code
-	co_return co_await asio::co_spawn (strand, co_write_impl (buffer, target_size), asio::use_awaitable);
-}
-
-auto nano::transport::tcp_socket::co_write_impl (nano::shared_buffer buffer, size_t target_size) -> asio::awaitable<std::tuple<boost::system::error_code, size_t>>
 {
 	debug_assert (strand.running_in_this_thread ());
 	debug_assert (write_in_progress.exchange (true) == false);
@@ -385,7 +371,7 @@ auto nano::transport::tcp_socket::co_write_impl (nano::shared_buffer buffer, siz
 void nano::transport::tcp_socket::async_write (nano::shared_buffer buffer, std::function<void (boost::system::error_code const &, size_t)> callback)
 {
 	debug_assert (callback);
-	asio::co_spawn (strand, co_write_impl (buffer, buffer->size ()), [callback, /* lifetime guard */ this_s = shared_from_this ()] (std::exception_ptr const & ex, auto const & result) {
+	asio::co_spawn (strand, co_write (buffer, buffer->size ()), [callback, /* lifetime guard */ this_s = shared_from_this ()] (std::exception_ptr const & ex, auto const & result) {
 		release_assert (!ex);
 		auto const & [ec, size] = result;
 		callback (ec, size);
@@ -394,7 +380,7 @@ void nano::transport::tcp_socket::async_write (nano::shared_buffer buffer, std::
 
 auto nano::transport::tcp_socket::blocking_write (nano::shared_buffer buffer, size_t size) -> std::tuple<boost::system::error_code, size_t>
 {
-	auto fut = asio::co_spawn (strand, co_write_impl (buffer, size), asio::use_future);
+	auto fut = asio::co_spawn (strand, co_write (buffer, size), asio::use_future);
 	fut.wait (); // Blocking call
 	auto result = fut.get ();
 	return result;
@@ -440,6 +426,11 @@ std::chrono::steady_clock::time_point nano::transport::tcp_socket::get_time_crea
 std::chrono::steady_clock::time_point nano::transport::tcp_socket::get_time_connected () const
 {
 	return time_connected;
+}
+
+nano::async::strand nano::transport::tcp_socket::get_strand ()
+{
+	return strand;
 }
 
 void nano::transport::tcp_socket::operator() (nano::object_stream & obs) const
