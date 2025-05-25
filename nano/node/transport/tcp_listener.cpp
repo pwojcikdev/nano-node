@@ -375,12 +375,20 @@ asio::awaitable<asio::ip::tcp::socket> nano::transport::tcp_listener::connect_so
 asio::awaitable<void> nano::transport::tcp_listener::wait_available_slots () const
 {
 	nano::interval log_interval;
-	while (connection_count () >= config.max_inbound_connections && !stopped)
+	while (!stopped)
 	{
+		auto current_count = connection_count ();
+		if (current_count < config.max_inbound_connections)
+		{
+			break;
+		}
+
 		if (log_interval.elapse (node.network_params.network.is_dev_network () ? 1s : 15s))
 		{
-			logger.warn (nano::log::type::tcp_listener, "Waiting for available slots to accept new connections (current: {} / max: {})",
-			connection_count (), config.max_inbound_connections);
+			logger.warn (
+			nano::log::type::tcp_listener,
+			"Waiting for available slots to accept new connections (current: {} / max: {})",
+			current_count, config.max_inbound_connections);
 		}
 
 		co_await nano::async::sleep_for (100ms);
