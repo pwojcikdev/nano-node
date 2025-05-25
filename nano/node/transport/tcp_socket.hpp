@@ -37,6 +37,8 @@ public:
 	void close ();
 	void close_async (); // Safe to call from io context
 
+	nano::async::strand get_strand ();
+
 	nano::endpoint get_remote_endpoint () const;
 	nano::endpoint get_local_endpoint () const;
 	nano::transport::socket_endpoint get_endpoint_type () const;
@@ -64,10 +66,7 @@ public:
 	std::tuple<boost::system::error_code, size_t> blocking_read (nano::shared_buffer, size_t size);
 	std::tuple<boost::system::error_code, size_t> blocking_write (nano::shared_buffer, size_t size);
 
-private:
 	asio::awaitable<std::tuple<boost::system::error_code>> co_connect_impl (nano::endpoint endpoint);
-	asio::awaitable<std::tuple<boost::system::error_code, size_t>> co_read_impl (nano::shared_buffer, size_t size);
-	asio::awaitable<std::tuple<boost::system::error_code, size_t>> co_write_impl (nano::shared_buffer, size_t size);
 
 public: // TODO: Remove these
 	nano::transport::socket_type type () const

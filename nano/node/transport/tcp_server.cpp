@@ -14,7 +14,7 @@ nano::transport::tcp_server::tcp_server (nano::node & node_a, std::shared_ptr<na
 	node_w{ node_a.shared () },
 	node{ node_a },
 	socket{ socket_a },
-	strand{ node_a.io_ctx.get_executor () },
+	strand{ socket_a->get_strand () },
 	task{ strand },
 	buffer{ std::make_shared<nano::shared_buffer::element_type> (max_buffer_size) }
 {

@@ -13,7 +13,7 @@
 nano::transport::tcp_channel::tcp_channel (nano::node & node_a, std::shared_ptr<nano::transport::tcp_socket> socket_a) :
 	channel (node_a),
 	socket{ socket_a },
-	strand{ node_a.io_ctx.get_executor () },
+	strand{ socket_a->get_strand () },
 	sending_task{ strand }
 {
 	remote_endpoint = socket_a->get_remote_endpoint ();
