@@ -64,6 +64,8 @@ void nano::transport::tcp_socket::close ()
 		close_impl ();
 	}));
 	fut.wait (); // Blocking call
+
+	debug_assert (!alive ());
 }
 
 void nano::transport::tcp_socket::close_async ()

@@ -410,7 +410,7 @@ auto nano::transport::tcp_listener::accept_one (asio::ip::tcp::socket raw_socket
 	if (auto result = check_limits (remote_endpoint.address (), type); result != accept_result::accepted)
 	{
 		stats.inc (nano::stat::type::tcp_listener, nano::stat::detail::accept_rejected, to_stat_dir (type));
-		logger.debug (nano::log::type::tcp_listener, "Rejected connection from: {} reason: {} ({})",
+		logger.debug (nano::log::type::tcp_listener, "Rejected connection: {} reason: {} ({})",
 		remote_endpoint,
 		to_string (result),
 		to_string (type));
