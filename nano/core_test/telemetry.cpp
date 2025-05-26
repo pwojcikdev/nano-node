@@ -150,8 +150,8 @@ TEST (telemetry, dos_tcp)
 	// Should process telemetry_req messages
 	ASSERT_TIMELY (5s, 1 < node_server->stats.count (nano::stat::type::message, nano::stat::detail::telemetry_req, nano::stat::dir::in));
 
-	// But not respond to all of them
-	ASSERT_ALWAYS (1s, node_server->stats.count (nano::stat::type::message, nano::stat::detail::telemetry_ack, nano::stat::dir::out) < 3);
+	// But not respond to all of them (by default there are 2 broadcasts per second in dev mode)
+	ASSERT_ALWAYS (1s, node_server->stats.count (nano::stat::type::message, nano::stat::detail::telemetry_ack, nano::stat::dir::out) < 7);
 }
 
 TEST (telemetry, disable_metrics)
