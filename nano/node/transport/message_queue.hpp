@@ -5,12 +5,69 @@
 
 #include <boost/container/static_vector.hpp>
 
-#include <deque>
 #include <functional>
 #include <utility>
 
 namespace nano::transport
 {
+// Barebone statically allocated ring buffer implementation
+template <class T, size_t Capacity>
+class static_ring_buffer
+{
+	static_assert (Capacity > 0, "ring buffer capacity must be > 0");
+
+public:
+	bool empty () const noexcept
+	{
+		return m_size == 0;
+	}
+	bool full () const noexcept
+	{
+		return m_size == Capacity;
+	}
+	size_t size () const noexcept
+	{
+		return m_size;
+	}
+	size_t capacity () const noexcept
+	{
+		return Capacity;
+	}
+
+	T & front () noexcept
+	{
+		debug_assert (!empty ());
+		return *m_buf[m_head];
+	}
+	T const & front () const noexcept
+	{
+		debug_assert (!empty ());
+		return *m_buf[m_head];
+	}
+
+	void push_back (T v) noexcept
+	{
+		debug_assert (!full ());
+		m_buf[m_tail] = std::move (v);
+		m_tail = (m_tail + 1) % Capacity;
+		++m_size;
+	}
+
+	void pop_front () noexcept
+	{
+		debug_assert (!empty ());
+		m_buf[m_head].reset ();
+		m_head = (m_head + 1) % Capacity;
+		--m_size;
+	}
+
+private:
+	std::array<std::optional<T>, Capacity> m_buf{};
+	size_t m_head{ 0 }; // index of current front
+	size_t m_tail{ 0 }; // index one-past last element
+	size_t m_size{ 0 }; // number of live objects
+};
+
 class message_queue final
 {
 public:
@@ -32,39 +89,45 @@ public:
 		}
 	}
 
-	bool empty () const
+	bool empty () const noexcept
 	{
 		return total_size == 0;
 	}
 
-	size_t size () const
+	size_t size () const noexcept
 	{
 		return total_size;
 	}
 
-	size_t size (traffic_type type) const
+	size_t size (traffic_type type) const noexcept
 	{
 		return queues.at (type).second.size ();
 	}
 
-	bool max (traffic_type type) const
+	bool max (traffic_type type) const noexcept
 	{
 		return size (type) >= max_size;
 	}
 
-	bool full (traffic_type type) const
+	bool full (traffic_type type) const noexcept
 	{
 		return size (type) >= full_size;
 	}
 
-	void push (traffic_type type, entry_t entry)
+	bool push (traffic_type type, entry_t entry) noexcept
 	{
 		debug_assert (!full (type)); // Should be checked before calling this function
-		queues.at (type).second.push_back (std::move (entry));
-		++total_size;
+		auto & queue = queues.at (type).second;
+		if (!queue.full ())
+		{
+			queue.push_back (std::move (entry));
+			++total_size;
+			return true; // Added
+		}
+		return false; // Dropped
 	}
 
-	value_t next ()
+	value_t next () noexcept
 	{
 		debug_assert (!empty ()); // Should be checked before calling next
 
@@ -111,7 +174,7 @@ public:
 		return { source, std::move (entry) };
 	}
 
-	batch_t next_batch ()
+	batch_t next_batch () noexcept
 	{
 		batch_t result;
 		while (!empty () && result.size () < batch_size)
@@ -122,7 +185,7 @@ public:
 	}
 
 private:
-	static size_t constexpr priority (nano::transport::traffic_type type)
+	static size_t constexpr priority (nano::transport::traffic_type type) noexcept
 	{
 		switch (type)
 		{
@@ -134,7 +197,7 @@ private:
 		}
 	}
 
-	using queue_t = std::pair<nano::transport::traffic_type, std::deque<entry_t>>;
+	using queue_t = std::pair<nano::transport::traffic_type, static_ring_buffer<entry_t, full_size>>;
 	using queues_t = nano::enum_array<nano::transport::traffic_type, queue_t>;
 	queues_t queues{};
 	queues_t::iterator current{ queues.end () };
