@@ -6,10 +6,6 @@
 #include <nano/node/transport/tcp_channel.hpp>
 #include <nano/node/transport/transport.hpp>
 
-/*
- * tcp_channel
- */
-
 nano::transport::tcp_channel::tcp_channel (nano::node & node_a, std::shared_ptr<nano::transport::tcp_socket> socket_a) :
 	channel (node_a),
 	socket{ socket_a },
@@ -120,9 +116,8 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 		debug_assert (strand.running_in_this_thread ());
 
 		auto next_batch = [this] () {
-			const size_t max_batch = 8; // TODO: Make this configurable
 			nano::lock_guard<nano::mutex> lock{ mutex };
-			return queue.next_batch (max_batch);
+			return queue.next_batch ();
 		};
 
 		if (auto batch = next_batch (); !batch.empty ())
@@ -143,7 +138,7 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 	}
 }
 
-asio::awaitable<boost::system::error_code> nano::transport::tcp_channel::send_one (traffic_type type, tcp_channel_queue::entry_t const & item)
+asio::awaitable<boost::system::error_code> nano::transport::tcp_channel::send_one (traffic_type type, nano::transport::message_queue::entry_t const & item)
 {
 	debug_assert (strand.running_in_this_thread ());
 
@@ -220,127 +215,4 @@ void nano::transport::tcp_channel::operator() (nano::object_stream & obs) const
 {
 	nano::transport::channel::operator() (obs); // Write common data
 	obs.write ("socket", socket);
-}
-
-/*
- * tcp_channel_queue
- */
-
-nano::transport::tcp_channel_queue::tcp_channel_queue ()
-{
-	for (auto type : all_traffic_types ())
-	{
-		queues.at (type) = { type, {} };
-	}
-}
-
-bool nano::transport::tcp_channel_queue::empty () const
-{
-	return total_size == 0;
-}
-
-size_t nano::transport::tcp_channel_queue::size () const
-{
-	return total_size;
-}
-
-size_t nano::transport::tcp_channel_queue::size (traffic_type type) const
-{
-	return queues.at (type).second.size ();
-}
-
-bool nano::transport::tcp_channel_queue::max (traffic_type type) const
-{
-	return size (type) >= max_size;
-}
-
-bool nano::transport::tcp_channel_queue::full (traffic_type type) const
-{
-	return size (type) >= full_size;
-}
-
-void nano::transport::tcp_channel_queue::push (traffic_type type, entry_t entry)
-{
-	debug_assert (!full (type)); // Should be checked before calling this function
-	queues.at (type).second.push_back (std::move (entry));
-	++total_size;
-}
-
-auto nano::transport::tcp_channel_queue::next () -> value_t
-{
-	debug_assert (!empty ()); // Should be checked before calling next
-
-	auto should_seek = [&, this] () {
-		if (current == queues.end ())
-		{
-			return true;
-		}
-		auto & queue = current->second;
-		if (queue.empty ())
-		{
-			return true;
-		}
-		// Allow up to `priority` requests to be processed before moving to the next queue
-		if (counter >= priority (current->first))
-		{
-			return true;
-		}
-		return false;
-	};
-
-	auto seek_next = [&, this] () {
-		counter = 0;
-		do
-		{
-			if (current != queues.end ())
-			{
-				++current;
-			}
-			if (current == queues.end ())
-			{
-				current = queues.begin ();
-			}
-			release_assert (current != queues.end ());
-		} while (current->second.empty ());
-	};
-
-	if (should_seek ())
-	{
-		seek_next ();
-	}
-
-	release_assert (current != queues.end ());
-
-	auto & source = current->first;
-	auto & queue = current->second;
-
-	++counter;
-	--total_size;
-
-	release_assert (!queue.empty ());
-	auto entry = std::move (queue.front ());
-	queue.pop_front ();
-	return { source, std::move (entry) };
-}
-
-auto nano::transport::tcp_channel_queue::next_batch (size_t max_count) -> batch_t
-{
-	std::deque<value_t> result;
-	while (!empty () && result.size () < max_count)
-	{
-		result.emplace_back (next ());
-	}
-	return result;
-}
-
-size_t nano::transport::tcp_channel_queue::priority (traffic_type type) const
-{
-	switch (type)
-	{
-		case traffic_type::block_broadcast:
-		case traffic_type::vote_rebroadcast:
-			return 1;
-		default:
-			return 4;
-	}
 }
