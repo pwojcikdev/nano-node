@@ -108,9 +108,8 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 		debug_assert (strand.running_in_this_thread ());
 
 		auto next_batch = [this] () {
-			const size_t max_batch = 8; // TODO: Make this configurable
 			nano::lock_guard<nano::mutex> lock{ mutex };
-			return queue.next_batch (max_batch);
+			return queue.next_batch ();
 		};
 
 		if (auto batch = next_batch (); !batch.empty ())
