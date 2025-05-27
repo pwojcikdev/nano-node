@@ -17,7 +17,6 @@ nano::transport::tcp_server::tcp_server (nano::node & node_a, std::shared_ptr<na
 	task{ strand },
 	buffer{ std::make_shared<nano::shared_buffer::element_type> (max_buffer_size) }
 {
-	start ();
 }
 
 nano::transport::tcp_server::~tcp_server ()
@@ -36,6 +35,7 @@ void nano::transport::tcp_server::close_async ()
 	socket->close_async ();
 }
 
+// Starting the server must be separate from the constructor to allow the socket to access shared_from_this
 void nano::transport::tcp_server::start ()
 {
 	task = nano::async::task (strand, start_impl ());
