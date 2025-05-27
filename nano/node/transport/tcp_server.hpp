@@ -75,7 +75,6 @@ private:
 	asio::awaitable<void> send_handshake_request ();
 
 private:
-	std::weak_ptr<nano::node> node_w;
 	nano::node & node;
 
 	std::shared_ptr<nano::transport::tcp_socket> socket;

@@ -11,7 +11,6 @@
  */
 
 nano::transport::tcp_server::tcp_server (nano::node & node_a, std::shared_ptr<nano::transport::tcp_socket> socket_a) :
-	node_w{ node_a.shared () },
 	node{ node_a },
 	socket{ socket_a },
 	strand{ socket_a->get_strand () },
@@ -672,16 +671,11 @@ void nano::transport::tcp_server::realtime_message_visitor::asc_pull_ack (const 
 
 bool nano::transport::tcp_server::to_bootstrap_connection ()
 {
-	auto node = this->node_w.lock ();
-	if (!node)
+	if (node.flags.disable_bootstrap_listener)
 	{
 		return false;
 	}
-	if (node->flags.disable_bootstrap_listener)
-	{
-		return false;
-	}
-	if (node->tcp_listener.bootstrap_count () >= node->config.bootstrap_connections_max)
+	if (node.tcp_listener.bootstrap_count () >= node.config.bootstrap_connections_max)
 	{
 		return false;
 	}
@@ -692,19 +686,14 @@ bool nano::transport::tcp_server::to_bootstrap_connection ()
 
 	socket->type_set (nano::transport::socket_type::bootstrap);
 
-	node->logger.debug (nano::log::type::tcp_server, "Switched to bootstrap mode ({})", get_remote_endpoint ());
+	node.logger.debug (nano::log::type::tcp_server, "Switched to bootstrap mode ({})", get_remote_endpoint ());
 
 	return true;
 }
 
 bool nano::transport::tcp_server::to_realtime_connection (nano::account const & node_id)
 {
-	auto node = this->node_w.lock ();
-	if (!node)
-	{
-		return false;
-	}
-	if (node->flags.disable_tcp_realtime)
+	if (node.flags.disable_tcp_realtime)
 	{
 		return false;
 	}
@@ -713,7 +702,7 @@ bool nano::transport::tcp_server::to_realtime_connection (nano::account const & 
 		return false;
 	}
 
-	auto channel_l = node->network.tcp_channels.create (socket, shared_from_this (), node_id);
+	auto channel_l = node.network.tcp_channels.create (socket, shared_from_this (), node_id);
 	if (!channel_l)
 	{
 		return false;
@@ -722,7 +711,7 @@ bool nano::transport::tcp_server::to_realtime_connection (nano::account const & 
 
 	socket->type_set (nano::transport::socket_type::realtime);
 
-	node->logger.debug (nano::log::type::tcp_server, "Switched to realtime mode ({})", get_remote_endpoint ());
+	node.logger.debug (nano::log::type::tcp_server, "Switched to realtime mode ({})", get_remote_endpoint ());
 
 	return true;
 }
