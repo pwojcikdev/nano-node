@@ -17,6 +17,8 @@ public:
 	tcp_server (nano::node &, std::shared_ptr<nano::transport::tcp_socket>);
 	~tcp_server ();
 
+	void start ();
+
 	void close ();
 	void close_async (); // Safe to call from io context
 
@@ -46,7 +48,6 @@ public:
 	}
 
 private:
-	void start ();
 	void stop ();
 
 	asio::awaitable<void> start_impl ();
