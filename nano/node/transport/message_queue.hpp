@@ -23,6 +23,7 @@ public:
 
 	constexpr static size_t max_size = 32;
 	constexpr static size_t full_size = 4 * max_size;
+	constexpr static size_t batch_size = 8;
 
 	message_queue ()
 	{
@@ -103,7 +104,7 @@ public:
 		return { source, entry };
 	}
 
-	batch_t next_batch (size_t max_count)
+	batch_t next_batch (size_t max_count = batch_size)
 	{
 		std::deque<value_t> result;
 		while (!empty () && result.size () < max_count)
