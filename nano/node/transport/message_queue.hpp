@@ -3,6 +3,8 @@
 #include <nano/lib/assert.hpp>
 #include <nano/node/transport/traffic_type.hpp>
 
+#include <boost/container/static_vector.hpp>
+
 #include <deque>
 #include <functional>
 #include <utility>
@@ -12,15 +14,16 @@ namespace nano::transport
 class message_queue final
 {
 public:
-	using callback_t = std::function<void (boost::system::error_code const &, std::size_t)>;
-	using entry_t = std::pair<nano::shared_const_buffer, callback_t>;
-	using value_t = std::pair<nano::transport::traffic_type, entry_t>;
-	using batch_t = std::deque<value_t>;
-
 	constexpr static size_t max_size = 32;
 	constexpr static size_t full_size = 4 * max_size;
 	constexpr static size_t batch_size = 8;
 
+	using callback_t = std::function<void (boost::system::error_code const &, std::size_t)>;
+	using entry_t = std::pair<nano::shared_const_buffer, callback_t>;
+	using value_t = std::pair<nano::transport::traffic_type, entry_t>;
+	using batch_t = boost::container::static_vector<value_t, batch_size>;
+
+public:
 	message_queue ()
 	{
 		for (auto type : all_traffic_types ())
@@ -108,10 +111,10 @@ public:
 		return { source, std::move (entry) };
 	}
 
-	batch_t next_batch (size_t max_count = batch_size)
+	batch_t next_batch ()
 	{
-		std::deque<value_t> result;
-		while (!empty () && result.size () < max_count)
+		batch_t result;
+		while (!empty () && result.size () < batch_size)
 		{
 			result.emplace_back (next ());
 		}
