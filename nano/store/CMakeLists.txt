@@ -1,108 +1,107 @@
 add_library(
   nano_store
-  account.hpp
-  block.hpp
   block_w_sideband.hpp
   component.hpp
-  confirmation_height.hpp
+  component.cpp
   db_val.hpp
   db_val_templ.hpp
   iterator.hpp
-  final_vote.hpp
+  iterator.cpp
   fwd.hpp
-  lmdb/account.hpp
-  lmdb/block.hpp
-  lmdb/confirmation_height.hpp
-  lmdb/db_val.hpp
-  lmdb/final_vote.hpp
-  lmdb/iterator.hpp
-  lmdb/lmdb.hpp
-  lmdb/lmdb_env.hpp
-  lmdb/iterator.hpp
-  lmdb/transaction_impl.hpp
-  lmdb/online_weight.hpp
-  lmdb/peer.hpp
-  lmdb/pending.hpp
-  lmdb/pruned.hpp
-  lmdb/rep_weight.hpp
-  lmdb/transaction_impl.hpp
-  lmdb/version.hpp
-  lmdb/wallet_value.hpp
-  online_weight.hpp
-  peer.hpp
-  pending.hpp
-  pruned.hpp
-  rep_weight.hpp
   reverse_iterator.hpp
   reverse_iterator_templ.hpp
-  rocksdb/account.hpp
-  rocksdb/block.hpp
-  rocksdb/confirmation_height.hpp
-  rocksdb/db_val.hpp
-  rocksdb/final_vote.hpp
-  rocksdb/iterator.hpp
-  rocksdb/online_weight.hpp
-  rocksdb/peer.hpp
-  rocksdb/pending.hpp
-  rocksdb/pruned.hpp
-  rocksdb/rep_weight.hpp
-  rocksdb/rocksdb.hpp
-  rocksdb/iterator.hpp
-  rocksdb/transaction_impl.hpp
-  rocksdb/utility.hpp
-  rocksdb/version.hpp
   tables.hpp
   transaction.hpp
-  typed_iterator.hpp
-  typed_iterator_templ.hpp
-  version.hpp
-  versioning.hpp
-  account.cpp
-  block.cpp
-  component.cpp
-  confirmation_height.cpp
-  iterator.cpp
-  final_vote.cpp
-  lmdb/account.cpp
-  lmdb/block.cpp
-  lmdb/confirmation_height.cpp
-  lmdb/final_vote.cpp
-  lmdb/iterator.cpp
-  lmdb/lmdb.cpp
-  lmdb/lmdb_env.cpp
-  lmdb/transaction.cpp
-  lmdb/online_weight.cpp
-  lmdb/peer.cpp
-  lmdb/pending.cpp
-  lmdb/pruned.cpp
-  lmdb/rep_weight.cpp
-  lmdb/version.cpp
-  lmdb/wallet_value.cpp
-  online_weight.cpp
-  peer.cpp
-  pending.cpp
-  pruned.cpp
-  rep_weight.cpp
-  rocksdb/account.cpp
-  rocksdb/block.cpp
-  rocksdb/confirmation_height.cpp
-  rocksdb/final_vote.cpp
-  rocksdb/iterator.cpp
-  rocksdb/online_weight.cpp
-  rocksdb/peer.cpp
-  rocksdb/pending.cpp
-  rocksdb/pruned.cpp
-  rocksdb/rep_weight.cpp
-  rocksdb/rocksdb.cpp
-  rocksdb/transaction.cpp
-  rocksdb/utility.cpp
-  rocksdb/version.cpp
   transaction.cpp
+  typed_iterator.hpp
   typed_iterator.cpp
-  version.cpp
+  versioning.hpp
   versioning.cpp
   write_queue.hpp
-  write_queue.cpp)
+  write_queue.cpp
+  
+  ledger/account.hpp
+  ledger/account.cpp
+  ledger/block.hpp
+  ledger/block.cpp
+  ledger/confirmation_height.hpp
+  ledger/confirmation_height.cpp
+  ledger/final_vote.hpp
+  ledger/final_vote.cpp
+  ledger/online_weight.hpp
+  ledger/online_weight.cpp
+  ledger/peer.hpp
+  ledger/peer.cpp
+  ledger/pending.hpp
+  ledger/pending.cpp
+  ledger/pruned.hpp
+  ledger/pruned.cpp
+  ledger/rep_weight.hpp
+  ledger/rep_weight.cpp
+  ledger/version.hpp
+  ledger/version.cpp
+  
+  lmdb/account.hpp
+  lmdb/account.cpp
+  lmdb/block.hpp
+  lmdb/block.cpp
+  lmdb/confirmation_height.hpp
+  lmdb/confirmation_height.cpp
+  lmdb/db_val.hpp
+  lmdb/final_vote.hpp
+  lmdb/final_vote.cpp
+  lmdb/iterator.hpp
+  lmdb/iterator.cpp
+  lmdb/lmdb.hpp
+  lmdb/lmdb.cpp
+  lmdb/lmdb_env.hpp
+  lmdb/lmdb_env.cpp
+  lmdb/online_weight.hpp
+  lmdb/online_weight.cpp
+  lmdb/peer.hpp
+  lmdb/peer.cpp
+  lmdb/pending.hpp
+  lmdb/pending.cpp
+  lmdb/pruned.hpp
+  lmdb/pruned.cpp
+  lmdb/rep_weight.hpp
+  lmdb/rep_weight.cpp
+  lmdb/transaction_impl.hpp
+  lmdb/transaction.cpp
+  lmdb/version.hpp
+  lmdb/version.cpp
+  lmdb/wallet_value.hpp
+  lmdb/wallet_value.cpp
+  
+  rocksdb/account.hpp
+  rocksdb/account.cpp
+  rocksdb/block.hpp
+  rocksdb/block.cpp
+  rocksdb/confirmation_height.hpp
+  rocksdb/confirmation_height.cpp
+  rocksdb/db_val.hpp
+  rocksdb/final_vote.hpp
+  rocksdb/final_vote.cpp
+  rocksdb/iterator.hpp
+  rocksdb/iterator.cpp
+  rocksdb/online_weight.hpp
+  rocksdb/online_weight.cpp
+  rocksdb/peer.hpp
+  rocksdb/peer.cpp
+  rocksdb/pending.hpp
+  rocksdb/pending.cpp
+  rocksdb/pruned.hpp
+  rocksdb/pruned.cpp
+  rocksdb/rep_weight.hpp
+  rocksdb/rep_weight.cpp
+  rocksdb/rocksdb.hpp
+  rocksdb/rocksdb.cpp
+  rocksdb/transaction_impl.hpp
+  rocksdb/transaction.cpp
+  rocksdb/utility.hpp
+  rocksdb/utility.cpp
+  rocksdb/version.hpp
+  rocksdb/version.cpp)
 
 target_link_libraries(
   nano_store

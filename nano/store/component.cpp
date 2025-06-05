@@ -1,14 +1,14 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/enum_util.hpp>
 #include <nano/lib/timer.hpp>
-#include <nano/store/account.hpp>
-#include <nano/store/block.hpp>
+#include <nano/store/ledger/account.hpp>
+#include <nano/store/ledger/block.hpp>
 #include <nano/store/component.hpp>
-#include <nano/store/confirmation_height.hpp>
-#include <nano/store/final_vote.hpp>
-#include <nano/store/pending.hpp>
-#include <nano/store/pruned.hpp>
-#include <nano/store/rep_weight.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/final_vote.hpp>
+#include <nano/store/ledger/pending.hpp>
+#include <nano/store/ledger/pruned.hpp>
+#include <nano/store/ledger/rep_weight.hpp>
 
 nano::store::component::component (nano::store::block & block_store_a, nano::store::account & account_store_a, nano::store::pending & pending_store_a, nano::store::online_weight & online_weight_store_a, nano::store::pruned & pruned_store_a, nano::store::peer & peer_store_a, nano::store::confirmation_height & confirmation_height_store_a, nano::store::final_vote & final_vote_store_a, nano::store::version & version_store_a, nano::store::rep_weight & rep_weight_a) :
 	block (block_store_a),

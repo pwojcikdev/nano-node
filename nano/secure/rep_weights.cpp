@@ -1,7 +1,7 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/secure/rep_weights.hpp>
 #include <nano/store/component.hpp>
-#include <nano/store/rep_weight.hpp>
+#include <nano/store/ledger/rep_weight.hpp>
 
 nano::rep_weights::rep_weights (nano::store::rep_weight & rep_weight_store_a, nano::uint128_t min_weight_a) :
 	rep_weight_store{ rep_weight_store_a },

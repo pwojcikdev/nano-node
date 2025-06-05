@@ -2,9 +2,9 @@
 
 #include <nano/secure/account_info.hpp>
 #include <nano/secure/pending_info.hpp>
-#include <nano/store/account.hpp>
+#include <nano/store/ledger/account.hpp>
 #include <nano/store/component.hpp>
-#include <nano/store/pending.hpp>
+#include <nano/store/ledger/pending.hpp>
 
 #include <optional>
 

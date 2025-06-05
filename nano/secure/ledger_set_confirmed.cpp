@@ -1,11 +1,11 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
-#include <nano/store/account.hpp>
-#include <nano/store/block.hpp>
+#include <nano/store/ledger/account.hpp>
+#include <nano/store/ledger/block.hpp>
 #include <nano/store/component.hpp>
-#include <nano/store/confirmation_height.hpp>
-#include <nano/store/pending.hpp>
-#include <nano/store/pruned.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/pending.hpp>
+#include <nano/store/ledger/pruned.hpp>
 
 nano::ledger_set_confirmed::ledger_set_confirmed (nano::ledger const & ledger) :
 	ledger{ ledger }

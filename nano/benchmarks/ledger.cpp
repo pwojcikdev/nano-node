@@ -4,7 +4,7 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/utility.hpp>
-#include <nano/store/account.hpp>
+#include <nano/store/ledger/account.hpp>
 
 #include <benchmark/benchmark.h>
 

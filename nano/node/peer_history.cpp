@@ -3,7 +3,7 @@
 #include <nano/node/peer_history.hpp>
 #include <nano/node/transport/channel.hpp>
 #include <nano/store/component.hpp>
-#include <nano/store/peer.hpp>
+#include <nano/store/ledger/peer.hpp>
 
 nano::peer_history::peer_history (nano::peer_history_config const & config_a, nano::store::component & store_a, nano::network & network_a, nano::logger & logger_a, nano::stats & stats_a) :
 	config{ config_a },

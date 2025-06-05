@@ -7,9 +7,9 @@
 #include <nano/secure/ledger_rollback.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/rep_weights.hpp>
-#include <nano/store/account.hpp>
-#include <nano/store/block.hpp>
-#include <nano/store/pending.hpp>
+#include <nano/store/ledger/account.hpp>
+#include <nano/store/ledger/block.hpp>
+#include <nano/store/ledger/pending.hpp>
 
 nano::ledger_rollback::ledger_rollback (nano::secure::write_transaction const & transaction_a, nano::ledger & ledger_a, std::deque<std::shared_ptr<nano::block>> & list_a, size_t depth_a, size_t max_depth_a) :
 	transaction (transaction_a),

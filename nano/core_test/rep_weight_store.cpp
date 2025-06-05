@@ -1,6 +1,6 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/store/component.hpp>
-#include <nano/store/rep_weight.hpp>
+#include <nano/store/ledger/rep_weight.hpp>
 #include <nano/test_common/make_store.hpp>
 
 #include <gtest/gtest.h>
