@@ -1,6 +1,7 @@
 #include <nano/lib/utility.hpp>
+#include <nano/store/lmdb/backend_lmdb.hpp>
+#include <nano/store/lmdb/common.hpp>
 #include <nano/store/lmdb/iterator.hpp>
-#include <nano/store/lmdb/lmdb.hpp>
 
 namespace nano::store::lmdb
 {

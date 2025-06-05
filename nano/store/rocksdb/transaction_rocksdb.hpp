@@ -1,6 +1,6 @@
 #pragma once
 
-#include <nano/store/component.hpp>
+#include <nano/store/transaction.hpp>
 
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
