@@ -69,6 +69,7 @@ enum class type
 	upnp,
 	rep_crawler,
 	ledger,
+	ledger_store,
 	lmdb,
 	rocksdb,
 	txn_tracker,
