@@ -18,7 +18,7 @@
 #include <nano/store/lmdb/pending.hpp>
 #include <nano/store/lmdb/pruned.hpp>
 #include <nano/store/lmdb/rep_weight.hpp>
-#include <nano/store/lmdb/transaction_impl.hpp>
+#include <nano/store/lmdb/transaction_lmdb.hpp>
 #include <nano/store/lmdb/version.hpp>
 #include <nano/store/versioning.hpp>
 
