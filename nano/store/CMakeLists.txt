@@ -1,5 +1,29 @@
 add_library(
   nano_store
+        store.hpp
+        store.cpp
+        backend.hpp
+        backend.cpp
+        ledger/account.hpp
+        ledger/account.cpp
+        ledger/block.hpp
+        ledger/block.cpp
+        ledger/confirmation_height.hpp
+        ledger/confirmation_height.cpp
+        ledger/final_vote.hpp
+        ledger/final_vote.cpp
+        ledger/online_weight.hpp
+        ledger/online_weight.cpp
+        ledger/peer.hpp
+        ledger/peer.cpp
+        ledger/pending.hpp
+        ledger/pending.cpp
+        ledger/pruned.hpp
+        ledger/pruned.cpp
+        ledger/rep_weight.hpp
+        ledger/rep_weight.cpp
+        ledger/version.hpp
+        ledger/version.cpp
   account.hpp
   block.hpp
   block_w_sideband.hpp

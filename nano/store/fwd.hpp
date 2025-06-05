@@ -21,3 +21,16 @@ class transaction;
 class version;
 class write_transaction;
 }
+namespace nano::store::ledger
+{
+class account;
+class block;
+class confirmation_height;
+class final_vote;
+class online_weight;
+class peer;
+class pending;
+class pruned;
+class rep_weight;
+class version;
+}

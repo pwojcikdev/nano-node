@@ -4,6 +4,7 @@
 #include <nano/lib/memory.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/fwd.hpp>
+#include <nano/store/common.hpp>
 #include <nano/store/fwd.hpp>
 #include <nano/store/tables.hpp>
 #include <nano/store/transaction.hpp>
@@ -20,14 +21,6 @@ namespace nano
 {
 namespace store
 {
-	enum class open_mode
-	{
-		read_only,
-		read_write
-	};
-
-	std::string_view to_string (open_mode mode);
-
 	/**
 	 * Store manager
 	 */
@@ -84,7 +77,7 @@ namespace store
 		virtual void rebuild_db (write_transaction const & transaction_a) = 0;
 
 		/** Not applicable to all sub-classes */
-		virtual void serialize_mdb_tracker (::boost::property_tree::ptree &, std::chrono::milliseconds, std::chrono::milliseconds){};
+		virtual void serialize_mdb_tracker (::boost::property_tree::ptree &, std::chrono::milliseconds, std::chrono::milliseconds) { };
 		virtual void serialize_memory_stats (::boost::property_tree::ptree &) = 0;
 
 		/** Start read-write transaction */
