@@ -282,6 +282,10 @@ std::string nano::error_config_messages::message (int ev) const
 	return "Invalid error code";
 }
 
+/*
+ *
+ */
+
 nano::error::error (std::error_code code_a)
 {
 	code = code_a;

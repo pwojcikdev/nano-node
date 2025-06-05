@@ -1,3 +1,5 @@
+#pragma once
+
 #include <nano/lib/utility.hpp>
 #include <nano/store/db_val_templ.hpp>
 #include <nano/store/typed_iterator.hpp>
@@ -10,8 +12,8 @@ void typed_iterator<Key, Value>::update ()
 	if (!iter.is_end ())
 	{
 		auto const & data = *iter;
-		db_val key_val{ data.first };
-		db_val value_val{ data.second };
+		nano::store::db_val key_val{ data.first };
+		nano::store::db_val value_val{ data.second };
 		current = std::make_pair (static_cast<Key> (key_val), static_cast<Value> (value_val));
 	}
 	else
