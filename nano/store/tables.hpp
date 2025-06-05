@@ -4,6 +4,7 @@
 
 namespace nano
 {
+// TODO: Move to store::tables
 // Keep this in alphabetical order
 enum class tables
 {
@@ -19,8 +20,10 @@ enum class tables
 	pruned,
 	vote,
 	rep_weights,
+	unchecked, // dropped in v22
+	frontiers, // dropped in v24
 };
-} // namespace nano
+}
 
 namespace std
 {
@@ -32,4 +35,4 @@ struct hash<::nano::tables>
 		return static_cast<size_t> (table_a);
 	}
 }; // struct hash
-} // namespace std
+}
