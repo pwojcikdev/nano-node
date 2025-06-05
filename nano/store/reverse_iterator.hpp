@@ -21,6 +21,7 @@ class reverse_iterator
 public:
 	using iterator_category = std::bidirectional_iterator_tag;
 	using value_type = Iter::value_type;
+	using difference_type = std::ptrdiff_t;
 	using pointer = value_type *;
 	using const_pointer = value_type const *;
 	using reference = value_type &;

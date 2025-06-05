@@ -1,13 +1,41 @@
 add_library(
   nano_store
+  store.hpp
+  store.cpp
+  backend.hpp
+  backend.cpp
+  ledger/account.hpp
+  ledger/account.cpp
+  ledger/block.hpp
+  ledger/block.cpp
+  ledger/confirmation_height.hpp
+  ledger/confirmation_height.cpp
+  ledger/final_vote.hpp
+  ledger/final_vote.cpp
+  ledger/online_weight.hpp
+  ledger/online_weight.cpp
+  ledger/peer.hpp
+  ledger/peer.cpp
+  ledger/pending.hpp
+  ledger/pending.cpp
+  ledger/pruned.hpp
+  ledger/pruned.cpp
+  ledger/rep_weight.hpp
+  ledger/rep_weight.cpp
+  ledger/version.hpp
+  ledger/version.cpp
   account.hpp
   block.hpp
   block_w_sideband.hpp
+  common.hpp
+  common.cpp
   component.hpp
   confirmation_height.hpp
   db_val.hpp
   db_val_templ.hpp
   iterator.hpp
+  meta.hpp
+  meta.cpp
   final_vote.hpp
   fwd.hpp
   lmdb/account.hpp
@@ -19,13 +47,13 @@ add_library(
   lmdb/lmdb.hpp
   lmdb/lmdb_env.hpp
   lmdb/iterator.hpp
-  lmdb/transaction_impl.hpp
+  lmdb/transaction_lmdb.hpp
   lmdb/online_weight.hpp
   lmdb/peer.hpp
   lmdb/pending.hpp
   lmdb/pruned.hpp
   lmdb/rep_weight.hpp
-  lmdb/transaction_impl.hpp
+  lmdb/transaction_lmdb.hpp
   lmdb/version.hpp
   lmdb/wallet_value.hpp
   online_weight.hpp
@@ -48,7 +76,7 @@ add_library(
   rocksdb/rep_weight.hpp
   rocksdb/rocksdb.hpp
   rocksdb/iterator.hpp
-  rocksdb/transaction_impl.hpp
+  rocksdb/transaction_rocksdb.hpp
   rocksdb/utility.hpp
   rocksdb/version.hpp
   tables.hpp
@@ -70,7 +98,7 @@ add_library(
   lmdb/iterator.cpp
   lmdb/lmdb.cpp
   lmdb/lmdb_env.cpp
-  lmdb/transaction.cpp
+  lmdb/transaction_lmdb.cpp
   lmdb/online_weight.cpp
   lmdb/peer.cpp
   lmdb/pending.cpp
@@ -94,7 +122,7 @@ add_library(
   rocksdb/pruned.cpp
   rocksdb/rep_weight.cpp
   rocksdb/rocksdb.cpp
-  rocksdb/transaction.cpp
+  rocksdb/transaction_rocksdb.cpp
   rocksdb/utility.cpp
   rocksdb/version.cpp
   transaction.cpp

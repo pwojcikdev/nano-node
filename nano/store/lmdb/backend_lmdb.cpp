@@ -1,0 +1,284 @@
+#include <nano/store/lmdb/backend_lmdb.hpp>
+#include <nano/store/lmdb/common.hpp>
+#include <nano/store/lmdb/iterator.hpp>
+#include <nano/store/lmdb/utility.hpp>
+
+#include <boost/format.hpp>
+
+#include <lmdb/libraries/liblmdb/lmdb.h>
+
+namespace nano::store::lmdb
+{
+backend_lmdb::backend_lmdb (std::filesystem::path const & path, nano::logger & logger_a, nano::lmdb_config const & config_a, nano::txn_tracking_config const & txn_tracking_config_a, std::chrono::milliseconds block_processor_batch_max_time_a) :
+	database_path{ path },
+	config{ config_a },
+	txn_tracking_config{ txn_tracking_config_a },
+	block_processor_batch_max_time{ block_processor_batch_max_time_a },
+	mdb_txn_tracker{ logger_a, txn_tracking_config_a, block_processor_batch_max_time_a },
+	txn_tracking_enabled{ txn_tracking_config_a.enable }
+{
+}
+
+backend_lmdb::~backend_lmdb ()
+{
+	close ();
+}
+
+void backend_lmdb::open_impl (column_schema schema, nano::store::open_mode mode)
+{
+	release_assert (!env, "environment already open");
+	release_assert (table_handles.empty ());
+
+	// Create environment with appropriate options
+	auto options = nano::store::lmdb::env::options::make ()
+				   .set_config (config)
+				   .set_use_no_mem_init (true)
+				   .set_read_only (mode == nano::store::open_mode::read_only);
+
+	env = std::make_unique<nano::store::lmdb::env> (database_path, options);
+
+	if (mode == nano::store::open_mode::read_only)
+	{
+		// Open all tables specified in schema (read-only)
+		auto transaction = tx_begin_read ();
+		for (auto const & [table, name] : schema)
+		{
+			open_table (transaction, table, name.c_str (), 0);
+		}
+	}
+	else
+	{
+		// Create tables if they don't exist (for create and read_write modes)
+		// This allows upgrades to open schemas with new tables
+		auto transaction = tx_begin_write ();
+		for (auto const & [table, name] : schema)
+		{
+			open_table (transaction, table, name.c_str (), MDB_CREATE);
+		}
+		transaction.commit ();
+	}
+}
+
+void backend_lmdb::close_impl ()
+{
+	// Close all table handles
+	if (env)
+	{
+		for (auto const & [table, dbi] : table_handles)
+		{
+			mdb_dbi_close (*env, dbi);
+		}
+	}
+	table_handles.clear ();
+
+	// Release environment
+	env.reset ();
+}
+
+void backend_lmdb::open_table (store::transaction const & transaction, tables table, char const * name, unsigned flags)
+{
+	MDB_dbi handle{};
+	auto status = mdb_dbi_open (env->tx (transaction), name, flags, &handle);
+	if (!success (status))
+	{
+		throw std::runtime_error ("Failed to open " + std::string (name) + " database: " + error_string (status));
+	}
+	table_handles[table] = handle;
+}
+
+auto backend_lmdb::table_to_dbi (tables table) const -> nano::store::lmdb::env::table_handle
+{
+	auto it = table_handles.find (table);
+	release_assert (it != table_handles.end (), "table not found");
+	return it->second;
+}
+
+int backend_lmdb::get (store::transaction const & tx, tables table, db_val const & key, db_val & value) const
+{
+	auto mdb_key = to_mdb_val (key);
+	MDB_val mdb_value{};
+
+	auto result = mdb_get (env->tx (tx), table_to_dbi (table), &mdb_key, &mdb_value);
+	if (result == MDB_SUCCESS)
+	{
+		value = from_mdb_val (mdb_value);
+	}
+	return result;
+}
+
+int backend_lmdb::put (store::write_transaction const & tx, tables table, db_val const & key, db_val const & value)
+{
+	auto mdb_key = to_mdb_val (key);
+	auto mdb_value = to_mdb_val (value);
+	return mdb_put (env->tx (tx), table_to_dbi (table), &mdb_key, &mdb_value, 0);
+}
+
+int backend_lmdb::del (store::write_transaction const & tx, tables table, db_val const & key)
+{
+	auto mdb_key = to_mdb_val (key);
+	return mdb_del (env->tx (tx), table_to_dbi (table), &mdb_key, nullptr);
+}
+
+bool backend_lmdb::exists (store::transaction const & tx, tables table, db_val const & key) const
+{
+	db_val junk;
+	auto status = get (tx, table, key, junk);
+	release_assert (success (status) || not_found (status), error_string (status));
+	return success (status);
+}
+
+uint64_t backend_lmdb::count (store::transaction const & tx, tables table) const
+{
+	MDB_stat stats;
+	auto status = mdb_stat (env->tx (tx), table_to_dbi (table), &stats);
+	release_assert (success (status), error_string (status));
+	return stats.ms_entries;
+}
+
+int backend_lmdb::clear (store::write_transaction const & tx, tables table)
+{
+	return mdb_drop (env->tx (tx), table_to_dbi (table), /* only empty the db */ 0);
+}
+
+bool backend_lmdb::drop_table (store::write_transaction const & tx, std::string const & name)
+{
+	MDB_dbi dbi;
+	auto status1 = mdb_dbi_open (env->tx (tx), name.c_str (), 0, &dbi);
+	if (not_found (status1))
+	{
+		return false; // Table doesn't exist
+	}
+	release_assert (success (status1), error_string (status1));
+
+	auto status2 = mdb_drop (env->tx (tx), dbi, /* delete from database */ 1);
+	release_assert (success (status2), error_string (status2));
+
+	// Remove from table_handles if it was tracked
+	std::erase_if (table_handles, [dbi] (auto const & pair) {
+		return pair.second == dbi;
+	});
+
+	return true;
+}
+
+bool backend_lmdb::table_exists (store::transaction const & tx, std::string const & name) const
+{
+	MDB_dbi dbi;
+	auto status = mdb_dbi_open (env->tx (tx), name.c_str (), 0, &dbi);
+	return success (status);
+}
+
+store::iterator backend_lmdb::begin (store::transaction const & tx, tables table) const
+{
+	return store::iterator{ iterator::begin (env->tx (tx), table_to_dbi (table)) };
+}
+
+store::iterator backend_lmdb::begin (store::transaction const & tx, tables table, db_val const & key) const
+{
+	auto mdb_key = to_mdb_val (key);
+	return store::iterator{ iterator::lower_bound (env->tx (tx), table_to_dbi (table), mdb_key) };
+}
+
+store::iterator backend_lmdb::end (store::transaction const & tx, tables table) const
+{
+	return store::iterator{ iterator::end (env->tx (tx), table_to_dbi (table)) };
+}
+
+bool backend_lmdb::success (int status) const
+{
+	return nano::store::lmdb::success (status);
+}
+
+bool backend_lmdb::not_found (int status) const
+{
+	return nano::store::lmdb::not_found (status);
+}
+
+std::string backend_lmdb::error_string (int status) const
+{
+	return nano::store::lmdb::error_string (status);
+}
+
+store::read_transaction backend_lmdb::tx_begin_read () const
+{
+	return env->tx_begin_read (create_txn_callbacks ());
+}
+
+store::write_transaction backend_lmdb::tx_begin_write ()
+{
+	return env->tx_begin_write (create_txn_callbacks ());
+}
+
+nano::store::lmdb::txn_callbacks backend_lmdb::create_txn_callbacks () const
+{
+	nano::store::lmdb::txn_callbacks callbacks;
+	if (txn_tracking_enabled)
+	{
+		callbacks.txn_start = [&tracker = mdb_txn_tracker] (store::transaction_impl const * transaction_impl) {
+			tracker.add (transaction_impl);
+		};
+		callbacks.txn_end = [&tracker = mdb_txn_tracker] (store::transaction_impl const * transaction_impl) {
+			tracker.erase (transaction_impl);
+		};
+	}
+	return callbacks;
+}
+
+void backend_lmdb::backup ()
+{
+	release_assert (env != nullptr, "database must be open to perform backup");
+
+	auto extension = database_path.extension ();
+	auto filename_without_extension = database_path.filename ().replace_extension ("");
+	auto backup_path = database_path.parent_path ();
+	auto backup_filename = filename_without_extension;
+	backup_filename += "_backup_";
+	backup_filename += std::to_string (std::chrono::system_clock::now ().time_since_epoch ().count ());
+	backup_filename += extension;
+	auto backup_filepath = backup_path / backup_filename;
+
+	auto error = mdb_env_copy (*env, backup_filepath.string ().c_str ());
+	if (error)
+	{
+		throw std::runtime_error ("Database backup failed: " + error_string (error));
+	}
+}
+
+void backend_lmdb::copy_with_compaction (std::filesystem::path const & destination)
+{
+	auto status = mdb_env_copy2 (*env, destination.string ().c_str (), MDB_CP_COMPACT);
+	if (status != MDB_SUCCESS)
+	{
+		throw std::runtime_error ("Database copy with compaction failed: " + error_string (status));
+	}
+}
+
+std::string backend_lmdb::vendor_get () const
+{
+	return boost::str (boost::format ("LMDB %1%.%2%.%3%") % MDB_VERSION_MAJOR % MDB_VERSION_MINOR % MDB_VERSION_PATCH);
+}
+
+std::string backend_lmdb::get_database_path () const
+{
+	return database_path.string ();
+}
+
+/*
+ *
+ */
+
+bool success (int status)
+{
+	return MDB_SUCCESS == status;
+}
+
+bool not_found (int status)
+{
+	return MDB_NOTFOUND == status;
+}
+
+std::string error_string (int status)
+{
+	return "status: " + std::to_string (status) + " (" + mdb_strerror (status) + ")";
+}
+}

@@ -4,6 +4,7 @@
 
 #include <lmdb/libraries/liblmdb/lmdb.h>
 
+// TODO: Move to common.hpp
 namespace nano::store::lmdb
 {
 /**
