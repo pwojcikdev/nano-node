@@ -7,6 +7,42 @@
 #include <system_error>
 #include <type_traits>
 
+// Convenience macro to implement the standard boilerplate for using std::error_code with enums
+// Use this at the end of any header defining one or more error code enums.
+#define REGISTER_ERROR_CODES(namespace_name, enum_type)                                                    \
+	namespace namespace_name                                                                               \
+	{                                                                                                      \
+	static_assert (static_cast<int> (enum_type::generic) > 0, "The first error enum must be generic = 1"); \
+	class enum_type##_messages : public std::error_category                                                \
+	{                                                                                                      \
+	public:                                                                                                \
+		char const * name () const noexcept override                                                       \
+		{                                                                                                  \
+			return #enum_type;                                                                             \
+		}                                                                                                  \
+                                                                                                           \
+		std::string message (int ev) const override;                                                       \
+	};                                                                                                     \
+                                                                                                           \
+	inline std::error_category const & enum_type##_category ()                                             \
+	{                                                                                                      \
+		static enum_type##_messages instance;                                                              \
+		return instance;                                                                                   \
+	}                                                                                                      \
+                                                                                                           \
+	inline std::error_code make_error_code (::namespace_name::enum_type err)                               \
+	{                                                                                                      \
+		return { static_cast<int> (err), enum_type##_category () };                                        \
+	}                                                                                                      \
+	}                                                                                                      \
+	namespace std                                                                                          \
+	{                                                                                                      \
+	template <>                                                                                            \
+	struct is_error_code_enum<::namespace_name::enum_type> : std::true_type                                \
+	{                                                                                                      \
+	};                                                                                                     \
+	}
+
 namespace nano
 {
 /** Common error codes */
@@ -150,43 +186,7 @@ enum class error_config
 	invalid_value,
 	missing_value
 };
-} // nano namespace
-
-// Convenience macro to implement the standard boilerplate for using std::error_code with enums
-// Use this at the end of any header defining one or more error code enums.
-#define REGISTER_ERROR_CODES(namespace_name, enum_type)                                                        \
-	namespace namespace_name                                                                                   \
-	{                                                                                                          \
-		static_assert (static_cast<int> (enum_type::generic) > 0, "The first error enum must be generic = 1"); \
-		class enum_type##_messages : public std::error_category                                                \
-		{                                                                                                      \
-		public:                                                                                                \
-			char const * name () const noexcept override                                                       \
-			{                                                                                                  \
-				return #enum_type;                                                                             \
-			}                                                                                                  \
-                                                                                                               \
-			std::string message (int ev) const override;                                                       \
-		};                                                                                                     \
-                                                                                                               \
-		inline std::error_category const & enum_type##_category ()                                             \
-		{                                                                                                      \
-			static enum_type##_messages instance;                                                              \
-			return instance;                                                                                   \
-		}                                                                                                      \
-                                                                                                               \
-		inline std::error_code make_error_code (::namespace_name::enum_type err)                               \
-		{                                                                                                      \
-			return { static_cast<int> (err), enum_type##_category () };                                        \
-		}                                                                                                      \
-	}                                                                                                          \
-	namespace std                                                                                              \
-	{                                                                                                          \
-		template <>                                                                                            \
-		struct is_error_code_enum<::namespace_name::enum_type> : std::true_type                                \
-		{                                                                                                      \
-		};                                                                                                     \
-	}
+} // nano errors
 
 REGISTER_ERROR_CODES (nano, error_common);
 REGISTER_ERROR_CODES (nano, error_blocks);
@@ -197,23 +197,27 @@ REGISTER_ERROR_CODES (nano, error_config);
 namespace nano
 {
 /** Adapter for std/boost::error_code, std::exception and bool flags to facilitate unified error handling */
-class error
+class error : public std::exception
 {
 public:
 	error () = default;
-	error (nano::error const & error_a) = default;
-	error (nano::error && error_a) = default;
+	error (nano::error const &) = default;
+	error (nano::error &&) = default;
 
-	error (std::error_code code_a);
-	error (std::string message_a);
-	error (std::exception const & exception_a);
-	error & operator= (nano::error const & err_a);
-	error & operator= (nano::error && err_a);
-	error & operator= (std::error_code code_a);
-	error & operator= (std::string message_a);
-	error & operator= (std::exception const & exception_a);
+	error (std::error_code);
+	error (std::string message);
+	error (std::exception const &);
+
+	error & operator= (nano::error const &);
+	error & operator= (nano::error &&);
+	error & operator= (std::error_code);
+	error & operator= (std::string message);
+	error & operator= (std::exception const &);
+
 	bool operator== (std::error_code code_a) const;
+
 	error & then (std::function<nano::error &()> next);
+
 	template <typename... ErrorCode>
 	error & accept (ErrorCode... err)
 	{
@@ -236,10 +240,11 @@ public:
 	 * A return value of 0 signifies there is no error.
 	 */
 	int error_code_as_int () const;
-	error & on_error (std::string message_a);
-	error & on_error (std::error_code code_a, std::string message_a);
-	error & set (std::string message_a, std::error_code code_a = nano::error_common::generic);
-	error & set_message (std::string message_a);
+
+	error & on_error (std::string message);
+	error & on_error (std::error_code code, std::string message);
+	error & set (std::string message, std::error_code code = nano::error_common::generic);
+	error & set_message (std::string message);
 	error & clear ();
 
 private:

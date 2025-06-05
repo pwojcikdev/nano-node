@@ -1,3 +1,5 @@
+#pragma once
+
 #include <nano/lib/utility.hpp>
 #include <nano/store/db_val_templ.hpp>
 #include <nano/store/typed_iterator.hpp>

@@ -3,10 +3,9 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/thread_roles.hpp>
 #include <nano/lib/utility.hpp>
-#include <nano/store/component.hpp>
-#include <nano/store/lmdb/lmdb.hpp>
+#include <nano/store/lmdb/common.hpp>
 #include <nano/store/lmdb/lmdb_env.hpp>
-#include <nano/store/lmdb/transaction_impl.hpp>
+#include <nano/store/lmdb/transaction_lmdb.hpp>
 
 #include <boost/format.hpp>
 

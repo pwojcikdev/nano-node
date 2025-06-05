@@ -1,4 +1,4 @@
-#include <nano/store/rocksdb/transaction_impl.hpp>
+#include <nano/store/rocksdb/transaction_rocksdb.hpp>
 #include <nano/store/rocksdb/utility.hpp>
 
 auto nano::store::rocksdb::tx (store::transaction const & transaction_a) -> std::variant<::rocksdb::Transaction *, ::rocksdb::ReadOptions *>
