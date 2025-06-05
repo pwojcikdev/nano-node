@@ -2,8 +2,7 @@
 
 #include <nano/lib/id_dispenser.hpp>
 #include <nano/lib/lmdbconfig.hpp>
-#include <nano/store/component.hpp>
-#include <nano/store/lmdb/transaction_impl.hpp>
+#include <nano/store/lmdb/transaction_lmdb.hpp>
 
 namespace nano::store::lmdb
 {
@@ -72,5 +71,7 @@ public:
 	std::unique_ptr<MDB_env, decltype (&mdb_env_close)> environment{ nullptr, mdb_env_close };
 	nano::id_t const store_id{ nano::next_id () };
 	std::filesystem::path const database_path;
+
+	using table_handle = MDB_dbi;
 };
 }

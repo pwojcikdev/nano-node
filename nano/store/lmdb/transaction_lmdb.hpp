@@ -4,7 +4,6 @@
 #include <nano/lib/id_dispenser.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/timer.hpp>
-#include <nano/store/component.hpp>
 #include <nano/store/transaction.hpp>
 
 #include <boost/property_tree/ptree_fwd.hpp>

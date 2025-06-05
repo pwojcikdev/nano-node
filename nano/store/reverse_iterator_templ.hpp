@@ -1,3 +1,5 @@
+#pragma once
+
 #include <nano/store/reverse_iterator.hpp>
 
 namespace nano::store
