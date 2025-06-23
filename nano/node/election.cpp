@@ -356,17 +356,39 @@ bool nano::election::transition_time (nano::confirmation_solicitor & solicitor_a
 
 std::chrono::milliseconds nano::election::time_to_live () const
 {
-	switch (behavior_m)
+	debug_assert (!mutex.try_lock ());
+
+	// Gather current vote weight and quorum
+	auto const vote_weight = status.tally;
+	auto const quorum = node.online_reps.delta ();
+
+	return calculate_time_to_live (vote_weight, quorum);
+}
+
+std::chrono::milliseconds nano::election::calculate_time_to_live (nano::uint128_t const vote_weight, nano::uint128_t const quorum)
+{
+	// Scale linearly with gathered weight
+	double ratio = 0.0;
+	if (vote_weight >= quorum)
 	{
-		case election_behavior::manual:
-		case election_behavior::priority:
-			return std::chrono::milliseconds (5 * 60 * 1000);
-		case election_behavior::hinted:
-		case election_behavior::optimistic:
-			return std::chrono::milliseconds (30 * 1000);
+		ratio = ttl_factor; // Already has quorum, use full ttl
 	}
-	debug_assert (false);
-	return {};
+	else
+	{
+		// Scale with integer fraction of quorum
+		auto const step = quorum / ttl_factor;
+		if (step > 0)
+		{
+			ratio = static_cast<double> (vote_weight / step);
+		}
+		else
+		{
+			ratio = 0.0;
+		}
+	}
+	ratio = std::clamp (ratio, 0.0, static_cast<double> (ttl_factor));
+
+	return std::max (min_ttl, std::chrono::duration_cast<std::chrono::milliseconds> (base_ttl * ratio));
 }
 
 std::chrono::seconds nano::election::cooldown_time (nano::uint128_t weight) const

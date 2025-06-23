@@ -303,3 +303,95 @@ TEST (election, continuous_voting)
 	// Ensure votes are broadcasted in continuous manner
 	ASSERT_TIMELY (5s, node1.stats.count (nano::stat::type::election, nano::stat::detail::broadcast_vote) >= 5);
 }
+
+TEST (election, calculate_time_to_live)
+{
+	// Test with zero vote weight and quorum
+	{
+		auto ttl = nano::election::calculate_time_to_live (0, 100);
+		ASSERT_EQ (ttl, nano::election::min_ttl); // Should return minimum TTL (30s)
+	}
+
+	// Test with vote weight equal to quorum
+	{
+		nano::uint128_t quorum = 1000;
+		auto ttl = nano::election::calculate_time_to_live (quorum, quorum);
+		ASSERT_EQ (ttl, nano::election::base_ttl * nano::election::ttl_factor); // Should return maximum TTL (5 * 5min = 25min)
+	}
+
+	// Test with vote weight greater than quorum
+	{
+		nano::uint128_t quorum = 1000;
+		auto ttl = nano::election::calculate_time_to_live (quorum * 2, quorum);
+		ASSERT_EQ (ttl, nano::election::base_ttl * nano::election::ttl_factor); // Should still return maximum TTL
+	}
+
+	// Test with vote weight at half of quorum
+	{
+		nano::uint128_t quorum = 1000;
+		auto ttl = nano::election::calculate_time_to_live (quorum / 2, quorum);
+		// With ttl_factor = 5, step = 1000/5 = 200
+		// vote_weight = 500, so 500/200 = 2.5 (ratio = 2.5)
+		// Expected TTL = base_ttl * 2.5 = 5min * 2.5 = 12.5min = 750s
+		auto expected = std::chrono::duration_cast<std::chrono::milliseconds> (nano::election::base_ttl * 2.5);
+		ASSERT_EQ (ttl, expected);
+	}
+
+	// Test with vote weight at 1/5 of quorum
+	{
+		nano::uint128_t quorum = 1000;
+		auto ttl = nano::election::calculate_time_to_live (quorum / 5, quorum);
+		// With ttl_factor = 5, step = 1000/5 = 200
+		// vote_weight = 200, so 200/200 = 1 (ratio = 1.0)
+		// Expected TTL = base_ttl * 1.0 = 5min
+		ASSERT_EQ (ttl, nano::election::base_ttl);
+	}
+
+	// Test with very small vote weight
+	{
+		nano::uint128_t quorum = 1000;
+		auto ttl = nano::election::calculate_time_to_live (50, quorum);
+		// With ttl_factor = 5, step = 1000/5 = 200
+		// vote_weight = 50, so 50/200 = 0 (ratio = 0.0)
+		// Expected TTL = min_ttl (30s) since base_ttl * 0 would be 0
+		ASSERT_EQ (ttl, nano::election::min_ttl);
+	}
+
+	// Test with zero quorum (edge case)
+	{
+		auto ttl = nano::election::calculate_time_to_live (100, 0);
+		// When quorum is 0, vote_weight >= quorum is true, so ratio = ttl_factor
+		// Expected TTL = base_ttl * ttl_factor
+		ASSERT_EQ (ttl, nano::election::base_ttl * nano::election::ttl_factor);
+	}
+
+	// Test boundary case where calculated TTL would be less than min_ttl
+	{
+		nano::uint128_t quorum = 10000;
+		auto ttl = nano::election::calculate_time_to_live (1, quorum);
+		// With very small vote weight, the calculated TTL might be less than min_ttl
+		// The function should return min_ttl in this case
+		ASSERT_GE (ttl, nano::election::min_ttl);
+	}
+
+	// Test exact step boundaries
+	{
+		nano::uint128_t quorum = 500;
+		// step = 500/5 = 100
+
+		// Test at exactly 1 step
+		auto ttl1 = nano::election::calculate_time_to_live (100, quorum);
+		auto expected1 = nano::election::base_ttl; // ratio = 1.0
+		ASSERT_EQ (ttl1, expected1);
+
+		// Test at exactly 3 steps
+		auto ttl3 = nano::election::calculate_time_to_live (300, quorum);
+		auto expected3 = nano::election::base_ttl * 3; // ratio = 3.0
+		ASSERT_EQ (ttl3, expected3);
+
+		// Test just below 1 step
+		auto ttl_below = nano::election::calculate_time_to_live (99, quorum);
+		// 99/100 = 0 (integer division), so ratio = 0.0
+		ASSERT_EQ (ttl_below, nano::election::min_ttl);
+	}
+}

@@ -61,6 +61,9 @@ nano::stat::detail to_stat_detail (election_state);
 
 class election final : public std::enable_shared_from_this<election>
 {
+	friend class active_elections;
+	friend class confirmation_solicitor;
+
 	nano::id_t const id{ nano::next_id () }; // Track individual objects when tracing
 
 private:
@@ -73,7 +76,6 @@ private:
 
 private: // State management
 	static unsigned constexpr passive_duration_factor = 5;
-	static unsigned constexpr active_request_count_min = 2;
 	nano::election_state state_m{ election_state::passive };
 
 	std::chrono::steady_clock::duration state_start{ std::chrono::steady_clock::now ().time_since_epoch () };
@@ -184,6 +186,9 @@ private:
 	 */
 	std::chrono::milliseconds confirm_req_time () const;
 
+public:
+	static std::chrono::milliseconds calculate_time_to_live (nano::uint128_t vote_weight, nano::uint128_t quorum);
+
 private:
 	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> last_blocks;
 	std::unordered_map<nano::account, nano::vote_info> last_votes;
@@ -199,11 +204,12 @@ private:
 public: // Logging
 	void operator() (nano::object_stream &) const;
 
-private: // Constants
+public: // Constants
 	static std::size_t constexpr max_blocks{ 10 };
 
-	friend class active_elections;
-	friend class confirmation_solicitor;
+	static std::chrono::milliseconds constexpr base_ttl = std::chrono::minutes{ 5 }; // 5 min for all elections
+	static std::chrono::milliseconds constexpr min_ttl = std::chrono::seconds{ 30 }; // Minimum 30s for all elections
+	static unsigned constexpr ttl_factor = 5; // Max ttl is 5x base ttl
 
 public: // Only used in tests
 	void force_confirm ();
