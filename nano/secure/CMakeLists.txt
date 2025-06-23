@@ -22,6 +22,7 @@ add_library(
   common.cpp
   fwd.hpp
   generate_cache_flags.hpp
+  generate_cache_flags.cpp
   ledger.hpp
   ledger.cpp
   ledger_set_any.hpp

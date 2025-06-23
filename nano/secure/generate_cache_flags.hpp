@@ -7,29 +7,24 @@ namespace nano
 class generate_cache_flags
 {
 public:
-	bool reps{ true };
-	bool cemented_count{ true };
-	bool unchecked_count{ true };
-	bool account_count{ true };
-	bool block_count{ true };
-	bool consistency_check{ true };
+	bool reps = true;
+	bool cemented_count = true;
+	bool unchecked_count = true;
+	bool account_count = true;
+	bool block_count = true;
+
+	void enable_all ();
 
 public:
-	static generate_cache_flags all_enabled ()
-	{
-		return {};
-	}
-
 	static generate_cache_flags all_disabled ()
 	{
-		return {
-			.reps = false,
-			.cemented_count = false,
-			.unchecked_count = false,
-			.account_count = false,
-			.block_count = false,
-			.consistency_check = false,
-		};
+		generate_cache_flags flags;
+		flags.reps = false;
+		flags.cemented_count = false;
+		flags.unchecked_count = false;
+		flags.account_count = false;
+		flags.block_count = false;
+		return flags;
 	}
 };
 }

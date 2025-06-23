@@ -123,17 +123,12 @@ void nano::rep_weights::append_from (nano::rep_weights const & other)
 	weight_unused += other.weight_unused;
 }
 
-void nano::rep_weights::verify_consistency (nano::uint128_t const burn_balance) const
+void nano::rep_weights::verify_consistency () const
 {
 	std::shared_lock guard{ mutex };
-
-	auto const total_weight = weight_committed + weight_unused;
+	auto total_weight = weight_committed + weight_unused;
 	release_assert (total_weight == std::numeric_limits<nano::uint128_t>::max (), "total weight exceeds maximum value", to_string (weight_committed) + " + " + to_string (weight_unused));
-
-	auto const expected_total = std::numeric_limits<nano::uint128_t>::max () - burn_balance;
-	release_assert (weight_committed <= expected_total, "total weight does not match expected value accounting for burn", to_string (weight_committed) + " + " + to_string (weight_unused) + " != " + to_string (expected_total) + " (burn: " + to_string (burn_balance) + ")");
-
-	auto const cached_weight = std::accumulate (rep_amounts.begin (), rep_amounts.end (), nano::uint256_t{ 0 }, [] (nano::uint256_t sum, const auto & entry) {
+	auto cached_weight = std::accumulate (rep_amounts.begin (), rep_amounts.end (), nano::uint256_t{ 0 }, [] (nano::uint256_t sum, const auto & entry) {
 		return sum + entry.second;
 	});
 	release_assert (cached_weight <= weight_committed, "total cached weight must match the sum of all committed weights", to_string (cached_weight) + " <= " + to_string (weight_committed));
@@ -183,11 +178,6 @@ void nano::rep_weights::put_store (store::write_transaction const & txn, nano::a
 
 nano::uint128_t nano::rep_weights::get_impl (nano::account const & rep) const
 {
-	if (rep.is_zero ())
-	{
-		return 0; // Zero account always has zero weight
-	}
-
 	auto it = rep_amounts.find (rep);
 	if (it != rep_amounts.end ())
 	{
