@@ -67,9 +67,6 @@ class election final : public std::enable_shared_from_this<election>
 	nano::id_t const id{ nano::next_id () }; // Track individual objects when tracing
 
 private:
-	// Minimum time between broadcasts of the current winner of an election, as a backup to requesting confirmations
-	std::chrono::milliseconds base_latency () const;
-
 	// Callbacks
 	std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action;
 	std::function<void (nano::account const &)> vote_action;
@@ -176,6 +173,11 @@ private:
 	void remove_votes (nano::block_hash const &);
 	void remove_block (nano::block_hash const &);
 	bool replace_by_weight (nano::unique_lock<nano::mutex> & lock_a, nano::block_hash const &);
+
+	/**
+	 * Minimum time between broadcasts of the current winner of an election, as a backup to requesting confirmations
+	 */
+	std::chrono::milliseconds base_latency () const;
 	std::chrono::milliseconds time_to_live () const;
 	/**
 	 * Calculates minimum time delay between subsequent votes when processing non-final votes
@@ -184,7 +186,7 @@ private:
 	/**
 	 * Calculates time delay between broadcasting confirmation requests
 	 */
-	std::chrono::milliseconds confirm_req_time () const;
+	std::chrono::milliseconds confirm_req_interval () const;
 
 public:
 	static std::chrono::milliseconds calculate_time_to_live (nano::uint128_t vote_weight, nano::uint128_t quorum);

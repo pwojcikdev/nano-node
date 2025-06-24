@@ -14,11 +14,6 @@
 
 using namespace std::chrono;
 
-std::chrono::milliseconds nano::election::base_latency () const
-{
-	return node.network_params.network.is_dev_network () ? 25ms : 1000ms;
-}
-
 /*
  * election
  */
@@ -152,26 +147,44 @@ bool nano::election::state_change (nano::election_state expected_a, nano::electi
 	return result;
 }
 
-std::chrono::milliseconds nano::election::confirm_req_time () const
+std::chrono::milliseconds nano::election::base_latency () const
 {
-	switch (behavior_m)
+	return node.network_params.network.is_dev_network () ? 25ms : 1000ms;
+}
+
+std::chrono::milliseconds nano::election::confirm_req_interval () const
+{
+	std::chrono::milliseconds delay = base_latency () * 5;
+
+	// Exponential backoff for subsequent confirmation requests
+	auto requests = confirmation_request_count.load ();
+	if (requests > 0)
 	{
-		case election_behavior::manual:
-		case election_behavior::priority:
-		case election_behavior::hinted:
-			return base_latency () * 5;
-		case election_behavior::optimistic:
-			return base_latency () * 2;
+		// A factor of 2.0 would double the delay each time
+		// A smaller value creates a gentler curve
+		static constexpr double backoff_factor = 1.5;
+
+		// The number of backoff steps to apply is (requests - 1).
+		// We cap the exponent to prevent overflow
+		unsigned exponent = std::min<unsigned> (requests - 1, 12u);
+
+		// Perform the calculation using floating-point math
+		double new_delay_count = static_cast<double> (delay.count ()) * std::pow (backoff_factor, exponent);
+
+		// Convert the result back to milliseconds
+		delay = std::chrono::milliseconds{ static_cast<long long> (new_delay_count) };
 	}
-	debug_assert (false);
-	return {};
+
+	// Cap max delay
+	std::chrono::milliseconds const max_delay = node.network_params.network.is_dev_network () ? 1000ms : 1min; // 1 minute for non-dev networks
+	return std::min (delay, max_delay);
 }
 
 void nano::election::send_confirm_req (nano::confirmation_solicitor & solicitor_a)
 {
 	debug_assert (!mutex.try_lock ());
 
-	if (confirm_req_time () < (std::chrono::steady_clock::now () - last_req))
+	if (confirm_req_interval () < (std::chrono::steady_clock::now () - last_req))
 	{
 		if (!solicitor_a.add (*this))
 		{
