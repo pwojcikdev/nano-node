@@ -1137,7 +1137,6 @@ TEST (confirmation_height, many_accounts_send_receive_self_no_elections)
 	nano::store::write_queue write_database_queue;
 	nano::work_pool pool{ nano::dev::network_params.network, std::numeric_limits<unsigned>::max () };
 	std::atomic<bool> stopped{ false };
-	boost::latch initialized_latch{ 0 };
 
 	nano::block_hash block_hash_being_processed{ 0 };
 	nano::store::write_queue write_queue;

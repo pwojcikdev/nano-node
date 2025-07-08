@@ -23,7 +23,6 @@
 #include <nano/secure/utility.hpp>
 
 #include <boost/program_options.hpp>
-#include <boost/thread/latch.hpp>
 
 #include <atomic>
 #include <memory>
@@ -95,7 +94,6 @@ public:
 public:
 	const std::filesystem::path application_path;
 	const nano::keypair node_id;
-	boost::latch node_initialized_latch;
 	nano::node_config config;
 	nano::node_flags flags;
 	nano::network_params & network_params;

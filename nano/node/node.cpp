@@ -86,7 +86,6 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, uint16_t pe
 nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesystem::path const & application_path_a, nano::node_config const & config_a, nano::work_pool & work_a, nano::node_flags flags_a, unsigned seq) :
 	application_path{ application_path_a },
 	node_id{ load_or_create_node_id (application_path_a) },
-	node_initialized_latch{ 1 },
 	config{ config_a },
 	flags{ flags_a },
 	network_params{ config.network_params },
@@ -436,8 +435,6 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	{
 		logger.error (nano::log::type::node, "Failed to initialize node");
 	}
-
-	node_initialized_latch.count_down ();
 }
 
 nano::node::~node ()
