@@ -1,8 +1,9 @@
+#include <nano/lib/blocks.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
+#include <nano/store/component.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
-#include <nano/store/component.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>

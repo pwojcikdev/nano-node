@@ -9,6 +9,7 @@
 #include <nano/secure/ledger_processor.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/rep_weights.hpp>
+#include <nano/store/component.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
 #include <nano/store/ledger/pending.hpp>
