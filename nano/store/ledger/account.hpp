@@ -19,11 +19,11 @@ public:
 	explicit account (store::backend &);
 
 	void put (store::write_transaction const & tx, nano::account const & account, nano::account_info const & info);
-	bool get (store::transaction const & tx, nano::account const & account, nano::account_info & info);
-	std::optional<nano::account_info> get (store::transaction const & tx, nano::account const & account);
+	bool get (store::transaction const & tx, nano::account const & account, nano::account_info & info) const;
+	std::optional<nano::account_info> get (store::transaction const & tx, nano::account const & account) const;
 	void del (store::write_transaction const & tx, nano::account const & account);
-	bool exists (store::transaction const & tx, nano::account const & account);
-	size_t count (store::transaction const & tx);
+	bool exists (store::transaction const & tx, nano::account const & account) const;
+	size_t count (store::transaction const & tx) const;
 	iterator begin (store::transaction const & tx, nano::account const & account) const;
 	iterator begin (store::transaction const & tx) const;
 	reverse_iterator rbegin (store::transaction const & tx) const;

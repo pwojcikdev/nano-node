@@ -16,8 +16,8 @@ public:
 public:
 	explicit rep_weight (store::backend &);
 
-	uint64_t count (store::transaction const & tx);
-	nano::uint128_t get (store::transaction const & tx, nano::account const & representative);
+	uint64_t count (store::transaction const & tx) const;
+	nano::uint128_t get (store::transaction const & tx, nano::account const & representative) const;
 	void put (store::write_transaction const & tx, nano::account const & representative, nano::uint128_t const & weight);
 	void del (store::write_transaction const & tx, nano::account const & representative);
 	iterator begin (store::transaction const & tx, nano::account const & representative) const;

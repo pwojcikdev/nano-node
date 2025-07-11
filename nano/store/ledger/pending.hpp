@@ -19,9 +19,9 @@ public:
 
 	void put (store::write_transaction const & tx, nano::pending_key const & key, nano::pending_info const & info);
 	void del (store::write_transaction const & tx, nano::pending_key const & key);
-	std::optional<nano::pending_info> get (store::transaction const & tx, nano::pending_key const & key);
-	bool exists (store::transaction const & tx, nano::pending_key const & key);
-	bool any (store::transaction const & tx, nano::account const & account);
+	std::optional<nano::pending_info> get (store::transaction const & tx, nano::pending_key const & key) const;
+	bool exists (store::transaction const & tx, nano::pending_key const & key) const;
+	bool any (store::transaction const & tx, nano::account const & account) const;
 	iterator begin (store::transaction const & tx, nano::pending_key const & key) const;
 	iterator begin (store::transaction const & tx) const;
 	iterator end (store::transaction const & tx) const;

@@ -24,8 +24,8 @@ public:
 	void successor_clear (store::write_transaction const & tx, nano::block_hash const & hash);
 	std::shared_ptr<nano::block> get (store::transaction const & tx, nano::block_hash const & hash) const;
 	void del (store::write_transaction const & tx, nano::block_hash const & hash);
-	bool exists (store::transaction const & tx, nano::block_hash const & hash);
-	uint64_t count (store::transaction const & tx);
+	bool exists (store::transaction const & tx, nano::block_hash const & hash) const;
+	uint64_t count (store::transaction const & tx) const;
 	iterator begin (store::transaction const & tx, nano::block_hash const & hash) const;
 	iterator begin (store::transaction const & tx) const;
 	iterator end (store::transaction const & tx) const;
@@ -33,8 +33,8 @@ public:
 
 private:
 	void block_raw_get (store::transaction const & tx, nano::block_hash const & hash, db_val & value) const;
-	size_t block_successor_offset (store::transaction const & tx, size_t size, nano::block_type type) const;
-	nano::block_type block_type_from_raw (void * data); // TODO: Use span
+	size_t block_successor_offset (size_t size, nano::block_type type) const;
+	nano::block_type block_type_from_raw (void const * data) const; // TODO: Use span
 
 private:
 	store::backend & backend;

@@ -18,11 +18,11 @@ public:
 	explicit confirmation_height (store::backend &);
 
 	void put (store::write_transaction const & tx, nano::account const & account, nano::confirmation_height_info const & info);
-	bool get (store::transaction const & tx, nano::account const & account, nano::confirmation_height_info & info);
+	bool get (store::transaction const & tx, nano::account const & account, nano::confirmation_height_info & info) const;
 	std::optional<nano::confirmation_height_info> get (store::transaction const & tx, nano::account const & account);
 	bool exists (store::transaction const & tx, nano::account const & account) const;
 	void del (store::write_transaction const & tx, nano::account const & account);
-	uint64_t count (store::transaction const & tx);
+	uint64_t count (store::transaction const & tx) const;
 	void clear (store::write_transaction const & tx, nano::account const & account);
 	void clear (store::write_transaction const & tx);
 	iterator begin (store::transaction const & tx, nano::account const & account) const;

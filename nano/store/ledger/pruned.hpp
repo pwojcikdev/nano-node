@@ -19,7 +19,7 @@ public:
 	void put (store::write_transaction const & tx, nano::block_hash const & hash);
 	void del (store::write_transaction const & tx, nano::block_hash const & hash);
 	bool exists (store::transaction const & tx, nano::block_hash const & hash) const;
-	nano::block_hash random (store::transaction const & tx);
+	nano::block_hash random (store::transaction const & tx) const;
 	size_t count (store::transaction const & tx) const;
 	void clear (store::write_transaction const & tx);
 	iterator begin (store::transaction const & tx, nano::block_hash const & hash) const;
