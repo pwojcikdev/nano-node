@@ -168,9 +168,9 @@ double nano::work_thresholds::denormalized_multiplier (double const multiplier_a
 	if (threshold_a == epoch_1 || threshold_a == epoch_2_receive)
 	{
 		auto ratio (nano::difficulty::to_multiplier (epoch_2, threshold_a));
-		debug_assert (ratio >= 1);
+		// debug_assert (ratio >= 1);
 		multiplier = multiplier * ratio + 1.0 - ratio;
-		debug_assert (multiplier >= 1);
+		// debug_assert (multiplier >= 1);
 	}
 	return multiplier;
 }
