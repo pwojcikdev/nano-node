@@ -29,9 +29,11 @@ public:
 	write_transaction_impl (::rocksdb::OptimisticTransactionDB * db_a);
 	~write_transaction_impl ();
 	bool commit () override;
+	void abort () override;
 	void renew () override;
 	void * get_handle () const override;
 	bool contains (nano::tables table_a) const override;
+	bool is_active () const override;
 
 private:
 	bool check_no_write_tx () const;

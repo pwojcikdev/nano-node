@@ -86,6 +86,17 @@ bool nano::store::rocksdb::write_transaction_impl::commit ()
 	return false;
 }
 
+void nano::store::rocksdb::write_transaction_impl::abort ()
+{
+	if (active)
+	{
+		auto status = txn->Rollback ();
+		release_assert (status.ok (), "Failed to rollback RocksDB transaction", status.ToString ());
+
+		active = false;
+	}
+}
+
 void nano::store::rocksdb::write_transaction_impl::renew ()
 {
 	::rocksdb::OptimisticTransactionOptions txn_options;
@@ -102,6 +113,11 @@ void * nano::store::rocksdb::write_transaction_impl::get_handle () const
 bool nano::store::rocksdb::write_transaction_impl::contains (nano::tables table_a) const
 {
 	return true;
+}
+
+bool nano::store::rocksdb::write_transaction_impl::is_active () const
+{
+	return active;
 }
 
 bool nano::store::rocksdb::write_transaction_impl::check_no_write_tx () const
