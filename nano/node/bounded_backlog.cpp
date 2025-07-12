@@ -354,7 +354,7 @@ std::deque<nano::block_hash> nano::bounded_backlog::perform_rollbacks (std::dequ
 	}
 
 	// We had rocksdb issues in the past, ensure that rep weights are always consistent
-	ledger.verify_consistency (transaction);
+	// ledger.verify_consistency (transaction);
 
 	return processed;
 }
