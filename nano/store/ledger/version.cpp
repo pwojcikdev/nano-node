@@ -8,7 +8,7 @@ version::version (store::backend & backend_a) :
 {
 }
 
-void version::put (store::write_transaction const & transaction, int version)
+void version::put (store::write_transaction const & transaction, uint64_t version)
 {
 	nano::uint256_union version_key{ 1 };
 	nano::uint256_union version_value{ version };
@@ -16,12 +16,12 @@ void version::put (store::write_transaction const & transaction, int version)
 	backend.release_assert_success (status);
 }
 
-int version::get (store::transaction const & transaction) const
+uint64_t version::get (store::transaction const & transaction) const
 {
 	nano::uint256_union version_key{ 1 };
 	db_val data;
 	auto status = backend.get (transaction, tables::meta, version_key, data);
-	int result = nano::store::lmdb::component::version_minimum; // Default minimum version
+	uint64_t result = nano::store::lmdb::component::version_minimum; // Default minimum version
 	if (backend.success (status))
 	{
 		nano::uint256_union version_value{ data };

@@ -63,8 +63,8 @@ namespace store
 		store::ledger::pending & pending;
 		store::ledger::rep_weight & rep_weight;
 
-		static int constexpr version_minimum{ 21 };
-		static int constexpr version_current{ 24 };
+		static uint64_t constexpr version_minimum{ 21 };
+		static uint64_t constexpr version_current{ 24 };
 
 	public:
 		store::ledger::online_weight & online_weight;
