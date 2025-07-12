@@ -84,7 +84,7 @@ nano::store::lmdb::write_transaction_impl::~write_transaction_impl ()
 	commit ();
 }
 
-void nano::store::lmdb::write_transaction_impl::commit ()
+bool nano::store::lmdb::write_transaction_impl::commit ()
 {
 	if (active)
 	{
@@ -92,7 +92,9 @@ void nano::store::lmdb::write_transaction_impl::commit ()
 		release_assert (success (status) && "Unable to write to the LMDB database", error_string (status));
 		txn_callbacks.txn_end (this);
 		active = false;
+		return true;
 	}
+	return false;
 }
 
 void nano::store::lmdb::write_transaction_impl::renew ()
