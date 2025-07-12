@@ -1,7 +1,7 @@
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/lmdb/lmdb.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 version::version (store::backend & backend_a) :
 	backend{ backend_a }

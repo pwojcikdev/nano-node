@@ -3,7 +3,7 @@
 #include <nano/store/db_val.hpp>
 #include <nano/store/ledger/account.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 account::account (store::backend & backend_a) :
 	backend{ backend_a }

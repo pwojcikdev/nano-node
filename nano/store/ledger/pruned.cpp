@@ -2,7 +2,7 @@
 #include <nano/secure/parallel_traversal.hpp>
 #include <nano/store/ledger/pruned.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 pruned::pruned (store::backend & backend_a) :
 	backend{ backend_a }

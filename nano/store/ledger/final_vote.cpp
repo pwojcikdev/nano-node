@@ -1,7 +1,7 @@
 #include <nano/secure/parallel_traversal.hpp>
 #include <nano/store/ledger/final_vote.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 final_vote::final_vote (store::backend & backend_a) :
 	backend{ backend_a }

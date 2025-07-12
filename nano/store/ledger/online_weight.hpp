@@ -5,7 +5,7 @@
 #include <nano/store/reverse_iterator.hpp>
 #include <nano/store/typed_iterator.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 class online_weight
 {

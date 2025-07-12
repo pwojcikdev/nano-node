@@ -37,16 +37,16 @@ namespace store
 
 	public:
 		explicit component (
-		nano::store::block &,
-		nano::store::account &,
-		nano::store::pending &,
-		nano::store::online_weight &,
-		nano::store::pruned &,
-		nano::store::peer &,
-		nano::store::confirmation_height &,
-		nano::store::final_vote &,
-		nano::store::version &,
-		nano::store::rep_weight &);
+		nano::store::ledger::block &,
+		nano::store::ledger::account &,
+		nano::store::ledger::pending &,
+		nano::store::ledger::online_weight &,
+		nano::store::ledger::pruned &,
+		nano::store::ledger::peer &,
+		nano::store::ledger::confirmation_height &,
+		nano::store::ledger::final_vote &,
+		nano::store::ledger::version &,
+		nano::store::ledger::rep_weight &);
 
 		virtual ~component () = default;
 
@@ -58,21 +58,21 @@ namespace store
 		virtual bool success (int status) const = 0;
 		virtual std::string error_string (int status) const = 0;
 
-		store::block & block;
-		store::account & account;
-		store::pending & pending;
-		store::rep_weight & rep_weight;
+		store::ledger::block & block;
+		store::ledger::account & account;
+		store::ledger::pending & pending;
+		store::ledger::rep_weight & rep_weight;
 
 		static int constexpr version_minimum{ 21 };
 		static int constexpr version_current{ 24 };
 
 	public:
-		store::online_weight & online_weight;
-		store::pruned & pruned;
-		store::peer & peer;
-		store::confirmation_height & confirmation_height;
-		store::final_vote & final_vote;
-		store::version & version;
+		store::ledger::online_weight & online_weight;
+		store::ledger::pruned & pruned;
+		store::ledger::peer & peer;
+		store::ledger::confirmation_height & confirmation_height;
+		store::ledger::final_vote & final_vote;
+		store::ledger::version & version;
 
 	public: // TODO: Shouldn't be public
 		store::write_queue write_queue;

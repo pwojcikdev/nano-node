@@ -2,7 +2,7 @@
 #include <nano/store/db_val_templ.hpp>
 #include <nano/store/ledger/block.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 block::block (store::backend & backend_a) :
 	backend{ backend_a }
@@ -14,7 +14,7 @@ void block::put (store::write_transaction const & transaction, nano::block_hash 
 	class block_predecessor_set : public nano::block_visitor
 	{
 	public:
-		block_predecessor_set (store::write_transaction const & transaction_a, store::block & block_store_a) :
+		block_predecessor_set (store::write_transaction const & transaction_a, store::ledger::block & block_store_a) :
 			transaction{ transaction_a },
 			block_store{ block_store_a }
 		{
@@ -64,7 +64,7 @@ void block::put (store::write_transaction const & transaction, nano::block_hash 
 
 	private:
 		store::write_transaction const & transaction;
-		store::block & block_store;
+		store::ledger::block & block_store;
 	};
 
 	debug_assert (block.sideband ().successor.is_zero () || exists (transaction, block.sideband ().successor));

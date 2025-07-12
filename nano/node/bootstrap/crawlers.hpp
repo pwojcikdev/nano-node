@@ -84,8 +84,8 @@ private:
 	nano::store::component & store;
 	nano::store::transaction const & transaction;
 
-	nano::store::account::iterator it;
-	nano::store::account::iterator const end;
+	nano::store::ledger::account::iterator it;
+	nano::store::ledger::account::iterator const end;
 };
 
 struct pending_database_crawler
@@ -181,7 +181,7 @@ private:
 	nano::store::component & store;
 	nano::store::transaction const & transaction;
 
-	nano::store::pending::iterator it;
-	nano::store::pending::iterator const end;
+	nano::store::ledger::pending::iterator it;
+	nano::store::ledger::pending::iterator const end;
 };
 }

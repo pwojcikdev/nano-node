@@ -5,7 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 rep_weight::rep_weight (store::backend & backend_a) :
 	backend{ backend_a }

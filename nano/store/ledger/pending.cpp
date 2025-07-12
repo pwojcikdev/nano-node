@@ -1,7 +1,7 @@
 #include <nano/secure/parallel_traversal.hpp>
 #include <nano/store/ledger/pending.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 pending::pending (store::backend & backend_a) :
 	backend{ backend_a }

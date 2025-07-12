@@ -1,7 +1,7 @@
 #include <nano/secure/parallel_traversal.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 confirmation_height::confirmation_height (store::backend & backend_a) :
 	backend{ backend_a }

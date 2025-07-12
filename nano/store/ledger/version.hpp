@@ -2,7 +2,7 @@
 
 #include <nano/store/backend.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 class version
 {

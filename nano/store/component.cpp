@@ -10,7 +10,7 @@
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
 
-nano::store::component::component (nano::store::block & block_store_a, nano::store::account & account_store_a, nano::store::pending & pending_store_a, nano::store::online_weight & online_weight_store_a, nano::store::pruned & pruned_store_a, nano::store::peer & peer_store_a, nano::store::confirmation_height & confirmation_height_store_a, nano::store::final_vote & final_vote_store_a, nano::store::version & version_store_a, nano::store::rep_weight & rep_weight_a) :
+nano::store::component::component (nano::store::ledger::block & block_store_a, nano::store::ledger::account & account_store_a, nano::store::ledger::pending & pending_store_a, nano::store::ledger::online_weight & online_weight_store_a, nano::store::ledger::pruned & pruned_store_a, nano::store::ledger::peer & peer_store_a, nano::store::ledger::confirmation_height & confirmation_height_store_a, nano::store::ledger::final_vote & final_vote_store_a, nano::store::ledger::version & version_store_a, nano::store::ledger::rep_weight & rep_weight_a) :
 	block (block_store_a),
 	account (account_store_a),
 	pending (pending_store_a),

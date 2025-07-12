@@ -1,6 +1,6 @@
 #include <nano/store/ledger/peer.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 peer::peer (store::backend & backend_a) :
 	backend{ backend_a }

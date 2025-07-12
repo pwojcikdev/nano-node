@@ -8,7 +8,7 @@
 #include <functional>
 #include <optional>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 class block
 {

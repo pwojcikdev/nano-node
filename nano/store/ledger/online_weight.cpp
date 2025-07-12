@@ -1,6 +1,6 @@
 #include <nano/store/ledger/online_weight.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 online_weight::online_weight (store::backend & backend_a) :
 	backend{ backend_a }

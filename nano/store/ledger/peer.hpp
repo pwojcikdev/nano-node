@@ -4,7 +4,7 @@
 #include <nano/store/backend.hpp>
 #include <nano/store/typed_iterator.hpp>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 class peer
 {

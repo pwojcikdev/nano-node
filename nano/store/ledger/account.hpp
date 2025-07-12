@@ -8,7 +8,7 @@
 
 #include <functional>
 
-namespace nano::store
+namespace nano::store::ledger
 {
 class account
 {
