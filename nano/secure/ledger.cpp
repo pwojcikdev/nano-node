@@ -49,9 +49,9 @@ nano::ledger::~ledger ()
 {
 }
 
-auto nano::ledger::tx_begin_write (nano::store::writer guard_type) const -> secure::write_transaction
+auto nano::ledger::tx_begin_write (nano::store::writer guard_type, nano::store::write_strategy strategy) const -> secure::write_transaction
 {
-	auto guard = store.write_queue.wait (guard_type);
+	auto guard = store.write_queue.wait (guard_type, strategy);
 	auto txn = store.tx_begin_write ();
 	return secure::write_transaction{ std::move (txn), std::move (guard) };
 }
