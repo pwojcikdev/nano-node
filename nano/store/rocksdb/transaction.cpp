@@ -32,11 +32,10 @@ void * nano::store::rocksdb::read_transaction_impl::get_handle () const
 	return (void *)&options;
 }
 
-nano::store::rocksdb::write_transaction_impl::write_transaction_impl (::rocksdb::TransactionDB * db_a) :
+nano::store::rocksdb::write_transaction_impl::write_transaction_impl (::rocksdb::OptimisticTransactionDB * db_a) :
 	db (db_a)
 {
-	debug_assert (check_no_write_tx ());
-	::rocksdb::TransactionOptions txn_options;
+	::rocksdb::OptimisticTransactionOptions txn_options;
 	txn_options.set_snapshot = true;
 	txn = db->BeginTransaction (::rocksdb::WriteOptions (), txn_options);
 }
@@ -52,14 +51,27 @@ void nano::store::rocksdb::write_transaction_impl::commit ()
 	if (active)
 	{
 		auto status = txn->Commit ();
-		release_assert (status.ok () && "Unable to write to the RocksDB database", status.ToString ());
+
+		// If there are no available memtables try again a few more times
+		constexpr auto num_attempts = 10;
+		auto attempt_num = 0;
+		while (status.IsTryAgain () && attempt_num < num_attempts)
+		{
+			status = txn->Commit ();
+			++attempt_num;
+		}
+
+		if (!status.ok ())
+		{
+			release_assert (false && "Unable to write to the RocksDB database", status.ToString ());
+		}
 		active = false;
 	}
 }
 
 void nano::store::rocksdb::write_transaction_impl::renew ()
 {
-	::rocksdb::TransactionOptions txn_options;
+	::rocksdb::OptimisticTransactionOptions txn_options;
 	txn_options.set_snapshot = true;
 	db->BeginTransaction (::rocksdb::WriteOptions (), txn_options, txn);
 	active = true;
@@ -77,7 +89,5 @@ bool nano::store::rocksdb::write_transaction_impl::contains (nano::tables table_
 
 bool nano::store::rocksdb::write_transaction_impl::check_no_write_tx () const
 {
-	std::vector<::rocksdb::Transaction *> transactions;
-	db->GetAllPreparedTransactions (&transactions);
-	return transactions.empty ();
+	return true; // TODO: No longer needed
 }

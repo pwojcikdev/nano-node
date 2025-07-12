@@ -191,10 +191,10 @@ void nano::store::rocksdb::component::open (std::filesystem::path const & path_a
 	}
 	else
 	{
-		s = ::rocksdb::TransactionDB::Open (options_a, ::rocksdb::TransactionDBOptions{}, path_a.string (), column_families, &handles_l, &transaction_db);
-		if (transaction_db)
+		s = ::rocksdb::OptimisticTransactionDB::Open (options_a, path_a.string (), column_families, &handles_l, &optimistic_db);
+		if (optimistic_db)
 		{
-			db.reset (transaction_db);
+			db.reset (optimistic_db);
 		}
 	}
 
@@ -425,8 +425,8 @@ std::vector<rocksdb::ColumnFamilyDescriptor> nano::store::rocksdb::component::cr
 
 nano::store::write_transaction nano::store::rocksdb::component::tx_begin_write ()
 {
-	release_assert (transaction_db != nullptr);
-	return store::write_transaction{ std::make_unique<nano::store::rocksdb::write_transaction_impl> (transaction_db) };
+	release_assert (optimistic_db != nullptr);
+	return store::write_transaction{ std::make_unique<nano::store::rocksdb::write_transaction_impl> (optimistic_db) };
 }
 
 nano::store::read_transaction nano::store::rocksdb::component::tx_begin_read () const
