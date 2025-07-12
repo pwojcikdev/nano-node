@@ -41,7 +41,7 @@ public:
 	~ledger ();
 
 	/** Start read-write transaction */
-	secure::write_transaction tx_begin_write (nano::store::writer guard_type = nano::store::writer::generic) const;
+	secure::write_transaction tx_begin_write (nano::store::writer guard_type = nano::store::writer::generic, nano::store::write_strategy strategy = nano::store::write_strategy::pessimistic) const;
 	/** Start read-only transaction */
 	secure::read_transaction tx_begin_read () const;
 
