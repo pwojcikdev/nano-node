@@ -8,9 +8,10 @@
  * write_guard
  */
 
-nano::store::write_guard::write_guard (write_queue & queue, writer type) :
+nano::store::write_guard::write_guard (write_queue & queue, writer type, write_strategy strategy) :
 	queue{ queue },
-	type{ type }
+	type{ type },
+	strategy{ strategy }
 {
 	renew ();
 }
@@ -18,9 +19,14 @@ nano::store::write_guard::write_guard (write_queue & queue, writer type) :
 nano::store::write_guard::write_guard (write_guard && other) noexcept :
 	queue{ other.queue },
 	type{ other.type },
-	owns{ other.owns }
+	strategy{ other.strategy },
+	owns{ other.owns },
+	token{ other.token },
+	shared_lock{ std::move (other.shared_lock) },
+	exclusive_lock{ std::move (other.exclusive_lock) }
 {
 	other.owns = false;
+	other.token = 0;
 }
 
 nano::store::write_guard::~write_guard ()
@@ -39,14 +45,33 @@ bool nano::store::write_guard::is_owned () const
 void nano::store::write_guard::release ()
 {
 	release_assert (owns);
-	queue.release (type);
+
+	shared_lock.reset ();
+	exclusive_lock.reset ();
+
+	if (strategy == write_strategy::pessimistic)
+	{
+		queue.release (token);
+	}
+
 	owns = false;
 }
 
 void nano::store::write_guard::renew ()
 {
 	release_assert (!owns);
-	queue.acquire (type);
+
+	// Acquire the appropriate lock based on strategy
+	if (strategy == write_strategy::pessimistic)
+	{
+		token = queue.acquire (type);
+		exclusive_lock = std::make_unique<std::unique_lock<std::shared_mutex>> (queue.db_mutex);
+	}
+	else
+	{
+		shared_lock = std::make_unique<std::shared_lock<std::shared_mutex>> (queue.db_mutex);
+	}
+
 	owns = true;
 }
 
@@ -58,9 +83,9 @@ nano::store::write_queue::write_queue ()
 {
 }
 
-nano::store::write_guard nano::store::write_queue::wait (writer writer)
+nano::store::write_guard nano::store::write_queue::wait (writer writer, write_strategy strategy)
 {
-	return write_guard{ *this, writer };
+	return write_guard{ *this, writer, strategy };
 }
 
 bool nano::store::write_queue::contains (writer writer) const
@@ -81,31 +106,27 @@ void nano::store::write_queue::pop ()
 	condition.notify_all ();
 }
 
-void nano::store::write_queue::acquire (writer writer)
+uint64_t nano::store::write_queue::acquire (writer writer)
 {
 	nano::unique_lock<nano::mutex> lock{ mutex };
 
-	// There should be no duplicates in the queue (exception is testing)
-	debug_assert (std::none_of (queue.cbegin (), queue.cend (), [writer] (auto const & item) {
-		return item.first == writer;
-	})
-	|| writer == writer::testing);
-
-	auto const id = next++;
+	auto const token = next++;
 
 	// Add writer to the end of the queue if it's not already waiting
-	queue.push_back ({ writer, id });
+	queue.push_back ({ writer, token });
 
 	// Wait until we are at the front of the queue
-	condition.wait (lock, [&] () { return queue.front ().second == id; });
+	condition.wait (lock, [&] () { return queue.front ().second == token; });
+
+	return token;
 }
 
-void nano::store::write_queue::release (writer writer)
+void nano::store::write_queue::release (uint64_t token)
 {
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
 		release_assert (!queue.empty ());
-		release_assert (queue.front ().first == writer);
+		release_assert (queue.front ().second == token);
 		queue.pop_front ();
 	}
 	condition.notify_all ();
