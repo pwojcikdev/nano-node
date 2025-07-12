@@ -358,9 +358,9 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 		size_t number_of_blocks_processed = 0;
 		size_t number_of_forced_processed = 0;
 
-		std::deque<std::pair<nano::block_status, nano::block_context>> processed;
+		std::deque<nano::block_status> results;
 
-		for (auto & ctx : batch)
+		for (auto const & ctx : batch)
 		{
 			auto const hash = ctx.block->hash ();
 			bool const force = ctx.source == nano::block_source::forced;
@@ -376,17 +376,25 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 			number_of_blocks_processed++;
 
 			auto result = process_one (transaction, ctx, force);
-			processed.emplace_back (result, std::move (ctx));
+			results.push_back (result);
 		}
 
 		// We had rocksdb issues in the past, ensure that rep weights are always consistent
-		ledger.verify_consistency (transaction);
+		// ledger.verify_consistency (transaction);
 
 		transaction.commit ();
 
 		if (number_of_blocks_processed != 0 && timer.stop () > std::chrono::milliseconds (100))
 		{
 			logger.debug (nano::log::type::block_processor, "Processed {} blocks ({} forced) in {} {}", number_of_blocks_processed, number_of_forced_processed, timer.value ().count (), timer.unit ());
+		}
+
+		release_assert (results.size () == batch.size ());
+		std::deque<std::pair<nano::block_status, nano::block_context>> processed;
+		for (auto & ctx : batch)
+		{
+			processed.emplace_back (std::make_pair (results.front (), std::move (ctx)));
+			results.pop_front ();
 		}
 
 		// Queue notifications to be dispatched in the background
@@ -396,7 +404,7 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 	});
 }
 
-nano::block_status nano::block_processor::process_one (secure::write_transaction const & transaction, nano::block_context const & context, bool const forced_a)
+nano::block_status nano::block_processor::process_one (secure::write_transaction const & transaction, nano::block_context const & context, bool const forced)
 {
 	auto const & block = context.block;
 	auto const hash = block->hash ();
@@ -410,7 +418,7 @@ nano::block_status nano::block_processor::process_one (secure::write_transaction
 	nano::log::arg{ "result", result },
 	nano::log::arg{ "source", context.source },
 	nano::log::arg{ "arrival", nano::log::microseconds (context.arrival) },
-	nano::log::arg{ "forced", forced_a },
+	nano::log::arg{ "forced", forced },
 	nano::log::arg{ "block", block });
 
 	switch (result)

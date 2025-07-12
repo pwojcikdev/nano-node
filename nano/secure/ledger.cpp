@@ -75,6 +75,7 @@ void nano::ledger::tx_optimistic_process (nano::store::writer guard_type, std::f
 		catch (nano::store::transaction_conflict_error const & e)
 		{
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::optimistic_failed);
+			txn.abort ();
 		}
 	}
 	// Redo the action with a pessimistic transaction which is guaranteed to succeed
