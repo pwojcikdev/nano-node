@@ -4,8 +4,8 @@
 
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
+#include <rocksdb/utilities/optimistic_transaction_db.h>
 #include <rocksdb/utilities/transaction.h>
-#include <rocksdb/utilities/transaction_db.h>
 
 namespace nano::store::rocksdb
 {
@@ -26,7 +26,7 @@ private:
 class write_transaction_impl final : public store::write_transaction_impl
 {
 public:
-	write_transaction_impl (::rocksdb::TransactionDB * db_a);
+	write_transaction_impl (::rocksdb::OptimisticTransactionDB * db_a);
 	~write_transaction_impl ();
 	void commit () override;
 	void renew () override;
@@ -37,7 +37,7 @@ private:
 	bool check_no_write_tx () const;
 
 	::rocksdb::Transaction * txn;
-	::rocksdb::TransactionDB * db;
+	::rocksdb::OptimisticTransactionDB * db;
 	bool active{ true };
 };
 }
