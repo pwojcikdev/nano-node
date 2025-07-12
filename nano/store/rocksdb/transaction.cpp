@@ -50,7 +50,7 @@ nano::store::rocksdb::write_transaction_impl::~write_transaction_impl ()
 	delete txn;
 }
 
-void nano::store::rocksdb::write_transaction_impl::commit ()
+bool nano::store::rocksdb::write_transaction_impl::commit ()
 {
 	if (active)
 	{
@@ -81,7 +81,9 @@ void nano::store::rocksdb::write_transaction_impl::commit ()
 		}
 
 		active = false;
+		return true;
 	}
+	return false;
 }
 
 void nano::store::rocksdb::write_transaction_impl::renew ()

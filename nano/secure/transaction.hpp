@@ -70,9 +70,12 @@ public:
 
 	void commit ()
 	{
-		txn.commit ();
-		guard.release ();
-		promise.set_value ();
+		bool owned = txn.commit ();
+		if (owned)
+		{
+			guard.release ();
+			promise.set_value ();
+		}
 	}
 
 	void renew ()

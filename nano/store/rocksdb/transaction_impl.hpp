@@ -28,7 +28,7 @@ class write_transaction_impl final : public store::write_transaction_impl
 public:
 	write_transaction_impl (::rocksdb::OptimisticTransactionDB * db_a);
 	~write_transaction_impl ();
-	void commit () override;
+	bool commit () override;
 	void renew () override;
 	void * get_handle () const override;
 	bool contains (nano::tables table_a) const override;
