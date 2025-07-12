@@ -1,4 +1,8 @@
 #include <nano/store/rocksdb/transaction_impl.hpp>
+#include <nano/store/transaction.hpp>
+
+#include <chrono>
+#include <thread>
 
 nano::store::rocksdb::read_transaction_impl::read_transaction_impl (::rocksdb::DB * db_a) :
 	db (db_a)
@@ -52,19 +56,30 @@ void nano::store::rocksdb::write_transaction_impl::commit ()
 	{
 		auto status = txn->Commit ();
 
-		// If there are no available memtables try again a few more times
-		constexpr auto num_attempts = 10;
-		auto attempt_num = 0;
-		while (status.IsTryAgain () && attempt_num < num_attempts)
+		// If there are no available memtables try again a few more times with cooldown
+		constexpr auto max_attempts = 10;
+		int attempt_num = 0;
+		while (status.IsTryAgain () && attempt_num < max_attempts)
 		{
+			std::this_thread::sleep_for (15ms); // Small cooldown before retry
 			status = txn->Commit ();
 			++attempt_num;
 		}
 
 		if (!status.ok ())
 		{
-			release_assert (false && "Unable to write to the RocksDB database", status.ToString ());
+			if (status.IsBusy () || status.IsTimedOut ())
+			{
+				// Optimistic transaction conflict - throw exception
+				throw nano::store::transaction_conflict_error ("Transaction commit failed due to conflict: " + status.ToString ());
+			}
+			else
+			{
+				// Other errors (including IsTryAgain after retries) should still crash
+				release_assert (false, "Unable to write to the RocksDB database", status.ToString ());
+			}
 		}
+
 		active = false;
 	}
 }
