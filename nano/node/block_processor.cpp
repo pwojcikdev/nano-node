@@ -346,61 +346,62 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 	debug_assert (!mutex.try_lock ());
 	debug_assert (!queue.empty ());
 
+	nano::timer<std::chrono::milliseconds> timer;
+	timer.start ();
+
 	auto batch = next_batch (config.batch_size);
 
 	lock.unlock ();
 
-	auto transaction = ledger.tx_begin_write (nano::store::writer::block_processor, nano::store::write_strategy::optimistic);
+	ledger.tx_optimistic_process (nano::store::writer::block_processor, [&, this] (secure::write_transaction & transaction) {
+		// Processing blocks
+		size_t number_of_blocks_processed = 0;
+		size_t number_of_forced_processed = 0;
 
-	nano::timer<std::chrono::milliseconds> timer;
-	timer.start ();
+		std::deque<std::pair<nano::block_status, nano::block_context>> processed;
 
-	// Processing blocks
-	size_t number_of_blocks_processed = 0;
-	size_t number_of_forced_processed = 0;
-
-	std::deque<std::pair<nano::block_status, nano::block_context>> processed;
-
-	for (auto & ctx : batch)
-	{
-		auto const hash = ctx.block->hash ();
-		bool const force = ctx.source == nano::block_source::forced;
-
-		transaction.refresh_if_needed ();
-
-		if (force)
+		for (auto & ctx : batch)
 		{
-			number_of_forced_processed++;
-			rollback_competitor (transaction, *ctx.block);
+			auto const hash = ctx.block->hash ();
+			bool const force = ctx.source == nano::block_source::forced;
+
+			transaction.refresh_if_needed ();
+
+			if (force)
+			{
+				number_of_forced_processed++;
+				rollback_competitor (transaction, *ctx.block);
+			}
+
+			number_of_blocks_processed++;
+
+			auto result = process_one (transaction, ctx, force);
+			processed.emplace_back (result, std::move (ctx));
 		}
 
-		number_of_blocks_processed++;
+		// We had rocksdb issues in the past, ensure that rep weights are always consistent
+		ledger.verify_consistency (transaction);
 
-		auto result = process_one (transaction, ctx, force);
-		processed.emplace_back (result, std::move (ctx));
-	}
+		transaction.commit ();
 
-	// We had rocksdb issues in the past, ensure that rep weights are always consistent
-	ledger.verify_consistency (transaction);
+		if (number_of_blocks_processed != 0 && timer.stop () > std::chrono::milliseconds (100))
+		{
+			logger.debug (nano::log::type::block_processor, "Processed {} blocks ({} forced) in {} {}", number_of_blocks_processed, number_of_forced_processed, timer.value ().count (), timer.unit ());
+		}
 
-	transaction.commit ();
-
-	if (number_of_blocks_processed != 0 && timer.stop () > std::chrono::milliseconds (100))
-	{
-		logger.debug (nano::log::type::block_processor, "Processed {} blocks ({} forced) in {} {}", number_of_blocks_processed, number_of_forced_processed, timer.value ().count (), timer.unit ());
-	}
-
-	// Queue notifications to be dispatched in the background
-	ledger_notifications.notify_processed (transaction, std::move (processed), [this] {
-		stats.inc (nano::stat::type::block_processor, nano::stat::detail::notify_processed);
+		// Queue notifications to be dispatched in the background
+		ledger_notifications.notify_processed (transaction, std::move (processed), [this] {
+			stats.inc (nano::stat::type::block_processor, nano::stat::detail::notify_processed);
+		});
 	});
 }
 
-nano::block_status nano::block_processor::process_one (secure::write_transaction const & transaction_a, nano::block_context const & context, bool const forced_a)
+nano::block_status nano::block_processor::process_one (secure::write_transaction const & transaction, nano::block_context const & context, bool const forced_a)
 {
-	auto block = context.block;
+	auto const & block = context.block;
 	auto const hash = block->hash ();
-	nano::block_status result = ledger.process (transaction_a, block);
+
+	nano::block_status result = ledger.process (transaction, block);
 
 	stats.inc (nano::stat::type::block_processor_result, to_stat_detail (result));
 	stats.inc (nano::stat::type::block_processor_source, to_stat_detail (context.source));
