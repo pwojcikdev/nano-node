@@ -61,6 +61,31 @@ auto nano::ledger::tx_begin_read () const -> secure::read_transaction
 	return secure::read_transaction{ store.tx_begin_read () };
 }
 
+void nano::ledger::tx_optimistic_process (nano::store::writer guard_type, std::function<void (secure::write_transaction &)> const & action) const
+{
+	{
+		auto txn = tx_begin_write (guard_type, nano::store::write_strategy::optimistic);
+		try
+		{
+			action (txn);
+			txn.commit ();
+			stats.inc (nano::stat::type::ledger, nano::stat::detail::optimistic_success);
+			return;
+		}
+		catch (nano::store::transaction_conflict_error const & e)
+		{
+			stats.inc (nano::stat::type::ledger, nano::stat::detail::optimistic_failed);
+			txn.abort ();
+		}
+	}
+	// Redo the action with a pessimistic transaction which is guaranteed to succeed
+	{
+		auto txn = tx_begin_write (guard_type, nano::store::write_strategy::pessimistic);
+		action (txn);
+		txn.commit ();
+	}
+}
+
 void nano::ledger::initialize (nano::generate_cache_flags const & generate_cache_flags)
 {
 	debug_assert (rep_weights.empty ());
