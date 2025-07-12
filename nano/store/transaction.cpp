@@ -119,10 +119,10 @@ nano::id_dispenser::id_t nano::store::write_transaction::store_id () const
 	return impl->store_id;
 }
 
-void nano::store::write_transaction::commit ()
+bool nano::store::write_transaction::commit ()
 {
 	++current_epoch;
-	impl->commit ();
+	return impl->commit ();
 }
 
 void nano::store::write_transaction::renew ()

@@ -43,7 +43,7 @@ class write_transaction_impl : public transaction_impl
 {
 public:
 	explicit write_transaction_impl (nano::id_dispenser::id_t const store_id = 0);
-	virtual void commit () = 0;
+	virtual bool commit () = 0;
 	virtual void renew () = 0;
 	virtual bool contains (nano::tables table_a) const = 0;
 };
@@ -97,7 +97,7 @@ public:
 	void * get_handle () const override;
 	nano::id_dispenser::id_t store_id () const override;
 
-	void commit ();
+	bool commit ();
 	void renew ();
 	void refresh ();
 	void refresh_if_needed (std::chrono::milliseconds max_age = std::chrono::milliseconds{ 500 });

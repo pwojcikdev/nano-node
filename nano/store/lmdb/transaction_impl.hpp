@@ -43,7 +43,7 @@ class write_transaction_impl final : public store::write_transaction_impl
 public:
 	write_transaction_impl (nano::store::lmdb::env const &, txn_callbacks mdb_txn_callbacks);
 	~write_transaction_impl ();
-	void commit () override;
+	bool commit () override;
 	void renew () override;
 	void * get_handle () const override;
 	bool contains (nano::tables table_a) const override;
