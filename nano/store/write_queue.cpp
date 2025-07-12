@@ -44,17 +44,18 @@ bool nano::store::write_guard::is_owned () const
 
 void nano::store::write_guard::release ()
 {
-	release_assert (owns);
-
-	shared_lock.reset ();
-	exclusive_lock.reset ();
-
-	if (strategy == write_strategy::pessimistic)
+	if (owns)
 	{
-		queue.release (token);
-	}
+		shared_lock.reset ();
+		exclusive_lock.reset ();
 
-	owns = false;
+		if (strategy == write_strategy::pessimistic)
+		{
+			queue.release (token);
+		}
+
+		owns = false;
+	}
 }
 
 void nano::store::write_guard::renew ()
