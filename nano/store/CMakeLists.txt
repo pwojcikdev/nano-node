@@ -19,7 +19,10 @@ add_library(
   versioning.cpp
   write_queue.hpp
   write_queue.cpp
-
+  lmdb_backend.hpp
+  lmdb_backend.cpp
+  rocksdb_backend.hpp
+  rocksdb_backend.cpp
   ledger/account.hpp
   ledger/account.cpp
   ledger/block.hpp
@@ -40,7 +43,6 @@ add_library(
   ledger/rep_weight.cpp
   ledger/version.hpp
   ledger/version.cpp
-
   lmdb/db_val.hpp
   lmdb/iterator.hpp
   lmdb/iterator.cpp
@@ -52,7 +54,6 @@ add_library(
   lmdb/transaction.cpp
   lmdb/wallet_value.hpp
   lmdb/wallet_value.cpp
-
   rocksdb/db_val.hpp
   rocksdb/iterator.hpp
   rocksdb/iterator.cpp
