@@ -25,6 +25,16 @@ public:
 	nano::ledger & ledger;
 	nano::block_status result{ nano::block_status::invalid };
 
+public: // Disable signature validation for testing purposes
+	bool validate_message (nano::public_key const &, nano::uint256_union const &, nano::signature const &)
+	{
+		return false;
+	}
+	bool validate_message (nano::public_key const &, uint8_t const *, size_t, nano::signature const &)
+	{
+		return false;
+	}
+
 private:
 	bool validate_epoch_block (nano::state_block const & block);
 };
