@@ -217,7 +217,7 @@ void nano::cementing_set::run_batch (std::unique_lock<std::mutex> & lock)
 	};
 
 	{
-		auto transaction = ledger.tx_begin_write (nano::store::writer::confirmation_height);
+		auto transaction = ledger.tx_begin_write (nano::store::writer::confirmation_height, nano::store::write_strategy::optimistic);
 		for (auto const & entry : batch)
 		{
 			auto const & hash = entry.hash;
