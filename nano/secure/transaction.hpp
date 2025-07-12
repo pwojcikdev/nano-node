@@ -70,16 +70,28 @@ public:
 
 	void commit ()
 	{
-		bool owned = txn.commit ();
-		if (owned)
+		if (active ())
 		{
+			txn.commit ();
 			guard.release ();
 			promise.set_value ();
 		}
 	}
 
+	void abort ()
+	{
+		if (active ())
+		{
+			txn.abort ();
+			guard.release ();
+			promise.set_exception (std::make_exception_ptr (nano::store::transaction_aborted_error ("Transaction aborted")));
+		}
+	}
+
 	void renew ()
 	{
+		release_assert (!active ());
+
 		guard.renew ();
 		txn.renew ();
 		start = std::chrono::steady_clock::now ();
@@ -111,7 +123,8 @@ public:
 
 	bool active () const
 	{
-		return guard.is_owned ();
+		debug_assert (guard.is_owned () == txn.is_active ());
+		return txn.is_active ();
 	}
 
 	std::shared_future<void> get_future () const

@@ -44,9 +44,11 @@ public:
 	write_transaction_impl (nano::store::lmdb::env const &, txn_callbacks mdb_txn_callbacks);
 	~write_transaction_impl ();
 	bool commit () override;
+	void abort () override;
 	void renew () override;
 	void * get_handle () const override;
 	bool contains (nano::tables table_a) const override;
+	bool is_active () const override;
 	MDB_txn * handle;
 	nano::store::lmdb::env const & env;
 	lmdb::txn_callbacks txn_callbacks;

@@ -151,3 +151,13 @@ bool nano::store::write_transaction::contains (nano::tables table_a) const
 {
 	return impl->contains (table_a);
 }
+
+void nano::store::write_transaction::abort ()
+{
+	impl->abort ();
+}
+
+bool nano::store::write_transaction::is_active () const
+{
+	return impl && impl->is_active ();
+}

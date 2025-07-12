@@ -21,6 +21,18 @@ public:
 	}
 };
 
+/**
+ * Exception thrown when awaiting future of a transaction that has been aborted
+ */
+class transaction_aborted_error : public std::runtime_error
+{
+public:
+	explicit transaction_aborted_error (std::string const & message) :
+		std::runtime_error (message)
+	{
+	}
+};
+
 class transaction_impl
 {
 public:
@@ -44,8 +56,10 @@ class write_transaction_impl : public transaction_impl
 public:
 	explicit write_transaction_impl (nano::id_dispenser::id_t const store_id = 0);
 	virtual bool commit () = 0;
+	virtual void abort () = 0;
 	virtual void renew () = 0;
 	virtual bool contains (nano::tables table_a) const = 0;
+	virtual bool is_active () const = 0;
 };
 
 class transaction
@@ -98,10 +112,12 @@ public:
 	nano::id_dispenser::id_t store_id () const override;
 
 	bool commit ();
+	void abort ();
 	void renew ();
 	void refresh ();
 	void refresh_if_needed (std::chrono::milliseconds max_age = std::chrono::milliseconds{ 500 });
 	bool contains (nano::tables table_a) const;
+	bool is_active () const;
 
 private:
 	std::unique_ptr<write_transaction_impl> impl;
