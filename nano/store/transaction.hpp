@@ -4,9 +4,23 @@
 #include <nano/store/tables.hpp>
 
 #include <memory>
+#include <stdexcept>
+#include <string>
 
 namespace nano::store
 {
+/**
+ * Exception thrown when an optimistic transaction fails to commit due to conflicts
+ */
+class transaction_conflict_error : public std::runtime_error
+{
+public:
+	explicit transaction_conflict_error (std::string const & message) :
+		std::runtime_error (message)
+	{
+	}
+};
+
 class transaction_impl
 {
 public:
