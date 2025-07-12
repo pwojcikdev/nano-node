@@ -84,7 +84,7 @@ public:
 		default_rpc_port (45000),
 		default_ipc_port (46000),
 		default_websocket_port (47000),
-		aec_loop_interval (300ms), // Update AEC ~3 times per second
+		aec_loop_interval (25ms),
 		cleanup_period (default_cleanup_period),
 		merge_period (std::chrono::milliseconds (250)),
 		keepalive_period (std::chrono::seconds (15)),
