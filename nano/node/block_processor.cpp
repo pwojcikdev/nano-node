@@ -67,20 +67,23 @@ nano::block_processor::block_processor (nano::node_config const & node_config_a,
 nano::block_processor::~block_processor ()
 {
 	// Thread must be stopped before destruction
-	debug_assert (!thread.joinable ());
+	debug_assert (threads.empty ());
 }
 
 void nano::block_processor::start ()
 {
-	debug_assert (!thread.joinable ());
+	debug_assert (threads.empty ());
 
 	boost::thread::attributes attrs;
 	attrs.set_stack_size (nano::ledger_thread_stack_size ());
 
-	thread = boost::thread (attrs, [this] () {
-		nano::thread_role::set (nano::thread_role::name::block_processing);
-		run ();
-	});
+	for (auto i = 0u; i < config.threads; ++i)
+	{
+		threads.emplace_back (attrs, [this] () {
+			nano::thread_role::set (nano::thread_role::name::block_processing);
+			run ();
+		});
+	}
 }
 
 void nano::block_processor::stop ()
@@ -90,10 +93,14 @@ void nano::block_processor::stop ()
 		stopped = true;
 	}
 	condition.notify_all ();
-	if (thread.joinable ())
+	for (auto & thread : threads)
 	{
-		thread.join ();
+		if (thread.joinable ())
+		{
+			thread.join ();
+		}
 	}
+	threads.clear ();
 }
 
 // TODO: Remove and replace all checks with calls to size (block_source)
@@ -343,7 +350,7 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 
 	lock.unlock ();
 
-	auto transaction = ledger.tx_begin_write (nano::store::writer::block_processor);
+	auto transaction = ledger.tx_begin_write (nano::store::writer::block_processor, nano::store::write_strategy::optimistic);
 
 	nano::timer<std::chrono::milliseconds> timer;
 	timer.start ();
@@ -375,6 +382,8 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 
 	// We had rocksdb issues in the past, ensure that rep weights are always consistent
 	ledger.verify_consistency (transaction);
+
+	transaction.commit ();
 
 	if (number_of_blocks_processed != 0 && timer.stop () > std::chrono::milliseconds (100))
 	{

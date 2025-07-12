@@ -683,6 +683,10 @@ enum class detail
 	// fork_cache
 	overfill_entry,
 
+	// db
+	optimistic_success,
+	optimistic_failed,
+
 	_last // Must be the last enum
 };
 

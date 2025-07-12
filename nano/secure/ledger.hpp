@@ -45,6 +45,9 @@ public:
 	/** Start read-only transaction */
 	secure::read_transaction tx_begin_read () const;
 
+	/** Attempt optimistic write transaction and if it fails, retry the action with a pessimistic transaction */
+	void tx_optimistic_process (nano::store::writer guard_type, std::function<void (secure::write_transaction &)> const & action) const;
+
 	bool unconfirmed_exists (secure::transaction const &, nano::block_hash const &) const;
 	nano::uint128_t account_receivable (secure::transaction const &, nano::account const &, bool = false) const;
 	/**
