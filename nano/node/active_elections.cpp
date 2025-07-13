@@ -30,7 +30,7 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 	cementing_set{ cementing_set_a },
 	recently_confirmed{ config.confirmation_cache },
 	recently_cemented{ config.confirmation_history_size },
-	workers{ 1, nano::thread_role::name::aec_notifications }
+	workers{ 2, nano::thread_role::name::aec_notifications }
 {
 	count_by_behavior.fill (0); // Zero initialize array
 
