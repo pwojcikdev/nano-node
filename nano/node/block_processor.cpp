@@ -365,7 +365,7 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 			auto const hash = ctx.block->hash ();
 			bool const force = ctx.source == nano::block_source::forced;
 
-			transaction.refresh_if_needed ();
+			// transaction.refresh_if_needed ();
 
 			if (force)
 			{

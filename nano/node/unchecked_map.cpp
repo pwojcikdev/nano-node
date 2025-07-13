@@ -168,13 +168,13 @@ void nano::unchecked_map::query_impl (nano::block_hash const & hash)
 		stats.inc (nano::stat::type::unchecked, nano::stat::detail::satisfied);
 		satisfied.notify (info);
 	});
-	if (!disable_delete)
-	{
-		for (auto const & key : delete_queue)
-		{
-			del (key);
-		}
-	}
+	// if (!disable_delete)
+	// {
+	// 	for (auto const & key : delete_queue)
+	// 	{
+	// 		del (key);
+	// 	}
+	// }
 }
 
 nano::container_info nano::unchecked_map::container_info () const
