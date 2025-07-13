@@ -443,6 +443,7 @@ void run_throughput_benchmark (boost::program_options::variables_map const & vm,
 	// Node configuration
 	nano::node_config node_config;
 	node_config.peering_port = 0; // Use random available port
+	node_config.max_backlog = 0; // Disable bounded backlog
 	node_config.block_processor.max_system_queue = std::numeric_limits<size_t>::max (); // Unlimited queue size
 	node_config.max_unchecked_blocks = 1024 * 1024;
 
