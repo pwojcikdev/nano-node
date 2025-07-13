@@ -1,4 +1,4 @@
-add_executable(nano_node daemon.cpp daemon.hpp entry.cpp)
+add_executable(nano_node benchmark.cpp benchmark.hpp daemon.cpp daemon.hpp entry.cpp)
 
 target_link_libraries(nano_node node Boost::process ${PLATFORM_LIBS})
 
