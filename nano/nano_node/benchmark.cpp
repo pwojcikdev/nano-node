@@ -139,6 +139,23 @@ throughput_benchmark::throughput_benchmark (std::shared_ptr<nano::node> node_a, 
 				lock->erase (context.block->hash ());
 				processed_blocks_count++;
 			}
+			else
+			{
+				switch (status)
+				{
+					case nano::block_status::old:
+						// Ignore, doesn't matter
+						break;
+					case nano::block_status::gap_previous:
+						// Ignore, should be handled by unchecked map
+						break;
+					case nano::block_status::gap_source:
+						// Ignore, should be handled by unchecked map
+						break;
+					default:
+						std::cout << fmt::format ("Block processing failed: {} for block {}\n", to_string (status), context.block->hash ().to_string ());
+				}
+			}
 		}
 	});
 }
@@ -427,6 +444,7 @@ void run_throughput_benchmark (boost::program_options::variables_map const & vm,
 	nano::node_config node_config;
 	node_config.peering_port = 0; // Use random available port
 	node_config.block_processor.max_system_queue = std::numeric_limits<size_t>::max (); // Unlimited queue size
+	node_config.max_unchecked_blocks = 1024 * 1024;
 
 	auto node = std::make_shared<nano::node> (io_ctx, nano::unique_path (), node_config, work_pool, node_flags);
 	node->start ();
