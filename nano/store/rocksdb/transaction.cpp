@@ -4,6 +4,10 @@
 #include <chrono>
 #include <thread>
 
+/*
+ * read_transaction_impl
+ */
+
 nano::store::rocksdb::read_transaction_impl::read_transaction_impl (::rocksdb::DB * db_a) :
 	db (db_a)
 {
@@ -35,6 +39,10 @@ void * nano::store::rocksdb::read_transaction_impl::get_handle () const
 {
 	return (void *)&options;
 }
+
+/*
+ * write_transaction_impl
+ */
 
 nano::store::rocksdb::write_transaction_impl::write_transaction_impl (::rocksdb::OptimisticTransactionDB * db_a) :
 	db (db_a)

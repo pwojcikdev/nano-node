@@ -61,9 +61,10 @@ auto iterator::make_iterator (::rocksdb::DB * db, std::variant<::rocksdb::Transa
 		using V = std::remove_cvref_t<decltype (ptr)>;
 		if constexpr (std::is_same_v<V, ::rocksdb::Transaction *>)
 		{
-			::rocksdb::ReadOptions ropts;
-			ropts.fill_cache = false;
-			return ptr->GetIterator (ropts, table);
+			::rocksdb::ReadOptions options;
+			options.snapshot = ptr->GetSnapshot ();
+			options.fill_cache = false;
+			return ptr->GetIterator (options, table);
 		}
 		else if constexpr (std::is_same_v<V, ::rocksdb::ReadOptions *>)
 		{
