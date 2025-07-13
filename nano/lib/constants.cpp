@@ -48,10 +48,9 @@ nano::work_thresholds const nano::work_thresholds::publish_beta (
 );
 
 nano::work_thresholds const nano::work_thresholds::publish_dev (
-0xfe00000000000000, // Very low for tests
-0xffc0000000000000, // 8x higher than epoch_1
-0xf000000000000000 // 8x lower than epoch_1
-);
+0,
+0,
+0);
 
 nano::work_thresholds const nano::work_thresholds::publish_test ( // defaults to live network levels
 nano::env::get<HexTo<uint64_t>> ("NANO_TEST_EPOCH_1").value_or (0xffffffc000000000),
