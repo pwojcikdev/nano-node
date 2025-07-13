@@ -49,7 +49,6 @@ nano::block_processor::block_processor (nano::node_config const & node_config_a,
 				return config.priority_live;
 			case nano::block_source::bootstrap:
 			case nano::block_source::bootstrap_legacy:
-			case nano::block_source::unchecked:
 				return config.priority_bootstrap;
 			case nano::block_source::local:
 				return config.priority_local;
