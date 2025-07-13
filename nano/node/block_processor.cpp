@@ -397,6 +397,108 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 			results.pop_front ();
 		}
 
+		for (auto const & entry : processed)
+		{
+			auto const & result = entry.first;
+			auto const & block = entry.second.block;
+			auto const hash = block->hash ();
+
+			switch (result)
+			{
+				case nano::block_status::progress:
+				{
+					unchecked.trigger (hash);
+
+					/*
+					 * For send blocks check epoch open unchecked (gap pending).
+					 * For state blocks check only send subtype and only if block epoch is not last epoch.
+					 * If epoch is last, then pending entry shouldn't trigger same epoch open block for destination account.
+					 */
+					if (block->type () == nano::block_type::send || (block->type () == nano::block_type::state && block->is_send () && std::underlying_type_t<nano::epoch> (block->sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
+					{
+						unchecked.trigger (block->destination ());
+					}
+					break;
+				}
+				case nano::block_status::gap_previous:
+				{
+					unchecked.put (block->previous (), block);
+					stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_previous);
+					break;
+				}
+				case nano::block_status::gap_source:
+				{
+					release_assert (block->source_field () || block->link_field ());
+					unchecked.put (block->source_field ().value_or (block->link_field ().value_or (0).as_block_hash ()), block);
+					stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
+					break;
+				}
+				case nano::block_status::gap_epoch_open_pending:
+				{
+					unchecked.put (block->account_field ().value_or (0), block); // Specific unchecked key starting with epoch open block account public key
+					stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
+					break;
+				}
+				case nano::block_status::old:
+				{
+					stats.inc (nano::stat::type::ledger, nano::stat::detail::old);
+					break;
+				}
+				// These are unexpected and indicate erroneous/malicious behavior, log debug info to highlight the issue
+				case nano::block_status::bad_signature:
+				{
+					logger.debug (nano::log::type::block_processor, "Block signature is invalid: {}", hash);
+					break;
+				}
+				case nano::block_status::negative_spend:
+				{
+					logger.debug (nano::log::type::block_processor, "Block spends negative amount: {}", hash);
+					break;
+				}
+				case nano::block_status::unreceivable:
+				{
+					logger.debug (nano::log::type::block_processor, "Block is unreceivable: {}", hash);
+					break;
+				}
+				case nano::block_status::fork:
+				{
+					stats.inc (nano::stat::type::ledger, nano::stat::detail::fork);
+					logger.debug (nano::log::type::block_processor, "Block is a fork: {}", hash);
+					break;
+				}
+				case nano::block_status::opened_burn_account:
+				{
+					logger.debug (nano::log::type::block_processor, "Block opens burn account: {}", hash);
+					break;
+				}
+				case nano::block_status::balance_mismatch:
+				{
+					logger.debug (nano::log::type::block_processor, "Block balance mismatch: {}", hash);
+					break;
+				}
+				case nano::block_status::representative_mismatch:
+				{
+					logger.debug (nano::log::type::block_processor, "Block representative mismatch: {}", hash);
+					break;
+				}
+				case nano::block_status::block_position:
+				{
+					logger.debug (nano::log::type::block_processor, "Block is in incorrect position: {}", hash);
+					break;
+				}
+				case nano::block_status::insufficient_work:
+				{
+					logger.debug (nano::log::type::block_processor, "Block has insufficient work: {}", hash);
+					break;
+				}
+				case nano::block_status::invalid:
+				{
+					debug_assert (false, "invalid block status"); // This should never happen
+					break;
+				}
+			}
+		}
+
 		// Queue notifications to be dispatched in the background
 		ledger_notifications.notify_processed (transaction, std::move (processed), [this] {
 			stats.inc (nano::stat::type::block_processor, nano::stat::detail::notify_processed);
@@ -421,100 +523,101 @@ nano::block_status nano::block_processor::process_one (secure::write_transaction
 	nano::log::arg{ "forced", forced },
 	nano::log::arg{ "block", block });
 
-	switch (result)
-	{
-		case nano::block_status::progress:
-		{
-			unchecked.trigger (hash);
+	// switch (result)
+	// {
+	// 	case nano::block_status::progress:
+	// 	{
+	// 		unchecked.trigger (hash);
+	//
+	// 		/*
+	// 		 * For send blocks check epoch open unchecked (gap pending).
+	// 		 * For state blocks check only send subtype and only if block epoch is not last epoch.
+	// 		 * If epoch is last, then pending entry shouldn't trigger same epoch open block for destination account.
+	// 		 */
+	// 		if (block->type () == nano::block_type::send || (block->type () == nano::block_type::state && block->is_send () && std::underlying_type_t<nano::epoch> (block->sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
+	// 		{
+	// 			unchecked.trigger (block->destination ());
+	// 		}
+	// 		break;
+	// 	}
+	// 	case nano::block_status::gap_previous:
+	// 	{
+	// 		unchecked.put (block->previous (), block);
+	// 		stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_previous);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::gap_source:
+	// 	{
+	// 		release_assert (block->source_field () || block->link_field ());
+	// 		unchecked.put (block->source_field ().value_or (block->link_field ().value_or (0).as_block_hash ()), block);
+	// 		stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::gap_epoch_open_pending:
+	// 	{
+	// 		unchecked.put (block->account_field ().value_or (0), block); // Specific unchecked key starting with epoch open block account public key
+	// 		stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::old:
+	// 	{
+	// 		stats.inc (nano::stat::type::ledger, nano::stat::detail::old);
+	// 		break;
+	// 	}
+	// 	// These are unexpected and indicate erroneous/malicious behavior, log debug info to highlight the issue
+	// 	case nano::block_status::bad_signature:
+	// 	{
+	// 		logger.debug (nano::log::type::block_processor, "Block signature is invalid: {}", hash);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::negative_spend:
+	// 	{
+	// 		logger.debug (nano::log::type::block_processor, "Block spends negative amount: {}", hash);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::unreceivable:
+	// 	{
+	// 		logger.debug (nano::log::type::block_processor, "Block is unreceivable: {}", hash);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::fork:
+	// 	{
+	// 		stats.inc (nano::stat::type::ledger, nano::stat::detail::fork);
+	// 		logger.debug (nano::log::type::block_processor, "Block is a fork: {}", hash);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::opened_burn_account:
+	// 	{
+	// 		logger.debug (nano::log::type::block_processor, "Block opens burn account: {}", hash);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::balance_mismatch:
+	// 	{
+	// 		logger.debug (nano::log::type::block_processor, "Block balance mismatch: {}", hash);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::representative_mismatch:
+	// 	{
+	// 		logger.debug (nano::log::type::block_processor, "Block representative mismatch: {}", hash);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::block_position:
+	// 	{
+	// 		logger.debug (nano::log::type::block_processor, "Block is in incorrect position: {}", hash);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::insufficient_work:
+	// 	{
+	// 		logger.debug (nano::log::type::block_processor, "Block has insufficient work: {}", hash);
+	// 		break;
+	// 	}
+	// 	case nano::block_status::invalid:
+	// 	{
+	// 		debug_assert (false, "invalid block status"); // This should never happen
+	// 		break;
+	// 	}
+	// }
 
-			/*
-			 * For send blocks check epoch open unchecked (gap pending).
-			 * For state blocks check only send subtype and only if block epoch is not last epoch.
-			 * If epoch is last, then pending entry shouldn't trigger same epoch open block for destination account.
-			 */
-			if (block->type () == nano::block_type::send || (block->type () == nano::block_type::state && block->is_send () && std::underlying_type_t<nano::epoch> (block->sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
-			{
-				unchecked.trigger (block->destination ());
-			}
-			break;
-		}
-		case nano::block_status::gap_previous:
-		{
-			unchecked.put (block->previous (), block);
-			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_previous);
-			break;
-		}
-		case nano::block_status::gap_source:
-		{
-			release_assert (block->source_field () || block->link_field ());
-			unchecked.put (block->source_field ().value_or (block->link_field ().value_or (0).as_block_hash ()), block);
-			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
-			break;
-		}
-		case nano::block_status::gap_epoch_open_pending:
-		{
-			unchecked.put (block->account_field ().value_or (0), block); // Specific unchecked key starting with epoch open block account public key
-			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
-			break;
-		}
-		case nano::block_status::old:
-		{
-			stats.inc (nano::stat::type::ledger, nano::stat::detail::old);
-			break;
-		}
-		// These are unexpected and indicate erroneous/malicious behavior, log debug info to highlight the issue
-		case nano::block_status::bad_signature:
-		{
-			logger.debug (nano::log::type::block_processor, "Block signature is invalid: {}", hash);
-			break;
-		}
-		case nano::block_status::negative_spend:
-		{
-			logger.debug (nano::log::type::block_processor, "Block spends negative amount: {}", hash);
-			break;
-		}
-		case nano::block_status::unreceivable:
-		{
-			logger.debug (nano::log::type::block_processor, "Block is unreceivable: {}", hash);
-			break;
-		}
-		case nano::block_status::fork:
-		{
-			stats.inc (nano::stat::type::ledger, nano::stat::detail::fork);
-			logger.debug (nano::log::type::block_processor, "Block is a fork: {}", hash);
-			break;
-		}
-		case nano::block_status::opened_burn_account:
-		{
-			logger.debug (nano::log::type::block_processor, "Block opens burn account: {}", hash);
-			break;
-		}
-		case nano::block_status::balance_mismatch:
-		{
-			logger.debug (nano::log::type::block_processor, "Block balance mismatch: {}", hash);
-			break;
-		}
-		case nano::block_status::representative_mismatch:
-		{
-			logger.debug (nano::log::type::block_processor, "Block representative mismatch: {}", hash);
-			break;
-		}
-		case nano::block_status::block_position:
-		{
-			logger.debug (nano::log::type::block_processor, "Block is in incorrect position: {}", hash);
-			break;
-		}
-		case nano::block_status::insufficient_work:
-		{
-			logger.debug (nano::log::type::block_processor, "Block has insufficient work: {}", hash);
-			break;
-		}
-		case nano::block_status::invalid:
-		{
-			debug_assert (false, "invalid block status"); // This should never happen
-			break;
-		}
-	}
 	return result;
 }
 
