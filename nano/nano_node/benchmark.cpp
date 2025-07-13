@@ -419,6 +419,7 @@ void throughput_benchmark::print_statistics ()
 void run_throughput_benchmark (boost::program_options::variables_map const & vm, std::filesystem::path const & data_path)
 {
 	nano::network_constants::set_active_network ("dev");
+	nano::logger::initialize (nano::log_config::cli_default (nano::log::level::warn));
 
 	// Parse configuration
 	size_t num_accounts = 150000;
