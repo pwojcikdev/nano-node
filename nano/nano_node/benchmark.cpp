@@ -184,7 +184,7 @@ void throughput_benchmark::setup_genesis_distribution ()
 				.balance (0)
 				.link (target_account)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*node->work.generate (nano::work_version::work_1, genesis_latest, node->network_params.work.epoch_1))
+				.work (0)
 				.build ();
 
 	// Create open block for target account
@@ -195,14 +195,14 @@ void throughput_benchmark::setup_genesis_distribution ()
 				.balance (genesis_balance)
 				.link (send->hash ())
 				.sign (target_keypair.prv, target_keypair.pub)
-				.work (*node->work.generate (nano::work_version::work_1, target_account, node->network_params.work.epoch_1))
+				.work (0)
 				.build ();
 
 	// Process blocks
 	auto result1 = node->process_local (send);
-	release_assert (result1 && result1.value () == nano::block_status::progress);
+	release_assert (result1 && result1 == nano::block_status::progress, to_string (*result1));
 	auto result2 = node->process_local (open);
-	release_assert (result2 && result2.value () == nano::block_status::progress);
+	release_assert (result2 && result2 == nano::block_status::progress, to_string (*result2));
 
 	// Update pool balance tracking
 	pool.set_initial_balance (target_account, genesis_balance);
@@ -270,7 +270,7 @@ std::deque<std::shared_ptr<nano::block>> throughput_benchmark::generate_random_t
 					.balance (new_sender_balance)
 					.link (receiver)
 					.sign (sender_keypair.prv, sender_keypair.pub)
-					.work (*node->work.generate (nano::work_version::work_1, work_root, node->network_params.work.epoch_1))
+					.work (0)
 					.build ();
 
 		blocks.push_back (send);
@@ -301,7 +301,7 @@ std::deque<std::shared_ptr<nano::block>> throughput_benchmark::generate_random_t
 					   .balance (new_receiver_balance)
 					   .link (send->hash ())
 					   .sign (receiver_keypair.prv, receiver_keypair.pub)
-					   .work (*node->work.generate (nano::work_version::work_1, receiver_work_root, node->network_params.work.epoch_1))
+					   .work (0)
 					   .build ();
 
 		blocks.push_back (receive);
