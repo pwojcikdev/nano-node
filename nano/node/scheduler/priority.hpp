@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/thread_pool.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/scheduler/bucket.hpp>
 
@@ -40,7 +41,6 @@ public:
 	 */
 	bool activate (nano::secure::transaction const &, nano::account const &);
 	bool activate (nano::secure::transaction const &, nano::account const &, nano::account_info const &, nano::confirmation_height_info const &);
-	bool activate_successors (nano::secure::transaction const &, nano::block const &);
 
 	bool contains (nano::block_hash const &) const;
 	void notify ();
@@ -73,5 +73,8 @@ private:
 	mutable nano::mutex mutex;
 	std::thread thread;
 	std::thread cleanup_thread;
+
+	nano::thread_pool workers;
+	nano::interval warning_interval;
 };
 }
