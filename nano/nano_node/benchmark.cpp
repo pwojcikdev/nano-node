@@ -238,7 +238,7 @@ std::deque<std::shared_ptr<nano::block>> throughput_benchmark::generate_random_t
 	std::uniform_int_distribution<uint64_t> amount_dist (1, std::numeric_limits<uint64_t>::max ()); // TODO: Use max uint128_t
 
 	// Generate batch_size number of transfer pairs (send + receive = 2 blocks each)
-	size_t batch_size = 250000; // Default batch size
+	size_t batch_size = 100000; // Default batch size
 	size_t transfers_generated = 0;
 
 	while (transfers_generated < batch_size / 2) // Divide by 2 since each transfer creates 2 blocks

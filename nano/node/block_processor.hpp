@@ -29,7 +29,7 @@ public:
 
 public:
 	size_t threads{ std::max (1u, nano::hardware_concurrency () / 3) };
-	size_t batch_size{ 64 };
+	size_t batch_size{ 16 };
 
 	// Maximum number of blocks to queue from network peers
 	size_t max_peer_queue{ 128 };
