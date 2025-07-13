@@ -28,8 +28,8 @@ public:
 	nano::error serialize (nano::tomlconfig & toml) const;
 
 public:
-	size_t threads{ std::max (1u, nano::hardware_concurrency () / 3) };
-	size_t batch_size{ 16 };
+	size_t threads{ std::max (1u, 1u + nano::hardware_concurrency () / 4) };
+	size_t batch_size{ 64 };
 
 	// Maximum number of blocks to queue from network peers
 	size_t max_peer_queue{ 128 };
