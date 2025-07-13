@@ -170,14 +170,15 @@ void throughput_benchmark::run_benchmark ()
 
 	for (auto iteration = 0; iteration < num_iterations; ++iteration)
 	{
+		std::cout << fmt::format ("\n----------------------------------------\n");
 		std::cout << fmt::format ("Generating batch {} of random transfers...\n", iteration + 1);
 		auto blocks = generate_random_transfers ();
 
 		std::cout << fmt::format ("Processing {} blocks...\n", blocks.size ());
 		measure_processing_performance (blocks);
 
-		std::cout << fmt::format ("Iteration {} complete. Processed {} blocks so far.\n", iteration + 1, processed_blocks_count.load ());
-		std::cout << "----------------------------------------\n\n";
+		std::cout << fmt::format ("Iteration {} complete. Processed a total of {} blocks so far.\n", iteration + 1, processed_blocks_count.load ());
+		std::cout << "----------------------------------------\n";
 	}
 
 	print_statistics ();
@@ -227,7 +228,7 @@ void throughput_benchmark::setup_genesis_distribution ()
 	// Initialize frontier for target account
 	frontiers[target_account] = open->hash ();
 
-	std::cout << fmt::format ("Genesis distribution complete. Target account: {}\n", target_account.to_string ());
+	std::cout << fmt::format ("Genesis distribution complete\n");
 }
 
 std::deque<std::shared_ptr<nano::block>> throughput_benchmark::generate_random_transfers ()
@@ -327,14 +328,14 @@ std::deque<std::shared_ptr<nano::block>> throughput_benchmark::generate_random_t
 
 		transfers_generated++;
 
-		if (transfers_generated % 10000 == 0)
-		{
-			std::cout << fmt::format ("Generated {} transfer pairs, {} accounts with balance\n",
-			transfers_generated, pool.accounts_with_balance_count ());
-		}
+		// if (transfers_generated % 10000 == 0)
+		// {
+		// 	std::cout << fmt::format ("Generated {} transfer pairs, {} accounts with balance\n",
+		// 	transfers_generated, pool.accounts_with_balance_count ());
+		// }
 	}
 
-	std::cout << fmt::format ("Generated {} total blocks\n", blocks.size ());
+	std::cout << fmt::format ("Generated {} blocks\n", blocks.size ());
 
 	return blocks;
 }
@@ -450,6 +451,8 @@ void run_throughput_benchmark (boost::program_options::variables_map const & vm,
 	node_config.max_backlog = 0; // Disable bounded backlog
 	node_config.block_processor.max_system_queue = std::numeric_limits<size_t>::max (); // Unlimited queue size
 	node_config.max_unchecked_blocks = 1024 * 1024;
+
+	// node_config.block_processor.threads = 5;
 
 	auto node = std::make_shared<nano::node> (io_ctx, nano::unique_path (), node_config, work_pool, node_flags);
 	node->start ();
