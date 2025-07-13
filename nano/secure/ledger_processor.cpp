@@ -295,6 +295,7 @@ void nano::ledger_processor::state_block_impl (nano::state_block & block_a)
 						result = !block_a.hashables.link.is_zero () ? nano::block_status::progress : nano::block_status::gap_source; // Is the first block receiving from a send ? (Unambigious)
 					}
 				}
+				bool pending_exists = false;
 				if (result == nano::block_status::progress)
 				{
 					if (!is_send)
@@ -306,6 +307,7 @@ void nano::ledger_processor::state_block_impl (nano::state_block & block_a)
 							{
 								nano::pending_key key (block_a.hashables.account, block_a.hashables.link.as_block_hash ());
 								auto pending = ledger.store.pending.get (transaction, key);
+								pending_exists = pending.has_value ();
 								result = !pending ? nano::block_status::unreceivable : nano::block_status::progress; // Has this source already been received (Malformed)
 								if (result == nano::block_status::progress)
 								{
@@ -352,6 +354,11 @@ void nano::ledger_processor::state_block_impl (nano::state_block & block_a)
 						}
 						else if (!block_a.hashables.link.is_zero ())
 						{
+							release_assert (is_receive);
+							release_assert (pending_exists);
+							// nano::pending_key key (block_a.hashables.account, block_a.hashables.link.as_block_hash ());
+							// auto pending = ledger.store.pending.get (transaction, key);
+							// release_assert (pending.has_value ());
 							ledger.store.pending.del (transaction, nano::pending_key (block_a.hashables.account, block_a.hashables.link.as_block_hash ()));
 						}
 
