@@ -237,7 +237,7 @@ std::deque<std::shared_ptr<nano::block>> throughput_benchmark::generate_random_t
 	std::mt19937 gen (rd ());
 
 	// Generate batch_size number of transfer pairs (send + receive = 2 blocks each)
-	size_t batch_size = 100000; // Default batch size
+	size_t batch_size = 250000; // Default batch size
 	size_t transfers_generated = 0;
 
 	while (transfers_generated < batch_size / 2) // Divide by 2 since each transfer creates 2 blocks
@@ -421,8 +421,8 @@ void run_throughput_benchmark (boost::program_options::variables_map const & vm,
 	nano::network_constants::set_active_network ("dev");
 
 	// Parse configuration
-	size_t num_accounts = 50000;
-	size_t num_iterations = 10;
+	size_t num_accounts = 150000;
+	size_t num_iterations = 5;
 
 	if (vm.count ("accounts"))
 	{
