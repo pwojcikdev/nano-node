@@ -378,14 +378,17 @@ void throughput_benchmark::measure_processing_performance (std::deque<std::share
 	while (true)
 	{
 		{
-			auto lock = current_blocks.lock ();
-			if (lock->empty ())
+			auto current_blocks_l = current_blocks.lock ();
+			if (current_blocks_l->empty ())
 			{
 				break;
 			}
 			if (progress_interval.elapse (3s))
 			{
-				std::cout << fmt::format ("{} blocks remaining to process\n", lock->size ());
+				std::cout << fmt::format ("{} blocks remaining to process (block processor: {}, unchecked: {})\n",
+				current_blocks_l->size (),
+				node->block_processor.size (),
+				node->unchecked.count ());
 			}
 		}
 
