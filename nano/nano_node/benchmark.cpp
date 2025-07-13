@@ -235,7 +235,6 @@ std::deque<std::shared_ptr<nano::block>> throughput_benchmark::generate_random_t
 	std::deque<std::shared_ptr<nano::block>> blocks;
 	std::random_device rd;
 	std::mt19937 gen (rd ());
-	std::uniform_int_distribution<uint64_t> amount_dist (1, std::numeric_limits<uint64_t>::max ()); // TODO: Use max uint128_t
 
 	// Generate batch_size number of transfer pairs (send + receive = 2 blocks each)
 	size_t batch_size = 100000; // Default batch size
@@ -262,6 +261,7 @@ std::deque<std::shared_ptr<nano::block>> throughput_benchmark::generate_random_t
 		auto & receiver_keypair = pool.get_keypair (receiver);
 
 		// Random transfer amount (but not more than sender balance)
+		std::uniform_int_distribution<uint64_t> amount_dist (1, sender_balance.convert_to<uint64_t> ());
 		nano::uint128_t transfer_amount = std::min (static_cast<nano::uint128_t> (amount_dist (gen)), sender_balance);
 
 		// Get or initialize sender frontier
