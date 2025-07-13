@@ -32,7 +32,9 @@ public:
 	void stop ();
 
 	void put (nano::hash_or_account const & dependency, nano::unchecked_info const & info);
+	void put_many (std::deque<std::pair<nano::hash_or_account, nano::unchecked_info>> const & batch);
 	void trigger (nano::hash_or_account const & dependency);
+	void trigger_many (std::deque<nano::hash_or_account> const & batch);
 
 	bool exists (nano::unchecked_key const & key) const;
 	void del (nano::unchecked_key const & key);
