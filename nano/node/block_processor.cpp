@@ -396,6 +396,55 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 			results.pop_front ();
 		}
 
+		// Update unchecked map in batch to avoid locking overhead
+		std::deque<nano::hash_or_account> to_trigger;
+		std::deque<std::pair<nano::hash_or_account, nano::unchecked_info>> to_unchecked;
+		for (auto const & entry : processed)
+		{
+			auto const & [status, context] = entry;
+			auto const & block = context.block;
+
+			switch (status)
+			{
+				case nano::block_status::progress:
+				{
+					to_trigger.push_back (block->hash ());
+
+					/*
+					 * For send blocks check epoch open unchecked (gap pending).
+					 * For state blocks check only send subtype and only if block epoch is not last epoch.
+					 * If epoch is last, then pending entry shouldn't trigger same epoch open block for destination account.
+					 */
+					if (block->type () == nano::block_type::send || (block->type () == nano::block_type::state && block->is_send () && std::underlying_type_t<nano::epoch> (block->sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
+					{
+						to_trigger.push_back (block->destination ());
+					}
+				}
+				break;
+				case nano::block_status::gap_previous:
+				{
+					to_unchecked.push_back (std::make_pair (block->previous (), block));
+				}
+				break;
+				case nano::block_status::gap_source:
+				{
+					release_assert (block->source_field () || block->link_field ());
+					to_unchecked.push_back (std::make_pair (block->source_field ().value_or (block->link_field ().value_or (0).as_block_hash ()), block));
+				}
+				break;
+				case nano::block_status::gap_epoch_open_pending:
+				{
+					// Specific unchecked key starting with epoch open block account public key
+					to_unchecked.push_back (std::make_pair (block->account_field ().value_or (0), block));
+				}
+				break;
+				default:
+					break; // Ignore the rest
+			}
+		}
+		unchecked.put_many (to_unchecked);
+		unchecked.trigger_many (to_trigger);
+
 		// Queue notifications to be dispatched in the background
 		ledger_notifications.notify_processed (transaction, std::move (processed), [this] {
 			stats.inc (nano::stat::type::block_processor, nano::stat::detail::notify_processed);
@@ -424,35 +473,20 @@ nano::block_status nano::block_processor::process_one (secure::write_transaction
 	{
 		case nano::block_status::progress:
 		{
-			unchecked.trigger (hash);
-
-			/*
-			 * For send blocks check epoch open unchecked (gap pending).
-			 * For state blocks check only send subtype and only if block epoch is not last epoch.
-			 * If epoch is last, then pending entry shouldn't trigger same epoch open block for destination account.
-			 */
-			if (block->type () == nano::block_type::send || (block->type () == nano::block_type::state && block->is_send () && std::underlying_type_t<nano::epoch> (block->sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
-			{
-				unchecked.trigger (block->destination ());
-			}
 			break;
 		}
 		case nano::block_status::gap_previous:
 		{
-			unchecked.put (block->previous (), block);
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_previous);
 			break;
 		}
 		case nano::block_status::gap_source:
 		{
-			release_assert (block->source_field () || block->link_field ());
-			unchecked.put (block->source_field ().value_or (block->link_field ().value_or (0).as_block_hash ()), block);
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
 			break;
 		}
 		case nano::block_status::gap_epoch_open_pending:
 		{
-			unchecked.put (block->account_field ().value_or (0), block); // Specific unchecked key starting with epoch open block account public key
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
 			break;
 		}
