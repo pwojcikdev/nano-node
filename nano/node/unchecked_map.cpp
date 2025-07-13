@@ -49,7 +49,6 @@ void nano::unchecked_map::put (nano::hash_or_account const & dependency, nano::u
 	stats.inc (nano::stat::type::unchecked, nano::stat::detail::put);
 	nano::unchecked_key key{ dependency, info.block->hash () };
 	entries.get<tag_root> ().insert ({ key, info });
-
 	if (entries.size () > max_size)
 	{
 		entries.get<tag_sequenced> ().pop_front ();
@@ -57,7 +56,7 @@ void nano::unchecked_map::put (nano::hash_or_account const & dependency, nano::u
 
 	// Check if this dependency was previously triggered
 	bool trigger = false;
-	if (recently_triggered.get<tag_hash> ().count (dependency.hash) > 0)
+	if (recently_triggered.get<tag_hash> ().contains (dependency.hash) > 0)
 	{
 		// This block was triggered before it was inserted, so trigger it now
 		triggered.emplace_back (dependency);
@@ -70,6 +69,30 @@ void nano::unchecked_map::put (nano::hash_or_account const & dependency, nano::u
 	{
 		condition.notify_all ();
 	}
+}
+
+void nano::unchecked_map::put_many (std::deque<std::pair<nano::hash_or_account, nano::unchecked_info>> const & batch)
+{
+	std::unique_lock lock{ mutex };
+
+	stats.add (nano::stat::type::unchecked, nano::stat::detail::put, batch.size ());
+	for (auto const & [dependency, info] : batch)
+	{
+		nano::unchecked_key key{ dependency, info.block->hash () };
+		entries.get<tag_root> ().insert ({ key, info });
+		if (entries.size () > max_size)
+		{
+			entries.get<tag_sequenced> ().pop_front ();
+		}
+
+		if (recently_triggered.get<tag_hash> ().contains (dependency.hash) > 0)
+		{
+			triggered.emplace_back (dependency);
+		}
+	}
+
+	lock.unlock ();
+	condition.notify_all ();
 }
 
 void nano::unchecked_map::for_each (std::function<void (nano::unchecked_key const &, nano::unchecked_info const &)> action, std::function<bool ()> predicate)
@@ -150,6 +173,27 @@ void nano::unchecked_map::trigger (nano::hash_or_account const & dependency)
 	triggered.emplace_back (dependency);
 
 	stats.inc (nano::stat::type::unchecked, nano::stat::detail::trigger);
+	condition.notify_all ();
+}
+
+void nano::unchecked_map::trigger_many (std::deque<nano::hash_or_account> const & batch)
+{
+	std::lock_guard lock{ mutex };
+
+	for (auto const & dependency : batch)
+	{
+		// Add to triggered cache
+		if (recently_triggered.size () >= max_triggered_entries)
+		{
+			recently_triggered.pop_front ();
+		}
+		recently_triggered.emplace_back (dependency.hash);
+
+		// Add to triggered queue
+		triggered.emplace_back (dependency);
+	}
+
+	stats.add (nano::stat::type::unchecked, nano::stat::detail::trigger, batch.size ());
 	condition.notify_all ();
 }
 
