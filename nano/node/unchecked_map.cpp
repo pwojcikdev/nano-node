@@ -6,8 +6,8 @@
 #include <nano/lib/timer.hpp>
 #include <nano/node/unchecked_map.hpp>
 
-nano::unchecked_map::unchecked_map (unsigned const max_unchecked_blocks, nano::stats & stats, bool const & disable_delete) :
-	max_unchecked_blocks{ max_unchecked_blocks },
+nano::unchecked_map::unchecked_map (unsigned max_size, nano::stats & stats, bool disable_delete) :
+	max_size{ max_size },
 	stats{ stats },
 	disable_delete{ disable_delete }
 {
@@ -31,7 +31,7 @@ void nano::unchecked_map::start ()
 void nano::unchecked_map::stop ()
 {
 	{
-		nano::lock_guard<nano::mutex> lock{ mutex };
+		std::lock_guard lock{ mutex };
 		stopped = true;
 	}
 	condition.notify_all ();
@@ -44,21 +44,37 @@ void nano::unchecked_map::stop ()
 
 void nano::unchecked_map::put (nano::hash_or_account const & dependency, nano::unchecked_info const & info)
 {
-	nano::lock_guard<std::recursive_mutex> lock{ entries_mutex };
+	std::unique_lock lock{ mutex };
+
+	stats.inc (nano::stat::type::unchecked, nano::stat::detail::put);
 	nano::unchecked_key key{ dependency, info.block->hash () };
 	entries.get<tag_root> ().insert ({ key, info });
 
-	if (entries.size () > max_unchecked_blocks)
+	if (entries.size () > max_size)
 	{
 		entries.get<tag_sequenced> ().pop_front ();
 	}
 
-	stats.inc (nano::stat::type::unchecked, nano::stat::detail::put);
+	// Check if this dependency was previously triggered
+	bool trigger = false;
+	if (recently_triggered.get<tag_hash> ().count (dependency.hash) > 0)
+	{
+		// This block was triggered before it was inserted, so trigger it now
+		triggered.emplace_back (dependency);
+		trigger = true;
+	}
+
+	lock.unlock ();
+
+	if (trigger)
+	{
+		condition.notify_all ();
+	}
 }
 
 void nano::unchecked_map::for_each (std::function<void (nano::unchecked_key const &, nano::unchecked_info const &)> action, std::function<bool ()> predicate)
 {
-	nano::lock_guard<std::recursive_mutex> lock{ entries_mutex };
+	std::lock_guard lock{ mutex };
 	for (auto i = entries.begin (), n = entries.end (); predicate () && i != n; ++i)
 	{
 		action (i->key, i->info);
@@ -67,7 +83,7 @@ void nano::unchecked_map::for_each (std::function<void (nano::unchecked_key cons
 
 void nano::unchecked_map::for_each (nano::hash_or_account const & dependency, std::function<void (nano::unchecked_key const &, nano::unchecked_info const &)> action, std::function<bool ()> predicate)
 {
-	nano::lock_guard<std::recursive_mutex> lock{ entries_mutex };
+	std::lock_guard lock{ mutex };
 	for (auto i = entries.template get<tag_root> ().lower_bound (nano::unchecked_key{ dependency, 0 }), n = entries.template get<tag_root> ().end (); predicate () && i != n && i->key.key () == dependency.as_block_hash (); ++i)
 	{
 		action (i->key, i->info);
@@ -85,33 +101,33 @@ std::vector<nano::unchecked_info> nano::unchecked_map::get (nano::block_hash con
 
 bool nano::unchecked_map::exists (nano::unchecked_key const & key) const
 {
-	nano::lock_guard<std::recursive_mutex> lock{ entries_mutex };
+	std::lock_guard lock{ mutex };
 	return entries.get<tag_root> ().count (key) != 0;
 }
 
 void nano::unchecked_map::del (nano::unchecked_key const & key)
 {
-	nano::lock_guard<std::recursive_mutex> lock{ entries_mutex };
+	std::lock_guard lock{ mutex };
 	auto erased = entries.get<tag_root> ().erase (key);
 	debug_assert (erased);
 }
 
 void nano::unchecked_map::clear ()
 {
-	nano::lock_guard<std::recursive_mutex> lock{ entries_mutex };
+	std::lock_guard lock{ mutex };
 	entries.clear ();
 }
 
 size_t nano::unchecked_map::entries_size () const
 {
-	nano::lock_guard<std::recursive_mutex> lock{ entries_mutex };
+	std::lock_guard lock{ mutex };
 	return entries.size ();
 }
 
-size_t nano::unchecked_map::queries_size () const
+size_t nano::unchecked_map::triggered_size () const
 {
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	return buffer.size ();
+	std::lock_guard lock{ mutex };
+	return triggered.size ();
 }
 
 size_t nano::unchecked_map::count () const
@@ -121,66 +137,96 @@ size_t nano::unchecked_map::count () const
 
 void nano::unchecked_map::trigger (nano::hash_or_account const & dependency)
 {
-	nano::unique_lock<nano::mutex> lock{ mutex };
-	buffer.emplace_back (dependency);
-	lock.unlock ();
-	stats.inc (nano::stat::type::unchecked, nano::stat::detail::trigger);
-	condition.notify_all (); // Notify run ()
-}
+	std::lock_guard lock{ mutex };
 
-void nano::unchecked_map::process_queries (decltype (buffer) const & back_buffer)
-{
-	for (auto const & item : back_buffer)
+	// Add to triggered cache
+	if (recently_triggered.size () >= max_triggered_entries)
 	{
-		query_impl (item.hash);
+		recently_triggered.pop_front ();
 	}
+	recently_triggered.emplace_back (dependency.hash);
+
+	// Add to triggered queue
+	triggered.emplace_back (dependency);
+
+	stats.inc (nano::stat::type::unchecked, nano::stat::detail::trigger);
+	condition.notify_all ();
 }
 
 void nano::unchecked_map::run ()
 {
-	nano::unique_lock<nano::mutex> lock{ mutex };
+	std::unique_lock lock{ mutex };
 	while (!stopped)
 	{
-		if (!buffer.empty ())
+		condition.wait (lock, [this] {
+			return stopped || !triggered.empty ();
+		});
+		while (!triggered.empty () && !stopped)
 		{
-			back_buffer.swap (buffer);
-			writing_back_buffer = true;
+			auto item = triggered.front ();
+			triggered.pop_front ();
+
 			lock.unlock ();
-			process_queries (back_buffer);
+			trigger_impl (item.hash);
 			lock.lock ();
-			writing_back_buffer = false;
-			back_buffer.clear ();
-		}
-		else
-		{
-			condition.wait (lock, [this] () {
-				return stopped || !buffer.empty ();
-			});
 		}
 	}
 }
 
-void nano::unchecked_map::query_impl (nano::block_hash const & hash)
+void nano::unchecked_map::trigger_impl (nano::block_hash const & hash)
 {
-	std::deque<nano::unchecked_key> delete_queue;
-	for_each (hash, [this, &delete_queue] (nano::unchecked_key const & key, nano::unchecked_info const & info) {
-		delete_queue.push_back (key);
-		stats.inc (nano::stat::type::unchecked, nano::stat::detail::satisfied);
-		satisfied.notify (info);
-	});
-	// if (!disable_delete)
-	// {
-	// 	for (auto const & key : delete_queue)
-	// 	{
-	// 		del (key);
-	// 	}
-	// }
+	std::deque<std::pair<nano::unchecked_key, nano::unchecked_info>> to_notify;
+	{
+		std::lock_guard lock{ mutex };
+		for_each (hash, [&to_notify] (nano::unchecked_key const & key, nano::unchecked_info const & info) {
+			to_notify.emplace_back (key, info);
+		});
+	}
+
+	if (!to_notify.empty ())
+	{
+		// Remove from triggered cache since we found entries
+		// {
+		// 	std::lock_guard lock{ mutex };
+		// 	recently_triggered.get<tag_hash> ().erase (hash);
+		// }
+
+		// Notify outside of locks
+		for (auto const & [key, info] : to_notify)
+		{
+			stats.inc (nano::stat::type::unchecked, nano::stat::detail::satisfied);
+			satisfied.notify (info);
+		}
+
+		// Delete entries if needed
+		// if (!disable_delete)
+		// {
+		// 	nano::lock_guard<std::recursive_mutex> lock{ entries_mutex };
+		// 	for (auto const & [key, info] : to_notify)
+		// 	{
+		// 		del (key);
+		// 	}
+		// }
+	}
+	else
+	{
+		// Check if in triggered cache - if yes, requeue
+		// std::lock_guard lock{ mutex };
+		// if (recently_triggered.get<tag_hash> ().count (hash) > 0)
+		// {
+		// 	// Re-queue for later processing
+		// 	triggered.emplace_back (hash);
+		// }
+	}
 }
 
 nano::container_info nano::unchecked_map::container_info () const
 {
+	std::lock_guard lock{ mutex };
+
 	nano::container_info info;
-	info.put ("entries", entries_size ());
-	info.put ("queries", queries_size ());
+	info.put ("entries", entries.size ());
+	info.put ("triggered", triggered.size ());
+	info.put ("recently_triggered", recently_triggered.size ());
 	return info;
 }
