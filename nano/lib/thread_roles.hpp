@@ -56,6 +56,7 @@ enum class name
 	scheduler_manual,
 	scheduler_optimistic,
 	scheduler_priority,
+	scheduler_priority_activations,
 	rep_crawler,
 	local_block_broadcasting,
 	rep_tiers,
