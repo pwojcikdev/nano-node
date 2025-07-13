@@ -537,6 +537,7 @@ bool nano::store::rocksdb::component::exists (store::transaction const & transac
 		if constexpr (std::is_same_v<V, ::rocksdb::Transaction *>)
 		{
 			::rocksdb::ReadOptions options;
+			options.snapshot = ptr->GetSnapshot ();
 			options.fill_cache = false;
 			return ptr->Get (options, table_to_column_family (table_a), key_slice, &slice);
 		}
@@ -586,7 +587,6 @@ void nano::store::rocksdb::component::flush_table (nano::tables table_a)
 
 int nano::store::rocksdb::component::get (store::transaction const & transaction_a, tables table_a, nano::store::rocksdb::db_val const & key_a, nano::store::rocksdb::db_val & value_a) const
 {
-	::rocksdb::ReadOptions options;
 	::rocksdb::PinnableSlice slice;
 	auto key_slice = to_slice (key_a);
 	auto handle = table_to_column_family (table_a);
@@ -595,6 +595,8 @@ int nano::store::rocksdb::component::get (store::transaction const & transaction
 		using V = std::remove_cvref_t<decltype (ptr)>;
 		if constexpr (std::is_same_v<V, ::rocksdb::Transaction *>)
 		{
+			::rocksdb::ReadOptions options;
+			options.snapshot = ptr->GetSnapshot ();
 			return ptr->Get (options, handle, key_slice, &slice);
 		}
 		else if constexpr (std::is_same_v<V, ::rocksdb::ReadOptions *>)
