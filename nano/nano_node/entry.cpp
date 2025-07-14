@@ -196,12 +196,7 @@ int main (int argc, char * const * argv)
 		{
 			nano::daemon daemon;
 			nano::node_flags flags;
-			auto flags_ec = nano::update_flags (flags, vm);
-			if (flags_ec)
-			{
-				std::cerr << flags_ec.message () << std::endl;
-				std::exit (1);
-			}
+			nano::update_flags (flags, vm);
 			daemon.run (data_path, flags);
 		}
 		else if (vm.count ("compare_rep_weights"))

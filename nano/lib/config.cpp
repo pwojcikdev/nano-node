@@ -63,27 +63,27 @@ bool slow_instrumentation ()
 
 std::string get_node_toml_config_path (std::filesystem::path const & data_path)
 {
-	return (data_path / "config-node.toml").string ();
+	return (data_path / node_config_filename).string ();
 }
 
 std::string get_rpc_toml_config_path (std::filesystem::path const & data_path)
 {
-	return (data_path / "config-rpc.toml").string ();
+	return (data_path / rpc_config_filename).string ();
 }
 
 std::string get_qtwallet_toml_config_path (std::filesystem::path const & data_path)
 {
-	return (data_path / "config-qtwallet.toml").string ();
+	return (data_path / qtwallet_config_filename).string ();
 }
 
 std::string get_access_toml_config_path (std::filesystem::path const & data_path)
 {
-	return (data_path / "config-access.toml").string ();
+	return (data_path / access_config_filename).string ();
 }
 
 std::string get_tls_toml_config_path (std::filesystem::path const & data_path)
 {
-	return (data_path / "config-tls.toml").string ();
+	return (data_path / tls_config_filename).string ();
 }
 }
 
