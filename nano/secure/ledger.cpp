@@ -63,6 +63,8 @@ auto nano::ledger::tx_begin_read () const -> secure::read_transaction
 
 void nano::ledger::tx_optimistic_process (nano::store::writer guard_type, std::function<void (secure::write_transaction &)> const & action) const
 {
+	auto constexpr optimistic_attempts = 2;
+	for (auto i = 0; i < optimistic_attempts; ++i)
 	{
 		auto txn = tx_begin_write (guard_type, nano::store::write_strategy::optimistic);
 		try
