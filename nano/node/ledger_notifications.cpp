@@ -53,10 +53,17 @@ void nano::ledger_notifications::wait (std::function<void ()> cooldown_action)
 
 void nano::ledger_notifications::notify_processed (nano::secure::write_transaction & transaction, processed_batch_t processed, std::function<void ()> callback)
 {
+	debug_assert (transaction.active ());
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
-		notifications.emplace_back (transaction.get_future (), nano::wrap_move_only ([this, processed = std::move (processed), callback = std::move (callback)] () mutable {
+		notifications.emplace_back (transaction.get_future (), nano::wrap_move_only ([this, processed = std::move (processed), callback = std::move (callback), deferred = transaction.get_deferred ()] () mutable {
 			stats.inc (nano::stat::type::ledger_notifications, nano::stat::detail::notify_processed);
+
+			// Execute deferred operations
+			for (auto & operation : deferred)
+			{
+				operation ();
+			}
 
 			// Set results for futures when not holding the lock
 			for (auto & [result, context] : processed)
@@ -81,10 +88,17 @@ void nano::ledger_notifications::notify_processed (nano::secure::write_transacti
 
 void nano::ledger_notifications::notify_rolled_back (nano::secure::write_transaction & transaction, rolled_back_batch_t batch, nano::qualified_root rollback_root, std::function<void ()> callback)
 {
+	debug_assert (transaction.active ());
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
-		notifications.emplace_back (transaction.get_future (), nano::wrap_move_only ([this, batch = std::move (batch), rollback_root, callback = std::move (callback)] () {
+		notifications.emplace_back (transaction.get_future (), nano::wrap_move_only ([this, batch = std::move (batch), rollback_root, callback = std::move (callback), deferred = transaction.get_deferred ()] () {
 			stats.inc (nano::stat::type::ledger_notifications, nano::stat::detail::notify_rolled_back);
+
+			// Execute deferred operations
+			for (auto & operation : deferred)
+			{
+				operation ();
+			}
 
 			blocks_rolled_back.notify (batch, rollback_root);
 
@@ -119,7 +133,15 @@ void nano::ledger_notifications::run ()
 
 			auto & [future, callback] = notification;
 			future.wait (); // Wait for the associated transaction to be committed
-			callback (); // Notify observers
+			try
+			{
+				future.get (); // Ensure transaction was successful
+				callback (); // Notify observers
+			}
+			catch (nano::store::transaction_aborted_error const & ex)
+			{
+				// Transaction failed, skip callback
+			}
 
 			condition.notify_all (); // Notify waiting threads about possible vacancy
 

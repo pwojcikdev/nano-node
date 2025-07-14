@@ -30,15 +30,22 @@ public:
 
 	std::future<result_t> get_future ()
 	{
-		return promise.get_future ();
+		if (!promise)
+		{
+			promise = std::make_shared<std::promise<result_t>> ();
+		}
+		return promise->get_future ();
 	}
 
 	void set_result (result_t result)
 	{
-		promise.set_value (result);
+		if (promise)
+		{
+			promise->set_value (result);
+		}
 	}
 
 private:
-	std::promise<result_t> promise;
+	std::shared_ptr<std::promise<result_t>> promise;
 };
 }

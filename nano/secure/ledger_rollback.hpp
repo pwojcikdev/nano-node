@@ -14,7 +14,7 @@ namespace nano
 class ledger_rollback final : public nano::block_visitor
 {
 public:
-	ledger_rollback (nano::secure::write_transaction const &, nano::ledger &, std::deque<std::shared_ptr<nano::block>> & list, size_t depth, size_t max_depth);
+	ledger_rollback (nano::secure::write_transaction &, nano::ledger &, std::deque<std::shared_ptr<nano::block>> & list, size_t depth, size_t max_depth);
 
 	void send_block (nano::send_block const &) override;
 	void receive_block (nano::receive_block const &) override;
@@ -22,7 +22,7 @@ public:
 	void change_block (nano::change_block const &) override;
 	void state_block (nano::state_block const &) override;
 
-	nano::secure::write_transaction const & transaction;
+	nano::secure::write_transaction & transaction;
 	nano::ledger & ledger;
 	std::deque<std::shared_ptr<nano::block>> & list;
 	size_t const depth;

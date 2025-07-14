@@ -43,6 +43,9 @@ class write_transaction final : public transaction
 	std::promise<void> promise;
 	std::shared_future<void> future{ promise.get_future () };
 
+	// Deferred operations that should be executed after the transaction is committed
+	std::deque<std::function<void ()>> deferred;
+
 public:
 	write_transaction (nano::store::write_transaction && txn_a, nano::store::write_guard && guard_a) noexcept :
 		guard{ std::move (guard_a) },
@@ -54,6 +57,7 @@ public:
 
 	~write_transaction () override
 	{
+		debug_assert (deferred.empty (), "deferred operations should be processed by extenal executor");
 		if (active ())
 		{
 			commit ();
@@ -130,6 +134,18 @@ public:
 	std::shared_future<void> get_future () const
 	{
 		return future; // Give a copy of the shared future
+	}
+
+	void defer (std::function<void ()> operation)
+	{
+		debug_assert (active ());
+		deferred.push_back (std::move (operation));
+	}
+
+	auto get_deferred () -> std::deque<std::function<void ()>>
+	{
+		debug_assert (active ());
+		return std::move (deferred); // Move the deferred operations out
 	}
 
 	// Conversion operator to const nano::store::transaction&

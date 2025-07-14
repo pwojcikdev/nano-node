@@ -10,7 +10,7 @@ namespace nano
 class ledger_processor final : public nano::mutable_block_visitor
 {
 public:
-	ledger_processor (nano::secure::write_transaction const &, nano::ledger &);
+	ledger_processor (nano::secure::write_transaction &, nano::ledger &);
 
 	void send_block (nano::send_block &) override;
 	void receive_block (nano::receive_block &) override;
@@ -21,7 +21,7 @@ public:
 	void state_block_impl (nano::state_block &);
 	void epoch_block_impl (nano::state_block &);
 
-	nano::secure::write_transaction const & transaction;
+	nano::secure::write_transaction & transaction;
 	nano::ledger & ledger;
 	nano::block_status result{ nano::block_status::invalid };
 

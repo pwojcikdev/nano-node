@@ -11,7 +11,7 @@
 #include <nano/store/block.hpp>
 #include <nano/store/pending.hpp>
 
-nano::ledger_rollback::ledger_rollback (nano::secure::write_transaction const & transaction_a, nano::ledger & ledger_a, std::deque<std::shared_ptr<nano::block>> & list_a, size_t depth_a, size_t max_depth_a) :
+nano::ledger_rollback::ledger_rollback (nano::secure::write_transaction & transaction_a, nano::ledger & ledger_a, std::deque<std::shared_ptr<nano::block>> & list_a, size_t depth_a, size_t max_depth_a) :
 	transaction (transaction_a),
 	ledger (ledger_a),
 	list (list_a),
