@@ -474,10 +474,9 @@ std::map<nano::log::logger_id, nano::log::level> nano::log_config::default_level
 // Using std::cerr here, since logging may not be initialized yet
 nano::log_config nano::load_log_config (nano::log_config fallback, const std::filesystem::path & data_path, const std::vector<std::string> & config_overrides)
 {
-	const std::string config_filename = "config-log.toml";
 	try
 	{
-		auto config = nano::load_config_file<nano::log_config> (fallback, config_filename, data_path, config_overrides);
+		auto config = nano::load_config_file<nano::log_config> (fallback, log_config_filename, data_path, config_overrides);
 
 		// Parse default log level from environment variable, e.g. "NANO_LOG=debug"
 		auto env_level = nano::env::get ("NANO_LOG");
