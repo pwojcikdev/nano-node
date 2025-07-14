@@ -522,7 +522,7 @@ void nano::node::process_active (std::shared_ptr<nano::block> const & incoming)
 	block_processor.add (incoming);
 }
 
-[[nodiscard]] nano::block_status nano::node::process (secure::write_transaction const & transaction, std::shared_ptr<nano::block> block)
+[[nodiscard]] nano::block_status nano::node::process (secure::write_transaction & transaction, std::shared_ptr<nano::block> block)
 {
 	auto status = ledger.process (transaction, block);
 	logger.debug (nano::log::type::node, "Directly processed block: {} (status: {})", block->hash (), to_string (status));
@@ -531,7 +531,7 @@ void nano::node::process_active (std::shared_ptr<nano::block> const & incoming)
 
 nano::block_status nano::node::process (std::shared_ptr<nano::block> block)
 {
-	auto const transaction = ledger.tx_begin_write (nano::store::writer::node);
+	auto transaction = ledger.tx_begin_write (nano::store::writer::node);
 	return process (transaction, block);
 }
 

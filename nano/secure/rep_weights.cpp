@@ -1,5 +1,6 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/secure/rep_weights.hpp>
+#include <nano/secure/transaction.hpp>
 #include <nano/store/component.hpp>
 #include <nano/store/rep_weight.hpp>
 
@@ -9,45 +10,49 @@ nano::rep_weights::rep_weights (nano::store::rep_weight & rep_weight_store_a, na
 {
 }
 
-void nano::rep_weights::add (store::write_transaction const & txn, nano::account const & rep, nano::uint128_t const & amount_add)
+void nano::rep_weights::add (secure::write_transaction & transaction, nano::account const & rep, nano::uint128_t const & amount_add)
 {
-	auto const previous_weight = rep_weight_store.get (txn, rep);
+	auto const previous_weight = rep_weight_store.get (transaction, rep);
 	auto const new_weight = previous_weight + amount_add;
 	release_assert (new_weight >= previous_weight, "new weight must be greater than or equal to previous weight");
 
-	put_store (txn, rep, previous_weight, new_weight);
+	put_store (transaction, rep, previous_weight, new_weight);
 
-	std::lock_guard guard{ mutex };
-	put_cache (rep, new_weight);
+	transaction.defer ([this, rep, new_weight, amount_add] () {
+		std::lock_guard guard{ mutex };
+		put_cache (rep, new_weight);
 
-	weight_committed += amount_add;
-	weight_unused -= amount_add;
+		weight_committed += amount_add;
+		weight_unused -= amount_add;
+	});
 }
 
-void nano::rep_weights::sub (store::write_transaction const & txn, nano::account const & rep, nano::uint128_t const & amount_sub)
+void nano::rep_weights::sub (secure::write_transaction & transaction, nano::account const & rep, nano::uint128_t const & amount_sub)
 {
-	auto const previous_weight = rep_weight_store.get (txn, rep);
+	auto const previous_weight = rep_weight_store.get (transaction, rep);
 	auto const new_weight = previous_weight - amount_sub;
 	release_assert (new_weight <= previous_weight, "new weight must be less than or equal to previous weight");
 
-	put_store (txn, rep, previous_weight, new_weight);
+	put_store (transaction, rep, previous_weight, new_weight);
 
-	std::lock_guard guard{ mutex };
-	put_cache (rep, new_weight);
+	transaction.defer ([this, rep, new_weight, amount_sub] () {
+		std::lock_guard guard{ mutex };
+		put_cache (rep, new_weight);
 
-	weight_committed -= amount_sub;
-	weight_unused += amount_sub;
+		weight_committed -= amount_sub;
+		weight_unused += amount_sub;
+	});
 }
 
-void nano::rep_weights::move (store::write_transaction const & txn, nano::account const & source_rep, nano::account const & dest_rep, nano::uint128_t const & amount)
+void nano::rep_weights::move (secure::write_transaction & transaction, nano::account const & source_rep, nano::account const & dest_rep, nano::uint128_t const & amount)
 {
 	if (source_rep == dest_rep) // Nothing to move if reps are the same
 	{
 		return;
 	}
 
-	auto const previous_weight_source = rep_weight_store.get (txn, source_rep);
-	auto const previous_weight_dest = rep_weight_store.get (txn, dest_rep);
+	auto const previous_weight_source = rep_weight_store.get (transaction, source_rep);
+	auto const previous_weight_dest = rep_weight_store.get (transaction, dest_rep);
 	release_assert (previous_weight_source >= amount, "source representative must have enough weight to move");
 
 	auto const new_weight_source = previous_weight_source - amount;
@@ -55,15 +60,17 @@ void nano::rep_weights::move (store::write_transaction const & txn, nano::accoun
 	release_assert (new_weight_dest >= previous_weight_dest, "new weight for destination representative must be greater than or equal to previous weight");
 	release_assert (new_weight_source <= previous_weight_source, "new weight for source representative must be less than or equal to previous weight");
 
-	put_store (txn, source_rep, previous_weight_source, new_weight_source);
-	put_store (txn, dest_rep, previous_weight_dest, new_weight_dest);
+	put_store (transaction, source_rep, previous_weight_source, new_weight_source);
+	put_store (transaction, dest_rep, previous_weight_dest, new_weight_dest);
 
-	std::lock_guard guard{ mutex };
-	put_cache (source_rep, new_weight_source);
-	put_cache (dest_rep, new_weight_dest);
+	transaction.defer ([this, source_rep, dest_rep, new_weight_source, new_weight_dest] () {
+		std::lock_guard guard{ mutex };
+		put_cache (source_rep, new_weight_source);
+		put_cache (dest_rep, new_weight_dest);
+	});
 }
 
-void nano::rep_weights::move_add_sub (store::write_transaction const & txn, nano::account const & source_rep, nano::uint128_t const & amount_source, nano::account const & dest_rep, nano::uint128_t const & amount_dest)
+void nano::rep_weights::move_add_sub (secure::write_transaction & txn, nano::account const & source_rep, nano::uint128_t const & amount_source, nano::account const & dest_rep, nano::uint128_t const & amount_dest)
 {
 	if (amount_source == amount_dest)
 	{

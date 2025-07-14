@@ -223,7 +223,7 @@ public: // For tests only
 
 public: // Testing convenience functions
 	[[nodiscard]] nano::block_status process (std::shared_ptr<nano::block> block);
-	[[nodiscard]] nano::block_status process (secure::write_transaction const &, std::shared_ptr<nano::block> block);
+	[[nodiscard]] nano::block_status process (secure::write_transaction &, std::shared_ptr<nano::block> block);
 	nano::block_hash latest (nano::account const &);
 	nano::uint128_t balance (nano::account const &);
 

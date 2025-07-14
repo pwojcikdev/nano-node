@@ -17,14 +17,14 @@ public:
 	explicit rep_weights (nano::store::rep_weight &, nano::uint128_t min_weight = 0);
 
 	/* Adds or subtracts weight to the representative */
-	void add (store::write_transaction const &, nano::account const & rep, nano::uint128_t const & amount_add);
-	void sub (store::write_transaction const &, nano::account const & rep, nano::uint128_t const & amount_sub);
+	void add (secure::write_transaction &, nano::account const & rep, nano::uint128_t const & amount_add);
+	void sub (secure::write_transaction &, nano::account const & rep, nano::uint128_t const & amount_sub);
 
 	/* Move weight from one representative to another */
-	void move (store::write_transaction const &, nano::account const & source_rep, nano::account const & dest_rep, nano::uint128_t const & amount);
+	void move (secure::write_transaction &, nano::account const & source_rep, nano::account const & dest_rep, nano::uint128_t const & amount);
 
 	/* Move weight from one representative to another while adding or subtracting the weight */
-	void move_add_sub (store::write_transaction const &, nano::account const & source_rep, nano::uint128_t const & amount_source, nano::account const & dest_rep, nano::uint128_t const & amount_dest);
+	void move_add_sub (secure::write_transaction &, nano::account const & source_rep, nano::uint128_t const & amount_source, nano::account const & dest_rep, nano::uint128_t const & amount_dest);
 
 	/* Only use this method when loading rep weights from the database table */
 	void put (nano::account const & rep, nano::uint128_t const & weight);

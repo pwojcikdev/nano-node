@@ -86,7 +86,7 @@ private:
 
 	// Roll back block in the ledger that conflicts with 'block'
 	void rollback_competitor (secure::write_transaction &, nano::block const & block);
-	nano::block_status process_one (secure::write_transaction const &, nano::block_context const &, bool forced = false);
+	nano::block_status process_one (secure::write_transaction &, nano::block_context const &, bool forced = false);
 	void process_batch (nano::unique_lock<nano::mutex> &);
 	std::deque<nano::block_context> next_batch (size_t max_count);
 	nano::block_context next ();
