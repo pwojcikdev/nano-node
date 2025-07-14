@@ -67,21 +67,25 @@ void nano::ledger::tx_optimistic_process (nano::store::writer guard_type, std::f
 	for (auto i = 0; i < optimistic_attempts; ++i)
 	{
 		auto txn = tx_begin_write (guard_type, nano::store::write_strategy::optimistic);
+		if (i > 0)
+		{
+			stats.inc (to_stat_type (guard_type), nano::stat::detail::optimistic_retry);
+		}
 		try
 		{
 			action (txn);
 			txn.commit ();
-			stats.inc (nano::stat::type::ledger, nano::stat::detail::optimistic_success);
+			stats.inc (to_stat_type (guard_type), nano::stat::detail::optimistic);
 			return;
 		}
 		catch (nano::store::transaction_conflict_error const & e)
 		{
-			stats.inc (nano::stat::type::ledger, nano::stat::detail::optimistic_failed);
 			txn.abort ();
 		}
 	}
 	// Redo the action with a pessimistic transaction which is guaranteed to succeed
 	{
+		stats.inc (to_stat_type (guard_type), nano::stat::detail::pessimistic);
 		auto txn = tx_begin_write (guard_type, nano::store::write_strategy::pessimistic);
 		action (txn);
 		txn.commit ();
