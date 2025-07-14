@@ -1,12 +1,14 @@
 #pragma once
 
 #include <nano/lib/locks.hpp>
+#include <nano/lib/stats.hpp>
 
 #include <condition_variable>
 #include <deque>
 #include <functional>
 #include <memory>
 #include <shared_mutex>
+#include <string_view>
 
 namespace nano::store
 {
@@ -29,6 +31,10 @@ enum class writer
 	online_weight,
 	testing // Used in tests to emulate a write lock
 };
+
+std::string_view to_string (write_strategy strategy);
+std::string_view to_string (writer type);
+nano::stat::type to_stat_type (writer type);
 
 class write_queue;
 
