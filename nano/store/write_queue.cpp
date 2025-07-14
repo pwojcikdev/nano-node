@@ -1,4 +1,5 @@
 #include <nano/lib/config.hpp>
+#include <nano/lib/enum_util.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/store/write_queue.hpp>
 
@@ -131,4 +132,45 @@ void nano::store::write_queue::release (uint64_t token)
 		queue.pop_front ();
 	}
 	condition.notify_all ();
+}
+
+/*
+ *
+ */
+
+std::string_view nano::store::to_string (nano::store::writer type)
+{
+	return nano::enum_util::name (type);
+}
+
+std::string_view nano::store::to_string (nano::store::write_strategy strategy)
+{
+	return nano::enum_util::name (strategy);
+}
+
+nano::stat::type nano::store::to_stat_type (nano::store::writer type)
+{
+	switch (type)
+	{
+		case nano::store::writer::block_processor:
+			return nano::stat::type::writer_block_processor;
+		case nano::store::writer::bounded_backlog:
+			return nano::stat::type::writer_bounded_backlog;
+		case nano::store::writer::confirmation_height:
+			return nano::stat::type::writer_confirmation_height;
+		case nano::store::writer::voting_final:
+			return nano::stat::type::writer_voting_final;
+		case nano::store::writer::online_weight:
+			return nano::stat::type::writer_online_weight;
+		case nano::store::writer::pruning:
+			return nano::stat::type::writer_pruning;
+		case nano::store::writer::node:
+			return nano::stat::type::writer_node;
+		case nano::store::writer::generic:
+			return nano::stat::type::writer_generic;
+		case nano::store::writer::testing:
+			return nano::stat::type::writer_testing;
+	}
+	debug_assert (false, "unknown writer type");
+	return {};
 }

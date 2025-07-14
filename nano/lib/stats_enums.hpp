@@ -122,6 +122,15 @@ enum class type
 	online_reps,
 	pruning,
 	fork_cache,
+	writer_block_processor,
+	writer_bounded_backlog,
+	writer_confirmation_height,
+	writer_voting_final,
+	writer_online_weight,
+	writer_pruning,
+	writer_node,
+	writer_generic,
+	writer_testing,
 
 	_last // Must be the last enum
 };
@@ -684,8 +693,10 @@ enum class detail
 	overfill_entry,
 
 	// db
+	pessimistic,
 	optimistic_success,
 	optimistic_failed,
+	optimistic_retry,
 
 	_last // Must be the last enum
 };
