@@ -5,12 +5,12 @@
 #include <boost/config.hpp>
 #include <boost/version.hpp>
 
-#include <algorithm>
 #include <array>
 #include <chrono>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 using namespace std::chrono_literals;
 
@@ -86,6 +86,14 @@ uint16_t test_websocket_port ();
 std::array<uint8_t, 2> test_magic_number ();
 uint32_t test_scan_wallet_reps_delay (); // How often to scan for representatives in local wallet, in milliseconds
 
+// Configuration file names
+constexpr std::string_view node_config_filename{ "config-node.toml" };
+constexpr std::string_view rpc_config_filename{ "config-rpc.toml" };
+constexpr std::string_view log_config_filename{ "config-log.toml" };
+constexpr std::string_view access_config_filename{ "config-access.toml" };
+constexpr std::string_view qtwallet_config_filename{ "config-qtwallet.toml" };
+constexpr std::string_view tls_config_filename{ "config-tls.toml" };
+
 std::string get_node_toml_config_path (std::filesystem::path const & data_path);
 std::string get_rpc_toml_config_path (std::filesystem::path const & data_path);
 std::string get_access_toml_config_path (std::filesystem::path const & data_path);
@@ -138,5 +146,11 @@ T load_config_file (T fallback, const std::filesystem::path & config_filename, c
 		throw std::runtime_error (error.get_message ());
 	}
 	return config;
+}
+
+template <typename T>
+T load_config_file (const std::filesystem::path & config_filename, const std::filesystem::path & data_path, const std::vector<std::string> & config_overrides)
+{
+	return load_config_file<T> (T{}, config_filename, data_path, config_overrides);
 }
 }
