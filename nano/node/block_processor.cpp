@@ -521,6 +521,8 @@ nano::block_processor_config::block_processor_config (const nano::network_consta
 
 nano::error nano::block_processor_config::serialize (nano::tomlconfig & toml) const
 {
+	toml.put ("threads", threads, "Number of threads to use for processing. \ntype:uint64");
+	toml.put ("batch_size", batch_size, "Maximum number of blocks to process in a single batch. \ntype:uint64");
 	toml.put ("max_peer_queue", max_peer_queue, "Maximum number of blocks to queue from network peers. \ntype:uint64");
 	toml.put ("max_system_queue", max_system_queue, "Maximum number of blocks to queue from system components (local RPC, bootstrap). \ntype:uint64");
 	toml.put ("priority_live", priority_live, "Priority for live network blocks. Higher priority gets processed more frequently. \ntype:uint64");
@@ -536,6 +538,8 @@ nano::error nano::block_processor_config::serialize (nano::tomlconfig & toml) co
 
 nano::error nano::block_processor_config::deserialize (nano::tomlconfig & toml)
 {
+	toml.get ("threads", threads);
+	toml.get ("batch_size", batch_size);
 	toml.get ("max_peer_queue", max_peer_queue);
 	toml.get ("max_system_queue", max_system_queue);
 	toml.get ("priority_live", priority_live);
