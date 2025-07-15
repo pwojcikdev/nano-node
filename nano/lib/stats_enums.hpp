@@ -133,6 +133,7 @@ enum class type
 	writer_confirmation_height,
 	writer_voting_final,
 	writer_online_weight,
+	writer_rep_weights,
 	writer_pruning,
 	writer_node,
 	writer_generic,
@@ -243,6 +244,7 @@ enum class detail
 	process_blocking_timeout,
 	force,
 	cooldown_backlog,
+	rep_weights_update,
 
 	// block source
 	live,

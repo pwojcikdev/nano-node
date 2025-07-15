@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/secure/rep_weights.hpp>
 #include <nano/store/transaction.hpp>
 #include <nano/store/write_queue.hpp>
 
@@ -45,6 +46,9 @@ class write_transaction final : public transaction
 
 	// Deferred operations that should be executed after the transaction is committed
 	std::deque<std::function<void ()>> deferred;
+
+public: // Temporarily keeping these here
+	nano::rep_weights_updates rep_weights;
 
 public:
 	write_transaction (nano::store::write_transaction && txn_a, nano::store::write_guard && guard_a) noexcept :

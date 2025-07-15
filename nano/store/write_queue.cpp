@@ -162,6 +162,8 @@ nano::stat::type nano::store::to_stat_type (nano::store::writer type)
 			return nano::stat::type::writer_voting_final;
 		case nano::store::writer::online_weight:
 			return nano::stat::type::writer_online_weight;
+		case nano::store::writer::rep_weights:
+			return nano::stat::type::writer_rep_weights;
 		case nano::store::writer::pruning:
 			return nano::stat::type::writer_pruning;
 		case nano::store::writer::node:

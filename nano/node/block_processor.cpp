@@ -16,10 +16,6 @@
 
 #include <utility>
 
-/*
- * block_processor
- */
-
 nano::block_processor::block_processor (nano::node_config const & node_config_a, nano::ledger & ledger_a, nano::ledger_notifications & ledger_notifications_a, nano::unchecked_map & unchecked_a, nano::stats & stats_a, nano::logger & logger_a) :
 	config{ node_config_a.block_processor },
 	node_config{ node_config_a },
@@ -28,7 +24,8 @@ nano::block_processor::block_processor (nano::node_config const & node_config_a,
 	ledger_notifications{ ledger_notifications_a },
 	unchecked{ unchecked_a },
 	stats{ stats_a },
-	logger{ logger_a }
+	logger{ logger_a },
+	rep_weights_worker{ 1, nano::thread_role::name::rep_weights }
 {
 	queue.max_size_query = [this] (auto const & origin) {
 		switch (origin.source)
@@ -73,6 +70,8 @@ void nano::block_processor::start ()
 {
 	debug_assert (threads.empty ());
 
+	rep_weights_worker.start ();
+
 	boost::thread::attributes attrs;
 	attrs.set_stack_size (nano::ledger_thread_stack_size ());
 
@@ -100,6 +99,8 @@ void nano::block_processor::stop ()
 		}
 	}
 	threads.clear ();
+
+	rep_weights_worker.stop ();
 }
 
 // TODO: Remove and replace all checks with calls to size (block_source)
@@ -384,8 +385,16 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 		ledger.verify_consistency (transaction);
 
 		// Queue notifications to be dispatched in the background
-		ledger_notifications.notify_processed (transaction, processed, [this] {
+		ledger_notifications.notify_processed (transaction, processed, [this, updates = transaction.rep_weights] () mutable {
 			stats.inc (nano::stat::type::block_processor, nano::stat::detail::notify_processed);
+
+			// Submit rep weights updates for processing
+			rep_weights_worker.post ([this, updates = std::move (updates)] () {
+				stats.inc (nano::stat::type::block_processor, nano::stat::detail::rep_weights_update);
+
+				auto transaction = ledger.tx_begin_write (nano::store::writer::rep_weights, nano::store::write_strategy::optimistic);
+				updates.apply (transaction, ledger.rep_weights);
+			});
 		});
 	});
 	// At this point transaction is successfully committed
