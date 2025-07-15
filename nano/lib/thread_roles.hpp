@@ -72,6 +72,7 @@ enum class name
 	monitor,
 	http_callbacks,
 	pruning,
+	rep_weights,
 };
 
 std::string_view to_string (name);

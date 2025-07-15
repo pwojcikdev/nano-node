@@ -5,12 +5,62 @@
 #include <nano/lib/utility.hpp>
 #include <nano/secure/fwd.hpp>
 
+#include <deque>
 #include <memory>
 #include <shared_mutex>
 #include <unordered_map>
+#include <variant>
 
 namespace nano
 {
+class rep_weights;
+
+class rep_weights_updates
+{
+public:
+	void apply (nano::secure::write_transaction &, nano::rep_weights &) const;
+	void clear ();
+
+public:
+	/* Adds or subtracts weight to the representative */
+	void add (nano::account const & rep, nano::uint128_t const & amount_add);
+	void sub (nano::account const & rep, nano::uint128_t const & amount_sub);
+
+	/* Move weight from one representative to another */
+	void move (nano::account const & source_rep, nano::account const & dest_rep, nano::uint128_t const & amount);
+
+	/* Move weight from one representative to another while adding or subtracting the weight */
+	void move_add_sub (nano::account const & source_rep, nano::uint128_t const & amount_source, nano::account const & dest_rep, nano::uint128_t const & amount_dest);
+
+private:
+	struct op_add
+	{
+		nano::account rep;
+		nano::uint128_t amount_add;
+	};
+	struct op_sub
+	{
+		nano::account rep;
+		nano::uint128_t amount_sub;
+	};
+	struct op_move
+	{
+		nano::account source_rep;
+		nano::account dest_rep;
+		nano::uint128_t amount;
+	};
+	struct op_move_add_sub
+	{
+		nano::account source_rep;
+		nano::uint128_t amount_source;
+		nano::account dest_rep;
+		nano::uint128_t amount_dest;
+	};
+
+	using update_variant = std::variant<op_add, op_sub, op_move, op_move_add_sub>;
+	std::deque<update_variant> updates;
+};
+
 class rep_weights
 {
 public:

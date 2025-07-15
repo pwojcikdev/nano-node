@@ -23,6 +23,7 @@ public:
 
 	nano::secure::write_transaction & transaction;
 	nano::ledger & ledger;
+
 	nano::block_status result{ nano::block_status::invalid };
 
 private:

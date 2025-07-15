@@ -106,5 +106,7 @@ private:
 	nano::interval_mt log_processing_interval;
 	nano::interval_mt log_backlog_interval;
 	nano::interval_mt log_cooldown_interval;
+
+	nano::thread_pool rep_weights_worker;
 };
 }

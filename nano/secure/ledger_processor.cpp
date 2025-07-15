@@ -52,7 +52,7 @@ void nano::ledger_processor::send_block (nano::send_block & block_a)
 							if (result == nano::block_status::progress)
 							{
 								auto amount (info->balance.number () - block_a.hashables.balance.number ());
-								ledger.rep_weights.sub (transaction, info->representative, amount);
+								transaction.rep_weights.sub (info->representative, amount);
 								block_a.sideband_set (nano::block_sideband (account, 0, block_a.hashables.balance /* unused */, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */));
 								ledger.store.block.put (transaction, hash, block_a);
 								nano::account_info new_info (hash, info->representative, info->open_block, block_a.hashables.balance, nano::seconds_since_epoch (), info->block_count + 1, nano::epoch::epoch_0);
@@ -116,7 +116,7 @@ void nano::ledger_processor::receive_block (nano::receive_block & block_a)
 											ledger.store.block.put (transaction, hash, block_a);
 											nano::account_info new_info (hash, info->representative, info->open_block, new_balance, nano::seconds_since_epoch (), info->block_count + 1, nano::epoch::epoch_0);
 											ledger.update_account (transaction, account, *info, new_info);
-											ledger.rep_weights.add (transaction, info->representative, pending.value ().amount);
+											transaction.rep_weights.add (info->representative, pending.value ().amount);
 											ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::receive);
 										}
 									}
@@ -168,7 +168,7 @@ void nano::ledger_processor::open_block (nano::open_block & block_a)
 									ledger.store.block.put (transaction, hash, block_a);
 									nano::account_info new_info (hash, block_a.representative_field ().value (), hash, pending.value ().amount.number (), nano::seconds_since_epoch (), 1, nano::epoch::epoch_0);
 									ledger.update_account (transaction, block_a.hashables.account, info, new_info);
-									ledger.rep_weights.add (transaction, block_a.representative_field ().value (), pending.value ().amount);
+									transaction.rep_weights.add (block_a.representative_field ().value (), pending.value ().amount);
 									ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::open);
 								}
 							}
@@ -212,7 +212,7 @@ void nano::ledger_processor::change_block (nano::change_block & block_a)
 							block_a.sideband_set (nano::block_sideband (account, 0, info->balance, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */));
 							ledger.store.block.put (transaction, hash, block_a);
 							auto balance = previous->balance ();
-							ledger.rep_weights.move (transaction, info->representative, block_a.hashables.representative, balance);
+							transaction.rep_weights.move (info->representative, block_a.hashables.representative, balance);
 							nano::account_info new_info (hash, block_a.hashables.representative, info->open_block, info->balance, nano::seconds_since_epoch (), info->block_count + 1, nano::epoch::epoch_0);
 							ledger.update_account (transaction, account, *info, new_info);
 							ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::change);
@@ -335,13 +335,13 @@ void nano::ledger_processor::state_block_impl (nano::state_block & block_a)
 						if (!info.head.is_zero ())
 						{
 							// Move existing representation & add in amount delta
-							// ledger.rep_weights.representation_add_dual (transaction, info.representative, 0 - info.balance.number (), block_a.hashables.representative, block_a.hashables.balance.number ());
-							ledger.rep_weights.move_add_sub (transaction, info.representative, info.balance, block_a.hashables.representative, block_a.hashables.balance);
+							// transaction.rep_weights.representation_add_dual (transaction, info.representative, 0 - info.balance.number (), block_a.hashables.representative, block_a.hashables.balance.number ());
+							transaction.rep_weights.move_add_sub (info.representative, info.balance, block_a.hashables.representative, block_a.hashables.balance);
 						}
 						else
 						{
 							// Add in amount delta only
-							ledger.rep_weights.add (transaction, block_a.hashables.representative, block_a.hashables.balance);
+							transaction.rep_weights.add (block_a.hashables.representative, block_a.hashables.balance);
 						}
 
 						if (is_send)

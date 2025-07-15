@@ -18,13 +18,11 @@ void nano::rep_weights::add (secure::write_transaction & transaction, nano::acco
 
 	put_store (transaction, rep, previous_weight, new_weight);
 
-	transaction.defer ([this, rep, new_weight, amount_add] () {
-		std::lock_guard guard{ mutex };
-		put_cache (rep, new_weight);
+	std::lock_guard guard{ mutex };
+	put_cache (rep, new_weight);
 
-		weight_committed += amount_add;
-		weight_unused -= amount_add;
-	});
+	weight_committed += amount_add;
+	weight_unused -= amount_add;
 }
 
 void nano::rep_weights::sub (secure::write_transaction & transaction, nano::account const & rep, nano::uint128_t const & amount_sub)
@@ -35,13 +33,11 @@ void nano::rep_weights::sub (secure::write_transaction & transaction, nano::acco
 
 	put_store (transaction, rep, previous_weight, new_weight);
 
-	transaction.defer ([this, rep, new_weight, amount_sub] () {
-		std::lock_guard guard{ mutex };
-		put_cache (rep, new_weight);
+	std::lock_guard guard{ mutex };
+	put_cache (rep, new_weight);
 
-		weight_committed -= amount_sub;
-		weight_unused += amount_sub;
-	});
+	weight_committed -= amount_sub;
+	weight_unused += amount_sub;
 }
 
 void nano::rep_weights::move (secure::write_transaction & transaction, nano::account const & source_rep, nano::account const & dest_rep, nano::uint128_t const & amount)
@@ -63,11 +59,11 @@ void nano::rep_weights::move (secure::write_transaction & transaction, nano::acc
 	put_store (transaction, source_rep, previous_weight_source, new_weight_source);
 	put_store (transaction, dest_rep, previous_weight_dest, new_weight_dest);
 
-	transaction.defer ([this, source_rep, dest_rep, new_weight_source, new_weight_dest] () {
-		std::lock_guard guard{ mutex };
-		put_cache (source_rep, new_weight_source);
-		put_cache (dest_rep, new_weight_dest);
-	});
+	std::lock_guard guard{ mutex };
+	put_cache (source_rep, new_weight_source);
+	put_cache (dest_rep, new_weight_dest);
+
+	// Weight committed and unused remain unchanged
 }
 
 void nano::rep_weights::move_add_sub (secure::write_transaction & txn, nano::account const & source_rep, nano::uint128_t const & amount_source, nano::account const & dest_rep, nano::uint128_t const & amount_dest)
@@ -240,4 +236,66 @@ nano::container_info nano::rep_weights::container_info () const
 	info.put ("rep_amounts", rep_amounts);
 	// TODO: Info about weight_committed and weight_unused
 	return info;
+}
+
+/*
+ *
+ */
+
+void nano::rep_weights_updates::clear ()
+{
+	updates.clear ();
+}
+
+void nano::rep_weights_updates::apply (nano::secure::write_transaction & transaction, nano::rep_weights & rep_weights) const
+{
+	for (auto const & update : updates)
+	{
+		struct update_visitor
+		{
+			nano::secure::write_transaction & transaction;
+			nano::rep_weights & rep_weights;
+
+			void operator() (nano::rep_weights_updates::op_add const & op) const
+			{
+				rep_weights.add (transaction, op.rep, op.amount_add);
+			}
+
+			void operator() (nano::rep_weights_updates::op_sub const & op) const
+			{
+				rep_weights.sub (transaction, op.rep, op.amount_sub);
+			}
+
+			void operator() (nano::rep_weights_updates::op_move const & op) const
+			{
+				rep_weights.move (transaction, op.source_rep, op.dest_rep, op.amount);
+			}
+
+			void operator() (nano::rep_weights_updates::op_move_add_sub const & op) const
+			{
+				rep_weights.move_add_sub (transaction, op.source_rep, op.amount_source, op.dest_rep, op.amount_dest);
+			}
+		};
+		std::visit (update_visitor{ transaction, rep_weights }, update);
+	}
+}
+
+void nano::rep_weights_updates::add (nano::account const & rep, nano::uint128_t const & amount_add)
+{
+	updates.emplace_back (op_add{ rep, amount_add });
+}
+
+void nano::rep_weights_updates::sub (nano::account const & rep, nano::uint128_t const & amount_sub)
+{
+	updates.emplace_back (op_sub{ rep, amount_sub });
+}
+
+void nano::rep_weights_updates::move (nano::account const & source_rep, nano::account const & dest_rep, nano::uint128_t const & amount)
+{
+	updates.emplace_back (op_move{ source_rep, dest_rep, amount });
+}
+
+void nano::rep_weights_updates::move_add_sub (nano::account const & source_rep, nano::uint128_t const & amount_source, nano::account const & dest_rep, nano::uint128_t const & amount_dest)
+{
+	updates.emplace_back (op_move_add_sub{ source_rep, amount_source, dest_rep, amount_dest });
 }
