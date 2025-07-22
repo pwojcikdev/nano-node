@@ -50,18 +50,17 @@ public:
 private:
 	void stop ();
 
-	asio::awaitable<void> start_impl ();
-	asio::awaitable<void> do_handshake ();
-	asio::awaitable<void> run_receiving ();
-	asio::awaitable<nano::deserialize_message_result> receive_message ();
-	asio::awaitable<nano::buffer_view> read_socket (size_t size);
-
 	enum class process_result
 	{
 		abort,
 		progress,
 	};
-	asio::awaitable<process_result> process_message (std::unique_ptr<nano::message> message);
+
+	asio::awaitable<void> start_impl ();
+	asio::awaitable<process_result> perform_handshake ();
+	asio::awaitable<void> run_realtime ();
+	asio::awaitable<nano::deserialize_message_result> receive_message ();
+	asio::awaitable<nano::buffer_view> read_socket (size_t size) const;
 
 	enum class handshake_status
 	{
@@ -90,8 +89,6 @@ private:
 	std::atomic<bool> handshake_received{ false };
 
 private:
-	void received_message (std::unique_ptr<nano::message> message);
-
 	bool to_bootstrap_connection ();
 	bool to_realtime_connection (nano::account const & node_id);
 	bool is_undefined_connection () const;
@@ -99,15 +96,6 @@ private:
 	bool is_realtime_connection () const;
 
 private: // Visitors
-	class handshake_message_visitor : public nano::message_visitor
-	{
-	public:
-		bool process{ false };
-		std::optional<nano::node_id_handshake> handshake;
-
-		void node_id_handshake (nano::node_id_handshake const &) override;
-	};
-
 	class realtime_message_visitor : public nano::message_visitor
 	{
 	public:
@@ -123,7 +111,5 @@ private: // Visitors
 		void asc_pull_req (nano::asc_pull_req const &) override;
 		void asc_pull_ack (nano::asc_pull_ack const &) override;
 	};
-
-	friend class handshake_message_visitor;
 };
 }

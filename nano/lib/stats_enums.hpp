@@ -424,8 +424,10 @@ enum class detail
 	handshake_initiate,
 	handshake_response,
 	handshake_response_invalid,
+	handshake_failed,
 	message_queued,
 	message_dropped,
+	message_ignored,
 
 	// ipc
 	invocations,

@@ -199,7 +199,7 @@ void nano::transport::tcp_listener::purge (nano::unique_lock<nano::mutex> & lock
 		logger.debug (nano::log::type::tcp_listener, "Evicting dead connection: {}", connection.endpoint);
 
 		connection.socket->close ();
-		connection.server->stop ();
+		connection.server->close ();
 	}
 }
 
