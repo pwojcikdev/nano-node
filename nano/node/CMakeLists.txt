@@ -16,6 +16,8 @@ add_library(
   ${platform_sources}
   active_elections.hpp
   active_elections.cpp
+  active_elections_index.hpp
+  active_elections_index.cpp
   backlog_scan.hpp
   backlog_scan.cpp
   bandwidth_limiter.hpp

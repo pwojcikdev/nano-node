@@ -3,7 +3,8 @@ add_executable(
   entry.cpp
   fakes/websocket_client.hpp
   fakes/work_peer.hpp
-  active_elections.cpp
+        active_elections.cpp
+  active_elections_index.cpp
   assert.cpp
   async.cpp
   backlog.cpp
