@@ -91,7 +91,7 @@ bool nano::scheduler::bucket::activate ()
 		elections.get<tag_root> ().erase (election->qualified_root);
 	};
 
-	auto result = active.insert (block, nano::election_behavior::priority, erase_callback);
+	auto result = active.insert (block, nano::election_behavior::priority, index, priority, erase_callback);
 	if (result.inserted)
 	{
 		release_assert (result.election);

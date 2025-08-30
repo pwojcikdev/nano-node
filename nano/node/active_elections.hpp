@@ -1,12 +1,11 @@
 #pragma once
 
-#include <nano/lib/enum_util.hpp>
 #include <nano/lib/interval.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/observer_set.hpp>
 #include <nano/lib/thread_pool.hpp>
+#include <nano/node/active_elections_index.hpp>
 #include <nano/node/election_behavior.hpp>
-#include <nano/node/election_insertion_result.hpp>
 #include <nano/node/election_status.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/recently_cemented_cache.hpp>
@@ -15,19 +14,11 @@
 #include <nano/node/vote_with_weight_info.hpp>
 #include <nano/secure/common.hpp>
 
-#include <boost/multi_index/hashed_index.hpp>
-#include <boost/multi_index/member.hpp>
-#include <boost/multi_index/random_access_index.hpp>
-#include <boost/multi_index/sequenced_index.hpp>
-#include <boost/multi_index_container.hpp>
-
 #include <condition_variable>
 #include <deque>
 #include <memory>
 #include <thread>
 #include <unordered_map>
-
-namespace mi = boost::multi_index;
 
 namespace nano
 {
@@ -65,34 +56,6 @@ class active_elections final
 public:
 	using erased_callback_t = std::function<void (std::shared_ptr<nano::election>)>;
 
-private: // Elections
-	class entry final
-	{
-	public:
-		nano::qualified_root root;
-		std::shared_ptr<nano::election> election;
-		erased_callback_t erased_callback;
-	};
-
-	friend class nano::election;
-
-	// clang-format off
-	class tag_account {};
-	class tag_root {};
-	class tag_sequenced {};
-	class tag_uncemented {};
-	class tag_arrival {};
-	class tag_hash {};
-
-	using ordered_roots = boost::multi_index_container<entry,
-	mi::indexed_by<
-		mi::sequenced<mi::tag<tag_sequenced>>,
-		mi::hashed_unique<mi::tag<tag_root>,
-			mi::member<entry, nano::qualified_root, &entry::root>>
-	>>;
-	// clang-format on
-	ordered_roots roots;
-
 public:
 	active_elections (nano::node &, nano::ledger_notifications &, nano::cementing_set &);
 	~active_elections ();
@@ -100,31 +63,46 @@ public:
 	void start ();
 	void stop ();
 
-	/**
-	 * Starts new election with a specified behavior type
-	 */
-	nano::election_insertion_result insert (std::shared_ptr<nano::block> const &, nano::election_behavior = nano::election_behavior::priority, erased_callback_t = nullptr);
-	// Is the root of this block in the roots container
-	bool active (nano::block const &) const;
-	bool active (nano::qualified_root const &) const;
-	std::shared_ptr<nano::election> election (nano::qualified_root const &) const;
-	// Returns a list of elections sorted by difficulty
-	std::vector<std::shared_ptr<nano::election>> list_active (std::size_t max_count = std::numeric_limits<std::size_t>::max ());
-	bool erase (nano::block const &);
-	bool erase (nano::qualified_root const &);
-	bool empty () const;
-	std::size_t size () const;
-	std::size_t size (nano::election_behavior) const;
+	struct insert_result
+	{
+		std::shared_ptr<nano::election> election;
+		bool inserted;
+	};
+
+	/// Starts new election
+	insert_result insert (
+	std::shared_ptr<nano::block> const &,
+	nano::election_behavior = nano::election_behavior::priority,
+	nano::bucket_index bucket = 0,
+	nano::priority_timestamp priority = 0,
+	erased_callback_t = nullptr);
+
+	// Notify this container about a new block (potential fork)
 	bool publish (std::shared_ptr<nano::block> const &);
 
-	/**
-	 * Maximum number of elections that should be present in this container
-	 * NOTE: This is only a soft limit, it is possible for this container to exceed this count
-	 */
+	/// Is the root of this block in the roots container
+	bool active (nano::block const &) const;
+	bool active (nano::qualified_root const &) const;
+
+	std::shared_ptr<nano::election> election (nano::qualified_root const &) const;
+
+	/// Returns a list of elections sorted by difficulty
+	std::vector<std::shared_ptr<nano::election>> list_active (std::size_t max_count = std::numeric_limits<std::size_t>::max ());
+
+	bool erase (nano::block const &);
+	bool erase (nano::qualified_root const &);
+
+	bool empty () const;
+
+	size_t size () const;
+	size_t size (nano::election_behavior) const;
+	size_t size (nano::election_behavior, nano::bucket_index) const;
+
+	/// Maximum number of elections that should be present in this container
+	/// NOTE: This is only a soft limit, it is possible for this container to exceed this count
 	int64_t limit (nano::election_behavior behavior) const;
-	/**
-	 * How many election slots are available for specified election type
-	 */
+
+	/// How many election slots are available for specified election type
 	int64_t vacancy (nano::election_behavior behavior) const;
 
 	nano::container_info container_info () const;
@@ -137,7 +115,7 @@ private:
 	void tick_elections (nano::unique_lock<nano::mutex> &);
 
 	// Erase all blocks from active and, if not confirmed, clear digests from network filters
-	void cleanup_election (nano::unique_lock<nano::mutex> & lock_a, std::shared_ptr<nano::election>);
+	void erase_election (nano::unique_lock<nano::mutex> & lock_a, std::shared_ptr<nano::election>);
 
 	using block_cemented_result = std::pair<nano::election_status, std::vector<nano::vote_with_weight_info>>;
 	block_cemented_result block_cemented (std::shared_ptr<nano::block> const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election);
@@ -153,6 +131,10 @@ private: // Dependencies
 	nano::cementing_set & cementing_set;
 
 public:
+	nano::active_elections_index index;
+
+	std::unordered_map<nano::qualified_root, erased_callback_t> erased_callbacks;
+
 	nano::recently_confirmed_cache recently_confirmed;
 	nano::recently_cemented_cache recently_cemented;
 
@@ -161,9 +143,6 @@ public:
 	mutable nano::mutex mutex{ mutex_identifier (mutexes::active) };
 
 private:
-	/** Keeps track of number of elections by election behavior (normal, hinted, optimistic) */
-	nano::enum_array<nano::election_behavior, int64_t> count_by_behavior{};
-
 	nano::condition_variable condition;
 	bool stopped{ false };
 	std::thread thread;

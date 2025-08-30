@@ -323,7 +323,7 @@ TEST (node, fork_storm)
 			else
 			{
 				nano::unique_lock<nano::mutex> lock{ node_a->active.mutex };
-				auto election = node_a->active.roots.begin ()->election;
+				auto election = *node_a->active.list_active ().begin ();
 				lock.unlock ();
 				if (election->votes ().size () == 1)
 				{
@@ -1794,7 +1794,7 @@ TEST (node, mass_block_new)
 		// Clear all active
 		{
 			nano::lock_guard<nano::mutex> guard{ node.active.mutex };
-			node.active.roots.clear ();
+			node.active.clear ();
 		}
 	};
 
@@ -2159,12 +2159,12 @@ TEST (system, block_sequence)
 			{
 				message += boost::str (boost::format ("N:%1% b:%2% c:%3% a:%4% s:%5% p:%6%\n") % std::to_string (i->network.port) % std::to_string (i->ledger.block_count ()) % std::to_string (i->ledger.cemented_count ()) % std::to_string (i->active.size ()) % std::to_string (i->scheduler.priority.size ()) % std::to_string (i->network.size ()));
 				nano::lock_guard<nano::mutex> lock{ i->active.mutex };
-				for (auto const & j : i->active.roots)
+				for (auto const & j : i->active.list_active ())
 				{
-					auto election = j.election;
+					auto election = j;
 					if (election->confirmation_request_count > 10)
 					{
-						message += boost::str (boost::format ("\t r:%1% i:%2%\n") % j.root.to_string () % std::to_string (election->confirmation_request_count));
+						message += boost::str (boost::format ("\t r:%1% i:%2%\n") % j->root.to_string () % std::to_string (election->confirmation_request_count));
 						for (auto const & k : election->votes ())
 						{
 							message += boost::str (boost::format ("\t\t r:%1% t:%2%\n") % k.first.to_account () % std::to_string (k.second.timestamp));
