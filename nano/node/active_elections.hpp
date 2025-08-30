@@ -80,6 +80,9 @@ public:
 	// Notify this container about a new block (potential fork)
 	bool publish (std::shared_ptr<nano::block> const &);
 
+	// Trigger an immediate election update (e.g. after it is confirmed)
+	bool trigger (nano::qualified_root const &);
+
 	/// Is the root of this block in the roots container
 	bool active (nano::block const &) const;
 	bool active (nano::qualified_root const &) const;
@@ -111,13 +114,22 @@ public: // Events
 	nano::observer_set<> vacancy_updated;
 
 private:
+	bool predicate () const;
 	void run ();
 	void tick_elections (nano::unique_lock<nano::mutex> &);
 
 	// Erase all blocks from active and, if not confirmed, clear digests from network filters
 	void erase_election (nano::unique_lock<nano::mutex> & lock_a, std::shared_ptr<nano::election>);
 
-	using block_cemented_result = std::pair<nano::election_status, std::vector<nano::vote_with_weight_info>>;
+	// using block_cemented_result = std::pair<nano::election_status, std::vector<nano::vote_with_weight_info>>;
+
+	struct block_cemented_result
+	{
+		std::shared_ptr<nano::election> election;
+		nano::election_status status;
+		std::vector<nano::vote_with_weight_info> votes;
+	};
+
 	block_cemented_result block_cemented (std::shared_ptr<nano::block> const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election);
 	void notify_observers (nano::secure::transaction const &, nano::election_status const & status, std::vector<nano::vote_with_weight_info> const & votes) const;
 

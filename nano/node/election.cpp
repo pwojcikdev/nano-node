@@ -78,6 +78,8 @@ void nano::election::confirm_once (nano::unique_lock<nano::mutex> & lock)
 
 		lock.unlock ();
 
+		node.active.trigger (qualified_root);
+
 		node.election_workers.post ([status_l, confirmation_action_l = confirmation_action] () {
 			if (confirmation_action_l)
 			{

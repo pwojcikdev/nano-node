@@ -53,9 +53,18 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 		// Notify observers about cemented blocks on a background thread
 		workers.post ([this, results = std::move (results)] () {
 			auto transaction = node.ledger.tx_begin_read ();
-			for (auto const & [status, votes] : results)
+			for (auto const & [election, status, votes] : results)
 			{
 				transaction.refresh_if_needed ();
+
+				// Dependent elections are implicitly confirmed when their block is cemented
+				// TODO: Should this be the case? Maybe just cancel the election and issue block cemented notification?
+				if (election)
+				{
+					node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::confirm_dependent);
+					election->try_confirm (status.winner->hash ()); // TODO: This should either confirm or cancel the election
+				}
+
 				notify_observers (transaction, status, votes);
 			}
 		});
@@ -165,27 +174,6 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 
 			node.vote_router.connect (hash, result.election);
 
-			auto should_activate_immediately = [&] () {
-				// Broadcast votes immediately for priority elections
-				if (behavior == nano::election_behavior::priority)
-				{
-					return true;
-				}
-				// Skip passive phase for blocks without cached votes to avoid bootstrap delays
-				if (!node.vote_cache.contains (hash))
-				{
-					return true;
-				}
-				return false;
-			};
-
-			bool activate_immediately = should_activate_immediately ();
-			if (activate_immediately)
-			{
-				node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::activate_immediately);
-				result.election->transition_active ();
-			}
-
 			node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::started);
 			node.stats.inc (nano::stat::type::active_elections_started, to_stat_detail (behavior));
 
@@ -193,11 +181,10 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 			nano::log::arg{ "behavior", behavior },
 			nano::log::arg{ "election", result.election });
 
-			node.logger.debug (nano::log::type::active_elections, "Started new election for root: {} with blocks: {} (behavior: {}, active immediately: {})",
+			node.logger.debug (nano::log::type::active_elections, "Started new election for root: {} with blocks: {} (behavior: {})",
 			root,
 			fmt::join (result.election->blocks_hashes (), ", "), // TODO: Lazy eval
-			to_string (behavior),
-			activate_immediately);
+			to_string (behavior));
 		}
 		else
 		{
@@ -230,6 +217,23 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 	if (result.inserted)
 	{
 		release_assert (result.election);
+
+		auto should_activate_immediately = [&] () {
+			// Skip passive phase for blocks without cached votes to avoid bootstrap delays
+			if (!node.vote_cache.contains (hash))
+			{
+				return true;
+			}
+			return false;
+		};
+
+		// Transition to active (broadcasting votes, sending confirm reqs) state if needed
+		bool activate_immediately = should_activate_immediately ();
+		if (activate_immediately)
+		{
+			node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::activate_immediately);
+			result.election->transition_active ();
+		}
 
 		// Notifications
 		node.observers.active_started.notify (hash);
@@ -382,12 +386,7 @@ auto nano::active_elections::block_cemented (std::shared_ptr<nano::block> const 
 	debug_assert (node.block_confirmed (block->hash ()));
 
 	// Dependent elections are implicitly confirmed when their block is cemented
-	auto dependend_election = election_impl (block->qualified_root ());
-	if (dependend_election)
-	{
-		node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::confirm_dependent);
-		dependend_election->try_confirm (block->hash ()); // TODO: This should either confirm or cancel the election
-	}
+	auto election = election_impl (block->qualified_root ());
 
 	nano::election_status status;
 	std::vector<nano::vote_with_weight_info> votes;
@@ -401,7 +400,7 @@ auto nano::active_elections::block_cemented (std::shared_ptr<nano::block> const 
 		votes = source_election->votes_with_weight ();
 		status.type = nano::election_status_type::active_confirmed_quorum;
 	}
-	else if (dependend_election)
+	else if (election)
 	{
 		status.type = nano::election_status_type::active_confirmation_height;
 	}
@@ -420,7 +419,7 @@ auto nano::active_elections::block_cemented (std::shared_ptr<nano::block> const 
 	nano::log::arg{ "confirmation_root", confirmation_root },
 	nano::log::arg{ "source_election", source_election });
 
-	return { status, votes };
+	return { election, status, votes };
 }
 
 void nano::active_elections::notify_observers (nano::secure::transaction const & transaction, nano::election_status const & status, std::vector<nano::vote_with_weight_info> const & votes) const
@@ -461,11 +460,31 @@ void nano::active_elections::notify_observers (nano::secure::transaction const &
 	}
 }
 
+bool nano::active_elections::trigger (nano::qualified_root const & root)
+{
+	bool triggered = false;
+	{
+		nano::lock_guard<nano::mutex> guard{ mutex };
+		if (auto election = index.election (root))
+		{
+			triggered = index.trigger (election);
+		}
+	}
+	if (triggered)
+	{
+		condition.notify_all ();
+	}
+	return triggered;
+}
+
 void nano::active_elections::tick_elections (nano::unique_lock<nano::mutex> & lock)
 {
 	debug_assert (lock.owns_lock ());
 
-	auto const election_list = list_active_impl ();
+	auto const now = std::chrono::steady_clock::now ();
+	auto const cutoff = now - node.network_params.network.aec_loop_interval;
+	auto const election_list = index.list (cutoff, now);
+	debug_assert (!election_list.empty ()); // Shouldn't be called if there are no elections to process
 
 	lock.unlock ();
 
@@ -510,25 +529,33 @@ void nano::active_elections::tick_elections (nano::unique_lock<nano::mutex> & lo
 	}
 }
 
+bool nano::active_elections::predicate () const
+{
+	debug_assert (!mutex.try_lock ());
+
+	auto cutoff = std::chrono::steady_clock::now () - node.network_params.network.aec_loop_interval;
+	return index.any (cutoff);
+}
+
 void nano::active_elections::run ()
 {
 	nano::unique_lock<nano::mutex> lock{ mutex };
 	while (!stopped)
 	{
-		auto const stamp = std::chrono::steady_clock::now ();
+		if (predicate ())
+		{
+			node.stats.inc (nano::stat::type::active, nano::stat::detail::loop);
 
-		node.stats.inc (nano::stat::type::active, nano::stat::detail::loop);
-
-		tick_elections (lock);
-		debug_assert (!lock.owns_lock ());
-		lock.lock ();
-
-		auto const min_sleep = node.network_params.network.aec_loop_interval / 2;
-		auto const wakeup = std::max (stamp + node.network_params.network.aec_loop_interval, std::chrono::steady_clock::now () + min_sleep);
-
-		condition.wait_until (lock, wakeup, [this, wakeup] {
-			return stopped || std::chrono::steady_clock::now () >= wakeup;
-		});
+			tick_elections (lock);
+			debug_assert (!lock.owns_lock ());
+			lock.lock ();
+		}
+		else
+		{
+			condition.wait_for (lock, node.network_params.network.aec_loop_interval / 2, [this] {
+				return stopped || predicate ();
+			});
+		}
 	}
 }
 
