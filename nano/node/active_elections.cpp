@@ -57,12 +57,14 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 			{
 				transaction.refresh_if_needed ();
 
-				// Dependent elections are implicitly confirmed when their block is cemented
-				// TODO: Should this be the case? Maybe just cancel the election and issue block cemented notification?
+				// Dependent elections are cancelled when their block is cemented
 				if (election)
 				{
-					node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::confirm_dependent);
-					election->try_confirm (status.winner->hash ()); // TODO: This should either confirm or cancel the election
+					bool cancelled = election->cancel ();
+					if (cancelled)
+					{
+						node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::cancel_dependent);
+					}
 				}
 
 				notify_observers (transaction, status, votes);

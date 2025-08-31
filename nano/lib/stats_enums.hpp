@@ -514,6 +514,7 @@ enum class detail
 	started,
 	stopped,
 	confirm_dependent,
+	cancel_dependent,
 	forks_cached,
 	bootstrap_stale,
 

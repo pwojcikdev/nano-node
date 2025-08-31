@@ -93,9 +93,9 @@ public: // State transitions
 	// Returns true if the election should be cleaned up
 	bool tick (nano::confirmation_solicitor &);
 
-	void transition_active ();
+	bool transition_active ();
 	bool transition_priority ();
-	void cancel ();
+	bool cancel ();
 
 public: // Status
 	bool confirmed () const;

@@ -206,12 +206,6 @@ void nano::election::send_confirm_req (nano::confirmation_solicitor & solicitor_
 	}
 }
 
-void nano::election::transition_active ()
-{
-	nano::lock_guard<nano::mutex> guard{ mutex };
-	state_change (nano::election_state::passive, nano::election_state::active);
-}
-
 bool nano::election::transition_priority ()
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
@@ -239,10 +233,16 @@ bool nano::election::transition_priority ()
 	return true;
 }
 
-void nano::election::cancel ()
+bool nano::election::transition_active ()
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
-	state_change (state_m, nano::election_state::cancelled);
+	return !state_change (nano::election_state::passive, nano::election_state::active); // Invert since false => success
+}
+
+bool nano::election::cancel ()
+{
+	nano::lock_guard<nano::mutex> guard{ mutex };
+	return !state_change (state_m, nano::election_state::cancelled); // Invert since false => success
 }
 
 bool nano::election::confirmed_locked () const
