@@ -40,7 +40,7 @@ public:
 
 	std::shared_ptr<nano::election> random_election (nano::election_behavior behavior = nano::election_behavior::priority)
 	{
-		return std::make_shared<nano::election> (node, next_block (), nullptr, nullptr, behavior);
+		return std::make_shared<nano::election> (node, next_block (), behavior);
 	}
 };
 }

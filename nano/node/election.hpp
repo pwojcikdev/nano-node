@@ -70,6 +70,7 @@ private:
 	// Callbacks
 	std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action;
 	std::function<void (nano::account const &)> vote_action;
+	std::function<void (nano::qualified_root const &)> update_action;
 
 private: // State management
 	static unsigned constexpr passive_duration_factor = 5;
@@ -89,7 +90,9 @@ private: // State management
 	bool state_change (nano::election_state, nano::election_state);
 
 public: // State transitions
-	bool transition_time (nano::confirmation_solicitor &);
+	// Returns true if the election should be cleaned up
+	bool tick (nano::confirmation_solicitor &);
+
 	void transition_active ();
 	bool transition_priority ();
 	void cancel ();
@@ -110,7 +113,13 @@ public: // Status
 	nano::election_status status;
 
 public: // Interface
-	election (nano::node &, std::shared_ptr<nano::block> const & block, std::function<void (std::shared_ptr<nano::block> const &)> const & confirmation_action, std::function<void (nano::account const &)> const & vote_action, nano::election_behavior behavior);
+	election (
+	nano::node &,
+	std::shared_ptr<nano::block> const & block,
+	nano::election_behavior behavior,
+	std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action = nullptr,
+	std::function<void (nano::account const &)> vote_action = nullptr,
+	std::function<void (nano::qualified_root const &)> update_action = nullptr);
 
 	std::shared_ptr<nano::block> find (nano::block_hash const &) const;
 	/*

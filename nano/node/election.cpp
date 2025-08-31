@@ -23,9 +23,10 @@ std::chrono::milliseconds nano::election::base_latency () const
  * election
  */
 
-nano::election::election (nano::node & node_a, std::shared_ptr<nano::block> const & block_a, std::function<void (std::shared_ptr<nano::block> const &)> const & confirmation_action_a, std::function<void (nano::account const &)> const & vote_action_a, nano::election_behavior election_behavior_a) :
-	confirmation_action (confirmation_action_a),
-	vote_action (vote_action_a),
+nano::election::election (nano::node & node_a, std::shared_ptr<nano::block> const & block_a, nano::election_behavior election_behavior_a, std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action_a, std::function<void (nano::account const &)> vote_action_a, std::function<void (nano::qualified_root const &)> update_action_a) :
+	confirmation_action (std::move (confirmation_action_a)),
+	vote_action (std::move (vote_action_a)),
+	update_action (std::move (update_action_a)),
 	node (node_a),
 	behavior_m (election_behavior_a),
 	status (block_a),
@@ -78,14 +79,19 @@ void nano::election::confirm_once (nano::unique_lock<nano::mutex> & lock)
 
 		lock.unlock ();
 
-		node.active.trigger (qualified_root);
+		if (update_action)
+		{
+			node.election_workers.post ([qualified_root_l = qualified_root, update_action_l = update_action] () {
+				update_action_l (qualified_root_l);
+			});
+		}
 
-		node.election_workers.post ([status_l, confirmation_action_l = confirmation_action] () {
-			if (confirmation_action_l)
-			{
+		if (confirmation_action)
+		{
+			node.election_workers.post ([status_l, confirmation_action_l = confirmation_action] () {
 				confirmation_action_l (status_l.winner);
-			}
-		});
+			});
+		}
 	}
 	else
 	{
@@ -149,6 +155,13 @@ bool nano::election::state_change (nano::election_state expected_a, nano::electi
 			state_m = desired_a;
 			state_start = std::chrono::steady_clock::now ().time_since_epoch ();
 			result = false;
+
+			if (update_action)
+			{
+				node.election_workers.post ([qualified_root_l = qualified_root, update_action_l = update_action] () {
+					update_action_l (qualified_root_l);
+				});
+			}
 		}
 	}
 	return result;
@@ -215,6 +228,13 @@ bool nano::election::transition_priority ()
 	to_string (behavior_m),
 	qualified_root,
 	duration ().count ());
+
+	if (update_action)
+	{
+		node.election_workers.post ([qualified_root_l = qualified_root, update_action_l = update_action] () {
+			update_action_l (qualified_root_l);
+		});
+	}
 
 	return true;
 }
@@ -308,7 +328,7 @@ nano::election_status nano::election::get_status () const
 	return status;
 }
 
-bool nano::election::transition_time (nano::confirmation_solicitor & solicitor_a)
+bool nano::election::tick (nano::confirmation_solicitor & solicitor)
 {
 	nano::unique_lock<nano::mutex> lock{ mutex };
 	bool result = false;
@@ -322,12 +342,12 @@ bool nano::election::transition_time (nano::confirmation_solicitor & solicitor_a
 			break;
 		case nano::election_state::active:
 			broadcast_vote_locked (lock);
-			broadcast_block (solicitor_a);
-			send_confirm_req (solicitor_a);
+			broadcast_block (solicitor);
+			send_confirm_req (solicitor);
 			break;
 		case nano::election_state::confirmed:
 			result = true; // Return true to indicate this election should be cleaned up
-			broadcast_block (solicitor_a); // Ensure election winner is broadcasted
+			broadcast_block (solicitor); // Ensure election winner is broadcasted
 			state_change (nano::election_state::confirmed, nano::election_state::expired_confirmed);
 			break;
 		case nano::election_state::expired_unconfirmed:
@@ -353,6 +373,7 @@ bool nano::election::transition_time (nano::confirmation_solicitor & solicitor_a
 			status.type = nano::election_status_type::stopped;
 		}
 	}
+
 	return result;
 }
 

@@ -157,11 +157,16 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 
 			// Passing this callback into the election is important
 			// We need to observe and update the online voting weight *before* election quorum is checked
-			auto observe_rep_callback = [&node = node] (auto const & rep) {
+			auto observe_rep_action = [&node = node] (auto const & rep) {
 				node.online_reps.observe (rep);
 			};
 
-			result.election = nano::make_shared<nano::election> (node, block, nullptr, observe_rep_callback, behavior);
+			// On any election state update, schedule a call to tick it immediately
+			auto update_action = [this] (auto const & root) {
+				trigger (root);
+			};
+
+			result.election = std::make_shared<nano::election> (node, block, behavior, nullptr, observe_rep_action, update_action);
 
 			// Store erased callback if provided
 			if (erased_callback)
@@ -496,7 +501,8 @@ void nano::active_elections::tick_elections (nano::unique_lock<nano::mutex> & lo
 	std::deque<std::shared_ptr<nano::election>> stale_elections;
 	for (auto const & election : election_list)
 	{
-		if (election->transition_time (solicitor))
+		bool tick_result = election->tick (solicitor);
+		if (tick_result)
 		{
 			erase (election->qualified_root);
 		}
