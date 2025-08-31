@@ -49,7 +49,7 @@ void nano::scheduler::hinted::stop ()
 		nano::lock_guard<nano::mutex> lock{ mutex };
 		stopped = true;
 	}
-	notify ();
+	condition.notify_all ();
 	nano::join_or_pass (thread);
 }
 
