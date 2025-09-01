@@ -93,10 +93,15 @@ auto nano::active_elections_index::info (std::shared_ptr<nano::election> const &
 	return std::nullopt;
 }
 
-auto nano::active_elections_index::list () const -> std::deque<entry>
+auto nano::active_elections_index::list () const -> std::deque<std::shared_ptr<nano::election>>
 {
-	auto r = entries.get<tag_sequenced> () | std::views::transform ([] (auto const & entry) { return entry; });
+	auto r = entries.get<tag_sequenced> () | std::views::transform ([] (auto const & entry) { return entry.election; });
 	return { r.begin (), r.end () };
+}
+
+bool nano::active_elections_index::empty () const
+{
+	return entries.empty ();
 }
 
 size_t nano::active_elections_index::size () const

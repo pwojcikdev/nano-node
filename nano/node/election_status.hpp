@@ -23,6 +23,7 @@ enum class election_status_type : uint8_t
 	stopped = 5
 };
 
+std::string_view to_string (election_status_type);
 nano::stat::detail to_stat_detail (election_status_type);
 
 /* Holds a summary of an election */

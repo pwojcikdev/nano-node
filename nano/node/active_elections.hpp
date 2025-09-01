@@ -44,7 +44,8 @@ public:
 	// Maximum size of election winner details set
 	std::size_t max_election_winners{ 1024 * 16 };
 
-	std::chrono::seconds bootstrap_stale_threshold{ 60s };
+	std::chrono::milliseconds checkup_interval{ 1s };
+	std::chrono::seconds bootstrap_stale_threshold{ nano::is_dev_run () ? 1s : 60s };
 };
 
 /**
@@ -116,7 +117,9 @@ public: // Events
 private:
 	bool predicate () const;
 	void run ();
+	void run_checkup ();
 	void tick_elections (nano::unique_lock<nano::mutex> &);
+	void checkup_elections (nano::unique_lock<nano::mutex> &);
 
 	// Erase all blocks from active and, if not confirmed, clear digests from network filters
 	void erase_election (nano::unique_lock<nano::mutex> & lock_a, std::shared_ptr<nano::election>);
@@ -158,6 +161,7 @@ private:
 	nano::condition_variable condition;
 	bool stopped{ false };
 	std::thread thread;
+	std::thread checkup_thread;
 
 	nano::thread_pool workers;
 

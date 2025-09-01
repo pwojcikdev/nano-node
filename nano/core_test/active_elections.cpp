@@ -20,7 +20,9 @@
 
 #include <gtest/gtest.h>
 
+#include <future>
 #include <numeric>
+#include <random>
 
 using namespace std::chrono_literals;
 
@@ -1698,4 +1700,128 @@ TEST (active_elections, transition_hinted_to_priority)
 	ASSERT_EQ (1, node.stats.count (nano::stat::type::active_elections, nano::stat::detail::transition_priority));
 	ASSERT_EQ (0, node.active.size (nano::election_behavior::hinted));
 	ASSERT_EQ (1, node.active.size (nano::election_behavior::priority));
+}
+
+TEST (active_elections, cementing_race_conditions)
+{
+	nano::test::system system;
+	nano::node_config config = system.default_config ();
+
+	// Disable schedulers and backlog scan to have full control
+	config.backlog_scan.enable = false;
+	config.priority_scheduler.enable = false;
+	config.hinted_scheduler.enable = false;
+	config.optimistic_scheduler.enable = false;
+
+	auto & node = *system.add_node (config);
+
+	// Create many chains with many blocks
+	const int chain_count = 10;
+	const int blocks_per_chain = 20;
+	const auto duration = 2s;
+
+	auto const chains = nano::test::setup_chains (system, node, chain_count,
+	blocks_per_chain,
+	nano::dev::genesis_key,
+	false); // Don't auto-confirm
+
+	// Collect all blocks for random access
+	std::vector<std::shared_ptr<nano::block>> all_blocks;
+	for (auto & [account, blocks] : chains)
+	{
+		all_blocks.insert (all_blocks.end (), blocks.begin (), blocks.end ());
+	}
+
+	std::atomic<bool> stop_tasks{ false };
+
+	// Cement chain heads
+	auto cementing_task = std::async (std::launch::async, [&] () {
+		for (auto & [account, blocks] : chains)
+		{
+			// Cement using the cementing set so that notifications are properly handled
+			node.cementing_set.add (blocks.back ()->hash ());
+			std::this_thread::sleep_for (10ms);
+		}
+	});
+
+	// Insert elections continuously
+	auto insertion_task = std::async (std::launch::async, [&] () {
+		std::random_device rd;
+		std::mt19937 gen (rd ());
+		std::uniform_int_distribution<> dis (0, all_blocks.size () - 1);
+
+		while (!stop_tasks)
+		{
+			auto block = all_blocks[dis (gen)];
+			node.active.insert (block, nano::election_behavior::priority);
+			std::this_thread::yield ();
+		}
+	});
+
+	// Let tasks run for 2 seconds
+	WAIT (2s);
+
+	// Signal tasks to stop
+	stop_tasks = true;
+
+	// Wait for all async tasks to complete
+	cementing_task.wait ();
+	insertion_task.wait ();
+
+	// Wait for all cementing operations to complete
+	ASSERT_TIMELY (5s, node.cementing_set.size () == 0);
+
+	// Verify all blocks were cemented
+	auto transaction = node.ledger.tx_begin_read ();
+	for (auto & [account, blocks] : chains)
+	{
+		for (auto & block : blocks)
+		{
+			ASSERT_TRUE (node.ledger.confirmed.block_exists (transaction, block->hash ()));
+		}
+	}
+
+	// Critical assertion: No elections should remain active
+	ASSERT_TIMELY (5s, node.active.empty ());
+}
+
+TEST (active_elections, cleanup_already_cemented)
+{
+	nano::test::system system;
+
+	nano::node_config config;
+	// Configure checkup interval for faster test execution
+	config.active_elections.checkup_interval = 100ms;
+
+	auto & node = *system.add_node (config);
+
+	// Create a chain of blocks
+	auto const chain_count = 1;
+	auto const blocks_per_chain = 5;
+	auto const chains = nano::test::setup_chains (system, node, chain_count, blocks_per_chain, nano::dev::genesis_key, false);
+
+	auto & [account, blocks] = *chains.begin ();
+	auto last_block = blocks.back ();
+
+	// First, cement the block through direct ledger confirmation process, skips callbacks
+	{
+		auto transaction = node.ledger.tx_begin_write ();
+		node.ledger.confirm (transaction, last_block->hash ());
+	}
+
+	// Verify the block is actually cemented
+	ASSERT_TRUE (node.ledger.confirmed.block_exists (node.ledger.tx_begin_read (), last_block->hash ()));
+
+	// Now start an election for the already cemented block
+	auto election = node.active.insert (last_block, nano::election_behavior::priority);
+	ASSERT_NE (nullptr, election.election);
+
+	// Wait for the cleanup thread to detect and cancel the election
+	// The cleanup thread runs every checkup_interval (100ms) and only cancels elections
+	// that have been running for at least 3 * aec_loop_interval (3 * 50ms = 150ms by default)
+	ASSERT_TIMELY (5s, node.active.empty ());
+
+	// Verify that the election was cancelled by the checkup thread
+	ASSERT_GT (node.stats.count (nano::stat::type::active_elections, nano::stat::detail::cancel_checkup), 0)
+	<< "Expected election to be cancelled by checkup thread";
 }

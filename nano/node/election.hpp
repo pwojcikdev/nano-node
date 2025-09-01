@@ -77,7 +77,7 @@ private: // State management
 	static unsigned constexpr active_request_count_min = 2;
 	nano::election_state state_m{ election_state::passive };
 
-	std::chrono::steady_clock::duration state_start{ std::chrono::steady_clock::now ().time_since_epoch () };
+	std::chrono::steady_clock::time_point state_start{ std::chrono::steady_clock::now () };
 
 	// These are modified while not holding the mutex from transition_time only
 	std::chrono::steady_clock::time_point last_block{};
@@ -103,6 +103,7 @@ public: // Status
 	nano::election_extended_status current_status () const;
 	std::shared_ptr<nano::block> winner () const;
 	std::chrono::milliseconds duration () const;
+
 	std::atomic<unsigned> confirmation_request_count{ 0 };
 	std::atomic<unsigned> vote_broadcast_count{ 0 };
 
@@ -140,9 +141,15 @@ public: // Interface
 	nano::vote_info get_last_vote (nano::account const & account);
 	void set_last_vote (nano::account const & account, nano::vote_info vote_info);
 	nano::election_status get_status () const;
+
 	std::chrono::steady_clock::time_point get_election_start () const
 	{
 		return election_start;
+	}
+	std::chrono::steady_clock::time_point get_state_start () const
+	{
+		nano::lock_guard<nano::mutex> guard{ mutex };
+		return state_start;
 	}
 
 private: // Dependencies

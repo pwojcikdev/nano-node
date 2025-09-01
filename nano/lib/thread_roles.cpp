@@ -49,6 +49,9 @@ std::string nano::thread_role::get_string (nano::thread_role::name role)
 		case nano::thread_role::name::aec_loop:
 			thread_role_name_string = "AEC";
 			break;
+		case nano::thread_role::name::aec_checkup:
+			thread_role_name_string = "AEC checkup";
+			break;
 		case nano::thread_role::name::aec_notifications:
 			thread_role_name_string = "AEC notif";
 			break;

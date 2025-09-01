@@ -1,3 +1,5 @@
+#include "nano/secure/ledger_set_confirmed.hpp"
+
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/enum_util.hpp>
@@ -116,6 +118,11 @@ void nano::active_elections::start ()
 		nano::thread_role::set (nano::thread_role::name::aec_loop);
 		run ();
 	});
+
+	checkup_thread = std::thread ([this] () {
+		nano::thread_role::set (nano::thread_role::name::aec_checkup);
+		run_checkup ();
+	});
 }
 
 void nano::active_elections::stop ()
@@ -125,10 +132,8 @@ void nano::active_elections::stop ()
 		stopped = true;
 	}
 	condition.notify_all ();
-	if (thread.joinable ())
-	{
-		thread.join ();
-	}
+	join_or_pass (thread);
+	join_or_pass (checkup_thread);
 	workers.stop ();
 
 	clear ();
@@ -421,6 +426,11 @@ auto nano::active_elections::block_cemented (std::shared_ptr<nano::block> const 
 	node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::cemented);
 	node.stats.inc (nano::stat::type::active_elections_cemented, to_stat_detail (status.type));
 
+	node.logger.debug (nano::log::type::active_elections, "Cemented root: {} with block: {} (status: {})",
+	block->qualified_root (),
+	block->hash (),
+	to_string (status.type));
+
 	node.logger.trace (nano::log::type::active_elections, nano::log::detail::active_cemented,
 	nano::log::arg{ "block", block },
 	nano::log::arg{ "confirmation_root", confirmation_root },
@@ -522,6 +532,8 @@ void nano::active_elections::tick_elections (nano::unique_lock<nano::mutex> & lo
 
 		for (auto const & election : stale_elections)
 		{
+			// debug_assert (!node.ledger.confirmed.block_exists (transaction, election->winner ()->hash ()));
+
 			node.logger.debug (nano::log::type::active_elections, "Bootstrapping account: {} with stale election with root: {}, blocks: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
 			election->account,
 			election->qualified_root,
@@ -563,6 +575,79 @@ void nano::active_elections::run ()
 			condition.wait_for (lock, node.network_params.network.aec_loop_interval / 2, [this] {
 				return stopped || predicate ();
 			});
+		}
+	}
+}
+
+void nano::active_elections::checkup_elections (nano::unique_lock<nano::mutex> & lock)
+{
+	auto all_elections = index.list ();
+
+	lock.unlock ();
+
+	auto transaction = node.ledger.tx_begin_read ();
+
+	auto should_cancel = [&] (std::shared_ptr<nano::election> const & election) {
+		auto const target = node.ledger.any.block_successor (transaction, election->qualified_root);
+		if (target)
+		{
+			// Cancel if the election's block is already cemented
+			return node.ledger.confirmed.block_exists (transaction, *target);
+		}
+		else
+		{
+			// No successor means the block is not in the ledger, rather unexpected
+			return true; // Cancel the election
+		}
+	};
+
+	auto const now = std::chrono::steady_clock::now ();
+	auto const min_duration = node.network_params.network.aec_loop_interval * 3;
+
+	for (auto const & election : all_elections)
+	{
+		// Only cancel elections if they have been running for a minimum duration of time
+		// Usually the normal cemented callback will handle the cleanup
+		if ((now - election->get_state_start ()) > min_duration && should_cancel (election))
+		{
+			bool cancelled = election->cancel ();
+			if (cancelled)
+			{
+				node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::cancel_checkup);
+				node.logger.debug (nano::log::type::active_elections, "Checkup cancelled election for root: {} with blocks: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
+				election->qualified_root,
+				fmt::join (election->blocks_hashes (), ", "), // TODO: Lazy eval
+				to_string (election->behavior ()),
+				to_string (election->state ()),
+				election->voter_count (),
+				election->block_count (),
+				election->duration ().count ());
+			}
+		}
+	}
+}
+
+void nano::active_elections::run_checkup ()
+{
+	nano::unique_lock<nano::mutex> lock{ mutex };
+	while (!stopped)
+	{
+		condition.wait_for (lock, config.checkup_interval, [this] {
+			return stopped;
+		});
+
+		if (stopped)
+		{
+			return;
+		}
+
+		if (!index.empty ())
+		{
+			node.stats.inc (nano::stat::type::active, nano::stat::detail::loop_checkup);
+
+			checkup_elections (lock);
+			debug_assert (!lock.owns_lock ());
+			lock.lock ();
 		}
 	}
 }
@@ -637,7 +722,7 @@ std::vector<std::shared_ptr<nano::election>> nano::active_elections::list_active
 		{
 			break;
 		}
-		result_l.push_back (entry.election);
+		result_l.push_back (entry);
 	}
 	return result_l;
 }
@@ -776,6 +861,11 @@ nano::stat::type nano::to_stat_type (nano::election_state state)
 	}
 	debug_assert (false);
 	return {};
+}
+
+std::string_view nano::to_string (nano::election_status_type type)
+{
+	return nano::enum_util::name (type);
 }
 
 nano::stat::detail nano::to_stat_detail (nano::election_status_type type)
