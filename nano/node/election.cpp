@@ -50,7 +50,7 @@ void nano::election::confirm_once (nano::unique_lock<nano::mutex> & lock)
 
 	if (just_confirmed)
 	{
-		status.election_end = std::chrono::duration_cast<std::chrono::milliseconds> (std::chrono::system_clock::now ().time_since_epoch ());
+		status.election_end = std::chrono::system_clock::now (); // Timestamp as system time
 		status.election_duration = std::chrono::duration_cast<std::chrono::milliseconds> (std::chrono::steady_clock::now () - election_start);
 		status.confirmation_request_count = confirmation_request_count;
 		status.block_count = nano::narrow_cast<decltype (status.block_count)> (last_blocks.size ());

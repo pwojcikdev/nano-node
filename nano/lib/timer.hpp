@@ -100,29 +100,29 @@ private:
 
 using millis_t = uint64_t;
 
-inline millis_t milliseconds_since_epoch ()
+inline millis_t milliseconds_since_epoch (std::chrono::system_clock::time_point tp = std::chrono::system_clock::now ())
 {
-	return std::chrono::duration_cast<std::chrono::milliseconds> (std::chrono::system_clock::now ().time_since_epoch ()).count ();
+	return std::chrono::duration_cast<std::chrono::milliseconds> (tp.time_since_epoch ()).count ();
 }
 
-inline std::chrono::time_point<std::chrono::system_clock> from_milliseconds_since_epoch (nano::millis_t millis)
+inline std::chrono::system_clock::time_point from_milliseconds_since_epoch (nano::millis_t millis)
 {
-	return std::chrono::time_point<std::chrono::system_clock> (std::chrono::milliseconds{ millis });
+	return std::chrono::system_clock::time_point (std::chrono::milliseconds{ millis });
 }
 
 using seconds_t = uint64_t;
 
-inline seconds_t seconds_since_epoch ()
+inline seconds_t seconds_since_epoch (std::chrono::system_clock::time_point tp = std::chrono::system_clock::now ())
 {
-	return std::chrono::duration_cast<std::chrono::seconds> (std::chrono::system_clock::now ().time_since_epoch ()).count ();
+	return std::chrono::duration_cast<std::chrono::seconds> (tp.time_since_epoch ()).count ();
 }
 
-inline std::chrono::time_point<std::chrono::system_clock> from_seconds_since_epoch (nano::seconds_t seconds)
+inline std::chrono::system_clock::time_point from_seconds_since_epoch (nano::seconds_t seconds)
 {
-	return std::chrono::time_point<std::chrono::system_clock> (std::chrono::seconds{ seconds });
+	return std::chrono::system_clock::time_point (std::chrono::seconds{ seconds });
 }
 
-inline nano::millis_t time_difference (nano::millis_t start, nano::millis_t end)
+inline millis_t time_difference (millis_t start, millis_t end)
 {
 	return end > start ? (end - start) : 0;
 }
