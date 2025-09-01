@@ -46,6 +46,7 @@ void nano::election::confirm_once (nano::unique_lock<nano::mutex> & lock)
 
 	bool just_confirmed = state_m != nano::election_state::confirmed;
 	state_m = nano::election_state::confirmed;
+	state_start = std::chrono::steady_clock::now ();
 
 	if (just_confirmed)
 	{
@@ -153,7 +154,7 @@ bool nano::election::state_change (nano::election_state expected_a, nano::electi
 		if (state_m == expected_a)
 		{
 			state_m = desired_a;
-			state_start = std::chrono::steady_clock::now ().time_since_epoch ();
+			state_start = std::chrono::steady_clock::now ();
 			result = false;
 
 			if (update_action)
@@ -335,7 +336,7 @@ bool nano::election::tick (nano::confirmation_solicitor & solicitor)
 	switch (state_m)
 	{
 		case nano::election_state::passive:
-			if (base_latency () * passive_duration_factor < std::chrono::steady_clock::now ().time_since_epoch () - state_start)
+			if (base_latency () * passive_duration_factor < std::chrono::steady_clock::now () - state_start)
 			{
 				state_change (nano::election_state::passive, nano::election_state::active);
 			}

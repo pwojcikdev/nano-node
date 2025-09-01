@@ -68,12 +68,13 @@ public:
 	size_t size () const;
 	size_t size (nano::election_behavior) const;
 	size_t size (nano::election_behavior, nano::bucket_index) const;
+	bool empty () const;
 
 	// Returns election with the highest priority value. NOTE: Lower "priority" is better
 	using priority_result = std::pair<std::shared_ptr<nano::election>, nano::priority_timestamp>;
 	priority_result highest (nano::election_behavior, nano::bucket_index) const;
 
-	std::deque<entry> list () const;
+	std::deque<std::shared_ptr<nano::election>> list () const;
 
 	// Return list of elections with a timestamp before the specified cutoff time
 	std::deque<std::shared_ptr<nano::election>> list (

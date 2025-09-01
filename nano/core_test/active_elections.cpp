@@ -20,7 +20,9 @@
 
 #include <gtest/gtest.h>
 
+#include <future>
 #include <numeric>
+#include <random>
 
 using namespace std::chrono_literals;
 
@@ -1698,4 +1700,92 @@ TEST (active_elections, transition_hinted_to_priority)
 	ASSERT_EQ (1, node.stats.count (nano::stat::type::active_elections, nano::stat::detail::transition_priority));
 	ASSERT_EQ (0, node.active.size (nano::election_behavior::hinted));
 	ASSERT_EQ (1, node.active.size (nano::election_behavior::priority));
+}
+
+TEST (active_elections, cementing_race_conditions)
+{
+	nano::test::system system;
+	nano::node_config config = system.default_config ();
+
+	// Disable schedulers and backlog scan to have full control
+	config.backlog_scan.enable = false;
+	config.priority_scheduler.enable = false;
+	config.hinted_scheduler.enable = false;
+	config.optimistic_scheduler.enable = false;
+
+	auto & node = *system.add_node (config);
+
+	// Create many chains with many blocks
+	const int chain_count = 10;
+	const int blocks_per_chain = 20;
+	const auto duration = 2s;
+
+	auto const chains = nano::test::setup_chains (system, node, chain_count,
+	blocks_per_chain,
+	nano::dev::genesis_key,
+	false); // Don't auto-confirm
+
+	// Collect all blocks for random access
+	std::vector<std::shared_ptr<nano::block>> all_blocks;
+	for (auto & [account, blocks] : chains)
+	{
+		all_blocks.insert (all_blocks.end (), blocks.begin (), blocks.end ());
+	}
+
+	std::atomic<bool> stop_tasks{ false };
+
+	// Cement chain heads
+	auto cementing_task = std::async (std::launch::async, [&] () {
+		for (auto & [account, blocks] : chains)
+		{
+			nano::test::confirm (node.ledger, blocks.back ());
+			std::this_thread::sleep_for (10ms);
+		}
+	});
+
+	// Insert elections continuously
+	auto insertion_task = std::async (std::launch::async, [&] () {
+		std::random_device rd;
+		std::mt19937 gen (rd ());
+		std::uniform_int_distribution<> dis (0, all_blocks.size () - 1);
+
+		while (!stop_tasks)
+		{
+			auto block = all_blocks[dis (gen)];
+			node.active.insert (block, nano::election_behavior::priority);
+			std::this_thread::yield ();
+		}
+	});
+
+	// Let tasks run for 2 seconds
+	std::this_thread::sleep_for (duration);
+
+	// Signal tasks to stop
+	stop_tasks = true;
+
+	// Wait for all async tasks to complete
+	cementing_task.wait ();
+	insertion_task.wait ();
+
+	// Wait for all cementing operations to complete
+	ASSERT_TIMELY (5s, node.cementing_set.size () == 0);
+
+	// Verify all blocks were cemented
+	auto transaction = node.ledger.tx_begin_read ();
+	for (auto & [account, blocks] : chains)
+	{
+		for (auto & block : blocks)
+		{
+			ASSERT_TRUE (node.ledger.confirmed.block_exists (transaction, block->hash ()));
+		}
+	}
+
+	// Critical assertion: No elections should remain active
+	ASSERT_TIMELY (5s, node.active.empty ());
+
+	// Verify stats show proper race condition handling
+	ASSERT_GT (node.stats.count (nano::stat::type::active_elections,
+			   nano::stat::detail::cancel_checkup),
+	0)
+	<< "Expected some elections to be cancelled due to dependent cementing";
 }
