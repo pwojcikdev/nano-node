@@ -50,6 +50,7 @@ add_executable(
   random.cpp
   random_pool.cpp
   rate_limiting.cpp
+  recently_cache.cpp
   rep_crawler.cpp
   receivable.cpp
   peer_history.cpp

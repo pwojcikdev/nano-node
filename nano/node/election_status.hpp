@@ -33,8 +33,8 @@ public:
 	std::shared_ptr<nano::block> winner;
 	nano::amount tally{ 0 };
 	nano::amount final_tally{ 0 };
-	std::chrono::milliseconds election_end{ std::chrono::duration_cast<std::chrono::milliseconds> (std::chrono::system_clock::now ().time_since_epoch ()) };
-	std::chrono::milliseconds election_duration{ std::chrono::duration_values<std::chrono::milliseconds>::zero () };
+	std::chrono::system_clock::time_point election_end{};
+	std::chrono::milliseconds election_duration{};
 	unsigned confirmation_request_count{ 0 };
 	unsigned vote_broadcast_count{ 0 };
 	unsigned block_count{ 0 };

@@ -54,7 +54,7 @@ void nano::ipc::broker::start ()
 				confirmation->block = nano::ipc::flatbuffers_builder::block_to_union (*status_a.winner, amount_a, is_state_send_a, is_state_epoch_a);
 				confirmation->election_info = std::make_unique<nanoapi::ElectionInfoT> ();
 				confirmation->election_info->duration = status_a.election_duration.count ();
-				confirmation->election_info->time = status_a.election_end.count ();
+				confirmation->election_info->time = milliseconds_since_epoch (status_a.election_end);
 				confirmation->election_info->tally = status_a.tally.to_string_dec ();
 				confirmation->election_info->block_count = status_a.block_count;
 				confirmation->election_info->voter_count = status_a.voter_count;
