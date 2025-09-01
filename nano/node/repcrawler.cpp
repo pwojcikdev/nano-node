@@ -301,7 +301,7 @@ auto nano::rep_crawler::prepare_query_target () const -> hash_root_t
 	for (auto const & block : random_blocks)
 	{
 		// Avoid blocks that could still have live votes coming in
-		if (active.recently_confirmed.exists (block->hash ()))
+		if (active.recently_confirmed.contains (block->hash ()))
 		{
 			continue;
 		}

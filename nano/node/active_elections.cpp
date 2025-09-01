@@ -31,7 +31,7 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 	ledger_notifications{ ledger_notifications_a },
 	cementing_set{ cementing_set_a },
 	recently_confirmed{ config.confirmation_cache },
-	recently_cemented{ config.confirmation_history_size },
+	recently_cemented{ config.confirmation_cache },
 	workers{ 1, nano::thread_role::name::aec_notifications }
 {
 	// Cementing blocks might implicitly confirm dependent elections
@@ -158,7 +158,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 
 	if (!index.exists (root))
 	{
-		if (!recently_confirmed.exists (root))
+		if (!recently_confirmed.contains (root) && !recently_cemented.contains (root))
 		{
 			result.inserted = true;
 
@@ -308,7 +308,7 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 {
 	debug_assert (!mutex.try_lock ());
 	debug_assert (lock.owns_lock ());
-	debug_assert (!election->confirmed () || recently_confirmed.exists (election->qualified_root));
+	debug_assert (!election->confirmed () || recently_confirmed.contains (election->qualified_root));
 
 	auto blocks_l = election->blocks ();
 	node.vote_router.disconnect (*election);
@@ -816,7 +816,6 @@ nano::error nano::active_elections_config::serialize (nano::tomlconfig & toml) c
 	toml.put ("size", size, "Number of active elections. Elections beyond this limit have limited survival time.\nWarning: modifying this value may result in a lower confirmation rate. \ntype:uint64,[250..]");
 	toml.put ("hinted_limit_percentage", hinted_limit_percentage, "Limit of hinted elections as percentage of `active_elections_size` \ntype:uint64");
 	toml.put ("optimistic_limit_percentage", optimistic_limit_percentage, "Limit of optimistic elections as percentage of `active_elections_size`. \ntype:uint64");
-	toml.put ("confirmation_history_size", confirmation_history_size, "Maximum confirmation history size. If tracking the rate of block confirmations, the websocket feature is recommended instead. \ntype:uint64");
 	toml.put ("confirmation_cache", confirmation_cache, "Maximum number of confirmed elections kept in cache to prevent restarting an election. \ntype:uint64");
 	toml.put ("max_election_winners", max_election_winners, "Maximum size of election winner details set. \ntype:uint64");
 	toml.put ("bootstrap_stale_threshold", bootstrap_stale_threshold.count (), "Time after which additional bootstrap attempts are made to find missing blocks for an election. \ntype:seconds");
@@ -828,7 +827,6 @@ nano::error nano::active_elections_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("size", size);
 	toml.get ("hinted_limit_percentage", hinted_limit_percentage);
 	toml.get ("optimistic_limit_percentage", optimistic_limit_percentage);
-	toml.get ("confirmation_history_size", confirmation_history_size);
 	toml.get ("confirmation_cache", confirmation_cache);
 	toml.get ("max_election_winners", max_election_winners);
 	toml.get_duration ("bootstrap_stale_threshold", bootstrap_stale_threshold);

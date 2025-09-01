@@ -2062,7 +2062,9 @@ void nano::json_handler::confirmation_history ()
 	}
 	if (!ec)
 	{
-		for (auto const & status : node.active.recently_cemented.list ())
+		// TODO: Allow passing a count parameter to limit the number of results
+		// Default to 2000 for now since it was the previous limit
+		for (auto const & status : node.active.recently_cemented.list (2000))
 		{
 			if (hash.is_zero () || status.winner->hash () == hash)
 			{
@@ -4919,7 +4921,7 @@ void nano::json_handler::wallet_representative_set ()
 				for (auto & account : accounts)
 				{
 					wallet->change_async (
-					account, representative, [] (std::shared_ptr<nano::block> const &) {}, 0, false);
+					account, representative, [] (std::shared_ptr<nano::block> const &) { }, 0, false);
 				}
 			}
 		}

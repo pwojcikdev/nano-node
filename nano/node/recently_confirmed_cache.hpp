@@ -15,11 +15,6 @@ namespace mi = boost::multi_index;
 
 namespace nano
 {
-class container_info_component;
-}
-
-namespace nano
-{
 class recently_confirmed_cache final
 {
 public:
@@ -32,8 +27,8 @@ public:
 	void clear ();
 	std::size_t size () const;
 
-	bool exists (nano::qualified_root const &) const;
-	bool exists (nano::block_hash const &) const;
+	bool contains (nano::qualified_root const &) const;
+	bool contains (nano::block_hash const &) const;
 
 	nano::container_info container_info () const;
 
@@ -44,17 +39,17 @@ private:
 	// clang-format off
 	class tag_hash {};
 	class tag_root {};
-	class tag_sequence {};
+	class tag_sequenced {};
 
-	using ordered_recent_confirmations = boost::multi_index_container<entry_t,
+	using ordered_entries = boost::multi_index_container<entry_t,
 	mi::indexed_by<
-		mi::sequenced<mi::tag<tag_sequence>>,
+		mi::sequenced<mi::tag<tag_sequenced>>,
 		mi::hashed_unique<mi::tag<tag_root>,
 			mi::member<entry_t, nano::qualified_root, &entry_t::first>>,
 		mi::hashed_unique<mi::tag<tag_hash>,
 			mi::member<entry_t, nano::block_hash, &entry_t::second>>>>;
 	// clang-format on
-	ordered_recent_confirmations confirmed;
+	ordered_entries entries;
 
 	std::size_t const max_size;
 

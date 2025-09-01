@@ -86,7 +86,7 @@ std::unordered_map<nano::block_hash, nano::vote_code> nano::vote_router::vote (s
 			}
 			else
 			{
-				if (recently_confirmed.exists (hash))
+				if (recently_confirmed.contains (hash))
 				{
 					results[hash] = nano::vote_code::late;
 				}

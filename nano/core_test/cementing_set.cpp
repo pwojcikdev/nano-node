@@ -180,7 +180,7 @@ TEST (confirmation_callback, confirmed_history)
 		// Confirm send1
 		election->force_confirm ();
 		ASSERT_TIMELY_EQ (10s, node->active.size (), 0);
-		ASSERT_EQ (0, node->active.recently_cemented.list ().size ());
+		ASSERT_EQ (0, node->active.recently_cemented.size ());
 		ASSERT_TRUE (node->active.empty ());
 
 		auto transaction = node->ledger.tx_begin_read ();
@@ -200,7 +200,7 @@ TEST (confirmation_callback, confirmed_history)
 	ASSERT_TIMELY_EQ (10s, node->stats.count (nano::stat::type::confirmation_observer, nano::stat::detail::active_quorum, nano::stat::dir::out), 1);
 
 	// Each block that's confirmed is in the recently_cemented history
-	ASSERT_EQ (2, node->active.recently_cemented.list ().size ());
+	ASSERT_EQ (2, node->active.recently_cemented.size ());
 	ASSERT_TRUE (node->active.empty ());
 
 	// Confirm the callback is not called under this circumstance
