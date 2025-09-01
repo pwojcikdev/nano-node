@@ -274,7 +274,7 @@ bool nano::bounded_backlog::should_rollback (nano::block_hash const & hash) cons
 	{
 		return false;
 	}
-	if (node.active.recently_confirmed.exists (hash))
+	if (node.active.recently_confirmed.contains (hash))
 	{
 		return false;
 	}

@@ -37,10 +37,8 @@ public:
 	std::size_t hinted_limit_percentage{ 20 };
 	// Limit of optimistic elections as percentage of `active_elections_size`
 	std::size_t optimistic_limit_percentage{ 10 };
-	// Maximum confirmation history size
-	std::size_t confirmation_history_size{ 2048 };
 	// Maximum cache size for recently_confirmed
-	std::size_t confirmation_cache{ 65536 };
+	std::size_t confirmation_cache{ 1024 * 64 };
 	// Maximum size of election winner details set
 	std::size_t max_election_winners{ 1024 * 16 };
 

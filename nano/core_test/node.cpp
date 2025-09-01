@@ -1605,7 +1605,7 @@ TEST (node, block_confirm)
 	ASSERT_TIMELY (5s, election = node2.active.election (send1_copy->qualified_root ()));
 	// Make node2 genesis representative so it can vote
 	system.wallet (1)->insert_adhoc (nano::dev::genesis_key.prv);
-	ASSERT_TIMELY_EQ (10s, node1.active.recently_cemented.list ().size (), 1);
+	ASSERT_TIMELY_EQ (10s, node1.active.recently_cemented.size (), 1);
 }
 
 TEST (node, confirm_quorum)
