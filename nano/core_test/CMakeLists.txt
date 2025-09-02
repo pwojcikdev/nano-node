@@ -54,6 +54,7 @@ add_executable(
   rep_crawler.cpp
   receivable.cpp
   peer_history.cpp
+        priority_pool.cpp
   peer_container.cpp
   rep_weight_store.cpp
   scheduler_buckets.cpp
