@@ -158,6 +158,8 @@ add_library(
   scheduler/optimistic.cpp
   scheduler/priority.hpp
   scheduler/priority.cpp
+        scheduler/priority_pool.hpp
+    scheduler/priority_pool.cpp
   telemetry.hpp
   telemetry.cpp
   transport/block_deserializer.hpp
