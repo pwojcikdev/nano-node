@@ -63,7 +63,7 @@ nano::block_hash priority_pool::evict (nano::bucket_index bucket)
 	return nano::block_hash{ 0 }; // Nothing evicted
 }
 
-std::optional<priority_pool::priority_result> priority_pool::top (nano::bucket_index bucket)
+std::optional<priority_pool::priority_result> priority_pool::top (nano::bucket_index bucket) const
 {
 	auto & bucket_priority_index = pool.get<tag_bucket_priority> ();
 	auto range = bucket_priority_index.equal_range (bucket);
@@ -75,6 +75,25 @@ std::optional<priority_pool::priority_result> priority_pool::top (nano::bucket_i
 	}
 
 	return std::nullopt;
+}
+
+std::map<nano::bucket_index, priority_pool::priority_result> priority_pool::top_all () const
+{
+	std::map<nano::bucket_index, priority_result> result;
+
+	for (auto const & [bucket, size] : bucket_sizes)
+	{
+		if (size > 0)
+		{
+			auto entry = top (bucket);
+			if (entry)
+			{
+				result[bucket] = *entry;
+			}
+		}
+	}
+
+	return result;
 }
 
 std::optional<priority_pool::priority_result> priority_pool::pop (nano::bucket_index bucket)
@@ -94,6 +113,19 @@ std::optional<priority_pool::priority_result> priority_pool::pop (nano::bucket_i
 	}
 
 	return std::nullopt;
+}
+
+bool priority_pool::erase (nano::block_hash const & hash)
+{
+	auto & hash_index = pool.get<tag_hash> ();
+	if (auto it = hash_index.find (hash); it != hash_index.end ())
+	{
+		auto bucket = it->bucket;
+		hash_index.erase (it);
+		bucket_sizes[bucket]--;
+		return true;
+	}
+	return false;
 }
 
 bool priority_pool::contains (nano::block_hash const & hash) const
