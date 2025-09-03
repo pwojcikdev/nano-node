@@ -249,48 +249,34 @@ std::shared_ptr<nano::transport::test_channel> nano::test::test_channel (nano::n
 	return channel;
 }
 
-std::shared_ptr<nano::election> nano::test::start_election (nano::test::system & system_a, nano::node & node_a, const nano::block_hash & hash_a)
+std::shared_ptr<nano::election> nano::test::start_election (nano::test::system & system, nano::node & node, const nano::block_hash & hash)
 {
-	system_a.deadline_set (5s);
+	system.deadline_set (5s);
 
-	// wait until and ensure that the block is in the ledger
-	auto block_l = node_a.block (hash_a);
-	while (!block_l)
-	{
-		if (system_a.poll ())
-		{
-			return nullptr;
-		}
-		block_l = node_a.block (hash_a);
-	}
+	// Wait until and ensure that the block is in the ledger
+	auto block_l = node.block (hash);
+	debug_assert (block_l);
 
-	node_a.scheduler.manual.push (block_l);
+	auto fut = node.scheduler.manual.push (block_l);
 
-	// wait for the election to appear
-	std::shared_ptr<nano::election> election = node_a.active.election (block_l->qualified_root ());
-	while (!election)
-	{
-		if (system_a.poll ())
-		{
-			return nullptr;
-		}
-		election = node_a.active.election (block_l->qualified_root ());
-	}
+	// Wait for the block to be scheduled
+	auto status = fut.wait_for (5s);
+	debug_assert (status == std::future_status::ready);
 
-	election->transition_active ();
+	auto election = fut.get ();
 	return election;
 }
 
-bool nano::test::start_elections (nano::test::system & system_a, nano::node & node_a, std::vector<nano::block_hash> const & hashes_a, bool const forced_a)
+bool nano::test::start_elections (nano::test::system & system, nano::node & node, std::vector<nano::block_hash> const & hashes, bool const forced)
 {
-	for (auto const & hash_l : hashes_a)
+	for (auto const & hash_l : hashes)
 	{
-		auto election = nano::test::start_election (system_a, node_a, hash_l);
+		auto election = start_election (system, node, hash_l);
 		if (!election)
 		{
 			return false;
 		}
-		if (forced_a)
+		if (forced)
 		{
 			election->force_confirm ();
 		}
@@ -298,9 +284,9 @@ bool nano::test::start_elections (nano::test::system & system_a, nano::node & no
 	return true;
 }
 
-bool nano::test::start_elections (nano::test::system & system_a, nano::node & node_a, std::vector<std::shared_ptr<nano::block>> const & blocks_a, bool const forced_a)
+bool nano::test::start_elections (nano::test::system & system, nano::node & node, std::vector<std::shared_ptr<nano::block>> const & blocks, bool const forced_a)
 {
-	return nano::test::start_elections (system_a, node_a, blocks_to_hashes (blocks_a), forced_a);
+	return start_elections (system, node, blocks_to_hashes (blocks), forced_a);
 }
 
 nano::account_info nano::test::account_info (nano::node const & node, nano::account const & acc)
