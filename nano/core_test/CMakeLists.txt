@@ -23,6 +23,7 @@ add_executable(
   distributed_work.cpp
   election.cpp
   election_scheduler.cpp
+        election_tracker.cpp
   enums.cpp
   epochs.cpp
   fair_queue.cpp
