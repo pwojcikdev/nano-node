@@ -134,10 +134,8 @@ TEST (active_elections, confirm_frontier)
 		auto & node1 = *system.add_node (node_config, node_flags);
 		system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 
-		// we cannot use the same block instance on 2 different nodes, so make a copy
-		auto send_copy = builder.make_block ().from (*send).build ();
-		ASSERT_TRUE (nano::test::process (node1, { send_copy }));
-		nano::test::confirm (node1.ledger, send_copy);
+		ASSERT_TRUE (nano::test::process (node1, { send->clone () }));
+		nano::test::confirm (node1.ledger, send->hash ());
 	}
 
 	// The rep crawler would otherwise request confirmations in order to find representatives
@@ -149,13 +147,14 @@ TEST (active_elections, confirm_frontier)
 	// start node2 later so that we do not get the gossip traffic
 	auto & node2 = *system.add_node (node_config2, node_flags2);
 
+	// Start election before adding representative to rep crawler
+	ASSERT_EQ (nano::block_status::progress, node2.process (send));
+	ASSERT_TIMELY (5s, !node2.active.empty ());
+
 	// Add representative to disabled rep crawler
 	auto peers (node2.network.random_set (1));
 	ASSERT_FALSE (peers.empty ());
 	node2.rep_crawler.force_add_rep (nano::dev::genesis_key.pub, *peers.begin ());
-
-	ASSERT_EQ (nano::block_status::progress, node2.process (send));
-	ASSERT_TIMELY (5s, !node2.active.empty ());
 
 	// Save election to check request count afterwards
 	std::shared_ptr<nano::election> election2;
@@ -1551,9 +1550,13 @@ TEST (active_elections, broadcast_block_on_activation)
 	// Deactivates elections on both nodes.
 	config1.active_elections.size = 0;
 	config1.bootstrap.enable = false;
+	config1.priority_scheduler.enable = false;
+	config1.optimistic_scheduler.enable = false;
 	nano::node_config config2 = system.default_config ();
 	config2.active_elections.size = 0;
 	config2.bootstrap.enable = false;
+	config2.priority_scheduler.enable = false;
+	config2.optimistic_scheduler.enable = false;
 	nano::node_flags flags;
 	// Disables bootstrap listener to make sure the block won't be shared by this channel.
 	flags.disable_bootstrap_listener = true;
