@@ -6,39 +6,42 @@
 
 #include <boost/optional.hpp>
 
+#include <condition_variable>
 #include <deque>
 #include <memory>
-#include <mutex>
+#include <thread>
 
 namespace nano::scheduler
 {
-class buckets;
-
 class manual final
 {
-	std::deque<std::tuple<std::shared_ptr<nano::block>, boost::optional<nano::uint128_t>, nano::election_behavior>> queue;
-	nano::node & node;
-	mutable nano::mutex mutex;
-	nano::condition_variable condition;
-	bool stopped{ false };
-	std::thread thread;
-	void notify ();
-	bool predicate () const;
-	void run ();
-
 public:
-	explicit manual (nano::node & node);
+	explicit manual (nano::node &);
 	~manual ();
 
 	void start ();
 	void stop ();
 
-	// Manually start an election for a block
-	// Call action with confirmed block, may be different than what we started with
 	void push (std::shared_ptr<nano::block> const &, boost::optional<nano::uint128_t> const & = boost::none);
 
 	bool contains (nano::block_hash const &) const;
 
 	nano::container_info container_info () const;
+
+private:
+	bool predicate () const;
+	void notify ();
+	void run ();
+
+private: // Dependencies
+	nano::node & node;
+
+private:
+	std::deque<std::tuple<std::shared_ptr<nano::block>, boost::optional<nano::uint128_t>, nano::election_behavior>> queue;
+
+	bool stopped{ false };
+	nano::condition_variable condition;
+	mutable nano::mutex mutex;
+	std::thread thread;
 };
 }
