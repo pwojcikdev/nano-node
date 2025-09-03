@@ -2,19 +2,19 @@
 
 #include <nano/lib/numbers.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/scheduler/bucket.hpp>
+#include <nano/node/scheduler/election_tracker.hpp>
+#include <nano/node/scheduler/priority_pool.hpp>
 
 #include <condition_variable>
 #include <deque>
 #include <map>
 #include <memory>
+#include <queue>
 #include <string>
 #include <thread>
 
 namespace nano::scheduler
 {
-class buckets;
-
 class priority_config
 {
 public:
@@ -23,6 +23,14 @@ public:
 
 public:
 	bool enable{ true };
+	
+	// Pool configuration
+	std::size_t max_blocks{ 1024 * 64 };  // Total shared pool size across all buckets
+	std::size_t reserved_blocks{ 1024 * 8 }; // Reserved blocks per bucket
+	
+	// Election configuration  
+	std::size_t reserved_elections{ 100 }; // Guaranteed election slots per bucket
+	std::size_t max_elections{ 150 }; // Maximum election slots per bucket when AEC has space
 };
 
 class priority final
@@ -43,6 +51,8 @@ public:
 	bool activate_successors (nano::secure::transaction const &, nano::block const &);
 
 	bool contains (nano::block_hash const &) const;
+	bool contains (std::shared_ptr<nano::election> const &) const;
+
 	void notify ();
 	std::size_t size () const;
 	bool empty () const;
@@ -61,17 +71,21 @@ private: // Dependencies
 	nano::logger & logger;
 
 private:
-	void run ();
-	void run_cleanup ();
 	bool predicate () const;
+	bool bucket_activate_predicate (nano::bucket_index, nano::priority_timestamp candidate_timestamp) const;
+	bool bucket_overfill_predicate (nano::bucket_index) const;
+
+	void run ();
+	void run_one (nano::unique_lock<nano::mutex> &);
+	bool activate_bucket (nano::unique_lock<nano::mutex> &, nano::bucket_index);
 
 private:
-	std::map<nano::bucket_index, std::unique_ptr<scheduler::bucket>> buckets;
+	priority_pool pool;
+	election_tracker elections;
 
 	bool stopped{ false };
 	nano::condition_variable condition;
 	mutable nano::mutex mutex;
 	std::thread thread;
-	std::thread cleanup_thread;
 };
 }
