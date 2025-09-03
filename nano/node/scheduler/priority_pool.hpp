@@ -15,6 +15,7 @@
 #include <boost/multi_index_container.hpp>
 
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -45,8 +46,13 @@ public:
 	};
 
 	/// Peek or pop the next priority block (lower priority value goes first) for a given bucket
-	std::optional<priority_result> top (nano::bucket_index bucket);
+	std::optional<priority_result> top (nano::bucket_index bucket) const;
 	std::optional<priority_result> pop (nano::bucket_index bucket);
+
+	/// Get the best priority block for all non-empty buckets
+	std::map<nano::bucket_index, priority_result> top_all () const;
+
+	bool erase (nano::block_hash const & hash);
 
 	/// Evict the worst priority block (highest priority value) from a given bucket
 	nano::block_hash evict (nano::bucket_index bucket);
