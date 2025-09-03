@@ -53,9 +53,6 @@ public:
 class active_elections final
 {
 public:
-	using erased_callback_t = std::function<void (std::shared_ptr<nano::election>)>;
-
-public:
 	active_elections (nano::node &, nano::ledger_notifications &, nano::cementing_set &);
 	~active_elections ();
 
@@ -73,8 +70,7 @@ public:
 	std::shared_ptr<nano::block> const &,
 	nano::election_behavior = nano::election_behavior::priority,
 	nano::bucket_index bucket = 0,
-	nano::priority_timestamp priority = 0,
-	erased_callback_t = nullptr);
+	nano::priority_timestamp priority = 0);
 
 	// Notify this container about a new block (potential fork)
 	bool publish (std::shared_ptr<nano::block> const &);
@@ -111,6 +107,8 @@ public:
 
 public: // Events
 	nano::observer_set<> vacancy_updated;
+	nano::observer_set<std::shared_ptr<nano::election>, nano::bucket_index, nano::priority_timestamp> election_started;
+	nano::observer_set<std::shared_ptr<nano::election>> election_erased;
 
 private:
 	bool predicate () const;
@@ -146,7 +144,6 @@ private: // Dependencies
 public:
 	nano::active_elections_index index;
 
-	std::unordered_map<nano::qualified_root, erased_callback_t> erased_callbacks;
 
 	nano::recently_confirmed_cache recently_confirmed;
 	nano::recently_cemented_cache recently_cemented;
