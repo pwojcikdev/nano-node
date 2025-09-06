@@ -34,9 +34,15 @@ void run (std::filesystem::path const & data_path, std::vector<std::string> cons
 
 	nano::network_params network_params{ nano::network_constants::active_network };
 	nano::rpc_config rpc_config{ network_params.network };
-	auto error = nano::read_rpc_config_toml (data_path, rpc_config, config_overrides);
-	if (!error)
+	try
 	{
+		rpc_config = nano::load_rpc_config (data_path, config_overrides);
+	}
+	catch (std::exception const & ex)
+	{
+		std::cerr << "Error deserializing RPC config: " << ex.what () << std::endl;
+		std::exit (1);
+	}
 		std::shared_ptr<boost::asio::io_context> io_ctx = std::make_shared<boost::asio::io_context> ();
 
 		runner = std::make_unique<nano::thread_runner> (io_ctx, logger, rpc_config.rpc_process.io_threads, nano::thread_role::name::io_daemon);

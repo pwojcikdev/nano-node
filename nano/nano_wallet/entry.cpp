@@ -179,11 +179,14 @@ public:
 					{
 						// Launch rpc in-process
 						nano::rpc_config rpc_config{ config.node.network_params.network };
-						error = nano::read_rpc_config_toml (data_path, rpc_config, flags.rpc_config_overrides);
-						if (error)
+						try
+						{
+							rpc_config = nano::load_rpc_config (data_path, flags.rpc_config_overrides);
+						}
+						catch (std::exception const & ex)
 						{
 							splash->hide ();
-							show_error (error.get_message ());
+							show_error (ex.what ());
 							std::exit (1);
 						}
 						rpc_handler = std::make_unique<nano::inprocess_rpc_handler> (*node, ipc, config.rpc);

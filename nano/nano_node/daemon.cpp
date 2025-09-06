@@ -150,9 +150,13 @@ void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flag
 
 				// Launch rpc in-process
 				nano::rpc_config rpc_config{ config.node.network_params.network };
-				if (auto error = nano::read_rpc_config_toml (data_path, rpc_config, flags.rpc_config_overrides))
+				try
 				{
-					logger.critical (nano::log::type::daemon, "Error deserializing RPC config: {}", error.get_message ());
+					rpc_config = nano::load_rpc_config (data_path, flags.rpc_config_overrides);
+				}
+				catch (std::exception const & ex)
+				{
+					logger.critical (nano::log::type::daemon, "Error deserializing RPC config: {}", ex.what ());
 					std::exit (1);
 				}
 
