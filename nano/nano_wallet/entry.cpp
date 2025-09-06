@@ -94,15 +94,21 @@ public:
 		QApplication::processEvents ();
 
 		nano::network_params network_params{ nano::network_constants::active_network };
-		nano::daemon_config config{ data_path, network_params };
+		nano::daemon_config config;
 		nano::wallet_config wallet_config;
 
-		auto error = nano::read_node_config_toml (data_path, config, flags.config_overrides);
-		if (!error)
+		nano::error error;
+		try
 		{
-			error = read_wallet_config (wallet_config, data_path);
+			config = nano::load_node_config (data_path, network_params, flags.config_overrides);
 		}
-
+		catch (std::exception const & ex)
+		{
+			std::cerr << "Error deserializing config: " << ex.what () << std::endl;
+			std::exit (1);
+		}
+		
+		error = read_wallet_config (wallet_config, data_path);
 		if (!error)
 		{
 			error = nano::flags_config_conflicts (flags, config.node);

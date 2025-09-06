@@ -25,5 +25,5 @@ public:
 	std::filesystem::path data_path;
 };
 
-nano::error read_node_config_toml (std::filesystem::path const &, nano::daemon_config & config_a, std::vector<std::string> const & config_overrides = std::vector<std::string> ());
+nano::daemon_config load_node_config (std::filesystem::path const & data_path, nano::network_params const & network_params, std::vector<std::string> const & config_overrides = {});
 }

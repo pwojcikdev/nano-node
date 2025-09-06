@@ -78,10 +78,14 @@ void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flag
 	std::unique_ptr<nano::thread_runner> runner;
 
 	nano::network_params network_params{ nano::network_constants::active_network };
-	nano::daemon_config config{ data_path, network_params };
-	if (auto error = nano::read_node_config_toml (data_path, config, flags.config_overrides))
+	nano::daemon_config config;
+	try
 	{
-		logger.critical (nano::log::type::daemon, "Error deserializing node config: {}", error.get_message ());
+		config = nano::load_node_config (data_path, network_params, flags.config_overrides);
+	}
+	catch (std::exception const & ex)
+	{
+		logger.critical (nano::log::type::daemon, "Error deserializing node config: {}", ex.what ());
 		std::exit (1);
 	}
 	if (auto error = nano::flags_config_conflicts (flags, config.node))

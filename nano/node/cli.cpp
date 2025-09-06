@@ -803,16 +803,19 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 		nano::tomlconfig default_toml;
 		nano::tomlconfig current_toml;
 		nano::daemon_config default_config{ data_path, network_params };
-		nano::daemon_config current_config{ data_path, network_params };
+		nano::daemon_config current_config;
 
 		std::vector<std::string> config_overrides;
-		auto error = nano::read_node_config_toml (data_path, current_config, config_overrides);
-		if (error)
+		try
+		{
+			current_config = nano::load_node_config (data_path, network_params, config_overrides);
+		}
+		catch (std::exception const &)
 		{
 			std::cerr << "Could not read existing config file\n";
 			ec = nano::error_cli::reading_config;
 		}
-		else
+		if (ec != nano::error_cli::reading_config)
 		{
 			current_config.serialize_toml (current_toml);
 			default_config.serialize_toml (default_toml);
@@ -1443,7 +1446,7 @@ void reset_confirmation_heights (nano::store::write_transaction const & transact
 bool is_using_rocksdb (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::error_code & ec)
 {
 	nano::network_params network_params{ nano::network_constants::active_network };
-	nano::daemon_config config{ data_path, network_params };
+	nano::daemon_config config;
 
 	// Config overriding
 	auto config_arg (vm.find ("config"));
@@ -1453,13 +1456,12 @@ bool is_using_rocksdb (std::filesystem::path const & data_path, boost::program_o
 		config_overrides = nano::config_overrides (config_arg->second.as<std::vector<nano::config_key_value_pair>> ());
 	}
 
-	// config override...
-	auto error = nano::read_node_config_toml (data_path, config, config_overrides);
-	if (!error)
+	try
 	{
+		config = nano::load_node_config (data_path, network_params, config_overrides);
 		return config.node.rocksdb_config.enable;
 	}
-	else
+	catch (std::exception const &)
 	{
 		ec = nano::error_cli::reading_config;
 	}

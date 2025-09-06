@@ -1194,8 +1194,16 @@ int main (int argc, char * const * argv)
 			{
 				config_overrides = nano::config_overrides (config->second.as<std::vector<nano::config_key_value_pair>> ());
 			}
-			nano::daemon_config daemon_config{ data_path, network_params };
-			auto error = nano::read_node_config_toml (data_path, daemon_config, config_overrides);
+			nano::daemon_config daemon_config;
+			try
+			{
+				daemon_config = nano::load_node_config (data_path, network_params, config_overrides);
+			}
+			catch (std::exception const & ex)
+			{
+				std::cerr << "Error deserializing config: " << ex.what () << std::endl;
+				std::exit (1);
+			}
 
 			nano::node_config config1 = daemon_config.node;
 			config1.peering_port = 24000;

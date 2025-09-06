@@ -999,7 +999,7 @@ TEST (toml_config, daemon_read_config)
 {
 	auto path (nano::unique_path ());
 	std::filesystem::create_directories (path);
-	nano::daemon_config config;
+	nano::network_params network_params{ nano::network_constants::active_network };
 	std::vector<std::string> invalid_overrides1{ "node.max_work_generate_multiplier=0" };
 	std::string expected_message1{ "max_work_generate_multiplier must be greater than or equal to 1" };
 
@@ -1008,16 +1008,26 @@ TEST (toml_config, daemon_read_config)
 
 	// Reading when there is no config file
 	ASSERT_FALSE (std::filesystem::exists (nano::get_node_toml_config_path (path)));
-	ASSERT_FALSE (nano::read_node_config_toml (path, config));
+	ASSERT_NO_THROW (nano::load_node_config (path, network_params));
 	{
-		auto error = nano::read_node_config_toml (path, config, invalid_overrides1);
-		ASSERT_TRUE (error);
-		ASSERT_EQ (error.get_message (), expected_message1);
+		ASSERT_THROW ({
+			nano::load_node_config (path, network_params, invalid_overrides1);
+		}, std::runtime_error);
+		try {
+			nano::load_node_config (path, network_params, invalid_overrides1);
+		} catch (std::runtime_error const & ex) {
+			ASSERT_EQ (std::string (ex.what ()), expected_message1);
+		}
 	}
 	{
-		auto error = nano::read_node_config_toml (path, config, invalid_overrides2);
-		ASSERT_TRUE (error);
-		ASSERT_EQ (error.get_message (), expected_message2);
+		ASSERT_THROW ({
+			nano::load_node_config (path, network_params, invalid_overrides2);
+		}, std::runtime_error);
+		try {
+			nano::load_node_config (path, network_params, invalid_overrides2);
+		} catch (std::runtime_error const & ex) {
+			ASSERT_EQ (std::string (ex.what ()), expected_message2);
+		}
 	}
 
 	// Create an empty config
@@ -1026,16 +1036,26 @@ TEST (toml_config, daemon_read_config)
 
 	// Reading when there is a config file
 	ASSERT_TRUE (std::filesystem::exists (nano::get_node_toml_config_path (path)));
-	ASSERT_FALSE (nano::read_node_config_toml (path, config));
+	ASSERT_NO_THROW (nano::load_node_config (path, network_params));
 	{
-		auto error = nano::read_node_config_toml (path, config, invalid_overrides1);
-		ASSERT_TRUE (error);
-		ASSERT_EQ (error.get_message (), expected_message1);
+		ASSERT_THROW ({
+			nano::load_node_config (path, network_params, invalid_overrides1);
+		}, std::runtime_error);
+		try {
+			nano::load_node_config (path, network_params, invalid_overrides1);
+		} catch (std::runtime_error const & ex) {
+			ASSERT_EQ (std::string (ex.what ()), expected_message1);
+		}
 	}
 	{
-		auto error = nano::read_node_config_toml (path, config, invalid_overrides2);
-		ASSERT_TRUE (error);
-		ASSERT_EQ (error.get_message (), expected_message2);
+		ASSERT_THROW ({
+			nano::load_node_config (path, network_params, invalid_overrides2);
+		}, std::runtime_error);
+		try {
+			nano::load_node_config (path, network_params, invalid_overrides2);
+		} catch (std::runtime_error const & ex) {
+			ASSERT_EQ (std::string (ex.what ()), expected_message2);
+		}
 	}
 }
 
