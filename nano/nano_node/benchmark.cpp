@@ -415,10 +415,10 @@ void throughput_benchmark::measure_processing_performance (std::deque<std::share
 	std::cout << fmt::format ("Processing completed in {:.2f}s ({} blocks/sec)\n",
 	time_us / 1000000.0, total_blocks * 1000000 / time_us);
 
-	std::cout << fmt::format ("Database batch stats: optimistic: {}, optimistic retries: {}, pessimistic: {}\n",
-	node->stats.count (nano::stat::type::writer_block_processor, nano::stat::detail::optimistic),
-	node->stats.count (nano::stat::type::writer_block_processor, nano::stat::detail::optimistic_retry),
-	node->stats.count (nano::stat::type::writer_block_processor, nano::stat::detail::pessimistic));
+	// std::cout << fmt::format ("Database batch stats: optimistic: {}, optimistic retries: {}, pessimistic: {}\n",
+	// node->stats.count (nano::stat::type::writer_block_processor, nano::stat::detail::optimistic),
+	// node->stats.count (nano::stat::type::writer_block_processor, nano::stat::detail::optimistic_retry),
+	// node->stats.count (nano::stat::type::writer_block_processor, nano::stat::detail::pessimistic));
 
 	node->stats.clear ();
 }
@@ -483,7 +483,8 @@ void run_benchmark_block_processing (boost::program_options::variables_map const
 
 	std::cout << fmt::format ("Backend: {}\n", node->store.vendor_get ());
 	std::cout << fmt::format ("Using {} block processor threads, batch size: {}\n",
-	node->config.block_processor.threads,
+	// node->config.block_processor.threads,
+	1,
 	node->config.block_processor.batch_size);
 
 	// Wait for node to be ready
