@@ -6,7 +6,10 @@
 #include <nano/lib/thread_runner.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/work_version.hpp>
-#include <nano/nano_node/benchmark.hpp>
+#include <nano/nano_node/benchmarks/benchmark_block_processing.hpp>
+#include <nano/nano_node/benchmarks/benchmark_cementing.hpp>
+#include <nano/nano_node/benchmarks/benchmark_elections.hpp>
+#include <nano/nano_node/benchmarks/benchmark_pipeline.hpp>
 #include <nano/nano_node/daemon.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/cementing_set.hpp>
@@ -134,6 +137,9 @@ int main (int argc, char * const * argv)
 		("debug_profile_sign", "Profile signature generation")
 		("debug_profile_process", "Profile active blocks processing (only for nano_dev_network)")
 		("benchmark_block_processing", "Run block processing throughput benchmark")
+		("benchmark_cementing", "Run cementing throughput benchmark")
+		("benchmark_elections", "Run elections confirmation and cementing benchmark")
+		("benchmark_pipeline", "Run full confirmation pipeline benchmark")
 		("debug_profile_votes", "Profile votes processing (only for nano_dev_network)")
 		("debug_profile_frontiers_confirmation", "Profile frontiers confirmation speed (only for nano_dev_network)")
 		("debug_random_feed", "Generates output to RNG test suites")
@@ -154,6 +160,7 @@ int main (int argc, char * const * argv)
 		("accounts", boost::program_options::value<std::string> (), "Defines <accounts> for throughput benchmark (default 500000)")
 		("iterations", boost::program_options::value<std::string> (), "Defines <iterations> for throughput benchmark (default 10)")
 		("batch_size", boost::program_options::value<std::string> (), "Defines <batch_size> for throughput benchmark (default 250000)")
+		("cementing_mode", boost::program_options::value<std::string> (), "Defines cementing mode for benchmark: 'sequential' or 'root' (default sequential)")
 		("pow_sleep_interval", boost::program_options::value<std::string> (), "Defines the amount to sleep inbetween each pow calculation attempt")
 		("address_column", boost::program_options::value<std::string> (), "Defines which column the addresses are located, 0 indexed (check --debug_output_last_backtrace_dump output)")
 		("silent", "Silent command execution")
@@ -1054,7 +1061,19 @@ int main (int argc, char * const * argv)
 		}
 		else if (vm.count ("benchmark_block_processing"))
 		{
-			nano::cli::run_benchmark_block_processing (vm, data_path);
+			nano::cli::block_processing_benchmark::run (vm, data_path);
+		}
+		else if (vm.count ("benchmark_cementing"))
+		{
+			nano::cli::cementing_benchmark::run (vm, data_path);
+		}
+		else if (vm.count ("benchmark_elections"))
+		{
+			nano::cli::elections_benchmark::run (vm, data_path);
+		}
+		else if (vm.count ("benchmark_pipeline"))
+		{
+			nano::cli::pipeline_benchmark::run (vm, data_path);
 		}
 		else if (vm.count ("debug_profile_votes"))
 		{

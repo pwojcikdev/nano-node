@@ -25,6 +25,7 @@ nano::scheduler::priority::priority (nano::node_config & node_config, nano::node
 		buckets[index] = std::make_unique<scheduler::bucket> (index, node_config.priority_bucket, active, stats);
 	}
 
+	// Do not activate successors if the component is disabled
 	if (!config.enable)
 	{
 		return;
