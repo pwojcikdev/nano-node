@@ -191,10 +191,10 @@ void nano::store::rocksdb::component::open (std::filesystem::path const & path_a
 	}
 	else
 	{
-		s = ::rocksdb::TransactionDB::Open (options_a, ::rocksdb::TransactionDBOptions{}, path_a.string (), column_families, &handles_l, &transaction_db);
-		if (transaction_db)
+		s = ::rocksdb::OptimisticTransactionDB::Open (options_a, path_a.string (), column_families, &handles_l, &optimistic_db);
+		if (optimistic_db)
 		{
-			db.reset (transaction_db);
+			db.reset (optimistic_db);
 		}
 	}
 
@@ -425,8 +425,8 @@ std::vector<rocksdb::ColumnFamilyDescriptor> nano::store::rocksdb::component::cr
 
 nano::store::write_transaction nano::store::rocksdb::component::tx_begin_write ()
 {
-	release_assert (transaction_db != nullptr);
-	return store::write_transaction{ std::make_unique<nano::store::rocksdb::write_transaction_impl> (transaction_db) };
+	release_assert (optimistic_db != nullptr);
+	return store::write_transaction{ std::make_unique<nano::store::rocksdb::write_transaction_impl> (optimistic_db) };
 }
 
 nano::store::read_transaction nano::store::rocksdb::component::tx_begin_read () const
@@ -537,6 +537,7 @@ bool nano::store::rocksdb::component::exists (store::transaction const & transac
 		if constexpr (std::is_same_v<V, ::rocksdb::Transaction *>)
 		{
 			::rocksdb::ReadOptions options;
+			options.snapshot = ptr->GetSnapshot ();
 			options.fill_cache = false;
 			return ptr->Get (options, table_to_column_family (table_a), key_slice, &slice);
 		}
@@ -586,7 +587,6 @@ void nano::store::rocksdb::component::flush_table (nano::tables table_a)
 
 int nano::store::rocksdb::component::get (store::transaction const & transaction_a, tables table_a, nano::store::rocksdb::db_val const & key_a, nano::store::rocksdb::db_val & value_a) const
 {
-	::rocksdb::ReadOptions options;
 	::rocksdb::PinnableSlice slice;
 	auto key_slice = to_slice (key_a);
 	auto handle = table_to_column_family (table_a);
@@ -595,6 +595,8 @@ int nano::store::rocksdb::component::get (store::transaction const & transaction
 		using V = std::remove_cvref_t<decltype (ptr)>;
 		if constexpr (std::is_same_v<V, ::rocksdb::Transaction *>)
 		{
+			::rocksdb::ReadOptions options;
+			options.snapshot = ptr->GetSnapshot ();
 			return ptr->Get (options, handle, key_slice, &slice);
 		}
 		else if constexpr (std::is_same_v<V, ::rocksdb::ReadOptions *>)

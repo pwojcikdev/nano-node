@@ -22,7 +22,7 @@
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/table.h>
-#include <rocksdb/utilities/transaction_db.h>
+#include <rocksdb/utilities/optimistic_transaction_db.h>
 
 namespace nano
 {
@@ -93,7 +93,8 @@ private:
 	nano::store::open_mode const mode;
 	nano::logger & logger;
 	nano::ledger_constants & constants;
-	::rocksdb::TransactionDB * transaction_db = nullptr;
+	// Optimistic transactions are used in write mode
+	::rocksdb::OptimisticTransactionDB * optimistic_db = nullptr;
 	std::unique_ptr<::rocksdb::DB> db;
 	std::vector<std::unique_ptr<::rocksdb::ColumnFamilyHandle>> handles;
 	nano::rocksdb_config rocksdb_config;

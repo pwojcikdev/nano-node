@@ -28,7 +28,8 @@ public:
 	nano::error serialize (nano::tomlconfig & toml) const;
 
 public:
-	size_t batch_size{ 256 };
+	size_t threads{ std::max (1u, nano::hardware_concurrency () / 3) };
+	size_t batch_size{ 64 };
 
 	// Maximum number of blocks to queue from network peers
 	size_t max_peer_queue{ 128 };
@@ -85,7 +86,7 @@ private:
 
 	// Roll back block in the ledger that conflicts with 'block'
 	void rollback_competitor (secure::write_transaction &, nano::block const & block);
-	nano::block_status process_one (secure::write_transaction const &, nano::block_context const &, bool forced = false);
+	nano::block_status process_one (secure::write_transaction &, nano::block_context const &, bool forced = false);
 	void process_batch (nano::unique_lock<nano::mutex> &);
 	std::deque<nano::block_context> next_batch (size_t max_count);
 	nano::block_context next ();
@@ -100,10 +101,12 @@ private:
 	bool stopped{ false };
 	nano::condition_variable condition;
 	mutable nano::mutex mutex{ mutex_identifier (mutexes::block_processor) };
-	boost::thread thread;
+	std::vector<boost::thread> threads;
 
-	nano::interval log_processing_interval;
-	nano::interval log_backlog_interval;
-	nano::interval log_cooldown_interval;
+	nano::interval_mt log_processing_interval;
+	nano::interval_mt log_backlog_interval;
+	nano::interval_mt log_cooldown_interval;
+
+	nano::thread_pool rep_weights_worker;
 };
 }

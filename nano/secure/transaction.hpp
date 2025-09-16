@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/secure/rep_weights.hpp>
 #include <nano/store/transaction.hpp>
 #include <nano/store/write_queue.hpp>
 
@@ -43,6 +44,12 @@ class write_transaction final : public transaction
 	std::promise<void> promise;
 	std::shared_future<void> future{ promise.get_future () };
 
+	// Deferred operations that should be executed after the transaction is committed
+	std::deque<std::function<void ()>> deferred;
+
+public: // Temporarily keeping these here
+	nano::rep_weights_updates rep_weights;
+
 public:
 	write_transaction (nano::store::write_transaction && txn_a, nano::store::write_guard && guard_a) noexcept :
 		guard{ std::move (guard_a) },
@@ -54,6 +61,7 @@ public:
 
 	~write_transaction () override
 	{
+		debug_assert (deferred.empty (), "deferred operations should be processed by extenal executor");
 		if (active ())
 		{
 			commit ();
@@ -70,13 +78,28 @@ public:
 
 	void commit ()
 	{
-		txn.commit ();
-		guard.release ();
-		promise.set_value ();
+		if (active ())
+		{
+			txn.commit ();
+			guard.release ();
+			promise.set_value ();
+		}
+	}
+
+	void abort ()
+	{
+		if (active ())
+		{
+			txn.abort ();
+			guard.release ();
+			promise.set_exception (std::make_exception_ptr (nano::store::transaction_aborted_error ("Transaction aborted")));
+		}
 	}
 
 	void renew ()
 	{
+		release_assert (!active ());
+
 		guard.renew ();
 		txn.renew ();
 		start = std::chrono::steady_clock::now ();
@@ -108,12 +131,25 @@ public:
 
 	bool active () const
 	{
-		return guard.is_owned ();
+		debug_assert (guard.is_owned () == txn.is_active ());
+		return txn.is_active ();
 	}
 
 	std::shared_future<void> get_future () const
 	{
 		return future; // Give a copy of the shared future
+	}
+
+	void defer (std::function<void ()> operation)
+	{
+		debug_assert (active ());
+		deferred.push_back (std::move (operation));
+	}
+
+	auto get_deferred () -> std::deque<std::function<void ()>>
+	{
+		debug_assert (active ());
+		return std::move (deferred); // Move the deferred operations out
 	}
 
 	// Conversion operator to const nano::store::transaction&

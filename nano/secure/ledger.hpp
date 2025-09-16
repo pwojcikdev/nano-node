@@ -41,9 +41,12 @@ public:
 	~ledger ();
 
 	/** Start read-write transaction */
-	secure::write_transaction tx_begin_write (nano::store::writer guard_type = nano::store::writer::generic) const;
+	secure::write_transaction tx_begin_write (nano::store::writer guard_type = nano::store::writer::generic, nano::store::write_strategy strategy = nano::store::write_strategy::pessimistic) const;
 	/** Start read-only transaction */
 	secure::read_transaction tx_begin_read () const;
+
+	/** Attempt optimistic write transaction and if it fails, retry the action with a pessimistic transaction */
+	void tx_optimistic_process (nano::store::writer guard_type, std::function<void (secure::write_transaction &)> const & action) const;
 
 	bool unconfirmed_exists (secure::transaction const &, nano::block_hash const &) const;
 	nano::uint128_t account_receivable (secure::transaction const &, nano::account const &, bool = false) const;
@@ -63,10 +66,10 @@ public:
 	std::deque<std::shared_ptr<nano::block>> random_blocks (secure::transaction const &, size_t count) const;
 	std::optional<nano::pending_info> pending_info (secure::transaction const &, nano::pending_key const & key) const;
 	std::deque<std::shared_ptr<nano::block>> confirm (secure::write_transaction &, nano::block_hash const & hash, size_t max_blocks = 1024 * 128);
-	nano::block_status process (secure::write_transaction const &, std::shared_ptr<nano::block> block);
-	bool rollback (secure::write_transaction const &, nano::block_hash const &, std::deque<std::shared_ptr<nano::block>> & rollback_list, size_t depth = 0, size_t max_depth = nano::ledger_max_rollback_depth ());
-	bool rollback (secure::write_transaction const &, nano::block_hash const &);
-	void update_account (secure::write_transaction const &, nano::account const &, nano::account_info const &, nano::account_info const &);
+	nano::block_status process (secure::write_transaction &, std::shared_ptr<nano::block> block);
+	bool rollback (secure::write_transaction &, nano::block_hash const &, std::deque<std::shared_ptr<nano::block>> & rollback_list, size_t depth = 0, size_t max_depth = nano::ledger_max_rollback_depth ());
+	bool rollback (secure::write_transaction &, nano::block_hash const &);
+	void update_account (secure::write_transaction &, nano::account const &, nano::account_info const &, nano::account_info const &);
 	uint64_t pruning_action (secure::write_transaction &, nano::block_hash const &, uint64_t const);
 	bool dependents_confirmed (secure::transaction const &, nano::block const &) const;
 	bool is_epoch_link (nano::link const &) const;

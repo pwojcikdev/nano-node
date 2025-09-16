@@ -119,10 +119,10 @@ nano::id_dispenser::id_t nano::store::write_transaction::store_id () const
 	return impl->store_id;
 }
 
-void nano::store::write_transaction::commit ()
+bool nano::store::write_transaction::commit ()
 {
 	++current_epoch;
-	impl->commit ();
+	return impl->commit ();
 }
 
 void nano::store::write_transaction::renew ()
@@ -150,4 +150,14 @@ void nano::store::write_transaction::refresh_if_needed (std::chrono::millisecond
 bool nano::store::write_transaction::contains (nano::tables table_a) const
 {
 	return impl->contains (table_a);
+}
+
+void nano::store::write_transaction::abort ()
+{
+	impl->abort ();
+}
+
+bool nano::store::write_transaction::is_active () const
+{
+	return impl && impl->is_active ();
 }

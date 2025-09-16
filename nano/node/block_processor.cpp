@@ -16,10 +16,6 @@
 
 #include <utility>
 
-/*
- * block_processor
- */
-
 nano::block_processor::block_processor (nano::node_config const & node_config_a, nano::ledger & ledger_a, nano::ledger_notifications & ledger_notifications_a, nano::unchecked_map & unchecked_a, nano::stats & stats_a, nano::logger & logger_a) :
 	config{ node_config_a.block_processor },
 	node_config{ node_config_a },
@@ -28,7 +24,8 @@ nano::block_processor::block_processor (nano::node_config const & node_config_a,
 	ledger_notifications{ ledger_notifications_a },
 	unchecked{ unchecked_a },
 	stats{ stats_a },
-	logger{ logger_a }
+	logger{ logger_a },
+	rep_weights_worker{ 1, nano::thread_role::name::rep_weights }
 {
 	queue.max_size_query = [this] (auto const & origin) {
 		switch (origin.source)
@@ -66,20 +63,25 @@ nano::block_processor::block_processor (nano::node_config const & node_config_a,
 nano::block_processor::~block_processor ()
 {
 	// Thread must be stopped before destruction
-	debug_assert (!thread.joinable ());
+	debug_assert (threads.empty ());
 }
 
 void nano::block_processor::start ()
 {
-	debug_assert (!thread.joinable ());
+	debug_assert (threads.empty ());
+
+	rep_weights_worker.start ();
 
 	boost::thread::attributes attrs;
 	attrs.set_stack_size (nano::ledger_thread_stack_size ());
 
-	thread = boost::thread (attrs, [this] () {
-		nano::thread_role::set (nano::thread_role::name::block_processing);
-		run ();
-	});
+	for (auto i = 0u; i < config.threads; ++i)
+	{
+		threads.emplace_back (attrs, [this] () {
+			nano::thread_role::set (nano::thread_role::name::block_processing);
+			run ();
+		});
+	}
 }
 
 void nano::block_processor::stop ()
@@ -89,10 +91,16 @@ void nano::block_processor::stop ()
 		stopped = true;
 	}
 	condition.notify_all ();
-	if (thread.joinable ())
+	for (auto & thread : threads)
 	{
-		thread.join ();
+		if (thread.joinable ())
+		{
+			thread.join ();
+		}
 	}
+	threads.clear ();
+
+	rep_weights_worker.stop ();
 }
 
 // TODO: Remove and replace all checks with calls to size (block_source)
@@ -338,59 +346,123 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 	debug_assert (!mutex.try_lock ());
 	debug_assert (!queue.empty ());
 
+	nano::timer<std::chrono::milliseconds> timer;
+	timer.start ();
+
 	auto batch = next_batch (config.batch_size);
 
 	lock.unlock ();
 
-	auto transaction = ledger.tx_begin_write (nano::store::writer::block_processor);
-
-	nano::timer<std::chrono::milliseconds> timer;
-	timer.start ();
-
-	// Processing blocks
 	size_t number_of_blocks_processed = 0;
 	size_t number_of_forced_processed = 0;
 
 	std::deque<std::pair<nano::block_status, nano::block_context>> processed;
 
-	for (auto & ctx : batch)
-	{
-		auto const hash = ctx.block->hash ();
-		bool const force = ctx.source == nano::block_source::forced;
+	ledger.tx_optimistic_process (nano::store::writer::block_processor, [&, this] (secure::write_transaction & transaction) {
+		processed.clear ();
 
-		transaction.refresh_if_needed ();
+		number_of_blocks_processed = 0;
+		number_of_forced_processed = 0;
 
-		if (force)
+		for (auto const & ctx : batch)
 		{
-			number_of_forced_processed++;
-			rollback_competitor (transaction, *ctx.block);
+			auto const hash = ctx.block->hash ();
+			bool const force = ctx.source == nano::block_source::forced;
+
+			if (force)
+			{
+				number_of_forced_processed++;
+				rollback_competitor (transaction, *ctx.block);
+			}
+
+			number_of_blocks_processed++;
+
+			auto result = process_one (transaction, ctx, force);
+			processed.emplace_back (std::make_pair (result, ctx));
 		}
 
-		number_of_blocks_processed++;
+		// We had rocksdb issues in the past, ensure that rep weights are always consistent
+		ledger.verify_consistency (transaction);
 
-		auto result = process_one (transaction, ctx, force);
-		processed.emplace_back (result, std::move (ctx));
+		// Queue notifications to be dispatched in the background
+		ledger_notifications.notify_processed (transaction, processed, [this, updates = transaction.rep_weights] () mutable {
+			stats.inc (nano::stat::type::block_processor, nano::stat::detail::notify_processed);
+
+			// Submit rep weights updates for processing
+			rep_weights_worker.post ([this, updates = std::move (updates)] () {
+				stats.inc (nano::stat::type::block_processor, nano::stat::detail::rep_weights_update);
+
+				auto transaction = ledger.tx_begin_write (nano::store::writer::rep_weights, nano::store::write_strategy::optimistic);
+				updates.apply (transaction, ledger.rep_weights);
+			});
+		});
+	});
+	// At this point transaction is successfully committed
+
+	// Update unchecked map in batch to avoid locking overhead
+	std::deque<nano::hash_or_account> to_trigger;
+	std::deque<std::pair<nano::hash_or_account, nano::unchecked_info>> to_unchecked;
+	for (auto const & entry : processed)
+	{
+		auto const & [status, context] = entry;
+		auto const & block = context.block;
+
+		switch (status)
+		{
+			case nano::block_status::progress:
+			{
+				to_trigger.push_back (block->hash ());
+
+				/*
+				 * For send blocks check epoch open unchecked (gap pending).
+				 * For state blocks check only send subtype and only if block epoch is not last epoch.
+				 * If epoch is last, then pending entry shouldn't trigger same epoch open block for destination account.
+				 */
+				if (block->type () == nano::block_type::send || (block->type () == nano::block_type::state && block->is_send () && std::underlying_type_t<nano::epoch> (block->sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
+				{
+					to_trigger.push_back (block->destination ());
+				}
+			}
+			break;
+			case nano::block_status::gap_previous:
+			{
+				to_unchecked.push_back (std::make_pair (block->previous (), block));
+			}
+			break;
+			case nano::block_status::gap_source:
+			{
+				release_assert (block->source_field () || block->link_field ());
+				to_unchecked.push_back (std::make_pair (block->source_field ().value_or (block->link_field ().value_or (0).as_block_hash ()), block));
+			}
+			break;
+			case nano::block_status::gap_epoch_open_pending:
+			{
+				// Specific unchecked key starting with epoch open block account public key
+				to_unchecked.push_back (std::make_pair (block->account_field ().value_or (0), block));
+			}
+			break;
+			default:
+				break; // Ignore the rest
+		}
 	}
-
-	// We had rocksdb issues in the past, ensure that rep weights are always consistent
-	ledger.verify_consistency (transaction);
+	unchecked.put_many (to_unchecked);
+	unchecked.trigger_many (to_trigger);
 
 	if (number_of_blocks_processed != 0 && timer.stop () > std::chrono::milliseconds (100))
 	{
-		logger.debug (nano::log::type::block_processor, "Processed {} blocks ({} forced) in {} {}", number_of_blocks_processed, number_of_forced_processed, timer.value ().count (), timer.unit ());
+		logger.debug (nano::log::type::block_processor, "Processed {} blocks ({} forced) in {} {}",
+		number_of_blocks_processed,
+		number_of_forced_processed,
+		timer.value ().count (), timer.unit ());
 	}
-
-	// Queue notifications to be dispatched in the background
-	ledger_notifications.notify_processed (transaction, std::move (processed), [this] {
-		stats.inc (nano::stat::type::block_processor, nano::stat::detail::notify_processed);
-	});
 }
 
-nano::block_status nano::block_processor::process_one (secure::write_transaction const & transaction_a, nano::block_context const & context, bool const forced_a)
+nano::block_status nano::block_processor::process_one (secure::write_transaction & transaction, nano::block_context const & context, bool const forced)
 {
-	auto block = context.block;
+	auto const & block = context.block;
 	auto const hash = block->hash ();
-	nano::block_status result = ledger.process (transaction_a, block);
+
+	nano::block_status result = ledger.process (transaction, block);
 
 	stats.inc (nano::stat::type::block_processor_result, to_stat_detail (result));
 	stats.inc (nano::stat::type::block_processor_source, to_stat_detail (context.source));
@@ -399,42 +471,27 @@ nano::block_status nano::block_processor::process_one (secure::write_transaction
 	nano::log::arg{ "result", result },
 	nano::log::arg{ "source", context.source },
 	nano::log::arg{ "arrival", nano::log::microseconds (context.arrival) },
-	nano::log::arg{ "forced", forced_a },
+	nano::log::arg{ "forced", forced },
 	nano::log::arg{ "block", block });
 
 	switch (result)
 	{
 		case nano::block_status::progress:
 		{
-			unchecked.trigger (hash);
-
-			/*
-			 * For send blocks check epoch open unchecked (gap pending).
-			 * For state blocks check only send subtype and only if block epoch is not last epoch.
-			 * If epoch is last, then pending entry shouldn't trigger same epoch open block for destination account.
-			 */
-			if (block->type () == nano::block_type::send || (block->type () == nano::block_type::state && block->is_send () && std::underlying_type_t<nano::epoch> (block->sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
-			{
-				unchecked.trigger (block->destination ());
-			}
 			break;
 		}
 		case nano::block_status::gap_previous:
 		{
-			unchecked.put (block->previous (), block);
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_previous);
 			break;
 		}
 		case nano::block_status::gap_source:
 		{
-			release_assert (block->source_field () || block->link_field ());
-			unchecked.put (block->source_field ().value_or (block->link_field ().value_or (0).as_block_hash ()), block);
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
 			break;
 		}
 		case nano::block_status::gap_epoch_open_pending:
 		{
-			unchecked.put (block->account_field ().value_or (0), block); // Specific unchecked key starting with epoch open block account public key
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
 			break;
 		}
@@ -520,6 +577,8 @@ nano::block_processor_config::block_processor_config (const nano::network_consta
 
 nano::error nano::block_processor_config::serialize (nano::tomlconfig & toml) const
 {
+	toml.put ("threads", threads, "Number of threads to use for processing. \ntype:uint64");
+	toml.put ("batch_size", batch_size, "Maximum number of blocks to process in a single batch. \ntype:uint64");
 	toml.put ("max_peer_queue", max_peer_queue, "Maximum number of blocks to queue from network peers. \ntype:uint64");
 	toml.put ("max_system_queue", max_system_queue, "Maximum number of blocks to queue from system components (local RPC, bootstrap). \ntype:uint64");
 	toml.put ("priority_live", priority_live, "Priority for live network blocks. Higher priority gets processed more frequently. \ntype:uint64");
@@ -535,6 +594,8 @@ nano::error nano::block_processor_config::serialize (nano::tomlconfig & toml) co
 
 nano::error nano::block_processor_config::deserialize (nano::tomlconfig & toml)
 {
+	toml.get ("threads", threads);
+	toml.get ("batch_size", batch_size);
 	toml.get ("max_peer_queue", max_peer_queue);
 	toml.get ("max_system_queue", max_system_queue);
 	toml.get ("priority_live", priority_live);

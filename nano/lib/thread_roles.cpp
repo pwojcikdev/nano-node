@@ -154,6 +154,9 @@ std::string nano::thread_role::get_string (nano::thread_role::name role)
 		case nano::thread_role::name::scheduler_priority:
 			thread_role_name_string = "Sched Priority";
 			break;
+		case nano::thread_role::name::scheduler_priority_activations:
+			thread_role_name_string = "Sched activ";
+			break;
 		case nano::thread_role::name::stats:
 			thread_role_name_string = "Stats";
 			break;
@@ -201,6 +204,9 @@ std::string nano::thread_role::get_string (nano::thread_role::name role)
 			break;
 		case nano::thread_role::name::pruning:
 			thread_role_name_string = "Pruning";
+			break;
+		case nano::thread_role::name::rep_weights:
+			thread_role_name_string = "Rep weights";
 			break;
 		default:
 			debug_assert (false && "nano::thread_role::get_string unhandled thread role");

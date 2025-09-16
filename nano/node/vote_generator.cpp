@@ -113,6 +113,8 @@ void nano::vote_generator::process_batch (std::deque<queue_entry_t> & batch)
 	};
 
 	auto verify_batch = [this, &verified, &refresh_if_needed] (auto && transaction_variant, auto && batch) {
+		verified.clear ();
+
 		for (auto & [root, hash] : batch)
 		{
 			refresh_if_needed (transaction_variant);
@@ -124,11 +126,37 @@ void nano::vote_generator::process_batch (std::deque<queue_entry_t> & batch)
 		}
 	};
 
+	// Should only do anything with write transactions
+	auto commit_transaction = [&] (auto && transaction_variant) {
+		std::visit ([&] (auto && transaction) { if constexpr (std::is_same_v<std::decay_t<decltype(transaction)>, nano::secure::write_transaction>) { transaction.commit (); } }, transaction_variant);
+	};
+	auto abort_transaction = [&] (auto && transaction_variant) {
+		std::visit ([&] (auto && transaction) { if constexpr (std::is_same_v<std::decay_t<decltype(transaction)>, nano::secure::write_transaction>) { transaction.abort (); } }, transaction_variant);
+	};
+
 	if (is_final)
 	{
-		transaction_variant_t transaction_variant{ ledger.tx_begin_write (nano::store::writer::voting_final) };
-		verify_batch (transaction_variant, batch);
-		// Commit write transaction
+		bool done = false;
+		{
+			transaction_variant_t transaction_variant{ ledger.tx_begin_write (nano::store::writer::voting_final, nano::store::write_strategy::optimistic) };
+			try
+			{
+				verify_batch (transaction_variant, batch);
+				commit_transaction (transaction_variant);
+				stats.inc (stat_type (), nano::stat::detail::optimistic_success);
+				done = true;
+			}
+			catch (nano::store::transaction_conflict_error const & e)
+			{
+				stats.inc (stat_type (), nano::stat::detail::optimistic_failed);
+				abort_transaction (transaction_variant);
+			}
+		}
+		if (!done)
+		{
+			transaction_variant_t transaction_variant{ ledger.tx_begin_write (nano::store::writer::voting_final) };
+			verify_batch (transaction_variant, batch);
+		}
 	}
 	else
 	{

@@ -1,5 +1,6 @@
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/env.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/lib/thread_pool.hpp>
@@ -347,6 +348,33 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 		std::exit (1);
 	}
 
+	// Check for predefined wallet private key
+	if (auto predefined_key = nano::env::get ("NANO_PREDEFINED_WALLET"))
+	{
+		nano::raw_key private_key;
+		if (!private_key.decode_hex (*predefined_key))
+		{
+			logger.debug (nano::log::type::wallet, "Creating predefined wallet with provided private key");
+			auto wallet_id = nano::random_wallet_id ();
+			auto wallet = wallets.create (wallet_id);
+			if (wallet != nullptr)
+			{
+				auto public_key = wallet->insert_adhoc (private_key);
+				logger.info (nano::log::type::wallet, "Successfully created predefined wallet: {} with account: {}",
+				wallet_id.to_string (),
+				public_key.to_account ());
+			}
+			else
+			{
+				logger.error (nano::log::type::wallet, "Failed to create predefined wallet");
+			}
+		}
+		else
+		{
+			logger.error (nano::log::type::wallet, "Invalid private key format in NANO_PREDEFINED_WALLET environment variable");
+		}
+	}
+
 	auto reps = wallets.reps ();
 	if (reps.half_principal)
 	{
@@ -494,7 +522,7 @@ void nano::node::process_active (std::shared_ptr<nano::block> const & incoming)
 	block_processor.add (incoming);
 }
 
-[[nodiscard]] nano::block_status nano::node::process (secure::write_transaction const & transaction, std::shared_ptr<nano::block> block)
+[[nodiscard]] nano::block_status nano::node::process (secure::write_transaction & transaction, std::shared_ptr<nano::block> block)
 {
 	auto status = ledger.process (transaction, block);
 	logger.debug (nano::log::type::node, "Directly processed block: {} (status: {})", block->hash (), to_string (status));
@@ -503,7 +531,7 @@ void nano::node::process_active (std::shared_ptr<nano::block> const & incoming)
 
 nano::block_status nano::node::process (std::shared_ptr<nano::block> block)
 {
-	auto const transaction = ledger.tx_begin_write (nano::store::writer::node);
+	auto transaction = ledger.tx_begin_write (nano::store::writer::node);
 	return process (transaction, block);
 }
 

@@ -56,6 +56,7 @@ enum class name
 	scheduler_manual,
 	scheduler_optimistic,
 	scheduler_priority,
+	scheduler_priority_activations,
 	rep_crawler,
 	local_block_broadcasting,
 	rep_tiers,
@@ -72,6 +73,7 @@ enum class name
 	monitor,
 	http_callbacks,
 	pruning,
+	rep_weights,
 };
 
 std::string_view to_string (name);

@@ -49,9 +49,9 @@ nano::ledger::~ledger ()
 {
 }
 
-auto nano::ledger::tx_begin_write (nano::store::writer guard_type) const -> secure::write_transaction
+auto nano::ledger::tx_begin_write (nano::store::writer guard_type, nano::store::write_strategy strategy) const -> secure::write_transaction
 {
-	auto guard = store.write_queue.wait (guard_type);
+	auto guard = store.write_queue.wait (guard_type, strategy);
 	auto txn = store.tx_begin_write ();
 	return secure::write_transaction{ std::move (txn), std::move (guard) };
 }
@@ -59,6 +59,37 @@ auto nano::ledger::tx_begin_write (nano::store::writer guard_type) const -> secu
 auto nano::ledger::tx_begin_read () const -> secure::read_transaction
 {
 	return secure::read_transaction{ store.tx_begin_read () };
+}
+
+void nano::ledger::tx_optimistic_process (nano::store::writer guard_type, std::function<void (secure::write_transaction &)> const & action) const
+{
+	auto constexpr optimistic_attempts = 2;
+	for (auto i = 0; i < optimistic_attempts; ++i)
+	{
+		auto txn = tx_begin_write (guard_type, nano::store::write_strategy::optimistic);
+		if (i > 0)
+		{
+			stats.inc (to_stat_type (guard_type), nano::stat::detail::optimistic_retry);
+		}
+		try
+		{
+			action (txn);
+			txn.commit ();
+			stats.inc (to_stat_type (guard_type), nano::stat::detail::optimistic);
+			return;
+		}
+		catch (nano::store::transaction_conflict_error const & e)
+		{
+			txn.abort ();
+		}
+	}
+	// Redo the action with a pessimistic transaction which is guaranteed to succeed
+	{
+		stats.inc (to_stat_type (guard_type), nano::stat::detail::pessimistic);
+		auto txn = tx_begin_write (guard_type, nano::store::write_strategy::pessimistic);
+		action (txn);
+		txn.commit ();
+	}
 }
 
 void nano::ledger::initialize (nano::generate_cache_flags const & generate_cache_flags)
@@ -356,14 +387,16 @@ void nano::ledger::confirm_one (secure::write_transaction & transaction, nano::b
 	stats.inc (nano::stat::type::confirmation_height, nano::stat::detail::blocks_confirmed);
 }
 
-nano::block_status nano::ledger::process (secure::write_transaction const & transaction_a, std::shared_ptr<nano::block> block_a)
+nano::block_status nano::ledger::process (secure::write_transaction & transaction, std::shared_ptr<nano::block> block)
 {
-	debug_assert (!constants.work.validate_entry (*block_a) || constants.genesis == nano::dev::genesis);
-	ledger_processor processor (transaction_a, *this);
-	block_a->visit (processor);
+	debug_assert (!constants.work.validate_entry (*block) || constants.genesis == nano::dev::genesis);
+	ledger_processor processor{ transaction, *this };
+	block->visit (processor);
 	if (processor.result == nano::block_status::progress)
 	{
-		++cache.block_count;
+		transaction.defer ([this] () {
+			++cache.block_count;
+		});
 	}
 	return processor.result;
 }
@@ -507,7 +540,7 @@ nano::uint128_t nano::ledger::weight_exact (secure::transaction const & txn_a, n
 
 // Rollback blocks until `block_a' doesn't exist or it tries to penetrate the confirmation height
 // TODO: Refactor rollback operation to use non-recursive algorithm
-bool nano::ledger::rollback (secure::write_transaction const & transaction_a, nano::block_hash const & block_a, std::deque<std::shared_ptr<nano::block>> & list_a, size_t depth, size_t const max_depth)
+bool nano::ledger::rollback (secure::write_transaction & transaction_a, nano::block_hash const & block_a, std::deque<std::shared_ptr<nano::block>> & list_a, size_t depth, size_t const max_depth)
 {
 	if (depth > max_depth)
 	{
@@ -546,7 +579,7 @@ bool nano::ledger::rollback (secure::write_transaction const & transaction_a, na
 	return error;
 }
 
-bool nano::ledger::rollback (secure::write_transaction const & transaction_a, nano::block_hash const & block_a)
+bool nano::ledger::rollback (secure::write_transaction & transaction_a, nano::block_hash const & block_a)
 {
 	std::deque<std::shared_ptr<nano::block>> rollback_list;
 	return rollback (transaction_a, block_a, rollback_list);
@@ -711,27 +744,31 @@ nano::link const & nano::ledger::epoch_link (nano::epoch epoch_a) const
 	return constants.epochs.link (epoch_a);
 }
 
-void nano::ledger::update_account (secure::write_transaction const & transaction_a, nano::account const & account_a, nano::account_info const & old_a, nano::account_info const & new_a)
+void nano::ledger::update_account (secure::write_transaction & transaction, nano::account const & account, nano::account_info const & old_info, nano::account_info const & new_info)
 {
-	if (!new_a.head.is_zero ())
+	if (!new_info.head.is_zero ())
 	{
-		if (old_a.head.is_zero () && new_a.open_block == new_a.head)
+		if (old_info.head.is_zero () && new_info.open_block == new_info.head)
 		{
-			++cache.account_count;
+			transaction.defer ([this] () {
+				++cache.account_count;
+			});
 		}
-		if (!old_a.head.is_zero () && old_a.epoch () != new_a.epoch ())
+		if (!old_info.head.is_zero () && old_info.epoch () != new_info.epoch ())
 		{
 			// store.account.put won't erase existing entries if they're in different tables
-			store.account.del (transaction_a, account_a);
+			store.account.del (transaction, account);
 		}
-		store.account.put (transaction_a, account_a, new_a);
+		store.account.put (transaction, account, new_info);
 	}
 	else
 	{
-		debug_assert (!store.confirmation_height.exists (transaction_a, account_a));
-		store.account.del (transaction_a, account_a);
-		release_assert (cache.account_count > 0);
-		--cache.account_count;
+		debug_assert (!store.confirmation_height.exists (transaction, account));
+		store.account.del (transaction, account);
+		transaction.defer ([this] () {
+			release_assert (cache.account_count > 0);
+			--cache.account_count;
+		});
 	}
 }
 

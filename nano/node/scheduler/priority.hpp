@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/thread_pool.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/scheduler/election_tracker.hpp>
 #include <nano/node/scheduler/priority_pool.hpp>
@@ -48,7 +49,6 @@ public:
 	 */
 	bool activate (nano::secure::transaction const &, nano::account const &);
 	bool activate (nano::secure::transaction const &, nano::account const &, nano::account_info const &, nano::confirmation_height_info const &);
-	bool activate_successors (nano::secure::transaction const &, nano::block const &);
 
 	bool contains (nano::block_hash const &) const;
 	bool contains (std::shared_ptr<nano::election> const &) const;
@@ -87,5 +87,8 @@ private:
 	nano::condition_variable condition;
 	mutable nano::mutex mutex;
 	std::thread thread;
+
+	nano::thread_pool workers;
+	nano::interval warning_interval;
 };
 }

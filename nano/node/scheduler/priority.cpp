@@ -19,7 +19,8 @@ nano::scheduler::priority::priority (nano::node_config & node_config, nano::node
 	cementing_set{ cementing_set_a },
 	stats{ stats_a },
 	logger{ logger_a },
-	pool{ config.max_blocks, config.reserved_blocks }
+	pool{ config.max_blocks, config.reserved_blocks },
+	workers{ 2, nano::thread_role::name::scheduler_priority }
 {
 	if (!config.enable)
 	{
@@ -44,29 +45,67 @@ nano::scheduler::priority::priority (nano::node_config & node_config, nano::node
 
 	// Activate accounts with fresh blocks
 	ledger_notifications.blocks_processed.add ([this] (auto const & batch) {
-		auto transaction = ledger.tx_begin_read ();
+		std::deque<nano::account> accounts;
 		for (auto const & [result, context] : batch)
 		{
 			if (result == nano::block_status::progress)
 			{
-				release_assert (context.block != nullptr);
-				activate (transaction, context.block->account ());
+				accounts.push_back (context.block->account ());
 			}
+		}
+		if (!accounts.empty ())
+		{
+			if (workers.queued_tasks () >= nano::queue_warning_threshold () && warning_interval.elapse (15s))
+			{
+				node.logger.warn (nano::log::type::election_scheduler, "Notification queue has {} tasks", workers.queued_tasks ());
+			}
+
+			// Schedule activation of accounts on the background thread
+			workers.post ([this, accounts = std::move (accounts)] () {
+				auto transaction = ledger.tx_begin_read ();
+				for (auto const & account : accounts)
+				{
+					activate (transaction, account);
+				}
+			});
 		}
 	});
 
+	if (node.flags.disable_activate_successors)
+	{
+		return;
+	}
+
 	// Activate successors of cemented blocks
 	cementing_set.batch_cemented.add ([this] (auto const & batch) {
-		if (node.flags.disable_activate_successors)
+		std::deque<nano::account> accounts;
+		for (auto const & ctx : batch)
 		{
-			return;
-		}
+			auto const & block = ctx.block;
 
-		auto transaction = ledger.tx_begin_read ();
-		for (auto const & context : batch)
+			accounts.push_back (block->account ());
+
+			// Activate the next unconfirmed block in the destination account
+			if (block->is_send () && !block->destination ().is_zero () && block->destination () != block->account ())
+			{
+				accounts.push_back (block->destination ());
+			}
+		}
+		if (!accounts.empty ())
 		{
-			release_assert (context.block != nullptr);
-			activate_successors (transaction, *context.block);
+			if (workers.queued_tasks () >= nano::queue_warning_threshold () && warning_interval.elapse (15s))
+			{
+				node.logger.warn (nano::log::type::election_scheduler, "Notification queue has {} tasks", workers.queued_tasks ());
+			}
+
+			// Schedule activation of accounts on the background thread
+			workers.post ([this, accounts = std::move (accounts)] () {
+				auto transaction = ledger.tx_begin_read ();
+				for (auto const & account : accounts)
+				{
+					activate (transaction, account);
+				}
+			});
 		}
 	});
 }
@@ -86,6 +125,8 @@ void nano::scheduler::priority::start ()
 		return;
 	}
 
+	workers.start ();
+
 	thread = std::thread{ [this] () {
 		nano::thread_role::set (nano::thread_role::name::scheduler_priority);
 		run ();
@@ -100,6 +141,8 @@ void nano::scheduler::priority::stop ()
 	}
 	condition.notify_all ();
 	join_or_pass (thread);
+
+	workers.stop ();
 }
 
 void nano::scheduler::priority::notify ()
@@ -165,19 +208,6 @@ bool nano::scheduler::priority::activate (secure::transaction const & transactio
 
 	stats.inc (nano::stat::type::election_scheduler, nano::stat::detail::activate_failed);
 	return false; // Not activated
-}
-
-bool nano::scheduler::priority::activate_successors (secure::transaction const & transaction, nano::block const & block)
-{
-	bool result = activate (transaction, block.account ());
-
-	// Start or vote for the next unconfirmed block in the destination account
-	if (block.is_send () && !block.destination ().is_zero () && block.destination () != block.account ())
-	{
-		result |= activate (transaction, block.destination ());
-	}
-
-	return result;
 }
 
 bool nano::scheduler::priority::contains (nano::block_hash const & hash) const

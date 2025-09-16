@@ -84,12 +84,24 @@ nano::store::lmdb::write_transaction_impl::~write_transaction_impl ()
 	commit ();
 }
 
-void nano::store::lmdb::write_transaction_impl::commit ()
+bool nano::store::lmdb::write_transaction_impl::commit ()
 {
 	if (active)
 	{
 		auto status = mdb_txn_commit (handle);
 		release_assert (success (status) && "Unable to write to the LMDB database", error_string (status));
+		txn_callbacks.txn_end (this);
+		active = false;
+		return true;
+	}
+	return false;
+}
+
+void nano::store::lmdb::write_transaction_impl::abort ()
+{
+	if (active)
+	{
+		mdb_txn_abort (handle);
 		txn_callbacks.txn_end (this);
 		active = false;
 	}
@@ -112,6 +124,11 @@ bool nano::store::lmdb::write_transaction_impl::contains (nano::tables table_a) 
 {
 	// LMDB locks on every write
 	return true;
+}
+
+bool nano::store::lmdb::write_transaction_impl::is_active () const
+{
+	return active;
 }
 
 nano::mdb_txn_tracker::mdb_txn_tracker (nano::logger & logger_a, nano::txn_tracking_config const & txn_tracking_config_a, std::chrono::milliseconds block_processor_batch_max_time_a) :

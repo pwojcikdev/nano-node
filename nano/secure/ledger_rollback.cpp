@@ -11,7 +11,7 @@
 #include <nano/store/block.hpp>
 #include <nano/store/pending.hpp>
 
-nano::ledger_rollback::ledger_rollback (nano::secure::write_transaction const & transaction_a, nano::ledger & ledger_a, std::deque<std::shared_ptr<nano::block>> & list_a, size_t depth_a, size_t max_depth_a) :
+nano::ledger_rollback::ledger_rollback (nano::secure::write_transaction & transaction_a, nano::ledger & ledger_a, std::deque<std::shared_ptr<nano::block>> & list_a, size_t depth_a, size_t max_depth_a) :
 	transaction (transaction_a),
 	ledger (ledger_a),
 	list (list_a),
@@ -35,7 +35,7 @@ void nano::ledger_rollback::send_block (nano::send_block const & block_a)
 		auto info = ledger.any.account_get (transaction, pending.value ().source);
 		release_assert (info);
 		ledger.store.pending.del (transaction, key);
-		ledger.rep_weights.add (transaction, info->representative, pending.value ().amount);
+		transaction.rep_weights.add (info->representative, pending.value ().amount);
 		nano::account_info new_info (block_a.hashables.previous, info->representative, info->open_block, ledger.any.block_balance (transaction, block_a.hashables.previous).value (), nano::seconds_since_epoch (), info->block_count - 1, nano::epoch::epoch_0);
 		ledger.update_account (transaction, pending.value ().source, *info, new_info);
 		ledger.store.block.del (transaction, hash);
@@ -53,7 +53,7 @@ void nano::ledger_rollback::receive_block (nano::receive_block const & block_a)
 	auto source_account = ledger.any.block_account (transaction, block_a.hashables.source);
 	auto info = ledger.any.account_get (transaction, destination_account);
 	release_assert (info);
-	ledger.rep_weights.sub (transaction, info->representative, amount);
+	transaction.rep_weights.sub (info->representative, amount);
 	nano::account_info new_info (block_a.hashables.previous, info->representative, info->open_block, ledger.any.block_balance (transaction, block_a.hashables.previous).value (), nano::seconds_since_epoch (), info->block_count - 1, nano::epoch::epoch_0);
 	ledger.update_account (transaction, destination_account, *info, new_info);
 	ledger.store.block.del (transaction, hash);
@@ -68,7 +68,7 @@ void nano::ledger_rollback::open_block (nano::open_block const & block_a)
 	auto amount = ledger.any.block_amount (transaction, hash).value ().number ();
 	auto destination_account = block_a.account ();
 	auto source_account = ledger.any.block_account (transaction, block_a.hashables.source);
-	ledger.rep_weights.sub (transaction, block_a.representative_field ().value (), amount);
+	transaction.rep_weights.sub (block_a.representative_field ().value (), amount);
 	nano::account_info new_info;
 	ledger.update_account (transaction, destination_account, new_info, new_info);
 	ledger.store.block.del (transaction, hash);
@@ -87,7 +87,7 @@ void nano::ledger_rollback::change_block (nano::change_block const & block_a)
 	auto rep_block = ledger.store.block.get (transaction, rep_block_hash);
 	release_assert (rep_block != nullptr);
 	auto representative = rep_block->representative_field ().value ();
-	ledger.rep_weights.move (transaction, block_a.hashables.representative, representative, balance);
+	transaction.rep_weights.move (block_a.hashables.representative, representative, balance);
 	ledger.store.block.del (transaction, hash);
 	nano::account_info new_info (block_a.hashables.previous, representative, info->open_block, info->balance, nano::seconds_since_epoch (), info->block_count - 1, nano::epoch::epoch_0);
 	ledger.update_account (transaction, account, *info, new_info);
@@ -142,13 +142,13 @@ void nano::ledger_rollback::state_block (nano::state_block const & block_a)
 		auto rep_block (ledger.store.block.get (transaction, rep_block_hash));
 		release_assert (rep_block != nullptr);
 		previous_representative = rep_block->representative_field ().value ();
-		// ledger.rep_weights.representation_add_dual (transaction, representative, previous_balance, block_a.hashables.representative, 0 - block_a.hashables.balance.number ());
-		ledger.rep_weights.move_add_sub (transaction, block_a.hashables.representative, block_a.hashables.balance, previous_representative, previous_balance);
+		// transaction.rep_weights.representation_add_dual (transaction, representative, previous_balance, block_a.hashables.representative, 0 - block_a.hashables.balance.number ());
+		transaction.rep_weights.move_add_sub (block_a.hashables.representative, block_a.hashables.balance, previous_representative, previous_balance);
 	}
 	else
 	{
 		// Add in amount delta only
-		ledger.rep_weights.sub (transaction, block_a.hashables.representative, block_a.hashables.balance.number ());
+		transaction.rep_weights.sub (block_a.hashables.representative, block_a.hashables.balance.number ());
 	}
 
 	auto previous_version (ledger.version (transaction, block_a.hashables.previous));
