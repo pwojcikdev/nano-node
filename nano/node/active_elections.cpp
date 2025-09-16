@@ -30,7 +30,9 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 	cementing_set{ cementing_set_a },
 	recently_confirmed{ config.confirmation_cache },
 	recently_cemented{ config.confirmation_cache },
-	workers{ 1, nano::thread_role::name::aec_notifications }
+	workers{ config.worker_threads, nano::thread_role::name::aec_workers },
+	cemented_workers{ config.cemented_worker_threads, nano::thread_role::name::aec_cemented_notifications },
+	lifecycle_workers{ /* single threaded */ 1, nano::thread_role::name::aec_lifecycle_notifications }
 {
 	// Cementing blocks might implicitly confirm dependent elections
 	cementing_set.batch_cemented.add ([this] (auto const & cemented) {
@@ -45,13 +47,13 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 			}
 		}
 
-		if (workers.queued_tasks () >= nano::queue_warning_threshold () && warning_interval.elapse (15s))
+		if (cemented_workers.queued_tasks () >= nano::queue_warning_threshold () && warning_interval.elapse (15s))
 		{
-			node.logger.warn (nano::log::type::active_elections, "Notification queue has {} tasks", workers.queued_tasks ());
+			node.logger.warn (nano::log::type::active_elections, "Cemented notification queue has {} tasks", cemented_workers.queued_tasks ());
 		}
 
 		// Notify observers about cemented blocks on a background thread
-		workers.post ([this, results = std::move (results)] () {
+		cemented_workers.post ([this, results = std::move (results)] () {
 			auto transaction = node.ledger.tx_begin_read ();
 			for (auto const & [election, status, votes] : results)
 			{
@@ -104,6 +106,8 @@ nano::active_elections::~active_elections ()
 void nano::active_elections::start ()
 {
 	workers.start ();
+	cemented_workers.start ();
+	lifecycle_workers.start ();
 
 	if (node.flags.disable_request_loop)
 	{
@@ -130,8 +134,12 @@ void nano::active_elections::stop ()
 		stopped = true;
 	}
 	condition.notify_all ();
+
 	join_or_pass (thread);
 	join_or_pass (checkup_thread);
+
+	lifecycle_workers.stop ();
+	cemented_workers.stop ();
 	workers.stop ();
 
 	clear ();
@@ -178,8 +186,13 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 
 			node.vote_router.connect (hash, result.election);
 
-			// Notify observers that a new election started (while still holding the lock to avoid races)
-			election_started.notify (result.election, bucket, priority);
+			// Notify observers that a new election started on background thread
+			// (but submit while still holding the lock to preserve ordering of events)
+			lifecycle_workers.post ([this, election = result.election, hash, bucket, priority] () {
+				election_started.notify (election, bucket, priority);
+
+				node.observers.active_started.notify (hash);
+			});
 
 			node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::started);
 			node.stats.inc (nano::stat::type::active_elections_started, to_stat_detail (behavior));
@@ -212,8 +225,11 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 				index.update (result.election, behavior);
 				node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::transition_priority);
 
-				// Notify observers that this election is now priority (same as election_started)
-				election_started.notify (result.election, bucket, priority);
+				// Notify observers that this election is now priority on background thread
+				// (but submit while still holding the lock to preserve ordering of events)
+				lifecycle_workers.post ([this, election = result.election, bucket, priority] () {
+					election_started.notify (election, bucket, priority);
+				});
 			}
 			else
 			{
@@ -248,20 +264,22 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 			result.election->transition_active ();
 		}
 
-		// Notifications
-		node.observers.active_started.notify (hash);
-		vacancy_updated.notify (vacancies);
+		// Process notifications, vote cache and forks on background workers
+		workers.post ([this, hash, root, vacancies = std::move (vacancies)] () {
+			// Notifications
+			vacancy_updated.notify (vacancies);
 
-		// Let the election know about already observed votes
-		node.vote_cache_processor.trigger (hash);
+			// Let the election know about already observed votes
+			node.vote_cache_processor.trigger (hash);
 
-		// Let the election know about already observed forks
-		auto forks = node.fork_cache.get (root);
-		node.stats.add (nano::stat::type::active_elections, nano::stat::detail::forks_cached, forks.size ());
-		for (auto const & fork : forks)
-		{
-			publish (fork);
-		}
+			// Let the election know about already observed forks
+			auto forks = node.fork_cache.get (root);
+			node.stats.add (nano::stat::type::active_elections, nano::stat::detail::forks_cached, forks.size ());
+			for (auto const & fork : forks)
+			{
+				publish (fork);
+			}
+		});
 	}
 
 	// Votes are generated for inserted or ongoing elections
@@ -311,7 +329,6 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 	debug_assert (lock.owns_lock ());
 	debug_assert (!election->confirmed () || recently_confirmed.contains (election->qualified_root));
 
-	auto blocks_l = election->blocks ();
 	node.vote_router.disconnect (*election);
 
 	// Erase from index
@@ -336,30 +353,35 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 
 	auto vacancies = calculate_vacancies ();
 
+	// Notify observers that the election was erased on background thread
+	// (but submit while still holding the lock to preserve ordering of events)
+	lifecycle_workers.post ([this, election] () {
+		election_erased.notify (election);
+
+		for (auto const & [hash, block] : election->blocks ())
+		{
+			// Notify observers about dropped elections & blocks lost confirmed elections
+			if (!election->confirmed () || hash != election->winner ()->hash ())
+			{
+				node.observers.active_stopped.notify (hash);
+			}
+
+			if (!election->confirmed ())
+			{
+				// Clear from publish filter
+				node.network.filter.clear (block);
+			}
+		}
+	});
+
 	lock.unlock ();
 
 	// Track election duration
 	node.stats.sample (nano::stat::sample::active_election_duration, election->duration ().count (), { 0, 1000 * 60 * 10 /* 0-10 minutes range */ });
 
-	// Notify observers that the election was erased
-	election_erased.notify (election);
-
-	vacancy_updated.notify (vacancies);
-
-	for (auto const & [hash, block] : blocks_l)
-	{
-		// Notify observers about dropped elections & blocks lost confirmed elections
-		if (!election->confirmed () || hash != election->winner ()->hash ())
-		{
-			node.observers.active_stopped.notify (hash);
-		}
-
-		if (!election->confirmed ())
-		{
-			// Clear from publish filter
-			node.network.filter.clear (block);
-		}
-	}
+	workers.post ([this, vacancies] () {
+		vacancy_updated.notify (vacancies);
+	});
 }
 
 bool nano::active_elections::erase (nano::qualified_root const & root)
@@ -613,7 +635,9 @@ void nano::active_elections::checkup_elections (nano::unique_lock<nano::mutex> &
 			election->block_count (),
 			election->duration ().count ());
 
-			election_stale.notify (election);
+			lifecycle_workers.post ([this, election] () {
+				election_stale.notify (election);
+			});
 		}
 	}
 }
@@ -808,6 +832,8 @@ nano::container_info nano::active_elections::container_info () const
 
 	info.add ("recently_confirmed", recently_confirmed.container_info ());
 	info.add ("recently_cemented", recently_cemented.container_info ());
+	info.add ("cemented_workers", cemented_workers.container_info ());
+	info.add ("lifecycle_workers", lifecycle_workers.container_info ());
 	info.add ("workers", workers.container_info ());
 
 	return info;
@@ -828,6 +854,8 @@ nano::error nano::active_elections_config::serialize (nano::tomlconfig & toml) c
 	toml.put ("optimistic_limit_percentage", optimistic_limit_percentage, "Limit of optimistic elections as percentage of `active_elections_size`. \ntype:uint64");
 	toml.put ("confirmation_cache", confirmation_cache, "Maximum number of confirmed elections kept in cache to prevent restarting an election. \ntype:uint64");
 	toml.put ("max_election_winners", max_election_winners, "Maximum size of election winner details set. \ntype:uint64");
+	toml.put ("cemented_worker_threads", cemented_worker_threads, "Number of worker threads for background processing of cemented notifications. \ntype:uint64");
+	toml.put ("worker_threads", worker_threads, "Number of worker threads for background processing of elections. \ntype:uint64");
 	toml.put ("stale_threshold", stale_threshold.count (), "Time after which additional bootstrap attempts are made to find missing blocks for an election. \ntype:seconds");
 	return toml.get_error ();
 }
@@ -839,6 +867,8 @@ nano::error nano::active_elections_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("optimistic_limit_percentage", optimistic_limit_percentage);
 	toml.get ("confirmation_cache", confirmation_cache);
 	toml.get ("max_election_winners", max_election_winners);
+	toml.get ("cemented_worker_threads", cemented_worker_threads);
+	toml.get ("worker_threads", worker_threads);
 	toml.get_duration ("stale_threshold", stale_threshold);
 
 	return toml.get_error ();
