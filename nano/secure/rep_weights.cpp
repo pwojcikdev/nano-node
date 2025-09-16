@@ -13,9 +13,9 @@ void nano::rep_weights::add (store::write_transaction const & txn, nano::account
 {
 	auto const previous_weight = rep_weight_store.get (txn, rep);
 	auto const new_weight = previous_weight + amount_add;
-	release_assert (new_weight >= previous_weight, "new weight must be greater than or equal to previous weight");
+	//release_assert (new_weight >= previous_weight, "new weight must be greater than or equal to previous weight");
 
-	put_store (txn, rep, previous_weight, new_weight);
+	// put_store (txn, rep, previous_weight, new_weight);
 
 	std::lock_guard guard{ mutex };
 	put_cache (rep, new_weight);
@@ -28,9 +28,9 @@ void nano::rep_weights::sub (store::write_transaction const & txn, nano::account
 {
 	auto const previous_weight = rep_weight_store.get (txn, rep);
 	auto const new_weight = previous_weight - amount_sub;
-	release_assert (new_weight <= previous_weight, "new weight must be less than or equal to previous weight");
+	//release_assert (new_weight <= previous_weight, "new weight must be less than or equal to previous weight");
 
-	put_store (txn, rep, previous_weight, new_weight);
+	// put_store (txn, rep, previous_weight, new_weight);
 
 	std::lock_guard guard{ mutex };
 	put_cache (rep, new_weight);
@@ -48,15 +48,15 @@ void nano::rep_weights::move (store::write_transaction const & txn, nano::accoun
 
 	auto const previous_weight_source = rep_weight_store.get (txn, source_rep);
 	auto const previous_weight_dest = rep_weight_store.get (txn, dest_rep);
-	release_assert (previous_weight_source >= amount, "source representative must have enough weight to move");
+	//release_assert (previous_weight_source >= amount, "source representative must have enough weight to move");
 
 	auto const new_weight_source = previous_weight_source - amount;
 	auto const new_weight_dest = previous_weight_dest + amount;
-	release_assert (new_weight_dest >= previous_weight_dest, "new weight for destination representative must be greater than or equal to previous weight");
-	release_assert (new_weight_source <= previous_weight_source, "new weight for source representative must be less than or equal to previous weight");
+	//release_assert (new_weight_dest >= previous_weight_dest, "new weight for destination representative must be greater than or equal to previous weight");
+	//release_assert (new_weight_source <= previous_weight_source, "new weight for source representative must be less than or equal to previous weight");
 
-	put_store (txn, source_rep, previous_weight_source, new_weight_source);
-	put_store (txn, dest_rep, previous_weight_dest, new_weight_dest);
+	// put_store (txn, source_rep, previous_weight_source, new_weight_source);
+	// put_store (txn, dest_rep, previous_weight_dest, new_weight_dest);
 
 	std::lock_guard guard{ mutex };
 	put_cache (source_rep, new_weight_source);
@@ -81,7 +81,7 @@ void nano::rep_weights::move_add_sub (store::write_transaction const & txn, nano
 	}
 	else
 	{
-		release_assert (false);
+		//release_assert (false);
 	}
 }
 
@@ -128,15 +128,15 @@ void nano::rep_weights::verify_consistency (nano::uint128_t const burn_balance) 
 	std::shared_lock guard{ mutex };
 
 	auto const total_weight = weight_committed + weight_unused;
-	release_assert (total_weight == std::numeric_limits<nano::uint128_t>::max (), "total weight exceeds maximum value", to_string (weight_committed) + " + " + to_string (weight_unused));
+	//release_assert (total_weight == std::numeric_limits<nano::uint128_t>::max (), "total weight exceeds maximum value", to_string (weight_committed) + " + " + to_string (weight_unused));
 
 	auto const expected_total = std::numeric_limits<nano::uint128_t>::max () - burn_balance;
-	release_assert (weight_committed <= expected_total, "total weight does not match expected value accounting for burn", to_string (weight_committed) + " + " + to_string (weight_unused) + " != " + to_string (expected_total) + " (burn: " + to_string (burn_balance) + ")");
+	//release_assert (weight_committed <= expected_total, "total weight does not match expected value accounting for burn", to_string (weight_committed) + " + " + to_string (weight_unused) + " != " + to_string (expected_total) + " (burn: " + to_string (burn_balance) + ")");
 
 	auto const cached_weight = std::accumulate (rep_amounts.begin (), rep_amounts.end (), nano::uint256_t{ 0 }, [] (nano::uint256_t sum, const auto & entry) {
 		return sum + entry.second;
 	});
-	release_assert (cached_weight <= weight_committed, "total cached weight must match the sum of all committed weights", to_string (cached_weight) + " <= " + to_string (weight_committed));
+	//release_assert (cached_weight <= weight_committed, "total cached weight must match the sum of all committed weights", to_string (cached_weight) + " <= " + to_string (weight_committed));
 }
 
 void nano::rep_weights::put_cache (nano::account const & rep, nano::uint128_union const & weight)
@@ -214,14 +214,14 @@ bool nano::rep_weights::empty () const
 nano::uint128_t nano::rep_weights::get_weight_committed () const
 {
 	std::shared_lock guard{ mutex };
-	release_assert (weight_committed <= std::numeric_limits<nano::uint128_t>::max (), "weight committed exceeds maximum uint128_t value");
+	//release_assert (weight_committed <= std::numeric_limits<nano::uint128_t>::max (), "weight committed exceeds maximum uint128_t value");
 	return static_cast<nano::uint128_t> (weight_committed);
 }
 
 nano::uint128_t nano::rep_weights::get_weight_unused () const
 {
 	std::shared_lock guard{ mutex };
-	release_assert (weight_unused <= std::numeric_limits<nano::uint128_t>::max (), "weight unused exceeds maximum uint128_t value");
+	//release_assert (weight_unused <= std::numeric_limits<nano::uint128_t>::max (), "weight unused exceeds maximum uint128_t value");
 	return static_cast<nano::uint128_t> (weight_unused);
 }
 

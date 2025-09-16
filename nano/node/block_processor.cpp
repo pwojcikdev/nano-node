@@ -49,7 +49,6 @@ nano::block_processor::block_processor (nano::node_config const & node_config_a,
 				return config.priority_live;
 			case nano::block_source::bootstrap:
 			case nano::block_source::bootstrap_legacy:
-			case nano::block_source::unchecked:
 				return config.priority_bootstrap;
 			case nano::block_source::local:
 				return config.priority_local;
@@ -278,7 +277,7 @@ void nano::block_processor::run ()
 		// It's possible that ledger processing happens faster than the notifications can be processed by other components, cooldown here
 		ledger_notifications.wait ([this] {
 			stats.inc (nano::stat::type::block_processor, nano::stat::detail::cooldown);
-			if (log_cooldown_interval.elapse (15s))
+			if (log_cooldown_interval.elapse (nano::is_dev_run () ? 1s : 15s))
 			{
 				logger.warn (nano::log::type::block_processor, "Cooldown in block processing, waiting for remaining ledger notifications to be processed");
 			}
