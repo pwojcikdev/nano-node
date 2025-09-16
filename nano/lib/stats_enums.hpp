@@ -532,6 +532,9 @@ enum class detail
 	insert_priority,
 	insert_priority_success,
 	erase_oldest,
+	activate_success,
+	cancel_lowest,
+	cancel_failed,
 
 	// handshake
 	invalid_node_id,
@@ -657,10 +660,6 @@ enum class detail
 	active_confirmed_quorum,
 	active_confirmation_height,
 	inactive_confirmation_height,
-
-	// election bucket
-	activate_success,
-	cancel_lowest,
 
 	// query_type
 	blocks_by_hash,

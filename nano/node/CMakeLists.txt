@@ -146,8 +146,8 @@ add_library(
   request_aggregator.cpp
   rpc_callbacks.hpp
   rpc_callbacks.cpp
-  scheduler/bucket.cpp
-  scheduler/bucket.hpp
+  scheduler/election_tracker.cpp
+  scheduler/election_tracker.hpp
   scheduler/component.hpp
   scheduler/component.cpp
   scheduler/hinted.hpp
@@ -158,6 +158,8 @@ add_library(
   scheduler/optimistic.cpp
   scheduler/priority.hpp
   scheduler/priority.cpp
+        scheduler/priority_pool.hpp
+    scheduler/priority_pool.cpp
   telemetry.hpp
   telemetry.cpp
   transport/block_deserializer.hpp

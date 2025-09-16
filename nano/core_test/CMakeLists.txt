@@ -23,6 +23,7 @@ add_executable(
   distributed_work.cpp
   election.cpp
   election_scheduler.cpp
+        election_tracker.cpp
   enums.cpp
   epochs.cpp
   fair_queue.cpp
@@ -54,6 +55,7 @@ add_executable(
   rep_crawler.cpp
   receivable.cpp
   peer_history.cpp
+        priority_pool.cpp
   peer_container.cpp
   rep_weight_store.cpp
   scheduler_buckets.cpp
