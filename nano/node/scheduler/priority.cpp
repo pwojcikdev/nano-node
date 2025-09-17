@@ -286,38 +286,17 @@ bool nano::scheduler::priority::bucket_overfill_predicate (nano::bucket_index bu
 	return true; // Otherwise start cancelling elections
 }
 
-bool nano::scheduler::priority::activate_bucket (nano::unique_lock<nano::mutex> & lock, nano::bucket_index bucket)
+bool nano::scheduler::priority::run_one (nano::unique_lock<nano::mutex> & lock)
 {
 	debug_assert (!mutex.try_lock ());
 	debug_assert (lock.owns_lock ());
 
-	auto block_opt = pool.pop (bucket);
-	release_assert (block_opt);
-	auto const & [block, bucket_index, priority] = *block_opt;
-
-	lock.unlock ();
-
-	auto result = active.insert (block, nano::election_behavior::priority, bucket_index, priority);
-
-	if (result.inserted)
-	{
-		stats.inc (nano::stat::type::election_bucket, nano::stat::detail::activate_success);
-		return true;
-	}
-	else
-	{
-		stats.inc (nano::stat::type::election_bucket, nano::stat::detail::activate_failed);
-		return false;
-	}
-}
-
-void nano::scheduler::priority::run_one (nano::unique_lock<nano::mutex> & lock)
-{
-	debug_assert (!mutex.try_lock ());
-	debug_assert (lock.owns_lock ());
+	bool did_work = false;
 
 	// Snapshot aec vacancy here to avoid repeated calls which can be expensive
 	auto aec_vacancy = active.vacancy (nano::election_behavior::priority);
+
+	std::deque<priority_pool::priority_result> to_schedule;
 
 	// Activate buckets with available candidates
 	auto tops = pool.top_all ();
@@ -325,10 +304,33 @@ void nano::scheduler::priority::run_one (nano::unique_lock<nano::mutex> & lock)
 	{
 		if (bucket_activate_predicate (bucket_index, entry.priority, aec_vacancy))
 		{
-			activate_bucket (lock, bucket_index);
-			debug_assert (!lock.owns_lock ());
-			lock.lock ();
+			auto entry = pool.pop (bucket_index);
+			release_assert (entry.has_value ());
+			to_schedule.push_back (*entry);
 		}
+	}
+
+	if (!to_schedule.empty ())
+	{
+		lock.unlock ();
+
+		for (auto const & [block, bucket_index, priority] : to_schedule)
+		{
+			auto result = active.insert (block, nano::election_behavior::priority, bucket_index, priority);
+			if (result.inserted)
+			{
+				stats.inc (nano::stat::type::election_bucket, nano::stat::detail::activate_success);
+				did_work = true;
+			}
+			else
+			{
+				stats.inc (nano::stat::type::election_bucket, nano::stat::detail::activate_failed);
+			}
+		}
+
+		lock.lock ();
+
+		did_work = true;
 	}
 
 	// Cancel elections in overfilled buckets
@@ -341,7 +343,7 @@ void nano::scheduler::priority::run_one (nano::unique_lock<nano::mutex> & lock)
 		{
 			// Get the worst election (largest priority value)
 			auto worst = elections.worst (bucket_index);
-			debug_assert (worst.has_value ());
+			release_assert (worst.has_value ());
 			if (worst)
 			{
 				to_cancel.push_back (worst->election);
@@ -370,7 +372,11 @@ void nano::scheduler::priority::run_one (nano::unique_lock<nano::mutex> & lock)
 		}
 
 		lock.lock ();
+
+		did_work = true;
 	}
+
+	return did_work;
 }
 
 void nano::scheduler::priority::run ()
@@ -378,21 +384,26 @@ void nano::scheduler::priority::run ()
 	nano::unique_lock<nano::mutex> lock{ mutex };
 	while (!stopped)
 	{
+		// Optimize loop for the hot path where we constantly have work to do, skipping the condition predicate check
+		bool keep_running = true;
+		while (keep_running)
+		{
+			if (stopped)
+			{
+				return;
+			}
+
+			debug_assert ((std::this_thread::yield (), true)); // Introduce some random delay in debug builds
+
+			stats.inc (nano::stat::type::election_scheduler, nano::stat::detail::loop);
+
+			keep_running = run_one (lock);
+			debug_assert (lock.owns_lock ());
+		}
+
 		condition.wait (lock, [this] () {
 			return stopped || predicate ();
 		});
-
-		if (stopped)
-		{
-			return;
-		}
-
-		debug_assert ((std::this_thread::yield (), true)); // Introduce some random delay in debug builds
-
-		stats.inc (nano::stat::type::election_scheduler, nano::stat::detail::loop);
-
-		run_one (lock);
-		debug_assert (lock.owns_lock ());
 	}
 }
 
