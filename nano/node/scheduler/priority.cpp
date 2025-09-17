@@ -20,7 +20,7 @@ nano::scheduler::priority::priority (nano::node_config & node_config, nano::node
 	stats{ stats_a },
 	logger{ logger_a },
 	pool{ config.max_blocks, config.reserved_blocks },
-	workers{ 2, nano::thread_role::name::scheduler_priority }
+	workers{ 2, nano::thread_role::name::scheduler_priority_activations }
 {
 	if (!config.enable)
 	{
