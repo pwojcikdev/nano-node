@@ -25,6 +25,7 @@ enum class name
 	aec_notifications,
 	aec_cemented_notifications,
 	aec_lifecycle_notifications,
+	aec_workers,
 	wallet_actions,
 	bootstrap_initiator,
 	bootstrap_connections,
