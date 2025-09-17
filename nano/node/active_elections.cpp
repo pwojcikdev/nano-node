@@ -264,12 +264,6 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 		}
 	}
 
-	// Votes are generated for inserted or ongoing elections
-	if (result.election)
-	{
-		result.election->broadcast_vote ();
-	}
-
 	return result;
 }
 
