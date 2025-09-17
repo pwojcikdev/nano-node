@@ -23,6 +23,8 @@ enum class name
 	aec_loop,
 	aec_checkup,
 	aec_notifications,
+	aec_cemented_notifications,
+	aec_lifecycle_notifications,
 	wallet_actions,
 	bootstrap_initiator,
 	bootstrap_connections,
