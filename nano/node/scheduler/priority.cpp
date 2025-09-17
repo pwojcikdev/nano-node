@@ -102,7 +102,7 @@ void nano::scheduler::priority::stop ()
 	join_or_pass (thread);
 }
 
-void nano::scheduler::priority::notify ()
+void nano::scheduler::priority::notify (int64_t vacancy)
 {
 	condition.notify_all ();
 }

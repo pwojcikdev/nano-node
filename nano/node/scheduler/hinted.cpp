@@ -53,11 +53,11 @@ void nano::scheduler::hinted::stop ()
 	join_or_pass (thread);
 }
 
-void nano::scheduler::hinted::notify ()
+void nano::scheduler::hinted::notify (int64_t vacancy)
 {
 	// Avoid notifying when there is very little space inside AEC
 	auto const limit = active.limit (nano::election_behavior::hinted);
-	if (active.vacancy (nano::election_behavior::hinted) >= (limit * config.vacancy_threshold_percent / 100))
+	if (vacancy >= (limit * config.vacancy_threshold_percent / 100))
 	{
 		condition.notify_all ();
 	}

@@ -106,7 +106,7 @@ public:
 	nano::container_info container_info () const;
 
 public: // Events
-	nano::observer_set<> vacancy_updated;
+	nano::observer_set<std::map<nano::election_behavior, int64_t>> vacancy_updated;
 	nano::observer_set<std::shared_ptr<nano::election>, nano::bucket_index, nano::priority_timestamp> election_started;
 	nano::observer_set<std::shared_ptr<nano::election>> election_erased;
 	nano::observer_set<std::shared_ptr<nano::election>> election_stale;
@@ -134,6 +134,10 @@ private:
 	std::shared_ptr<nano::election> election_impl (nano::qualified_root const &) const;
 	std::vector<std::shared_ptr<nano::election>> list_active_impl (std::size_t max_count = std::numeric_limits<std::size_t>::max ()) const;
 
+	int64_t vacancy_impl (nano::election_behavior behavior) const;
+	int64_t election_winners_vacancy () const;
+	std::map<nano::election_behavior, int64_t> calculate_vacancies () const;
+
 private: // Dependencies
 	active_elections_config const & config;
 	nano::node & node;
@@ -142,7 +146,6 @@ private: // Dependencies
 
 public:
 	nano::active_elections_index index;
-
 
 	nano::recently_confirmed_cache recently_confirmed;
 	nano::recently_cemented_cache recently_cemented;

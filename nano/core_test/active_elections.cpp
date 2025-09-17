@@ -1400,6 +1400,10 @@ TEST (active_elections, vacancy)
 	nano::test::system system;
 	nano::node_config config = system.default_config ();
 	config.active_elections.size = 1;
+	config.priority_scheduler.enable = false;
+	config.optimistic_scheduler.enable = false;
+	config.hinted_scheduler.enable = false;
+	config.backlog_scan.enable = false;
 	auto & node = *system.add_node (config);
 	nano::state_block_builder builder;
 	auto send = builder.make_block ()
@@ -1411,7 +1415,7 @@ TEST (active_elections, vacancy)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				.work (*system.work.generate (nano::dev::genesis->hash ()))
 				.build ();
-	node.active.vacancy_updated.add ([&updated] () {
+	node.active.vacancy_updated.add ([&updated] (auto const & vacancies) {
 		updated = true;
 	});
 	ASSERT_EQ (nano::block_status::progress, node.process (send));

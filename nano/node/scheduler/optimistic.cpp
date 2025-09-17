@@ -50,10 +50,10 @@ void nano::scheduler::optimistic::stop ()
 	join_or_pass (thread);
 }
 
-void nano::scheduler::optimistic::notify ()
+void nano::scheduler::optimistic::notify (int64_t vacancy)
 {
 	// Only wake up the thread if there is space inside AEC for optimistic elections
-	if (active.vacancy (nano::election_behavior::optimistic) > 0)
+	if (vacancy > 0)
 	{
 		condition.notify_all ();
 	}
