@@ -78,8 +78,7 @@ private:
 	bool bucket_overfill_predicate (nano::bucket_index, int64_t aec_vacancy) const;
 
 	void run ();
-	void run_one (nano::unique_lock<nano::mutex> &);
-	bool activate_bucket (nano::unique_lock<nano::mutex> &, nano::bucket_index);
+	bool run_one (nano::unique_lock<nano::mutex> &);
 
 private:
 	priority_pool pool;
