@@ -7,6 +7,8 @@
 
 #include <boost/circular_buffer.hpp>
 
+#include <array>
+#include <atomic>
 #include <chrono>
 #include <initializer_list>
 #include <map>
@@ -71,6 +73,11 @@ public:
 	using counter_value_t = uint64_t;
 	using sampler_value_t = int64_t;
 
+public: // Array dimensions - must match the enum sizes in stats_enums.hpp
+	static constexpr size_t types_count = 256; // Enough for stat::type enum range
+	static constexpr size_t details_count = 1024; // Enough for stat::detail enum range
+	static constexpr size_t dirs_count = 2; // Enough for stat::dir enum range
+
 public:
 	explicit stats (nano::logger &, nano::stats_config = {});
 	~stats ();
@@ -132,15 +139,6 @@ public:
 	std::string dump (category category = category::counters);
 
 private:
-	struct counter_key
-	{
-		stat::type type;
-		stat::detail detail;
-		stat::dir dir;
-
-		auto operator<=> (const counter_key &) const = default;
-	};
-
 	struct sampler_key
 	{
 		stat::sample sample;
@@ -149,18 +147,6 @@ private:
 	};
 
 private:
-	class counter_entry
-	{
-	public:
-		// Prevent copying
-		counter_entry () = default;
-		counter_entry (counter_entry const &) = delete;
-		counter_entry & operator= (counter_entry const &) = delete;
-
-	public:
-		std::atomic<counter_value_t> value{ 0 };
-	};
-
 	class sampler_entry
 	{
 	public:
@@ -168,7 +154,7 @@ private:
 
 		sampler_entry (size_t max_samples, std::pair<sampler_value_t, sampler_value_t> expected_min_max) :
 			samples{ max_samples },
-			expected_min_max{ expected_min_max } {};
+			expected_min_max{ expected_min_max } { };
 
 		// Prevent copying
 		sampler_entry (sampler_entry const &) = delete;
@@ -183,9 +169,11 @@ private:
 		mutable nano::mutex mutex;
 	};
 
-	// Wrap in unique_ptrs because mutex/atomic members are not movable
-	// TODO: Compare performance of map vs unordered_map
-	std::map<counter_key, std::unique_ptr<counter_entry>> counters;
+	// Flat array for direct-indexed counter access
+	// Index calculation: type * details_count * dirs_count + detail * dirs_count + dir
+	std::array<std::atomic<counter_value_t>, types_count * details_count * dirs_count> counters{};
+
+	// Keep samplers as map since they have different behavior and lower frequency
 	std::map<sampler_key, std::unique_ptr<sampler_entry>> samplers;
 
 private:
@@ -200,6 +188,9 @@ private:
 	void log_samples_impl (stat_log_sink & sink, tm & tm);
 
 	static bool is_stat_logging_enabled ();
+
+	// Helper function to calculate flat array index
+	static size_t idx (stat::type type, stat::detail detail, stat::dir dir);
 
 private:
 	nano::stats_config const config;
