@@ -20,7 +20,7 @@ nano::scheduler::priority::priority (nano::node_config & node_config, nano::node
 	stats{ stats_a },
 	logger{ logger_a },
 	pool{ config.max_blocks, config.reserved_blocks },
-	workers{ 2, nano::thread_role::name::scheduler_priority_activations }
+	workers{ config.activation_threads, nano::thread_role::name::scheduler_priority_activations }
 {
 	if (!config.enable)
 	{
@@ -445,6 +445,7 @@ nano::error nano::scheduler::priority_config::serialize (nano::tomlconfig & toml
 	toml.put ("reserved_blocks", reserved_blocks, "Reserved blocks per bucket. \nType: uint64");
 	toml.put ("reserved_elections", reserved_elections, "Guaranteed election slots per bucket. \nType: uint64");
 	toml.put ("max_elections", max_elections, "Maximum election slots per bucket when AEC has space. \nType: uint64");
+	toml.put ("activation_threads", activation_threads, "Number of worker threads for activation processing. \nType: uint64");
 
 	return toml.get_error ();
 }
@@ -456,6 +457,7 @@ nano::error nano::scheduler::priority_config::deserialize (nano::tomlconfig & to
 	toml.get ("reserved_blocks", reserved_blocks);
 	toml.get ("reserved_elections", reserved_elections);
 	toml.get ("max_elections", max_elections);
+	toml.get ("activation_threads", activation_threads);
 
 	return toml.get_error ();
 }

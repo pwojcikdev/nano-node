@@ -24,14 +24,16 @@ public:
 
 public:
 	bool enable{ true };
-	
+
 	// Pool configuration
-	std::size_t max_blocks{ 1024 * 64 };  // Total shared pool size across all buckets
+	std::size_t max_blocks{ 1024 * 64 }; // Total shared pool size across all buckets
 	std::size_t reserved_blocks{ 1024 * 8 }; // Reserved blocks per bucket
-	
-	// Election configuration  
+
+	// Election configuration
 	std::size_t reserved_elections{ 100 }; // Guaranteed election slots per bucket
 	std::size_t max_elections{ 150 }; // Maximum election slots per bucket when AEC has space
+
+	unsigned activation_threads{ 3 }; // Number of worker threads for activation processing
 };
 
 class priority final
