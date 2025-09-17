@@ -16,10 +16,10 @@ nano::scheduler::component::component (nano::node_config & node_config, nano::no
 	priority{ *priority_impl }
 {
 	// Notify election schedulers when AEC frees election slot
-	active.vacancy_updated.add ([this] () {
-		priority.notify ();
-		hinted.notify ();
-		optimistic.notify ();
+	active.vacancy_updated.add ([this] (auto const & vacancies) {
+		priority.notify (vacancies.at (nano::election_behavior::priority));
+		hinted.notify (vacancies.at (nano::election_behavior::hinted));
+		optimistic.notify (vacancies.at (nano::election_behavior::optimistic));
 	});
 }
 

@@ -53,7 +53,7 @@ public:
 	bool contains (nano::block_hash const &) const;
 	bool contains (std::shared_ptr<nano::election> const &) const;
 
-	void notify ();
+	void notify (int64_t vacancy);
 	std::size_t size () const;
 	bool empty () const;
 

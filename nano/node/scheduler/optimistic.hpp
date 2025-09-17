@@ -61,7 +61,7 @@ public:
 	/**
 	 * Notify about changes in AEC vacancy
 	 */
-	void notify ();
+	void notify (int64_t vacancy);
 
 	nano::container_info container_info () const;
 

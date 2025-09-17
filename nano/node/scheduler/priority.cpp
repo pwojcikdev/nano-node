@@ -145,7 +145,7 @@ void nano::scheduler::priority::stop ()
 	workers.stop ();
 }
 
-void nano::scheduler::priority::notify ()
+void nano::scheduler::priority::notify (int64_t vacancy)
 {
 	condition.notify_all ();
 }

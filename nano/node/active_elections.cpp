@@ -211,7 +211,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 			{
 				index.update (result.election, behavior);
 				node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::transition_priority);
-				
+
 				// Notify observers that this election is now priority (same as election_started)
 				election_started.notify (result.election, bucket, priority);
 			}
@@ -221,6 +221,9 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 			}
 		}
 	}
+
+	// Calculate vacancies while holding the lock for later notification
+	auto vacancies = calculate_vacancies ();
 
 	lock.unlock ();
 
@@ -247,7 +250,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 
 		// Notifications
 		node.observers.active_started.notify (hash);
-		vacancy_updated.notify ();
+		vacancy_updated.notify (vacancies);
 
 		// Let the election know about already observed votes
 		node.vote_cache_processor.trigger (hash);
@@ -331,6 +334,8 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 	election->block_count (),
 	election->duration ().count ());
 
+	auto vacancies = calculate_vacancies ();
+
 	lock.unlock ();
 
 	// Track election duration
@@ -339,7 +344,7 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 	// Notify observers that the election was erased
 	election_erased.notify (election);
 
-	vacancy_updated.notify ();
+	vacancy_updated.notify (vacancies);
 
 	for (auto const & [hash, block] : blocks_l)
 	{
@@ -669,27 +674,44 @@ int64_t nano::active_elections::limit (nano::election_behavior behavior) const
 
 int64_t nano::active_elections::vacancy (nano::election_behavior behavior) const
 {
-	auto election_vacancy = [this] (nano::election_behavior behavior) -> int64_t {
-		nano::lock_guard<nano::mutex> guard{ mutex };
-		switch (behavior)
-		{
-			case nano::election_behavior::manual:
-				return std::numeric_limits<int64_t>::max ();
-			case nano::election_behavior::priority:
-				return limit (nano::election_behavior::priority) - static_cast<int64_t> (index.size ());
-			case nano::election_behavior::hinted:
-			case nano::election_behavior::optimistic:
-				return limit (behavior) - static_cast<int64_t> (index.size (behavior));
-		}
-		debug_assert (false); // Unknown enum
-		return 0;
-	};
+	nano::lock_guard<nano::mutex> guard{ mutex };
+	return std::min (vacancy_impl (behavior), election_winners_vacancy ());
+}
 
-	auto election_winners_vacancy = [this] () -> int64_t {
-		return static_cast<int64_t> (config.max_election_winners) - static_cast<int64_t> (cementing_set.size ());
-	};
+int64_t nano::active_elections::vacancy_impl (nano::election_behavior behavior) const
+{
+	debug_assert (!mutex.try_lock ());
 
-	return std::min (election_vacancy (behavior), election_winners_vacancy ());
+	switch (behavior)
+	{
+		case nano::election_behavior::manual:
+			return std::numeric_limits<int64_t>::max ();
+		case nano::election_behavior::priority:
+			return limit (nano::election_behavior::priority) - static_cast<int64_t> (index.size ());
+		case nano::election_behavior::hinted:
+		case nano::election_behavior::optimistic:
+			return limit (behavior) - static_cast<int64_t> (index.size (behavior));
+	}
+	debug_assert (false); // Unknown enum
+	return 0;
+}
+
+int64_t nano::active_elections::election_winners_vacancy () const
+{
+	return static_cast<int64_t> (config.max_election_winners) - static_cast<int64_t> (cementing_set.size ());
+}
+
+std::map<nano::election_behavior, int64_t> nano::active_elections::calculate_vacancies () const
+{
+	debug_assert (!mutex.try_lock ());
+
+	auto winners_vacancy = election_winners_vacancy ();
+
+	std::map<nano::election_behavior, int64_t> vacancies;
+	vacancies[nano::election_behavior::priority] = std::min (vacancy_impl (nano::election_behavior::priority), winners_vacancy);
+	vacancies[nano::election_behavior::hinted] = std::min (vacancy_impl (nano::election_behavior::hinted), winners_vacancy);
+	vacancies[nano::election_behavior::optimistic] = std::min (vacancy_impl (nano::election_behavior::optimistic), winners_vacancy);
+	return vacancies;
 }
 
 std::vector<std::shared_ptr<nano::election>> nano::active_elections::list_active (std::size_t max_count)
@@ -765,11 +787,13 @@ std::size_t nano::active_elections::size (nano::election_behavior behavior, nano
 void nano::active_elections::clear ()
 {
 	// TODO: Call erased_callback for each election
+	std::map<nano::election_behavior, int64_t> vacancies;
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
 		index.clear ();
+		vacancies = calculate_vacancies ();
 	}
-	vacancy_updated.notify ();
+	vacancy_updated.notify (vacancies);
 }
 
 nano::container_info nano::active_elections::container_info () const
