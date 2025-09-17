@@ -41,6 +41,8 @@ public:
 	std::size_t confirmation_cache{ 1024 * 64 };
 	// Maximum size of election winner details set
 	std::size_t max_election_winners{ 1024 * 16 };
+	// Number of worker threads for background processing of cemented notifications
+	unsigned cemented_worker_threads{ 1 };
 
 	std::chrono::milliseconds checkup_interval{ 1s };
 	std::chrono::seconds stale_threshold{ nano::is_dev_run () ? 1s : 60s };

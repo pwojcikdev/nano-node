@@ -30,7 +30,7 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 	cementing_set{ cementing_set_a },
 	recently_confirmed{ config.confirmation_cache },
 	recently_cemented{ config.confirmation_cache },
-	cemented_workers{ /* single threaded */ 1, nano::thread_role::name::aec_cemented_notifications },
+	cemented_workers{ config.cemented_worker_threads, nano::thread_role::name::aec_cemented_notifications },
 	lifecycle_workers{ /* single threaded */ 1, nano::thread_role::name::aec_lifecycle_notifications }
 {
 	// Cementing blocks might implicitly confirm dependent elections
@@ -845,6 +845,7 @@ nano::error nano::active_elections_config::serialize (nano::tomlconfig & toml) c
 	toml.put ("optimistic_limit_percentage", optimistic_limit_percentage, "Limit of optimistic elections as percentage of `active_elections_size`. \ntype:uint64");
 	toml.put ("confirmation_cache", confirmation_cache, "Maximum number of confirmed elections kept in cache to prevent restarting an election. \ntype:uint64");
 	toml.put ("max_election_winners", max_election_winners, "Maximum size of election winner details set. \ntype:uint64");
+	toml.put ("cemented_worker_threads", cemented_worker_threads, "Number of worker threads for background processing of cemented notifications. \ntype:uint64");
 	toml.put ("stale_threshold", stale_threshold.count (), "Time after which additional bootstrap attempts are made to find missing blocks for an election. \ntype:seconds");
 	return toml.get_error ();
 }
@@ -856,6 +857,7 @@ nano::error nano::active_elections_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("optimistic_limit_percentage", optimistic_limit_percentage);
 	toml.get ("confirmation_cache", confirmation_cache);
 	toml.get ("max_election_winners", max_election_winners);
+	toml.get ("cemented_worker_threads", cemented_worker_threads);
 	toml.get_duration ("stale_threshold", stale_threshold);
 
 	return toml.get_error ();
