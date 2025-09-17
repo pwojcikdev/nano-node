@@ -72,8 +72,8 @@ private: // Dependencies
 
 private:
 	bool predicate () const;
-	bool bucket_activate_predicate (nano::bucket_index, nano::priority_timestamp candidate_timestamp) const;
-	bool bucket_overfill_predicate (nano::bucket_index) const;
+	bool bucket_activate_predicate (nano::bucket_index, nano::priority_timestamp candidate_timestamp, int64_t aec_vacancy) const;
+	bool bucket_overfill_predicate (nano::bucket_index, int64_t aec_vacancy) const;
 
 	void run ();
 	void run_one (nano::unique_lock<nano::mutex> &);

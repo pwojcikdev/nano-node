@@ -208,11 +208,13 @@ bool nano::scheduler::priority::predicate () const
 {
 	debug_assert (!mutex.try_lock ());
 
+	auto aec_vacancy = active.vacancy (nano::election_behavior::priority);
+
 	// Check if any bucket has blocks and available election slots
 	auto tops = pool.top_all ();
 	for (auto const & [bucket_index, entry] : tops)
 	{
-		if (bucket_activate_predicate (bucket_index, entry.priority))
+		if (bucket_activate_predicate (bucket_index, entry.priority, aec_vacancy))
 		{
 			return true;
 		}
@@ -222,7 +224,7 @@ bool nano::scheduler::priority::predicate () const
 	auto sizes = elections.sizes ();
 	for (auto const & [bucket_index, size] : sizes)
 	{
-		if (size > 0 && bucket_overfill_predicate (bucket_index))
+		if (size > 0 && bucket_overfill_predicate (bucket_index, aec_vacancy))
 		{
 			return true;
 		}
@@ -231,7 +233,7 @@ bool nano::scheduler::priority::predicate () const
 	return false;
 }
 
-bool nano::scheduler::priority::bucket_activate_predicate (nano::bucket_index bucket, nano::priority_timestamp candidate_timestamp) const
+bool nano::scheduler::priority::bucket_activate_predicate (nano::bucket_index bucket, nano::priority_timestamp candidate_timestamp, int64_t aec_vacancy) const
 {
 	debug_assert (!mutex.try_lock ());
 
@@ -246,7 +248,7 @@ bool nano::scheduler::priority::bucket_activate_predicate (nano::bucket_index bu
 	// Allow up to max_elections if global vacancy allows
 	if (count < config.max_elections)
 	{
-		return active.vacancy (nano::election_behavior::priority) > 0;
+		return aec_vacancy > 0;
 	}
 
 	// Check if new priority is better than the lowest priority (highest value) in bucket
@@ -263,7 +265,7 @@ bool nano::scheduler::priority::bucket_activate_predicate (nano::bucket_index bu
 	return false;
 }
 
-bool nano::scheduler::priority::bucket_overfill_predicate (nano::bucket_index bucket) const
+bool nano::scheduler::priority::bucket_overfill_predicate (nano::bucket_index bucket, int64_t aec_vacancy) const
 {
 	debug_assert (!mutex.try_lock ());
 
@@ -278,7 +280,7 @@ bool nano::scheduler::priority::bucket_overfill_predicate (nano::bucket_index bu
 	// Allow up to 2x max_elections if there is space in AEC
 	if (count <= config.max_elections)
 	{
-		return active.vacancy (nano::election_behavior::priority) < 0;
+		return aec_vacancy < 0;
 	}
 
 	return true; // Otherwise start cancelling elections
@@ -314,11 +316,14 @@ void nano::scheduler::priority::run_one (nano::unique_lock<nano::mutex> & lock)
 	debug_assert (!mutex.try_lock ());
 	debug_assert (lock.owns_lock ());
 
+	// Snapshot aec vacancy here to avoid repeated calls which can be expensive
+	auto aec_vacancy = active.vacancy (nano::election_behavior::priority);
+
 	// Activate buckets with available candidates
 	auto tops = pool.top_all ();
 	for (auto const & [bucket_index, entry] : tops)
 	{
-		if (bucket_activate_predicate (bucket_index, entry.priority))
+		if (bucket_activate_predicate (bucket_index, entry.priority, aec_vacancy))
 		{
 			activate_bucket (lock, bucket_index);
 			debug_assert (!lock.owns_lock ());
@@ -332,7 +337,7 @@ void nano::scheduler::priority::run_one (nano::unique_lock<nano::mutex> & lock)
 	auto sizes = elections.sizes ();
 	for (auto const & [bucket_index, size] : sizes)
 	{
-		if (size > 0 && bucket_overfill_predicate (bucket_index))
+		if (size > 0 && bucket_overfill_predicate (bucket_index, aec_vacancy))
 		{
 			// Get the worst election (largest priority value)
 			auto worst = elections.worst (bucket_index);
