@@ -10,17 +10,194 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <functional>
 #include <latch>
 #include <memory>
+#include <thread>
 #include <type_traits>
+#include <vector>
 
 namespace nano
 {
+// High-performance thread pool implementation that avoids condition variable overhead under high load
 class thread_pool final
 {
 public:
-	// TODO: Auto start should be removed once the node is refactored to start the thread pool explicitly
+	static constexpr size_t batch_size = 128;
+	static constexpr std::chrono::milliseconds wakeup_interval{ 100 };
+
 	thread_pool (unsigned num_threads, nano::thread_role::name thread_name, bool auto_start = false) :
+		num_threads{ num_threads },
+		thread_name{ thread_name }
+	{
+		if (auto_start)
+		{
+			start ();
+		}
+	}
+
+	~thread_pool ()
+	{
+		stop ();
+	}
+
+	void start ()
+	{
+		debug_assert (!stopped.load ());
+		debug_assert (threads.empty ());
+
+		for (unsigned i = 0; i < num_threads; ++i)
+		{
+			threads.emplace_back ([this, i] () {
+				nano::thread_role::set (thread_name);
+				run_worker (i);
+			});
+		}
+	}
+
+	void stop ()
+	{
+		{
+			std::unique_lock lock{ mutex };
+			stopped = true;
+		}
+		condition.notify_all ();
+
+		// Join all threads
+		for (auto & thread : threads)
+		{
+			if (thread.joinable ())
+			{
+				thread.join ();
+			}
+		}
+		threads.clear ();
+	}
+
+	template <typename F>
+	void post (F && task)
+	{
+		if (stopped)
+		{
+			return;
+		}
+
+		bool should_notify = false;
+		{
+			std::lock_guard lock{ mutex };
+
+			// Add task to queue
+			tasks.emplace_back (std::forward<F> (task));
+			num_tasks.fetch_add (1);
+
+			// Adaptive signaling: only notify if we have sleeping workers
+			// and the queue isn't already large (indicating busy workers)
+			auto queue_size = tasks.size ();
+			auto sleeping = sleeping_workers.load ();
+
+			// Only signal if:
+			// 1. We have sleeping workers
+			// 2. Queue is not already large (if it's large, workers are busy)
+			// This avoids the __psynch_cvsignal overhead under high contention
+			// if (sleeping > 0 && queue_size <= num_threads * (batch_size / 4))
+			if (sleeping > 0 && queue_size < 4)
+			{
+				should_notify = true;
+			}
+		}
+		if (should_notify)
+		{
+			condition.notify_one ();
+		}
+	}
+
+	bool alive () const
+	{
+		return !stopped.load (std::memory_order_relaxed) && !threads.empty ();
+	}
+
+	uint64_t queued_tasks () const
+	{
+		return num_tasks.load (std::memory_order_relaxed);
+	}
+
+	nano::container_info container_info () const
+	{
+		nano::container_info info;
+		info.put ("tasks", num_tasks.load ());
+		return info;
+	}
+
+private:
+	void run_worker (unsigned thread_index)
+	{
+		// Thread-local task buffer for batch processing
+		std::vector<std::function<void ()>> local_tasks;
+		local_tasks.reserve (batch_size);
+
+		std::unique_lock lock{ mutex };
+		while (!stopped)
+		{
+			// Attempt to acquire more work
+			debug_assert (lock.owns_lock ());
+			size_t tasks_to_take = std::min (tasks.size (), batch_size);
+			for (size_t i = 0; i < tasks_to_take; ++i)
+			{
+				local_tasks.push_back (std::move (tasks.front ()));
+				tasks.pop_front ();
+			}
+
+			// If no work, wait for signal
+			if (local_tasks.empty ())
+			{
+				sleeping_workers.fetch_add (1);
+
+				// Wakeup periodically to recover if we miss a signal
+				condition.wait_for (lock, wakeup_interval, [this] {
+					return !tasks.empty () || stopped;
+				});
+
+				sleeping_workers.fetch_sub (1);
+			}
+			else
+			{
+				lock.unlock ();
+
+				for (auto & task : local_tasks)
+				{
+					task ();
+					num_tasks.fetch_sub (1);
+				}
+				local_tasks.clear ();
+
+				lock.lock ();
+			}
+		}
+	}
+
+private:
+	unsigned const num_threads;
+	nano::thread_role::name const thread_name;
+
+	std::vector<std::thread> threads;
+	mutable std::mutex mutex;
+	std::condition_variable condition;
+	std::atomic<bool> stopped{ false };
+
+	// Task queue
+	std::deque<std::function<void ()>> tasks;
+
+	std::atomic<uint64_t> num_tasks{ 0 };
+	std::atomic<uint32_t> sleeping_workers{ 0 };
+};
+
+class timed_thread_pool final
+{
+public:
+	// TODO: Auto start should be removed once the node is refactored to start the thread pool explicitly
+	timed_thread_pool (unsigned num_threads, nano::thread_role::name thread_name, bool auto_start = false) :
 		num_threads{ num_threads },
 		thread_name{ thread_name },
 		thread_names_latch{ num_threads }
@@ -31,7 +208,7 @@ public:
 		}
 	}
 
-	~thread_pool ()
+	~timed_thread_pool ()
 	{
 		// Must be stopped before destruction to avoid running takss when node components are being destroyed
 		debug_assert (!thread_pool_impl);
