@@ -15,7 +15,7 @@ TEST (thread_pool, thread_pool)
 		passed_sleep = true;
 	};
 
-	nano::thread_pool workers (1u, nano::thread_role::name::unknown);
+	nano::timed_thread_pool workers (1u, nano::thread_role::name::unknown);
 	nano::test::start_stop_guard stop_guard{ workers };
 	workers.post (func);
 	ASSERT_FALSE (passed_sleep);
@@ -37,7 +37,7 @@ TEST (thread_pool, one)
 	std::atomic<bool> done (false);
 	nano::mutex mutex;
 	nano::condition_variable condition;
-	nano::thread_pool workers (1u, nano::thread_role::name::unknown);
+	nano::timed_thread_pool workers (1u, nano::thread_role::name::unknown);
 	nano::test::start_stop_guard stop_guard{ workers };
 	workers.post ([&] () {
 		{
@@ -55,7 +55,7 @@ TEST (thread_pool, many)
 	std::atomic<int> count (0);
 	nano::mutex mutex;
 	nano::condition_variable condition;
-	nano::thread_pool workers (50u, nano::thread_role::name::unknown);
+	nano::timed_thread_pool workers (50u, nano::thread_role::name::unknown);
 	nano::test::start_stop_guard stop_guard{ workers };
 	for (auto i (0); i < 50; ++i)
 	{
@@ -77,7 +77,7 @@ TEST (thread_pool, top_execution)
 	int value2 (0);
 	nano::mutex mutex;
 	std::promise<bool> promise;
-	nano::thread_pool workers (1u, nano::thread_role::name::unknown);
+	nano::timed_thread_pool workers (1u, nano::thread_role::name::unknown);
 	nano::test::start_stop_guard stop_guard{ workers };
 	workers.post ([&] () {
 		nano::lock_guard<nano::mutex> lock{ mutex };
