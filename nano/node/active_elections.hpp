@@ -170,7 +170,8 @@ private:
 	nano::thread_pool lifecycle_workers;
 
 	nano::interval stale_interval;
-	nano::interval warning_interval;
+	nano::interval workers_warn_interval;
+	nano::interval cemented_warn_interval;
 
 public: // Tests
 	void clear ();

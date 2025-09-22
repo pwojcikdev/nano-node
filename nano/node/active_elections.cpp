@@ -47,7 +47,7 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 			}
 		}
 
-		if (cemented_workers.queued_tasks () >= nano::queue_warning_threshold () && warning_interval.elapse (15s))
+		if (cemented_workers.queued_tasks () >= nano::queue_warning_threshold () && cemented_warn_interval.elapse (15s))
 		{
 			node.logger.warn (nano::log::type::active_elections, "Cemented notification queue has {} tasks", cemented_workers.queued_tasks ());
 		}
@@ -286,6 +286,27 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 	if (result.election)
 	{
 		result.election->broadcast_vote ();
+	}
+
+	// It's possible that active elections activation happens faster than background processing can catch up, cooldown here
+	while (workers.queued_tasks () >= config.size || lifecycle_workers.queued_tasks () >= config.size)
+	{
+		node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::cooldown);
+
+		lock.lock ();
+
+		if (workers_warn_interval.elapse (15s))
+		{
+			node.logger.warn (nano::log::type::active_elections, "Worker queues are full, cooldown (workers: {}, lifecycle: {})",
+			workers.queued_tasks (),
+			lifecycle_workers.queued_tasks ());
+		}
+
+		condition.wait_for (lock, 10ms, [this] {
+			return stopped;
+		});
+
+		lock.unlock ();
 	}
 
 	return result;

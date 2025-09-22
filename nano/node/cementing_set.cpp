@@ -192,7 +192,7 @@ void nano::cementing_set::run_batch (std::unique_lock<std::mutex> & lock)
 		while (workers.queued_tasks () >= config.max_queued_notifications)
 		{
 			stats.inc (nano::stat::type::cementing_set, nano::stat::detail::cooldown);
-			condition.wait_for (lock, 100ms, [this] { return stopped.load (); });
+			condition.wait_for (lock, 10ms, [this] { return stopped.load (); });
 			if (stopped)
 			{
 				return;
