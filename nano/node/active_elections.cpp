@@ -186,12 +186,17 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 
 			node.vote_router.connect (hash, result.election);
 
+			// Calculate vacancies while holding the lock for later notification
+			auto vacancies = calculate_vacancies ();
+
 			// Notify observers that a new election started on background thread
 			// (but submit while still holding the lock to preserve ordering of events)
-			lifecycle_workers.post ([this, election = result.election, hash, bucket, priority] () {
+			lifecycle_workers.post ([this, election = result.election, hash, bucket, priority, vacancies = std::move (vacancies)] () {
 				election_started.notify (election, bucket, priority);
 
 				node.observers.active_started.notify (hash);
+
+				vacancy_updated.notify (vacancies);
 			});
 
 			node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::started);
@@ -238,9 +243,6 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 		}
 	}
 
-	// Calculate vacancies while holding the lock for later notification
-	auto vacancies = calculate_vacancies ();
-
 	lock.unlock ();
 
 	if (result.inserted)
@@ -265,10 +267,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 		}
 
 		// Process notifications, vote cache and forks on background workers
-		workers.post ([this, hash, root, vacancies = std::move (vacancies)] () {
-			// Notifications
-			vacancy_updated.notify (vacancies);
-
+		workers.post ([this, hash, root] () {
 			// Let the election know about already observed votes
 			node.vote_cache_processor.trigger (hash);
 
@@ -376,7 +375,7 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 
 	// Notify observers that the election was erased on background thread
 	// (but submit while still holding the lock to preserve ordering of events)
-	lifecycle_workers.post ([this, election] () {
+	lifecycle_workers.post ([this, election, vacancies = std::move (vacancies)] () {
 		election_erased.notify (election);
 
 		for (auto const & [hash, block] : election->blocks ())
@@ -393,16 +392,14 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 				node.network.filter.clear (block);
 			}
 		}
+
+		vacancy_updated.notify (vacancies);
 	});
 
 	lock.unlock ();
 
 	// Track election duration
 	node.stats.sample (nano::stat::sample::active_election_duration, election->duration ().count (), { 0, 1000 * 60 * 10 /* 0-10 minutes range */ });
-
-	workers.post ([this, vacancies] () {
-		vacancy_updated.notify (vacancies);
-	});
 }
 
 bool nano::active_elections::erase (nano::qualified_root const & root)
