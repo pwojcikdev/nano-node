@@ -34,6 +34,6 @@ private:
 	void run ();
 
 	std::atomic<bool> stopped{ false };
-	nano::thread_pool workers;
+	nano::timed_thread_pool workers;
 };
 }
