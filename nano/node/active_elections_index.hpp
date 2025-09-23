@@ -57,9 +57,13 @@ public:
 	size_t size (nano::election_behavior, nano::bucket_index) const;
 	bool empty () const;
 
-	// Returns election with the highest priority value. NOTE: Lower "priority" is better
+	// Get all bucket counts for a specific behavior
+	std::map<nano::bucket_index, size_t> counts (nano::election_behavior behavior) const;
+
+	// Get election with the highest priority value. NOTE: Lower "priority" is better
 	using priority_result = std::pair<std::shared_ptr<nano::election>, nano::priority_timestamp>;
 	priority_result last (nano::election_behavior, nano::bucket_index) const;
+	std::map<nano::bucket_index, priority_result> last (nano::election_behavior behavior) const;
 
 	std::deque<std::shared_ptr<nano::election>> list () const;
 

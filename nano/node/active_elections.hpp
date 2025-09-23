@@ -108,6 +108,13 @@ public:
 	/// How many election slots are available for specified election type
 	int64_t vacancy (nano::election_behavior behavior) const;
 
+	/// Get election counts by bucket for a behavior
+	std::map<nano::bucket_index, size_t> election_counts (nano::election_behavior behavior) const;
+
+	/// Get worst election for each bucket for a behavior
+	using priority_result = std::pair<std::shared_ptr<nano::election>, nano::priority_timestamp>;
+	std::map<nano::bucket_index, priority_result> worst_elections (nano::election_behavior behavior) const;
+
 	nano::container_info container_info () const;
 
 public: // Events
@@ -150,8 +157,6 @@ private: // Dependencies
 	nano::cementing_set & cementing_set;
 
 public:
-	nano::active_elections_index index;
-
 	nano::recently_confirmed_cache recently_confirmed;
 	nano::recently_cemented_cache recently_cemented;
 
@@ -160,6 +165,8 @@ public:
 	mutable nano::mutex mutex{ mutex_identifier (mutexes::active) };
 
 private:
+	nano::active_elections_index index;
+
 	nano::condition_variable condition;
 	bool stopped{ false };
 	std::thread thread;

@@ -26,22 +26,6 @@ nano::scheduler::priority::priority (nano::node_config & node_config, nano::node
 		return;
 	}
 
-	// React to AEC events
-	active.election_started.add ([this] (auto const & election, nano::bucket_index bucket, nano::priority_timestamp priority) {
-		nano::lock_guard<nano::mutex> lock{ mutex };
-
-		if (election->behavior () == nano::election_behavior::priority)
-		{
-			elections.insert (election, bucket, priority);
-		}
-	});
-
-	// React to AEC events
-	active.election_erased.add ([this] (auto const & election) {
-		nano::lock_guard<nano::mutex> lock{ mutex };
-		elections.erase (election);
-	});
-
 	// Activate accounts with fresh blocks
 	ledger_notifications.blocks_processed.add ([this] (auto const & batch) {
 		auto transaction = ledger.tx_begin_read ();
@@ -186,12 +170,6 @@ bool nano::scheduler::priority::contains (nano::block_hash const & hash) const
 	return pool.contains (hash);
 }
 
-bool nano::scheduler::priority::contains (std::shared_ptr<nano::election> const & election) const
-{
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	return elections.contains (election);
-}
-
 std::size_t nano::scheduler::priority::size () const
 {
 	nano::lock_guard<nano::mutex> lock{ mutex };
@@ -209,22 +187,27 @@ bool nano::scheduler::priority::predicate () const
 	debug_assert (!mutex.try_lock ());
 
 	auto aec_vacancy = active.vacancy (nano::election_behavior::priority);
+	auto election_counts = active.election_counts (nano::election_behavior::priority);
+	auto worst_elections = active.worst_elections (nano::election_behavior::priority);
 
 	// Check if any bucket has blocks and available election slots
 	auto tops = pool.top_all ();
 	for (auto const & [bucket_index, entry] : tops)
 	{
-		if (bucket_activate_predicate (bucket_index, entry.priority, aec_vacancy))
+		auto count = election_counts.count (bucket_index) ? election_counts.at (bucket_index) : 0;
+		auto worst_it = worst_elections.find (bucket_index);
+		auto worst = worst_it != worst_elections.end () ? worst_it->second : nano::active_elections::priority_result{ nullptr, 0 };
+
+		if (bucket_activate_predicate (bucket_index, entry.priority, aec_vacancy, count, worst))
 		{
 			return true;
 		}
 	}
 
 	// Check if any bucket is overfilled and needs to cancel elections
-	auto sizes = elections.sizes ();
-	for (auto const & [bucket_index, size] : sizes)
+	for (auto const & [bucket_index, size] : election_counts)
 	{
-		if (size > 0 && bucket_overfill_predicate (bucket_index, aec_vacancy))
+		if (size > 0 && bucket_overfill_predicate (bucket_index, aec_vacancy, size))
 		{
 			return true;
 		}
@@ -233,52 +216,49 @@ bool nano::scheduler::priority::predicate () const
 	return false;
 }
 
-bool nano::scheduler::priority::bucket_activate_predicate (nano::bucket_index bucket, nano::priority_timestamp candidate_timestamp, int64_t aec_vacancy) const
+bool nano::scheduler::priority::bucket_activate_predicate (nano::bucket_index bucket, nano::priority_timestamp candidate_timestamp, int64_t aec_vacancy, size_t election_count, nano::active_elections::priority_result const & worst) const
 {
 	debug_assert (!mutex.try_lock ());
 
-	auto count = elections.size (bucket);
-
 	// Always have space for reserved elections
-	if (count < config.reserved_elections)
+	if (election_count < config.reserved_elections)
 	{
 		return true;
 	}
 
 	// Allow up to max_elections if global vacancy allows
-	if (count < config.max_elections)
+	if (election_count < config.max_elections)
 	{
 		return aec_vacancy > 0;
 	}
 
 	// Check if new priority is better than the lowest priority (highest value) in bucket
-	if (auto lowest = elections.worst (bucket))
+	auto const & [worst_election, worst_priority] = worst;
+	if (worst_election)
 	{
 		// Compare to equal to drain duplicates
-		if (candidate_timestamp <= lowest->priority)
+		if (candidate_timestamp <= worst_priority)
 		{
 			// Bound number of reprioritizations
-			return count < config.max_elections * 2;
+			return election_count < config.max_elections * 2;
 		}
 	}
 
 	return false;
 }
 
-bool nano::scheduler::priority::bucket_overfill_predicate (nano::bucket_index bucket, int64_t aec_vacancy) const
+bool nano::scheduler::priority::bucket_overfill_predicate (nano::bucket_index bucket, int64_t aec_vacancy, size_t election_count) const
 {
 	debug_assert (!mutex.try_lock ());
 
-	auto count = elections.size (bucket);
-
 	// Always have space for reserved elections
-	if (count <= config.reserved_elections)
+	if (election_count <= config.reserved_elections)
 	{
 		return false;
 	}
 
 	// Allow up to 2x max_elections if there is space in AEC
-	if (count <= config.max_elections)
+	if (election_count <= config.max_elections)
 	{
 		return aec_vacancy < 0;
 	}
@@ -293,16 +273,24 @@ bool nano::scheduler::priority::run_one (nano::unique_lock<nano::mutex> & lock)
 
 	bool did_work = false;
 
-	// Snapshot aec vacancy here to avoid repeated calls which can be expensive
+	// Batch query AEC data - two calls with locks instead of many
 	auto aec_vacancy = active.vacancy (nano::election_behavior::priority);
+	auto election_counts = active.election_counts (nano::election_behavior::priority);
+	auto worst_elections = active.worst_elections (nano::election_behavior::priority);
 
 	std::deque<priority_pool::priority_result> to_schedule;
 
 	// Activate buckets with available candidates
 	auto tops = pool.top_all ();
-	for (auto const & [bucket_index, entry] : tops)
+	for (auto const & [bucket_index, top_entry] : tops)
 	{
-		if (bucket_activate_predicate (bucket_index, entry.priority, aec_vacancy))
+		auto count_it = election_counts.find (bucket_index);
+		auto count = count_it != election_counts.end () ? count_it->second : 0;
+
+		auto worst_it = worst_elections.find (bucket_index);
+		auto worst = worst_it != worst_elections.end () ? worst_it->second : nano::active_elections::priority_result{ nullptr, 0 };
+
+		if (bucket_activate_predicate (bucket_index, top_entry.priority, aec_vacancy, count, worst))
 		{
 			auto entry = pool.pop (bucket_index);
 			release_assert (entry.has_value ());
@@ -336,17 +324,16 @@ bool nano::scheduler::priority::run_one (nano::unique_lock<nano::mutex> & lock)
 	// Cancel elections in overfilled buckets
 	std::deque<std::shared_ptr<nano::election>> to_cancel;
 
-	auto sizes = elections.sizes ();
-	for (auto const & [bucket_index, size] : sizes)
+	for (auto const & [bucket_index, count] : election_counts)
 	{
-		if (size > 0 && bucket_overfill_predicate (bucket_index, aec_vacancy))
+		if (count > 0 && bucket_overfill_predicate (bucket_index, aec_vacancy, count))
 		{
-			// Get the worst election (largest priority value)
-			auto worst = elections.worst (bucket_index);
-			release_assert (worst.has_value ());
-			if (worst)
+			// Get the worst election from our cached data
+			auto worst_it = worst_elections.find (bucket_index);
+			if (worst_it != worst_elections.end ())
 			{
-				to_cancel.push_back (worst->election);
+				auto const & [worst_election, worst_priority] = worst_it->second;
+				to_cancel.push_back (worst_election);
 			}
 		}
 	}
@@ -411,7 +398,6 @@ nano::container_info nano::scheduler::priority::container_info () const
 {
 	nano::container_info info;
 	info.add ("pool", pool.container_info ());
-	info.add ("elections", elections.container_info ());
 	return info;
 }
 

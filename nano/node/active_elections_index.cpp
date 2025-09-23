@@ -127,6 +127,21 @@ size_t nano::active_elections_index::size (nano::election_behavior behavior, nan
 	return 0;
 }
 
+auto nano::active_elections_index::counts (nano::election_behavior behavior) const -> std::map<nano::bucket_index, size_t>
+{
+	std::map<nano::bucket_index, size_t> result;
+
+	for (auto const & [key, count] : size_by_bucket)
+	{
+		if (key.first == behavior && count > 0)
+		{
+			result[key.second] = count;
+		}
+	}
+
+	return result;
+}
+
 auto nano::active_elections_index::last (nano::election_behavior behavior, nano::bucket_index bucket) const -> priority_result
 {
 	auto & index = entries.get<tag_key> ();
@@ -141,6 +156,22 @@ auto nano::active_elections_index::last (nano::election_behavior behavior, nano:
 	}
 
 	return { nullptr, std::numeric_limits<nano::priority_timestamp>::max () };
+}
+
+auto nano::active_elections_index::last (nano::election_behavior behavior) const -> std::map<nano::bucket_index, priority_result>
+{
+	std::map<nano::bucket_index, priority_result> result;
+
+	// First get all buckets that have elections for this behavior
+	auto bucket_counts = counts (behavior);
+
+	// Now get the worst election for each bucket
+	for (auto const & [bucket, count] : bucket_counts)
+	{
+		result[bucket] = last (behavior, bucket);
+	}
+
+	return result;
 }
 
 auto nano::active_elections_index::list (std::chrono::steady_clock::time_point cutoff, std::chrono::steady_clock::time_point now) -> std::deque<std::shared_ptr<nano::election>>

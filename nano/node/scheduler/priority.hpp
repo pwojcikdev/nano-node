@@ -2,7 +2,6 @@
 
 #include <nano/lib/numbers.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/scheduler/election_tracker.hpp>
 #include <nano/node/scheduler/priority_pool.hpp>
 
 #include <condition_variable>
@@ -51,7 +50,6 @@ public:
 	bool activate_successors (nano::secure::transaction const &, nano::block const &);
 
 	bool contains (nano::block_hash const &) const;
-	bool contains (std::shared_ptr<nano::election> const &) const;
 
 	void notify (int64_t vacancy);
 	std::size_t size () const;
@@ -72,15 +70,14 @@ private: // Dependencies
 
 private:
 	bool predicate () const;
-	bool bucket_activate_predicate (nano::bucket_index, nano::priority_timestamp candidate_timestamp, int64_t aec_vacancy) const;
-	bool bucket_overfill_predicate (nano::bucket_index, int64_t aec_vacancy) const;
+	bool bucket_activate_predicate (nano::bucket_index, nano::priority_timestamp candidate_timestamp, int64_t aec_vacancy, size_t election_count, nano::active_elections::priority_result const & worst) const;
+	bool bucket_overfill_predicate (nano::bucket_index, int64_t aec_vacancy, size_t election_count) const;
 
 	void run ();
 	bool run_one (nano::unique_lock<nano::mutex> &);
 
 private:
 	priority_pool pool;
-	election_tracker elections;
 
 	bool stopped{ false };
 	nano::condition_variable condition;

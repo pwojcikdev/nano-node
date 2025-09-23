@@ -838,6 +838,18 @@ void nano::active_elections::clear ()
 	vacancy_updated.notify (vacancies);
 }
 
+std::map<nano::bucket_index, size_t> nano::active_elections::election_counts (nano::election_behavior behavior) const
+{
+	nano::lock_guard<nano::mutex> guard{ mutex };
+	return index.counts (behavior);
+}
+
+std::map<nano::bucket_index, nano::active_elections::priority_result> nano::active_elections::worst_elections (nano::election_behavior behavior) const
+{
+	nano::lock_guard<nano::mutex> guard{ mutex };
+	return index.last (behavior);
+}
+
 nano::container_info nano::active_elections::container_info () const
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
