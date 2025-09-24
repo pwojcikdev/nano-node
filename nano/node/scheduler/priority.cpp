@@ -353,7 +353,7 @@ bool nano::scheduler::priority::run_one (nano::unique_lock<nano::mutex> & lock)
 			election->block_count (),
 			election->duration ().count ());
 
-			bool cancelled = election->cancel ();
+			bool cancelled = active.erase (election->qualified_root);
 
 			stats.inc (nano::stat::type::election_scheduler, cancelled ? nano::stat::detail::cancel_lowest : nano::stat::detail::cancel_failed);
 		}
