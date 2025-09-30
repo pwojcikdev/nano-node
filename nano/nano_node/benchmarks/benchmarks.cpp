@@ -174,6 +174,14 @@ benchmark_config benchmark_config::parse (boost::program_options::variables_map 
 			std::cerr << "Invalid cementing mode: " << mode_str << ". Using default (sequential).\n";
 		}
 	}
+	if (vm.count ("num_representatives"))
+	{
+		config.num_representatives = std::stoull (vm["num_representatives"].as<std::string> ());
+	}
+	if (vm.count ("num_non_representatives"))
+	{
+		config.num_non_representatives = std::stoull (vm["num_non_representatives"].as<std::string> ());
+	}
 	return config;
 }
 
