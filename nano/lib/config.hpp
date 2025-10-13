@@ -107,6 +107,34 @@ size_t ledger_max_rollback_depth ();
 
 namespace nano
 {
+template <typename T>
+struct select_for
+{
+	T live;
+	std::optional<T> beta{};
+	std::optional<T> dev{};
+
+	operator T () const
+	{
+		switch (nano::get_active_network ())
+		{
+			case nano::networks::nano_live_network:
+			case nano::networks::nano_test_network:
+				return live;
+			case nano::networks::nano_beta_network:
+				return beta ? *beta : live;
+			case nano::networks::nano_dev_network:
+				return dev ? *dev : live;
+			case nano::networks::invalid:
+				break;
+		}
+		release_assert (false, "invalid network");
+	}
+};
+}
+
+namespace nano
+{
 /**
  * Attempt to read a configuration file from specified directory. Returns empty tomlconfig if nothing is found.
  * @throws std::runtime_error with error code if the file or overrides are not valid toml
