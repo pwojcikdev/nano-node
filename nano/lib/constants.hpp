@@ -125,7 +125,7 @@ public:
 	uint16_t default_rpc_port;
 	uint16_t default_ipc_port;
 	uint16_t default_websocket_port;
-	std::chrono::milliseconds aec_loop_interval{ select_for<std::chrono::milliseconds>{ .live = 300ms, .beta = 500ms, .dev = 20ms } };
+	std::chrono::milliseconds aec_loop_interval{ configure (300ms, { .dev = 20ms }) };
 
 	std::chrono::seconds cleanup_period;
 	std::chrono::milliseconds cleanup_period_half () const

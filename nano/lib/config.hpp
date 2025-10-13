@@ -107,30 +107,30 @@ size_t ledger_max_rollback_depth ();
 
 namespace nano
 {
-template <typename T>
-struct select_for
+template <class T>
+struct configure_overrides
 {
-	T live;
 	std::optional<T> beta{};
 	std::optional<T> dev{};
-
-	operator T () const
-	{
-		switch (nano::get_active_network ())
-		{
-			case nano::networks::nano_live_network:
-			case nano::networks::nano_test_network:
-				return live;
-			case nano::networks::nano_beta_network:
-				return beta ? *beta : live;
-			case nano::networks::nano_dev_network:
-				return dev ? *dev : live;
-			case nano::networks::invalid:
-				break;
-		}
-		release_assert (false, "invalid network");
-	}
 };
+
+template <class T, class U>
+T configure (T default_value, configure_overrides<U> overrides = {})
+{
+	switch (nano::get_active_network ())
+	{
+		case nano::networks::nano_live_network:
+		case nano::networks::nano_test_network:
+			return default_value;
+		case nano::networks::nano_beta_network:
+			return overrides.beta.value_or (default_value);
+		case nano::networks::nano_dev_network:
+			return overrides.dev.value_or (default_value);
+		case nano::networks::invalid:
+			break;
+	}
+	release_assert (false, "invalid network");
+}
 }
 
 namespace nano
