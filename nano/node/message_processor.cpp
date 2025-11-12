@@ -212,6 +212,15 @@ public:
 				node.aggregator.request (message.roots_hashes, channel);
 			}
 		}
+
+		// Trigger vote storage for rebroadcasting
+		if (!message.roots_hashes.empty ())
+		{
+			for (auto const & [hash, root] : message.roots_hashes)
+			{
+				node.vote_storage.trigger (hash, channel);
+			}
+		}
 	}
 
 	void confirm_ack (nano::confirm_ack const & message) override

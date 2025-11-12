@@ -40,6 +40,9 @@ std::string nano::thread_role::get_string (nano::thread_role::name role)
 		case nano::thread_role::name::vote_rebroadcasting:
 			thread_role_name_string = "Vote rebroad";
 			break;
+		case nano::thread_role::name::vote_storage:
+			thread_role_name_string = "Vote storage";
+			break;
 		case nano::thread_role::name::block_processing:
 			thread_role_name_string = "Blck processing";
 			break;

@@ -32,3 +32,41 @@ std::unique_ptr<nano::store::component> nano::make_store (nano::logger & logger,
 
 	release_assert (false); // Must be handled above
 }
+
+std::unique_ptr<nano::store::component> nano::make_vote_store (nano::logger & logger, std::filesystem::path const & path, nano::ledger_constants & constants, nano::node_config node_config)
+{
+	// Vote store is always read-write
+	nano::store::open_mode const mode = nano::store::open_mode::read_write;
+
+	// Use the same backend as the main store
+	switch (node_config.database_backend)
+	{
+		case nano::database_backend::lmdb:
+		{
+			// Create separate vote storage database with nosync_unsafe for performance
+			auto lmdb_config = node_config.lmdb_config;
+			lmdb_config.sync = nano::lmdb_config::sync_strategy::nosync_unsafe;
+
+			return std::make_unique<nano::store::lmdb::component> (
+				logger,
+				path / "votes.ldb",
+				constants,
+				node_config.diagnostics_config.txn_tracking,
+				node_config.block_processor_batch_max_time,
+				lmdb_config,
+				false, // backup_before_upgrade
+				mode);
+		}
+		case nano::database_backend::rocksdb:
+		{
+			return std::make_unique<nano::store::rocksdb::component> (
+				logger,
+				path / "votes_rocksdb",
+				constants,
+				node_config.rocksdb_config,
+				mode);
+		}
+	}
+
+	release_assert (false); // Must be handled above
+}

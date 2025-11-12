@@ -27,6 +27,10 @@ enum class type
 	vote_processor_overfill,
 	vote_rebroadcaster,
 	vote_rebroadcaster_tier,
+	vote_storage,
+	vote_storage_broadcast,
+	vote_storage_replies,
+	vote_storage_write,
 	election,
 	election_cleanup,
 	election_vote,
@@ -299,6 +303,16 @@ enum class detail
 	rebroadcast_unnecessary,
 	rebroadcast_hashes,
 
+	// vote_storage
+	stored,
+	stored_votes,
+	reply_duplicate,
+	reply_vote,
+	write_error_reply,
+	broadcast_rep,
+	write_error_broadcast,
+	low_weight,
+
 	// election specific
 	vote_new,
 	vote_processed,
@@ -365,6 +379,7 @@ enum class detail
 	confirmation_requests,
 	vote_rebroadcast,
 	vote_reply,
+	vote_storage,
 	rep_crawler,
 	telemetry,
 

@@ -207,6 +207,10 @@ add_library(
   vote_router.cpp
   vote_spacing.hpp
   vote_spacing.cpp
+  vote_storage_config.hpp
+  vote_storage_config.cpp
+  vote_storage.hpp
+  vote_storage.cpp
   vote_with_weight_info.hpp
   wallet.hpp
   wallet.cpp

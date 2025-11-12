@@ -18,6 +18,7 @@ enum class name
 	vote_processing,
 	vote_cache_processing,
 	vote_rebroadcasting,
+	vote_storage,
 	block_processing,
 	ledger_notifications,
 	aec_loop,

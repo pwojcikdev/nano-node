@@ -100,6 +100,8 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	stats{ *stats_impl },
 	store_impl{ nano::make_store (logger, application_path_a, network_params.ledger, flags.read_only, true, config_a) },
 	store{ *store_impl },
+	vote_store_impl{ nano::make_vote_store (logger, application_path_a, network_params.ledger, config_a) },
+	vote_store{ *vote_store_impl },
 	wallets_store_impl{ std::make_unique<nano::mdb_wallets_store> (application_path_a / "wallets.ldb", config_a.lmdb_config) },
 	wallets_store{ *wallets_store_impl },
 	wallets_impl{ std::make_unique<nano::wallets> (false, *this) },
@@ -210,6 +212,8 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	pruning{ *pruning_impl },
 	vote_rebroadcaster_impl{ std::make_unique<nano::vote_rebroadcaster> (config.vote_rebroadcaster, ledger, vote_router, network, wallets, rep_tiers, stats, logger) },
 	vote_rebroadcaster{ *vote_rebroadcaster_impl },
+	vote_storage_impl{ std::make_unique<nano::vote_storage> (config.vote_storage, *this, vote_store, network, ledger, stats) },
+	vote_storage{ *vote_storage_impl },
 	startup_time{ std::chrono::steady_clock::now () },
 	node_seq{ seq }
 {
@@ -291,6 +295,12 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 		if (should_observe)
 		{
 			online_reps.observe (vote->account);
+		}
+
+		// Store vote for potential rebroadcasting
+		if (code != nano::vote_code::invalid)
+		{
+			vote_storage.vote (vote);
 		}
 	});
 
@@ -587,6 +597,7 @@ void nano::node::start ()
 	http_callbacks.start ();
 	pruning.start ();
 	vote_rebroadcaster.start ();
+	vote_storage.start ();
 
 	add_initial_peers ();
 }
@@ -638,6 +649,7 @@ void nano::node::stop ()
 	http_callbacks.stop ();
 	pruning.stop ();
 	vote_rebroadcaster.stop ();
+	vote_storage.stop ();
 
 	bootstrap_workers.stop ();
 	wallet_workers.stop ();

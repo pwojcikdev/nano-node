@@ -20,6 +20,7 @@ enum class traffic_type
 	vote,
 	vote_rebroadcast,
 	vote_reply,
+	vote_storage,
 	rep_crawler,
 	telemetry,
 	test,

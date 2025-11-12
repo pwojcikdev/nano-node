@@ -19,6 +19,7 @@
 #include <nano/node/transport/tcp_server.hpp>
 #include <nano/node/unchecked_map.hpp>
 #include <nano/node/vote_cache.hpp>
+#include <nano/node/vote_storage.hpp>
 #include <nano/node/wallet.hpp>
 #include <nano/node/websocket.hpp>
 
@@ -106,6 +107,8 @@ public:
 	nano::stats & stats;
 	std::unique_ptr<nano::store::component> store_impl;
 	nano::store::component & store;
+	std::unique_ptr<nano::store::component> vote_store_impl;
+	nano::store::component & vote_store;
 	std::unique_ptr<nano::wallets_store> wallets_store_impl;
 	nano::wallets_store & wallets_store;
 	std::unique_ptr<nano::wallets> wallets_impl;
@@ -206,6 +209,8 @@ public:
 	nano::pruning & pruning;
 	std::unique_ptr<nano::vote_rebroadcaster> vote_rebroadcaster_impl;
 	nano::vote_rebroadcaster & vote_rebroadcaster;
+	std::unique_ptr<nano::vote_storage> vote_storage_impl;
+	nano::vote_storage & vote_storage;
 
 public:
 	std::chrono::steady_clock::time_point const startup_time;

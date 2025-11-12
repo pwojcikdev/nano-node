@@ -34,6 +34,7 @@
 #include <nano/node/vote_generator.hpp>
 #include <nano/node/vote_processor.hpp>
 #include <nano/node/vote_rebroadcaster.hpp>
+#include <nano/node/vote_storage_config.hpp>
 #include <nano/node/websocketconfig.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/generate_cache_flags.hpp>
@@ -161,6 +162,7 @@ public:
 	nano::backlog_scan_config backlog_scan;
 	nano::bounded_backlog_config bounded_backlog;
 	nano::vote_rebroadcaster_config vote_rebroadcaster;
+	nano::vote_storage_config vote_storage;
 	nano::fork_cache_config fork_cache;
 
 public:
