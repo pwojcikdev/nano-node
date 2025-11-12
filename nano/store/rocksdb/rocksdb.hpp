@@ -16,6 +16,7 @@
 #include <nano/store/rocksdb/pruned.hpp>
 #include <nano/store/rocksdb/rep_weight.hpp>
 #include <nano/store/rocksdb/version.hpp>
+#include <nano/store/rocksdb/vote_storage.hpp>
 
 #include <rocksdb/db.h>
 #include <rocksdb/filter_policy.h>
@@ -44,6 +45,7 @@ private:
 	nano::store::rocksdb::block block_store;
 	nano::store::rocksdb::confirmation_height confirmation_height_store;
 	nano::store::rocksdb::final_vote final_vote_store;
+	nano::store::rocksdb::vote_storage vote_storage_store;
 	nano::store::rocksdb::online_weight online_weight_store;
 	nano::store::rocksdb::peer peer_store;
 	nano::store::rocksdb::pending pending_store;
@@ -56,6 +58,7 @@ public:
 	friend class nano::store::rocksdb::block;
 	friend class nano::store::rocksdb::confirmation_height;
 	friend class nano::store::rocksdb::final_vote;
+	friend class nano::store::rocksdb::vote_storage;
 	friend class nano::store::rocksdb::online_weight;
 	friend class nano::store::rocksdb::peer;
 	friend class nano::store::rocksdb::pending;

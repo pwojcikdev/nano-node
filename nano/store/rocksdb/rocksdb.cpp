@@ -51,6 +51,7 @@ nano::store::rocksdb::component::component (nano::logger & logger_a, std::filesy
 		peer_store,
 		confirmation_height_store,
 		final_vote_store,
+		vote_storage_store,
 		version_store,
 		rep_weight_store
 	},
@@ -63,6 +64,7 @@ nano::store::rocksdb::component::component (nano::logger & logger_a, std::filesy
 	peer_store{ *this },
 	confirmation_height_store{ *this },
 	final_vote_store{ *this },
+	vote_storage_store{ *this },
 	version_store{ *this },
 	rep_weight_store{ *this },
 	database_path{ path_a },
@@ -171,6 +173,7 @@ std::unordered_map<char const *, nano::tables> nano::store::rocksdb::component::
 		{ "confirmation_height", tables::confirmation_height },
 		{ "pruned", tables::pruned },
 		{ "final_votes", tables::final_votes },
+		{ "vote_storage", tables::vote_storage },
 		{ "rep_weights", tables::rep_weights } };
 
 	debug_assert (map.size () == all_tables ().size () + 1);
@@ -519,6 +522,8 @@ rocksdb::ColumnFamilyHandle * nano::store::rocksdb::component::table_to_column_f
 			return get_column_family ("confirmation_height");
 		case tables::final_votes:
 			return get_column_family ("final_votes");
+		case tables::vote_storage:
+			return get_column_family ("vote_storage");
 		case tables::rep_weights:
 			return get_column_family ("rep_weights");
 		default:
@@ -807,7 +812,7 @@ void nano::store::rocksdb::component::on_flush (::rocksdb::FlushJobInfo const & 
 
 std::vector<nano::tables> nano::store::rocksdb::component::all_tables () const
 {
-	return std::vector<nano::tables>{ tables::accounts, tables::blocks, tables::confirmation_height, tables::final_votes, tables::meta, tables::online_weight, tables::peers, tables::pending, tables::pruned, tables::vote, tables::rep_weights };
+	return std::vector<nano::tables>{ tables::accounts, tables::blocks, tables::confirmation_height, tables::final_votes, tables::meta, tables::online_weight, tables::peers, tables::pending, tables::pruned, tables::vote, tables::vote_storage, tables::rep_weights };
 }
 
 bool nano::store::rocksdb::component::copy_db (std::filesystem::path const & destination_path)

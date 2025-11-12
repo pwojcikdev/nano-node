@@ -19,5 +19,6 @@ class read_transaction;
 class rep_weight;
 class transaction;
 class version;
+class vote_storage;
 class write_transaction;
 }

@@ -95,6 +95,14 @@ struct hash<::nano::qualified_root>
 	}
 };
 template <>
+struct hash<::nano::vote_storage_key>
+{
+	size_t operator() (::nano::vote_storage_key const & value) const noexcept
+	{
+		return hash<::nano::uint512_union>{}(value);
+	}
+};
+template <>
 struct hash<::nano::signature>
 {
 	size_t operator() (::nano::signature const & value) const noexcept
@@ -192,6 +200,14 @@ struct hash<::nano::qualified_root>
 	size_t operator() (::nano::qualified_root const & value) const noexcept
 	{
 		return std::hash<::nano::qualified_root> () (value);
+	}
+};
+template <>
+struct hash<::nano::vote_storage_key>
+{
+	size_t operator() (::nano::vote_storage_key const & value) const noexcept
+	{
+		return std::hash<::nano::vote_storage_key> () (value);
 	}
 };
 template <>

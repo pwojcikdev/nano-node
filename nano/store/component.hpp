@@ -45,6 +45,7 @@ namespace store
 		nano::store::peer &,
 		nano::store::confirmation_height &,
 		nano::store::final_vote &,
+		nano::store::vote_storage &,
 		nano::store::version &,
 		nano::store::rep_weight &);
 
@@ -72,6 +73,7 @@ namespace store
 		store::peer & peer;
 		store::confirmation_height & confirmation_height;
 		store::final_vote & final_vote;
+		store::vote_storage & vote_storage;
 		store::version & version;
 
 	public: // TODO: Shouldn't be public

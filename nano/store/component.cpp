@@ -9,8 +9,9 @@
 #include <nano/store/pending.hpp>
 #include <nano/store/pruned.hpp>
 #include <nano/store/rep_weight.hpp>
+#include <nano/store/vote_storage.hpp>
 
-nano::store::component::component (nano::store::block & block_store_a, nano::store::account & account_store_a, nano::store::pending & pending_store_a, nano::store::online_weight & online_weight_store_a, nano::store::pruned & pruned_store_a, nano::store::peer & peer_store_a, nano::store::confirmation_height & confirmation_height_store_a, nano::store::final_vote & final_vote_store_a, nano::store::version & version_store_a, nano::store::rep_weight & rep_weight_a) :
+nano::store::component::component (nano::store::block & block_store_a, nano::store::account & account_store_a, nano::store::pending & pending_store_a, nano::store::online_weight & online_weight_store_a, nano::store::pruned & pruned_store_a, nano::store::peer & peer_store_a, nano::store::confirmation_height & confirmation_height_store_a, nano::store::final_vote & final_vote_store_a, nano::store::vote_storage & vote_storage_store_a, nano::store::version & version_store_a, nano::store::rep_weight & rep_weight_a) :
 	block (block_store_a),
 	account (account_store_a),
 	pending (pending_store_a),
@@ -19,6 +20,7 @@ nano::store::component::component (nano::store::block & block_store_a, nano::sto
 	peer (peer_store_a),
 	confirmation_height (confirmation_height_store_a),
 	final_vote (final_vote_store_a),
+	vote_storage (vote_storage_store_a),
 	version (version_store_a),
 	rep_weight (rep_weight_a)
 {
@@ -36,6 +38,7 @@ void nano::store::component::initialize (store::write_transaction const & transa
 	release_assert (pending.begin (transaction) == pending.end (transaction));
 	release_assert (confirmation_height.begin (transaction) == confirmation_height.end (transaction));
 	release_assert (final_vote.begin (transaction) == final_vote.end (transaction));
+	release_assert (vote_storage.begin (transaction) == vote_storage.end (transaction));
 	release_assert (rep_weight.begin (transaction) == rep_weight.end (transaction));
 	release_assert (pruned.begin (transaction) == pruned.end (transaction));
 

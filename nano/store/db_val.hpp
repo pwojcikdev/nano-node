@@ -66,6 +66,7 @@ public:
 	explicit operator nano::uint128_union () const;
 	explicit operator nano::uint256_union () const;
 	explicit operator nano::uint512_union () const;
+	explicit operator nano::vote_storage_key () const;
 	explicit operator nano::qualified_root () const;
 	explicit operator nano::account_info () const;
 	explicit operator nano::account_info_v22 () const;

@@ -20,6 +20,7 @@
 #include <nano/store/lmdb/rep_weight.hpp>
 #include <nano/store/lmdb/transaction_impl.hpp>
 #include <nano/store/lmdb/version.hpp>
+#include <nano/store/lmdb/vote_storage.hpp>
 #include <nano/store/versioning.hpp>
 
 #include <boost/optional.hpp>
@@ -38,6 +39,7 @@ private:
 	nano::store::lmdb::block block_store;
 	nano::store::lmdb::confirmation_height confirmation_height_store;
 	nano::store::lmdb::final_vote final_vote_store;
+	nano::store::lmdb::vote_storage vote_storage_store;
 	nano::store::lmdb::online_weight online_weight_store;
 	nano::store::lmdb::peer peer_store;
 	nano::store::lmdb::pending pending_store;
@@ -49,6 +51,7 @@ private:
 	friend class nano::store::lmdb::block;
 	friend class nano::store::lmdb::confirmation_height;
 	friend class nano::store::lmdb::final_vote;
+	friend class nano::store::lmdb::vote_storage;
 	friend class nano::store::lmdb::online_weight;
 	friend class nano::store::lmdb::peer;
 	friend class nano::store::lmdb::pending;

@@ -506,6 +506,25 @@ public:
 	}
 };
 
+class vote_storage_key : public uint512_union
+{
+public:
+	vote_storage_key () = default;
+	vote_storage_key (nano::block_hash const & hash, nano::account const & account) :
+		uint512_union{ hash.as_union (), account.as_union () } {};
+	vote_storage_key (nano::uint512_t const & value) :
+		uint512_union{ value } {};
+
+	nano::block_hash const & hash () const
+	{
+		return reinterpret_cast<nano::block_hash const &> (uint256s[0]);
+	}
+	nano::account const & account () const
+	{
+		return reinterpret_cast<nano::account const &> (uint256s[1]);
+	}
+};
+
 nano::signature sign_message (nano::raw_key const &, nano::public_key const &, nano::uint256_union const &);
 nano::signature sign_message (nano::raw_key const &, nano::public_key const &, uint8_t const *, size_t);
 bool validate_message (nano::public_key const &, nano::uint256_union const &, nano::signature const &);
@@ -594,6 +613,8 @@ struct hash<::nano::uint512_union>;
 template <>
 struct hash<::nano::qualified_root>;
 template <>
+struct hash<::nano::vote_storage_key>;
+template <>
 struct hash<::nano::signature>;
 }
 
@@ -621,6 +642,8 @@ template <>
 struct hash<::nano::uint512_union>;
 template <>
 struct hash<::nano::qualified_root>;
+template <>
+struct hash<::nano::vote_storage_key>;
 template <>
 struct hash<::nano::signature>;
 }

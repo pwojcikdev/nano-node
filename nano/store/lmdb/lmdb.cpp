@@ -30,6 +30,7 @@ nano::store::lmdb::component::component (nano::logger & logger_a, std::filesyste
 		peer_store,
 		confirmation_height_store,
 		final_vote_store,
+		vote_storage_store,
 		version_store,
 		rep_weight_store
 	},
@@ -42,6 +43,7 @@ nano::store::lmdb::component::component (nano::logger & logger_a, std::filesyste
 	peer_store{ *this },
 	confirmation_height_store{ *this },
 	final_vote_store{ *this },
+	vote_storage_store{ *this },
 	version_store{ *this },
 	rep_weight_store{ *this },
 	database_path{ path_a },
@@ -232,6 +234,7 @@ void nano::store::lmdb::component::open_databases (store::transaction const & tr
 	open_table (transaction_a, "pending", flags, pending_store.pending_v0_handle);
 	pending_store.pending_handle = pending_store.pending_v0_handle;
 	open_table (transaction_a, "final_votes", flags, final_vote_store.final_votes_handle);
+	open_table (transaction_a, "vote_storage", flags, vote_storage_store.vote_storage_handle);
 	open_table (transaction_a, "blocks", MDB_CREATE, block_store.blocks_handle);
 	open_table (transaction_a, "rep_weights", flags, rep_weight_store.rep_weights_handle);
 }
@@ -460,6 +463,8 @@ MDB_dbi nano::store::lmdb::component::table_to_dbi (tables table_a) const
 			return confirmation_height_store.confirmation_height_handle;
 		case tables::final_votes:
 			return final_vote_store.final_votes_handle;
+		case tables::vote_storage:
+			return vote_storage_store.vote_storage_handle;
 		case tables::rep_weights:
 			return rep_weight_store.rep_weights_handle;
 		default:

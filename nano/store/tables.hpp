@@ -18,6 +18,7 @@ enum class tables
 	pending,
 	pruned,
 	vote,
+	vote_storage,
 	rep_weights,
 };
 } // namespace nano

@@ -125,6 +125,11 @@ inline db_val::operator nano::uint512_union () const
 	return convert<nano::uint512_union> ();
 }
 
+inline db_val::operator nano::vote_storage_key () const
+{
+	return convert<nano::vote_storage_key> ();
+}
+
 inline db_val::operator nano::qualified_root () const
 {
 	return convert<nano::qualified_root> ();
