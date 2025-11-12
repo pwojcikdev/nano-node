@@ -493,6 +493,7 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 		auto data_path = vm.count ("data_path") ? std::filesystem::path (vm["data_path"].as<std::string> ()) : nano::working_path ();
 		auto node_flags = nano::inactive_node_flag_defaults ();
 		node_flags.config_overrides.push_back ("node.rocksdb.enable=false");
+		node_flags.read_only = false;
 		nano::update_flags (node_flags, vm);
 		try
 		{
