@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "Checking C++ code formatting..."
+"${SCRIPT_DIR}/ci/clang-format-check.sh"
+
+echo "Checking CMake file formatting..."
+"${SCRIPT_DIR}/ci/cmake-format-check.sh"
+
+echo "All formatting checks passed!"

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "Formatting C++ code..."
+"${SCRIPT_DIR}/ci/clang-format-do.sh"
+
+echo "Formatting CMake files..."
+"${SCRIPT_DIR}/ci/cmake-format-do.sh"
+
+echo "All formatting complete!"
