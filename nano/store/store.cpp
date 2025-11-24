@@ -43,27 +43,62 @@ ledger_store::ledger_store (std::unique_ptr<store::backend> backend_a, nano::sta
 {
 	logger.info (nano::log::type::ledger_store, "Initializing ledger store: {}", backend.get_database_path ().string ());
 
-	bool is_fully_upgraded = false;
-	bool is_fresh_db = false;
+	backend_meta meta{ 0 };
+
+	bool needs_upgrade = false;
+	bool fresh_db = false;
 	{
 		// Attempt to get meta information to determine if the exists or needs upgrading
 		auto meta_result = backend.meta ();
 		if (meta_result)
 		{
-			auto meta = meta_result.value ();
-			is_fully_upgraded = (meta.version == version_current);
+			meta = meta_result.value ();
+
+			logger.debug (nano::log::type::ledger_store, "Ledger database version: {}", meta.version);
+
+			// Prevent opening future database versions
+			if (meta.version > version_current)
+			{
+				logger.error (nano::log::type::ledger_store, "The version of the ledger database ({}) is higher than the current ({}) which is supported. Either upgrade your node software or use a different database.", meta.version, version_current);
+
+				throw std::runtime_error ("Ledger version " + std::to_string (meta.version) + " is higher than current version " + std::to_string (version_current));
+			}
+
+			// Minimum supported upgrade version check
+			if (meta.version < version_minimum)
+			{
+				logger.error (nano::log::type::ledger_store, "The version of the ledger database ({}) is lower than the minimum ({}) which is supported for upgrades. Perfrom an intermediate upgrade with an older node version or perform a fresh bootstrap.", meta.version, version_minimum);
+
+				throw std::runtime_error ("Ledger version " + std::to_string (meta.version) + " is lower than minimum supported version " + std::to_string (version_minimum));
+			}
+
+			// Check if upgrade is needed
+			if (meta.version < version_current)
+			{
+				needs_upgrade = true;
+
+				logger.info (nano::log::type::ledger_store, "The ledger database needs to be upgraded from version {} to {}", meta.version, version_current);
+			}
 		}
 		else
 		{
 			if (meta_result.error () == nano::error_backend::not_found)
 			{
-				is_fresh_db = true;
+				fresh_db = true;
+
+				logger.info (nano::log::type::ledger_store, "No existing ledger found, a new database will be created.");
 			}
 			else
 			{
-				throw std::runtime_error ("Failed to read meta information from the database: " + backend.error_string (static_cast<int> (meta_result.error ())));
+				throw std::runtime_error ("Failed to read meta information from the database: " + meta_result.error ().get_message ());
 			}
 		}
+	}
+
+	release_assert (meta.version > 0 || fresh_db);
+
+	if (is_fresh_db)
+	{
 	}
 }
 }

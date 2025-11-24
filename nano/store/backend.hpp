@@ -9,6 +9,7 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 
 namespace nano::store
@@ -42,13 +43,15 @@ struct backend_meta
 class backend
 {
 public:
-	using column_definitions = std::map<tables, std::string>;
+	using column_definitions = std::set<tables>;
 
 public:
 	virtual ~backend () = default;
 
-	virtual nano::result<backend_meta> meta () = 0;
-	virtual backend_status open (nano::store::open_mode mode, column_definitions) = 0;
+	nano::result<backend_meta> meta ();
+
+	virtual void open (nano::store::open_mode mode, column_definitions) = 0;
+	virtual void close () = 0;
 
 	// Basic CRUD operations
 	virtual int get (store::transaction const & tx, tables table, db_val const & key, db_val & value) const = 0;
@@ -77,9 +80,9 @@ public:
 	// Helper methods
 	void release_assert_success (int status) const;
 
-	std::string vendor_get () const;
-	std::filesystem::path get_database_path () const;
-	nano::store::open_mode get_mode () const;
+	virtual std::string vendor_get () const;
+	virtual std::filesystem::path get_database_path () const;
+	virtual nano::store::open_mode get_mode () const;
 };
 
 inline void backend::release_assert_success (int status) const

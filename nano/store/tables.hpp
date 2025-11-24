@@ -4,6 +4,7 @@
 
 namespace nano
 {
+// TODO: Move to store::tables
 // Keep this in alphabetical order
 enum class tables
 {

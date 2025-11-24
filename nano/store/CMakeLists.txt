@@ -3,6 +3,7 @@ add_library(
         store.hpp
         store.cpp
         backend.hpp
+        backend.cpp
         ledger/account.hpp
         ledger/account.cpp
         ledger/block.hpp
