@@ -16,7 +16,7 @@
 #include <nano/secure/rep_weights.hpp>
 #include <nano/store/account.hpp>
 #include <nano/store/block.hpp>
-#include <nano/store/component.hpp>
+#include <nano/store/store.hpp>
 #include <nano/store/confirmation_height.hpp>
 #include <nano/store/final_vote.hpp>
 #include <nano/store/online_weight.hpp>
@@ -30,7 +30,7 @@
 
 #include <cryptopp/words.h>
 
-nano::ledger::ledger (nano::store::component & store_a, nano::network_params const & params_a, nano::stats & stats_a, nano::logger & logger_a, nano::generate_cache_flags generate_cache_flags_a, nano::uint128_t min_rep_weight_a, uint64_t max_backlog_a) :
+nano::ledger::ledger (nano::store::ledger_store & store_a, nano::network_params const & params_a, nano::stats & stats_a, nano::logger & logger_a, nano::generate_cache_flags generate_cache_flags_a, nano::uint128_t min_rep_weight_a, uint64_t max_backlog_a) :
 	constants{ params_a.ledger },
 	work{ params_a.work },
 	store{ store_a },

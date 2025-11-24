@@ -8,10 +8,10 @@
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/store/account.hpp>
 #include <nano/store/block.hpp>
-#include <nano/store/component.hpp>
+#include <nano/store/store.hpp>
 #include <nano/store/confirmation_height.hpp>
 
-nano::bootstrap_server::bootstrap_server (bootstrap_server_config const & config_a, nano::store::component & store_a, nano::ledger & ledger_a, nano::network_constants const & network_constants_a, nano::stats & stats_a) :
+nano::bootstrap_server::bootstrap_server (bootstrap_server_config const & config_a, nano::store::ledger_store & store_a, nano::ledger & ledger_a, nano::network_constants const & network_constants_a, nano::stats & stats_a) :
 	config{ config_a },
 	store{ store_a },
 	ledger{ ledger_a },

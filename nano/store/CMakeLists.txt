@@ -39,6 +39,7 @@ add_library(
   lmdb/confirmation_height.hpp
   lmdb/db_val.hpp
   lmdb/final_vote.hpp
+  lmdb/backend.hpp
   lmdb/iterator.hpp
   lmdb/lmdb.hpp
   lmdb/lmdb_env.hpp
@@ -60,6 +61,7 @@ add_library(
   reverse_iterator.hpp
   reverse_iterator_templ.hpp
   rocksdb/account.hpp
+  rocksdb/backend.hpp
   rocksdb/block.hpp
   rocksdb/confirmation_height.hpp
   rocksdb/db_val.hpp
@@ -88,6 +90,7 @@ add_library(
   iterator.cpp
   final_vote.cpp
   lmdb/account.cpp
+  lmdb/backend.cpp
   lmdb/block.cpp
   lmdb/confirmation_height.cpp
   lmdb/final_vote.cpp
@@ -108,6 +111,7 @@ add_library(
   pruned.cpp
   rep_weight.cpp
   rocksdb/account.cpp
+  rocksdb/backend.cpp
   rocksdb/block.cpp
   rocksdb/confirmation_height.cpp
   rocksdb/final_vote.cpp

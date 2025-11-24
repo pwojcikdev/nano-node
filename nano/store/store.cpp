@@ -326,4 +326,34 @@ void ledger_store::upgrade_v23_to_v24 ()
 
 	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v23 to v24 completed");
 }
+
+std::string ledger_store::vendor_get () const
+{
+	return backend.vendor_get ();
+}
+
+std::filesystem::path ledger_store::get_database_path () const
+{
+	return backend.get_database_path ();
+}
+
+nano::store::open_mode ledger_store::get_mode () const
+{
+	return backend.get_mode ();
+}
+
+bool ledger_store::copy_db (std::filesystem::path const & destination)
+{
+	return backend.copy_db (destination);
+}
+
+nano::store::write_transaction ledger_store::tx_begin_write ()
+{
+	return backend.tx_begin_write ();
+}
+
+nano::store::read_transaction ledger_store::tx_begin_read () const
+{
+	return backend.tx_begin_read ();
+}
 }

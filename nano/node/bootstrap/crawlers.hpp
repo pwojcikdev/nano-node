@@ -3,7 +3,7 @@
 #include <nano/secure/account_info.hpp>
 #include <nano/secure/pending_info.hpp>
 #include <nano/store/account.hpp>
-#include <nano/store/component.hpp>
+#include <nano/store/store.hpp>
 #include <nano/store/pending.hpp>
 
 #include <optional>
@@ -16,7 +16,7 @@ struct account_database_crawler
 
 	static constexpr size_t sequential_attempts = 10;
 
-	account_database_crawler (nano::store::component & store, nano::store::transaction const & transaction, nano::account const & start) :
+	account_database_crawler (nano::store::ledger_store & store, nano::store::transaction const & transaction, nano::account const & start) :
 		store{ store },
 		transaction{ transaction },
 		it{ store.account.end (transaction) },
@@ -81,7 +81,7 @@ private:
 		}
 	}
 
-	nano::store::component & store;
+	nano::store::ledger_store & store;
 	nano::store::transaction const & transaction;
 
 	nano::store::account::iterator it;
@@ -94,7 +94,7 @@ struct pending_database_crawler
 
 	static constexpr size_t sequential_attempts = 10;
 
-	pending_database_crawler (nano::store::component & store, nano::store::transaction const & transaction, nano::account const & start) :
+	pending_database_crawler (nano::store::ledger_store & store, nano::store::transaction const & transaction, nano::account const & start) :
 		store{ store },
 		transaction{ transaction },
 		it{ store.pending.end (transaction) },
@@ -178,7 +178,7 @@ private:
 		}
 	}
 
-	nano::store::component & store;
+	nano::store::ledger_store & store;
 	nano::store::transaction const & transaction;
 
 	nano::store::pending::iterator it;
