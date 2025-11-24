@@ -12,16 +12,49 @@ auto backend::open_meta () -> backend_meta
 	// Attempt to open just the meta table which should always exist
 	open (schema_meta, store::open_mode::read_only);
 
+	load_meta ();
+	debug_assert (current_meta.has_value ());
+
+	close ();
+
+	return current_meta.value ();
+}
+
+auto backend::open (column_schema schema, nano::store::open_mode mode) -> void
+{
+	release_assert (!is_open, "backend is already open");
+
+	open_impl (schema, mode);
+
+	load_meta ();
+	debug_assert (current_meta.has_value ());
+
+	is_open = true;
+}
+
+void backend::close ()
+{
+	close_impl ();
+
+	current_meta.reset ();
+	is_open = false;
+}
+
+void backend::load_meta ()
+{
 	backend_meta meta;
 	{
 		version_store version{ *this };
 		auto transaction = tx_begin_read ();
 		meta.version = version.get_version (transaction);
 	}
+	current_meta = meta;
+}
 
-	close ();
-
-	return meta;
+auto backend::get_meta () const -> backend_meta
+{
+	release_assert (current_meta.has_value (), "meta information has not been loaded");
+	return current_meta.value ();
 }
 }
 

@@ -11,10 +11,15 @@
 
 namespace nano::store
 {
+struct ledger_store_params
+{
+	bool backup_before_upgrade{ false };
+};
+
 class ledger_store
 {
 public:
-	explicit ledger_store (std::unique_ptr<nano::store::backend>, nano::store::open_mode mode, nano::stats & stats, nano::logger & logger);
+	explicit ledger_store (std::unique_ptr<nano::store::backend>, nano::store::open_mode mode, nano::stats &, nano::logger &, ledger_store_params = {});
 
 	nano::store::write_transaction tx_begin_write ();
 	nano::store::read_transaction tx_begin_read () const;
@@ -26,6 +31,11 @@ public:
 	std::string vendor_get () const;
 	std::filesystem::path get_database_path () const;
 	nano::store::open_mode get_mode () const;
+
+public: // Upgrades
+	void upgrade_v21_to_v22 ();
+	void upgrade_v22_to_v23 ();
+	void upgrade_v23_to_v24 ();
 
 private:
 	std::unique_ptr<nano::store::backend> backend_impl;
@@ -63,10 +73,13 @@ public:
 	nano::store::ledger::version & version;
 
 public:
-	static uint64_t constexpr version_minimum{ 21 };
-	static uint64_t constexpr version_current{ 24 };
+	static nano::store::version_t constexpr version_minimum{ 21 };
+	static nano::store::version_t constexpr version_current{ 24 };
 
 private:
 	static nano::store::column_schema const schema_current;
+	static nano::store::column_schema const schema_v21;
+	static nano::store::column_schema const schema_v22;
+	static nano::store::column_schema const schema_v23;
 };
 };

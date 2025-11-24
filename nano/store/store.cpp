@@ -1,3 +1,5 @@
+#include "store.hpp"
+
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/store/backend.hpp>
@@ -31,7 +33,7 @@ nano::store::column_schema const ledger_store::schema_current{
 
 namespace nano::store
 {
-ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nano::store::open_mode mode, nano::stats & stats_a, nano::logger & logger_a) :
+ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nano::store::open_mode mode, nano::stats & stats_a, nano::logger & logger_a, ledger_store_params params) :
 	backend_impl{ std::move (backend_a) },
 	backend{ *backend_impl },
 	stats{ stats_a },
@@ -121,14 +123,179 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 
 	if (needs_upgrade)
 	{
+		if (params.backup_before_upgrade)
+		{
+			logger.info (nano::log::type::ledger_store, "Creating ledger backup before upgrade...");
+
+			backend.backup ();
+
+			logger.info (nano::log::type::ledger_store, "Ledger backup completed, continuing with upgrade...");
+		}
+
 		perform_upgrades ();
 	}
 
 	if (fresh_db)
 	{
+		logger.info (nano::log::type::ledger_store, "Creating new ledger database with version {} at '{}'",
+		version_current, backend.get_database_path ().string ());
+
 		backend.create (schema_current);
 	}
 
 	backend.open (schema_current, mode);
+
+	release_assert (backend.get_meta ().version == version_current, "ledger database version after initialization is not current");
+}
+
+void ledger_store::perform_upgrades ()
+{
+	auto meta = backend.get_meta ();
+
+	debug_assert (meta.version < version_current, "perform_upgrades called but no upgrade is necessary");
+	release_assert (meta.version >= version_minimum, "perform_upgrades called but version is below minimum supported version", std::to_string (meta.version));
+
+	switch (meta.version)
+	{
+		case 21:
+			upgrade_v21_to_v22 ();
+			[[fallthrough]];
+		case 22:
+			upgrade_v22_to_v23 ();
+			[[fallthrough]];
+		case 23:
+			upgrade_v23_to_v24 ();
+			[[fallthrough]];
+		case 24:
+			break;
+		default:
+			release_assert (false, "invalid ledger database version for upgrade", std::to_string (meta.version));
+	}
+}
+
+/*
+ * Upgrades
+ */
+
+nano::store::column_schema const ledger_store::schema_v21{
+	{ tables::blocks, "blocks" },
+	{ tables::accounts, "accounts" },
+	{ tables::pending, "pending" },
+	{ tables::rep_weights, "rep_weights" },
+	{ tables::online_weight, "online_weight" },
+	{ tables::pruned, "pruned" },
+	{ tables::peers, "peers" },
+	{ tables::confirmation_height, "confirmation_height" },
+	{ tables::final_votes, "final_votes" },
+	{ tables::unchecked, "unchecked" },
+	{ tables::meta, "meta" }
+};
+
+// Drop unchecked table
+void ledger_store::upgrade_v21_to_v22 ()
+{
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v21 to v22...");
+
+	backend.open (schema_v21, nano::store::open_mode::read_write);
+	{
+		auto transaction = backend.tx_begin_write ();
+		debug_assert (backend.get_version (transaction) == 21, "unexpected version during upgrade", std::to_string (backend.get_version (transaction)));
+
+		backend.drop (transaction, tables::unchecked);
+		transaction.commit ();
+
+		backend.set_version (transaction, 22);
+	}
+	backend.close ();
+
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v21 to v22 completed");
+}
+
+// Fill rep_weights table with all existing representatives and their vote weight
+void ledger_store::upgrade_v22_to_v23 ()
+{
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v22 to v23...");
+
+	backend.open (schema_v22, nano::store::open_mode::read_write);
+	{
+		auto transaction = backend.tx_begin_write ();
+		debug_assert (backend.get_version (transaction) == 22, "unexpected version during upgrade", std::to_string (backend.get_version (transaction)));
+
+		// Always drop rep_weights table to ensure it's empty before populating
+		// This can happen if an upgrade was attempted but failed halfway through
+		backend.drop (transaction, tables::rep_weights);
+		transaction.refresh ();
+
+		release_assert (rep_weight.begin (backend.tx_begin_read ()) == rep_weight.end (transaction), "rep weights table must be empty before upgrading to v23");
+
+		auto iterate_accounts = [this] (auto && func) {
+			auto transaction = backend.tx_begin_read ();
+
+			// Manually create v22 compatible iterator to read accounts
+			auto it = store::typed_iterator<nano::account, nano::account_info_v22>{ store::iterator{ backend.begin (transaction, tables::accounts) } };
+			auto const end = store::typed_iterator<nano::account, nano::account_info_v22>{ store::iterator{ backend.end (transaction, tables::accounts) } };
+
+			for (; it != end; ++it)
+			{
+				auto const & account = it->first;
+				auto const & account_info = it->second;
+
+				func (account, account_info);
+			}
+		};
+
+		// Smaller batch size for dev runs to potentially trigger edge cases
+		const size_t batch_size = nano::is_dev_run () ? 2 : 250000;
+
+		size_t processed = 0;
+		iterate_accounts ([this, &transaction, &processed, batch_size] (nano::account const & account, nano::account_info_v22 const & account_info) {
+			if (!account_info.balance.is_zero ())
+			{
+				nano::uint128_t total{ 0 };
+				nano::store::db_val value;
+				auto status = backend.get (transaction, tables::rep_weights, account_info.representative, value);
+				if (backend.success (status))
+				{
+					total = nano::amount{ value }.number ();
+				}
+				total += account_info.balance.number ();
+				status = backend.put (transaction, tables::rep_weights, account_info.representative, nano::amount{ total });
+				backend.release_assert_success (status);
+			}
+
+			processed++;
+			if (processed % batch_size == 0)
+			{
+				logger.info (nano::log::type::ledger_upgrade, "Processed {} accounts", processed);
+				transaction.refresh (); // Refresh to prevent excessive memory usage
+			}
+		});
+
+		logger.info (nano::log::type::ledger_upgrade, "Done processing {} accounts", processed);
+		version.put (transaction, 23);
+	}
+	backend.close ();
+
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v22 to v23 completed");
+}
+
+// Drop frontiers table
+void ledger_store::upgrade_v23_to_v24 ()
+{
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v23 to v24...");
+
+	backend.open (schema_current, nano::store::open_mode::read_write);
+	{
+		auto transaction = backend.tx_begin_write ();
+		debug_assert (backend.get_version (transaction) == 23, "unexpected version during upgrade", std::to_string (backend.get_version (transaction)));
+
+		backend.drop (transaction, tables::frontiers);
+		transaction.commit ();
+
+		version.put (transaction, 24);
+	}
+	backend.close ();
+
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v23 to v24 completed");
 }
 }

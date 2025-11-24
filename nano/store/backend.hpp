@@ -43,9 +43,11 @@ struct backend_error
 	backend_status status;
 };
 
+using version_t = uint64_t;
+
 struct backend_meta
 {
-	uint64_t version;
+	version_t version;
 };
 
 using column_definition = std::pair<tables, std::string>;
@@ -63,9 +65,11 @@ public:
 
 	backend_meta open_meta ();
 
-	virtual void open (column_schema, nano::store::open_mode mode) = 0;
-	virtual void create (column_schema) = 0;
-	virtual void close () = 0;
+	void open (column_schema, nano::store::open_mode mode);
+	void create (column_schema);
+	void close ();
+
+	virtual void backup () = 0;
 
 	// Basic CRUD operations
 	virtual int get (store::transaction const & tx, tables table, db_val const & key, db_val & value) const = 0;
@@ -97,6 +101,22 @@ public:
 	virtual std::string vendor_get () const;
 	virtual std::filesystem::path get_database_path () const;
 	virtual nano::store::open_mode get_mode () const;
+
+	backend_meta get_meta () const;
+
+	nano::store::version_t get_version (store::transaction const &) const;
+	void set_version (store::write_transaction const &, nano::store::version_t version);
+
+protected:
+	virtual void open_impl (column_schema, nano::store::open_mode) = 0;
+	virtual void close_impl () = 0;
+
+private:
+	void load_meta ();
+
+private:
+	bool is_open{ false };
+	std::optional<backend_meta> current_meta;
 
 public:
 	static nano::store::column_schema const schema_meta;

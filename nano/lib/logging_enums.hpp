@@ -70,6 +70,7 @@ enum class type
 	rep_crawler,
 	ledger,
 	ledger_store,
+	ledger_upgrade,
 	lmdb,
 	rocksdb,
 	txn_tracker,
