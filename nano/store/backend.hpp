@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/errors.hpp>
 #include <nano/lib/result.hpp>
 #include <nano/store/common.hpp>
 #include <nano/store/db_val.hpp>
@@ -11,6 +12,18 @@
 #include <memory>
 #include <set>
 #include <string>
+
+namespace nano
+{
+enum class error_backend
+{
+	generic = 1,
+	db_not_found,
+	table_not_found,
+	failure,
+};
+}
+REGISTER_ERROR_CODES (nano, error_backend)
 
 namespace nano::store
 {
@@ -35,6 +48,9 @@ struct backend_meta
 	uint64_t version;
 };
 
+using column_definition = std::pair<tables, std::string>;
+using column_schema = std::set<column_definition>;
+
 /**
  * Polymorphic backend interface for key-value database operations.
  * This provides the minimal interface that database backends (LMDB, RocksDB) must implement.
@@ -43,14 +59,12 @@ struct backend_meta
 class backend
 {
 public:
-	using column_definitions = std::set<tables>;
-
-public:
 	virtual ~backend () = default;
 
-	nano::result<backend_meta> meta ();
+	backend_meta open_meta ();
 
-	virtual void open (nano::store::open_mode mode, column_definitions) = 0;
+	virtual void open (column_schema, nano::store::open_mode mode) = 0;
+	virtual void create (column_schema) = 0;
 	virtual void close () = 0;
 
 	// Basic CRUD operations
@@ -83,6 +97,9 @@ public:
 	virtual std::string vendor_get () const;
 	virtual std::filesystem::path get_database_path () const;
 	virtual nano::store::open_mode get_mode () const;
+
+public:
+	static nano::store::column_schema const schema_meta;
 };
 
 inline void backend::release_assert_success (int status) const
@@ -92,4 +109,22 @@ inline void backend::release_assert_success (int status) const
 		release_assert (false, error_string (status));
 	}
 }
+}
+
+namespace nano::store
+{
+class version_store
+{
+public:
+	explicit version_store (store::backend &);
+
+	void put_version (store::write_transaction const & transaction, uint64_t version);
+	uint64_t get_version (store::transaction const & transaction) const;
+
+private:
+	store::backend & backend;
+
+private:
+	static uint64_t constexpr version_key{ 1 };
+};
 }

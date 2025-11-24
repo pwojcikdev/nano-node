@@ -15,21 +15,37 @@
 
 namespace nano::store
 {
-ledger_store::ledger_store (std::unique_ptr<store::backend> backend_a, nano::stats & stats_a, nano::logger & logger_a) :
+nano::store::column_schema const ledger_store::schema_current{
+	{ tables::blocks, "blocks" },
+	{ tables::accounts, "accounts" },
+	{ tables::pending, "pending" },
+	{ tables::rep_weights, "rep_weights" },
+	{ tables::online_weight, "online_weight" },
+	{ tables::pruned, "pruned" },
+	{ tables::peers, "peers" },
+	{ tables::confirmation_height, "confirmation_height" },
+	{ tables::final_votes, "final_votes" },
+	{ tables::meta, "meta" }
+};
+}
+
+namespace nano::store
+{
+ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nano::store::open_mode mode, nano::stats & stats_a, nano::logger & logger_a) :
 	backend_impl{ std::move (backend_a) },
 	backend{ *backend_impl },
 	stats{ stats_a },
 	logger{ logger_a },
-	block_impl{ std::make_unique<store::ledger::block> (backend) },
-	account_impl{ std::make_unique<store::ledger::account> (backend) },
-	pending_impl{ std::make_unique<store::ledger::pending> (backend) },
-	rep_weight_impl{ std::make_unique<store::ledger::rep_weight> (backend) },
-	online_weight_impl{ std::make_unique<store::ledger::online_weight> (backend) },
-	pruned_impl{ std::make_unique<store::ledger::pruned> (backend) },
-	peer_impl{ std::make_unique<store::ledger::peer> (backend) },
-	confirmation_height_impl{ std::make_unique<store::ledger::confirmation_height> (backend) },
-	final_vote_impl{ std::make_unique<store::ledger::final_vote> (backend) },
-	version_impl{ std::make_unique<store::ledger::version> (backend) },
+	block_impl{ std::make_unique<nano::store::ledger::block> (backend) },
+	account_impl{ std::make_unique<nano::store::ledger::account> (backend) },
+	pending_impl{ std::make_unique<nano::store::ledger::pending> (backend) },
+	rep_weight_impl{ std::make_unique<nano::store::ledger::rep_weight> (backend) },
+	online_weight_impl{ std::make_unique<nano::store::ledger::online_weight> (backend) },
+	pruned_impl{ std::make_unique<nano::store::ledger::pruned> (backend) },
+	peer_impl{ std::make_unique<nano::store::ledger::peer> (backend) },
+	confirmation_height_impl{ std::make_unique<nano::store::ledger::confirmation_height> (backend) },
+	final_vote_impl{ std::make_unique<nano::store::ledger::final_vote> (backend) },
+	version_impl{ std::make_unique<nano::store::ledger::version> (backend) },
 	block{ *block_impl },
 	account{ *account_impl },
 	pending{ *pending_impl },
@@ -43,16 +59,15 @@ ledger_store::ledger_store (std::unique_ptr<store::backend> backend_a, nano::sta
 {
 	logger.info (nano::log::type::ledger_store, "Initializing ledger store: {}", backend.get_database_path ().string ());
 
-	backend_meta meta{ 0 };
+	backend_meta meta{};
 
 	bool needs_upgrade = false;
 	bool fresh_db = false;
 	{
 		// Attempt to get meta information to determine if the exists or needs upgrading
-		auto meta_result = backend.meta ();
-		if (meta_result)
+		try
 		{
-			meta = meta_result.value ();
+			meta = backend.open_meta ();
 
 			logger.debug (nano::log::type::ledger_store, "Ledger database version: {}", meta.version);
 
@@ -80,9 +95,9 @@ ledger_store::ledger_store (std::unique_ptr<store::backend> backend_a, nano::sta
 				logger.info (nano::log::type::ledger_store, "The ledger database needs to be upgraded from version {} to {}", meta.version, version_current);
 			}
 		}
-		else
+		catch (nano::error const & error)
 		{
-			if (meta_result.error () == nano::error_backend::not_found)
+			if (error == nano::error_backend::db_not_found)
 			{
 				fresh_db = true;
 
@@ -90,15 +105,30 @@ ledger_store::ledger_store (std::unique_ptr<store::backend> backend_a, nano::sta
 			}
 			else
 			{
-				throw std::runtime_error ("Failed to read meta information from the database: " + meta_result.error ().get_message ());
+				throw std::runtime_error ("Failed to read meta information from the database: " + error.get_message ());
 			}
 		}
 	}
-
 	release_assert (meta.version > 0 || fresh_db);
 
-	if (is_fresh_db)
+	if (needs_upgrade || fresh_db)
 	{
+		if (mode == nano::store::open_mode::read_only)
+		{
+			throw std::runtime_error ("Database requires upgrade but was opened in read-only mode");
+		}
 	}
+
+	if (needs_upgrade)
+	{
+		perform_upgrades ();
+	}
+
+	if (fresh_db)
+	{
+		backend.create (schema_current);
+	}
+
+	backend.open (schema_current, mode);
 }
 }

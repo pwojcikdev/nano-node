@@ -186,14 +186,6 @@ enum class error_config
 	invalid_value,
 	missing_value
 };
-
-/** Backend related errors */
-enum class error_backend
-{
-	generic = 1,
-	not_found,
-	failure,
-};
 } // nano errors
 
 REGISTER_ERROR_CODES (nano, error_common);
@@ -201,7 +193,6 @@ REGISTER_ERROR_CODES (nano, error_blocks);
 REGISTER_ERROR_CODES (nano, error_rpc);
 REGISTER_ERROR_CODES (nano, error_process);
 REGISTER_ERROR_CODES (nano, error_config);
-REGISTER_ERROR_CODES (nano, error_backend);
 
 namespace nano
 {
