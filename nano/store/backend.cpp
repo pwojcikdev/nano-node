@@ -1,23 +1,42 @@
 #include <nano/store/backend.hpp>
 
-namespace nano::store
+namespace nano
 {
-nano::store::column_schema const backend::schema_meta{ { tables::meta, "meta" } };
+std::string error_backend_messages::message (int ev) const
+{
+	switch (static_cast<nano::error_backend> (ev))
+	{
+		case nano::error_backend::generic:
+			return "Generic backend error";
+		case nano::error_backend::db_not_found:
+			return "Database not found";
+		case nano::error_backend::table_not_found:
+			return "Table not found";
+		case nano::error_backend::failure:
+			return "Backend operation failed";
+	}
+	return "Invalid error code";
+}
 }
 
 namespace nano::store
 {
-auto backend::open_meta () -> backend_meta
+nano::store::column_schema const backend::schema_meta{ { tables::meta, "meta" } };
+
+backend::~backend () = default;
+
+auto backend::meta () -> backend_meta
 {
 	// Attempt to open just the meta table which should always exist
 	open (schema_meta, store::open_mode::read_only);
 
 	load_meta ();
 	debug_assert (current_meta.has_value ());
+	auto meta = current_meta.value ();
 
 	close ();
 
-	return current_meta.value ();
+	return meta;
 }
 
 auto backend::open (column_schema schema, nano::store::open_mode mode) -> void
@@ -30,6 +49,20 @@ auto backend::open (column_schema schema, nano::store::open_mode mode) -> void
 	debug_assert (current_meta.has_value ());
 
 	is_open = true;
+}
+
+void backend::create (column_schema schema, nano::store::version_t version)
+{
+	release_assert (!is_open, "backend is already open");
+
+	// Create and immediately close to initialize the database structure
+	open_impl (schema, nano::store::open_mode::create);
+	is_open = true;
+
+	// Set the version in the meta table
+	set_version (tx_begin_write (), version);
+
+	close ();
 }
 
 void backend::close ()
@@ -60,6 +93,11 @@ auto backend::get_meta () const -> backend_meta
 
 namespace nano::store
 {
+version_store::version_store (store::backend & backend_a) :
+	backend{ backend_a }
+{
+}
+
 void version_store::put_version (store::write_transaction const & transaction, uint64_t version)
 {
 	nano::uint256_union db_key{ version_key };
@@ -81,5 +119,17 @@ auto version_store::get_version (store::transaction const & transaction) const -
 		result = db_value.number ().convert_to<uint64_t> ();
 	}
 	return result;
+}
+
+auto backend::get_version (store::transaction const & transaction) const -> nano::store::version_t
+{
+	version_store version_store_impl{ const_cast<backend &> (*this) };
+	return version_store_impl.get_version (transaction);
+}
+
+void backend::set_version (store::write_transaction const & transaction, nano::store::version_t version)
+{
+	version_store version_store_impl{ *this };
+	version_store_impl.put_version (transaction, version);
 }
 }

@@ -1,3 +1,4 @@
+#include <nano/lib/assert.hpp>
 #include <nano/store/rocksdb/transaction_impl.hpp>
 
 nano::store::rocksdb::read_transaction_impl::read_transaction_impl (::rocksdb::DB * db_a) :

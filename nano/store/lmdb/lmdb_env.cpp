@@ -1,9 +1,10 @@
+#include <nano/lib/config.hpp>
+#include <nano/lib/errors.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/utility.hpp>
-#include <nano/store/lmdb/lmdb.hpp>
+#include <nano/store/backend.hpp>
+#include <nano/store/lmdb/common.hpp>
 #include <nano/store/lmdb/lmdb_env.hpp>
-
-#include <boost/system/error_code.hpp>
 
 nano::store::lmdb::env::env (std::filesystem::path const & path_a, nano::store::lmdb::env::options options_a) :
 	database_path{ path_a }
@@ -69,9 +70,17 @@ void nano::store::lmdb::env::init (std::filesystem::path const & path_a, nano::s
 			auto status4 (mdb_env_open (environment, path_a.string ().c_str (), environment_flags, 00600));
 			if (!success (status4))
 			{
-				std::string message = "Could not open lmdb environment: (" + std::to_string (status4) + ") " + mdb_strerror (status4);
-				nano::default_logger ().error (nano::log::type::lmdb, "{}", message);
-				throw std::runtime_error (message);
+				if (status4 == ENOENT)
+				{
+					// Expected errors are packaged as nano::error and handled at a higher level
+					throw nano::error (nano::error_backend::db_not_found);
+				}
+				else
+				{
+					std::string message = "Could not open lmdb environment: (" + std::to_string (status4) + ") " + mdb_strerror (status4);
+					nano::default_logger ().error (nano::log::type::lmdb, "{}", message);
+					throw std::runtime_error (message);
+				}
 			}
 			release_assert (success (status4), error_string (status4));
 		}

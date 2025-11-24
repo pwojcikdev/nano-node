@@ -4,6 +4,7 @@
 #include <nano/secure/common.hpp>
 #include <nano/store/backend.hpp>
 #include <nano/store/typed_iterator.hpp>
+#include <nano/store/typed_iterator_templ.hpp>
 
 #include <functional>
 

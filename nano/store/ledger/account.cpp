@@ -70,12 +70,12 @@ auto account::begin (store::transaction const & transaction) const -> iterator
 
 auto account::rbegin (store::transaction const & transaction) const -> reverse_iterator
 {
-	return reverse_iterator{ end (transaction) };
+	return reverse_iterator{ std::prev (end (transaction)) };
 }
 
 auto account::rend (store::transaction const & transaction) const -> reverse_iterator
 {
-	return reverse_iterator{ begin (transaction) };
+	return reverse_iterator{ end (transaction) };
 }
 
 auto account::end (store::transaction const & transaction) const -> iterator

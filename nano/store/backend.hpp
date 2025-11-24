@@ -61,15 +61,16 @@ using column_schema = std::set<column_definition>;
 class backend
 {
 public:
-	virtual ~backend () = default;
+	virtual ~backend ();
 
-	backend_meta open_meta ();
+	backend_meta meta ();
 
 	void open (column_schema, nano::store::open_mode mode);
-	void create (column_schema);
+	void create (column_schema, nano::store::version_t version);
 	void close ();
 
 	virtual void backup () = 0;
+	virtual bool copy_db (std::filesystem::path const & destination) = 0;
 
 	// Basic CRUD operations
 	virtual int get (store::transaction const & tx, tables table, db_val const & key, db_val & value) const = 0;
@@ -98,9 +99,9 @@ public:
 	// Helper methods
 	void release_assert_success (int status) const;
 
-	virtual std::string vendor_get () const;
-	virtual std::filesystem::path get_database_path () const;
-	virtual nano::store::open_mode get_mode () const;
+	virtual std::string vendor_get () const = 0;
+	virtual std::string get_database_path () const = 0;
+	virtual nano::store::open_mode get_mode () const = 0;
 
 	backend_meta get_meta () const;
 

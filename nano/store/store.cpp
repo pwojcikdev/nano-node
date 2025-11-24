@@ -59,7 +59,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	final_vote{ *final_vote_impl },
 	version{ *version_impl }
 {
-	logger.info (nano::log::type::ledger_store, "Initializing ledger store: {}", backend.get_database_path ().string ());
+	logger.info (nano::log::type::ledger_store, "Initializing ledger store: {}", backend.get_database_path ());
 
 	backend_meta meta{};
 
@@ -69,7 +69,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 		// Attempt to get meta information to determine if the exists or needs upgrading
 		try
 		{
-			meta = backend.open_meta ();
+			meta = backend.meta ();
 
 			logger.debug (nano::log::type::ledger_store, "Ledger database version: {}", meta.version);
 
@@ -132,15 +132,15 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 			logger.info (nano::log::type::ledger_store, "Ledger backup completed, continuing with upgrade...");
 		}
 
-		perform_upgrades ();
+		perform_upgrades (meta);
 	}
 
 	if (fresh_db)
 	{
 		logger.info (nano::log::type::ledger_store, "Creating new ledger database with version {} at '{}'",
-		version_current, backend.get_database_path ().string ());
+		version_current, backend.get_database_path ());
 
-		backend.create (schema_current);
+		backend.create (schema_current, version_current);
 	}
 
 	backend.open (schema_current, mode);
@@ -148,10 +148,39 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	release_assert (backend.get_meta ().version == version_current, "ledger database version after initialization is not current");
 }
 
-void ledger_store::perform_upgrades ()
-{
-	auto meta = backend.get_meta ();
+ledger_store::~ledger_store () = default;
 
+void ledger_store::initialize (nano::store::write_transaction const & transaction, nano::ledger_constants const & constants)
+{
+	release_assert (empty (transaction), "attempt to initialize a non-empty ledger store");
+	release_assert (constants.genesis->has_sideband ());
+
+	// TODO: Use designated initialization
+	block.put (transaction, constants.genesis->hash (), *constants.genesis);
+	confirmation_height.put (transaction, constants.genesis->account (), nano::confirmation_height_info{ 1, constants.genesis->hash () });
+	account.put (transaction, constants.genesis->account (), { constants.genesis->hash (), constants.genesis->account (), constants.genesis->hash (), std::numeric_limits<nano::uint128_t>::max (), nano::seconds_since_epoch (), 1, nano::epoch::epoch_0 });
+	rep_weight.put (transaction, constants.genesis->account (), std::numeric_limits<nano::uint128_t>::max ());
+}
+
+bool ledger_store::empty (nano::store::transaction const & transaction) const
+{
+	for (auto const & [table, table_name] : schema_current)
+	{
+		if (table == tables::meta)
+		{
+			continue; // Ignore meta table
+		}
+		if (backend.begin (transaction, table) != backend.end (transaction, table))
+		{
+			return false;
+		}
+		debug_assert (backend.count (transaction, table) == 0);
+	}
+	return true;
+}
+
+void ledger_store::perform_upgrades (nano::store::backend_meta meta)
+{
 	debug_assert (meta.version < version_current, "perform_upgrades called but no upgrade is necessary");
 	release_assert (meta.version >= version_minimum, "perform_upgrades called but version is below minimum supported version", std::to_string (meta.version));
 
@@ -230,7 +259,7 @@ void ledger_store::upgrade_v21_to_v22 ()
 		debug_assert (backend.get_version (transaction) == 21, "unexpected version during upgrade", std::to_string (backend.get_version (transaction)));
 
 		backend.drop (transaction, tables::unchecked);
-		transaction.commit ();
+		transaction.refresh ();
 
 		backend.set_version (transaction, 22);
 	}
@@ -318,12 +347,47 @@ void ledger_store::upgrade_v23_to_v24 ()
 		debug_assert (backend.get_version (transaction) == 23, "unexpected version during upgrade", std::to_string (backend.get_version (transaction)));
 
 		backend.drop (transaction, tables::frontiers);
-		transaction.commit ();
+		transaction.refresh ();
 
 		version.put (transaction, 24);
 	}
 	backend.close ();
 
 	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v23 to v24 completed");
+}
+
+std::string ledger_store::vendor_get () const
+{
+	return backend.vendor_get ();
+}
+
+std::filesystem::path ledger_store::get_database_path () const
+{
+	return backend.get_database_path ();
+}
+
+nano::store::open_mode ledger_store::get_mode () const
+{
+	return backend.get_mode ();
+}
+
+bool ledger_store::copy_db (std::filesystem::path const & destination)
+{
+	return backend.copy_db (destination);
+}
+
+uint64_t ledger_store::count (nano::store::transaction const & tx, tables table) const
+{
+	return backend.count (tx, table);
+}
+
+nano::store::write_transaction ledger_store::tx_begin_write ()
+{
+	return backend.tx_begin_write ();
+}
+
+nano::store::read_transaction ledger_store::tx_begin_read () const
+{
+	return backend.tx_begin_read ();
 }
 }

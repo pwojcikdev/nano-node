@@ -29,6 +29,16 @@ auto online_weight::end (store::transaction const & transaction) const -> iterat
 	return iterator{ backend.end (transaction, tables::online_weight) };
 }
 
+auto online_weight::rbegin (store::transaction const & transaction) const -> reverse_iterator
+{
+	return reverse_iterator{ std::prev (end (transaction)) };
+}
+
+auto online_weight::rend (store::transaction const & transaction) const -> reverse_iterator
+{
+	return reverse_iterator{ end (transaction) };
+}
+
 size_t online_weight::count (store::transaction const & transaction) const
 {
 	return backend.count (transaction, tables::online_weight);
