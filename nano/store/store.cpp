@@ -181,13 +181,41 @@ nano::store::column_schema const ledger_store::schema_v21{
 	{ tables::blocks, "blocks" },
 	{ tables::accounts, "accounts" },
 	{ tables::pending, "pending" },
+	{ tables::online_weight, "online_weight" },
+	{ tables::pruned, "pruned" },
+	{ tables::peers, "peers" },
+	{ tables::confirmation_height, "confirmation_height" },
+	{ tables::final_votes, "final_votes" },
+	{ tables::frontiers, "frontiers" },
+	{ tables::unchecked, "unchecked" },
+	{ tables::meta, "meta" }
+};
+
+nano::store::column_schema const ledger_store::schema_v22{
+	{ tables::blocks, "blocks" },
+	{ tables::accounts, "accounts" },
+	{ tables::pending, "pending" },
 	{ tables::rep_weights, "rep_weights" },
 	{ tables::online_weight, "online_weight" },
 	{ tables::pruned, "pruned" },
 	{ tables::peers, "peers" },
 	{ tables::confirmation_height, "confirmation_height" },
 	{ tables::final_votes, "final_votes" },
-	{ tables::unchecked, "unchecked" },
+	{ tables::frontiers, "frontiers" },
+	{ tables::meta, "meta" }
+};
+
+nano::store::column_schema const ledger_store::schema_v23{
+	{ tables::blocks, "blocks" },
+	{ tables::accounts, "accounts" },
+	{ tables::pending, "pending" },
+	{ tables::rep_weights, "rep_weights" },
+	{ tables::online_weight, "online_weight" },
+	{ tables::pruned, "pruned" },
+	{ tables::peers, "peers" },
+	{ tables::confirmation_height, "confirmation_height" },
+	{ tables::final_votes, "final_votes" },
+	{ tables::frontiers, "frontiers" },
 	{ tables::meta, "meta" }
 };
 
@@ -232,8 +260,8 @@ void ledger_store::upgrade_v22_to_v23 ()
 			auto transaction = backend.tx_begin_read ();
 
 			// Manually create v22 compatible iterator to read accounts
-			auto it = store::typed_iterator<nano::account, nano::account_info_v22>{ store::iterator{ backend.begin (transaction, tables::accounts) } };
-			auto const end = store::typed_iterator<nano::account, nano::account_info_v22>{ store::iterator{ backend.end (transaction, tables::accounts) } };
+			auto it = store::typed_iterator<nano::account, nano::account_info_v22>{ backend.begin (transaction, tables::accounts) };
+			auto const end = store::typed_iterator<nano::account, nano::account_info_v22>{ backend.end (transaction, tables::accounts) };
 
 			for (; it != end; ++it)
 			{
@@ -284,7 +312,7 @@ void ledger_store::upgrade_v23_to_v24 ()
 {
 	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v23 to v24...");
 
-	backend.open (schema_current, nano::store::open_mode::read_write);
+	backend.open (schema_v23, nano::store::open_mode::read_write);
 	{
 		auto transaction = backend.tx_begin_write ();
 		debug_assert (backend.get_version (transaction) == 23, "unexpected version during upgrade", std::to_string (backend.get_version (transaction)));
