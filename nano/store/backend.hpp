@@ -1,6 +1,6 @@
 #pragma once
 
-#include <nano/boost/outcome.hpp>
+#include <nano/lib/result.hpp>
 #include <nano/store/common.hpp>
 #include <nano/store/db_val.hpp>
 #include <nano/store/iterator.hpp>
@@ -27,8 +27,6 @@ enum class backend_status
 struct backend_error
 {
 	backend_status status;
-
-
 };
 
 struct backend_meta
@@ -49,7 +47,7 @@ public:
 public:
 	virtual ~backend () = default;
 
-	virtual outcome::result<backend_meta, backend_error> meta () = 0;
+	virtual nano::result<backend_meta> meta () = 0;
 	virtual backend_status open (nano::store::open_mode mode, column_definitions) = 0;
 
 	// Basic CRUD operations

@@ -55,7 +55,7 @@ ledger_store::ledger_store (std::unique_ptr<store::backend> backend_a, nano::sta
 		}
 		else
 		{
-			if (meta_result.error () == backend_status::not_found)
+			if (meta_result.error () == nano::error_backend::not_found)
 			{
 				is_fresh_db = true;
 			}
