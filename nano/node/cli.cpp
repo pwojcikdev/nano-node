@@ -15,7 +15,7 @@
 
 namespace
 {
-void reset_confirmation_heights (nano::store::write_transaction const & transaction, nano::ledger_constants & constants, nano::store::component & store);
+void reset_confirmation_heights (nano::store::write_transaction const & transaction, nano::ledger_constants & constants, nano::store::ledger_store & store);
 bool is_using_rocksdb (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::error_code & ec);
 }
 
@@ -1430,7 +1430,7 @@ std::unique_ptr<nano::inactive_node> nano::default_inactive_node (std::filesyste
 
 namespace
 {
-void reset_confirmation_heights (nano::store::write_transaction const & transaction, nano::ledger_constants & constants, nano::store::component & store)
+void reset_confirmation_heights (nano::store::write_transaction const & transaction, nano::ledger_constants & constants, nano::store::ledger_store & store)
 {
 	// First do a clean sweep
 	store.confirmation_height.clear (transaction);

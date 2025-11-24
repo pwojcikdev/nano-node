@@ -11,6 +11,7 @@ class block;
 class component;
 class confirmation_height;
 class final_vote;
+class ledger_store;
 class online_weight;
 class peer;
 class pending;

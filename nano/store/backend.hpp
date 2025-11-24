@@ -70,6 +70,7 @@ public:
 	void close ();
 
 	virtual void backup () = 0;
+	virtual bool copy_db (std::filesystem::path const & destination) = 0;
 
 	// Basic CRUD operations
 	virtual int get (store::transaction const & tx, tables table, db_val const & key, db_val & value) const = 0;

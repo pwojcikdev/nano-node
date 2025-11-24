@@ -31,6 +31,7 @@ public:
 	std::string vendor_get () const;
 	std::filesystem::path get_database_path () const;
 	nano::store::open_mode get_mode () const;
+	bool copy_db (std::filesystem::path const & destination);
 
 public: // Upgrades
 	void upgrade_v21_to_v22 ();

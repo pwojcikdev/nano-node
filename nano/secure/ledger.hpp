@@ -38,7 +38,7 @@ class ledger final
 	friend class receivable_iterator;
 
 public:
-	ledger (nano::store::component &, nano::network_params const &, nano::stats &, nano::logger &, nano::generate_cache_flags = {}, nano::uint128_t min_rep_weight = 0, uint64_t max_backlog = 0);
+	ledger (nano::store::ledger_store &, nano::network_params const &, nano::stats &, nano::logger &, nano::generate_cache_flags = {}, nano::uint128_t min_rep_weight = 0, uint64_t max_backlog = 0);
 	~ledger ();
 
 	/** Start read-write transaction */
@@ -104,7 +104,7 @@ public:
 
 	nano::ledger_constants const & constants;
 	nano::work_thresholds const & work;
-	nano::store::component & store;
+	nano::store::ledger_store & store;
 	nano::stats & stats;
 	nano::logger & logger;
 

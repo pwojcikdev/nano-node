@@ -1,10 +1,12 @@
 #include <nano/lib/logging.hpp>
+#include <nano/lib/stats.hpp>
 #include <nano/node/make_store.hpp>
 #include <nano/node/nodeconfig.hpp>
-#include <nano/store/lmdb/lmdb.hpp>
-#include <nano/store/rocksdb/rocksdb.hpp>
+#include <nano/store/lmdb/backend.hpp>
+#include <nano/store/rocksdb/backend.hpp>
+#include <nano/store/store.hpp>
 
-std::unique_ptr<nano::store::component> nano::make_store (nano::logger & logger, std::filesystem::path const & path, nano::ledger_constants & constants, bool read_only, bool add_db_postfix, nano::node_config node_config)
+std::unique_ptr<nano::store::ledger_store> nano::make_store (nano::logger & logger, nano::stats & stats, std::filesystem::path const & path, nano::ledger_constants & constants, bool read_only, bool add_db_postfix, nano::node_config node_config)
 {
 	auto decide_backend = [&] () -> nano::database_backend {
 		if (node_config.rocksdb_config.enable && node_config.database_backend == nano::database_backend::lmdb)
@@ -17,18 +19,29 @@ std::unique_ptr<nano::store::component> nano::make_store (nano::logger & logger,
 
 	nano::store::open_mode const mode = read_only ? nano::store::open_mode::read_only : nano::store::open_mode::read_write;
 
-	auto backend = decide_backend ();
-	switch (backend)
+	auto backend_type = decide_backend ();
+	std::unique_ptr<nano::store::backend> backend;
+
+	switch (backend_type)
 	{
 		case nano::database_backend::lmdb:
 		{
-			return std::make_unique<nano::store::lmdb::component> (logger, add_db_postfix ? path / "data.ldb" : path, constants, node_config.diagnostics_config.txn_tracking, node_config.block_processor_batch_max_time, node_config.lmdb_config, node_config.backup_before_upgrade, mode);
+			auto db_path = add_db_postfix ? path / "data.ldb" : path;
+			backend = std::make_unique<nano::store::lmdb::backend> (db_path, node_config.lmdb_config, node_config.diagnostics_config.txn_tracking, node_config.block_processor_batch_max_time);
+			break;
 		}
 		case nano::database_backend::rocksdb:
 		{
-			return std::make_unique<nano::store::rocksdb::component> (logger, add_db_postfix ? path / "rocksdb" : path, constants, node_config.rocksdb_config, mode);
+			auto db_path = add_db_postfix ? path / "rocksdb" : path;
+			backend = std::make_unique<nano::store::rocksdb::backend> (db_path, node_config.rocksdb_config);
+			break;
 		}
 	}
 
-	release_assert (false); // Must be handled above
+	release_assert (backend != nullptr);
+
+	nano::store::ledger_store_params params;
+	params.backup_before_upgrade = node_config.backup_before_upgrade;
+
+	return std::make_unique<nano::store::ledger_store> (std::move (backend), mode, stats, logger, params);
 }

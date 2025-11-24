@@ -2,10 +2,10 @@
 #include <nano/node/network.hpp>
 #include <nano/node/peer_history.hpp>
 #include <nano/node/transport/channel.hpp>
-#include <nano/store/component.hpp>
+#include <nano/store/store.hpp>
 #include <nano/store/peer.hpp>
 
-nano::peer_history::peer_history (nano::peer_history_config const & config_a, nano::store::component & store_a, nano::network & network_a, nano::logger & logger_a, nano::stats & stats_a) :
+nano::peer_history::peer_history (nano::peer_history_config const & config_a, nano::store::ledger_store & store_a, nano::network & network_a, nano::logger & logger_a, nano::stats & stats_a) :
 	config{ config_a },
 	store{ store_a },
 	network{ network_a },

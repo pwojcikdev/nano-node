@@ -53,8 +53,7 @@
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
 #include <nano/secure/vote.hpp>
-#include <nano/store/component.hpp>
-#include <nano/store/rocksdb/rocksdb.hpp>
+#include <nano/store/store.hpp>
 
 #include <boost/format.hpp>
 #include <boost/property_tree/json_parser.hpp>
@@ -98,7 +97,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	logger{ *logger_impl },
 	stats_impl{ std::make_unique<nano::stats> (logger, config.stats_config) },
 	stats{ *stats_impl },
-	store_impl{ nano::make_store (logger, application_path_a, network_params.ledger, flags.read_only, true, config_a) },
+	store_impl{ nano::make_store (logger, stats, application_path_a, network_params.ledger, flags.read_only, true, config_a) },
 	store{ *store_impl },
 	wallets_store_impl{ std::make_unique<nano::mdb_wallets_store> (application_path_a / "wallets.ldb", config_a.lmdb_config) },
 	wallets_store{ *wallets_store_impl },

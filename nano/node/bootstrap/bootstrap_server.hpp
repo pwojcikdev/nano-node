@@ -35,7 +35,7 @@ public:
 class bootstrap_server final
 {
 public:
-	bootstrap_server (bootstrap_server_config const &, nano::store::component &, nano::ledger &, nano::network_constants const &, nano::stats &);
+	bootstrap_server (bootstrap_server_config const &, nano::store::ledger_store &, nano::ledger &, nano::network_constants const &, nano::stats &);
 	~bootstrap_server ();
 
 	void start ();
@@ -87,7 +87,7 @@ private:
 
 private: // Dependencies
 	bootstrap_server_config const & config;
-	nano::store::component & store;
+	nano::store::ledger_store & store;
 	nano::ledger & ledger;
 	nano::network_constants const & network_constants;
 	nano::stats & stats;

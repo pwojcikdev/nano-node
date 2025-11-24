@@ -1,0 +1,554 @@
+#include <nano/lib/files.hpp>
+#include <nano/store/rocksdb/backend.hpp>
+#include <nano/store/rocksdb/iterator.hpp>
+#include <nano/store/rocksdb/transaction_impl.hpp>
+#include <nano/store/rocksdb/utility.hpp>
+
+#include <boost/format.hpp>
+
+#include <rocksdb/filter_policy.h>
+#include <rocksdb/slice.h>
+#include <rocksdb/utilities/backup_engine.h>
+#include <rocksdb/utilities/transaction.h>
+
+namespace
+{
+class event_listener : public ::rocksdb::EventListener
+{
+public:
+	event_listener (std::function<void (::rocksdb::FlushJobInfo const &)> const & flush_completed_cb_a) :
+		flush_completed_cb (flush_completed_cb_a)
+	{
+	}
+
+	void OnFlushCompleted (::rocksdb::DB * /* db_a */, ::rocksdb::FlushJobInfo const & flush_info_a) override
+	{
+		flush_completed_cb (flush_info_a);
+	}
+
+private:
+	std::function<void (::rocksdb::FlushJobInfo const &)> flush_completed_cb;
+};
+} // namespace
+
+namespace nano::store::rocksdb
+{
+backend::backend (std::filesystem::path const & path, nano::rocksdb_config const & config_a) :
+	database_path{ path },
+	config{ config_a },
+	cf_name_table_map{ create_cf_name_table_map () }
+{
+	boost::system::error_code error_mkdir, error_chmod;
+	std::filesystem::create_directories (path, error_mkdir);
+	nano::set_secure_perm_directory (path, error_chmod);
+
+	if (error_mkdir)
+	{
+		throw std::runtime_error ("Failed to create database directory: " + path.string ());
+	}
+
+	generate_tombstone_map ();
+}
+
+void backend::open_impl (column_schema schema, nano::store::open_mode mode)
+{
+	current_mode = mode;
+
+	auto options = get_db_options ();
+	auto column_families = create_column_families (schema);
+
+	open_db (database_path, mode == nano::store::open_mode::read_only, options, column_families);
+
+	// Build table_handles map
+	for (auto const & [table, name] : schema)
+	{
+		table_handles[table] = get_column_family (name.c_str ());
+	}
+}
+
+void backend::close_impl ()
+{
+	table_handles.clear ();
+	handles.clear ();
+	db.reset ();
+	transaction_db = nullptr;
+}
+
+void backend::open_db (std::filesystem::path const & path, bool read_only, ::rocksdb::Options const & options, std::vector<::rocksdb::ColumnFamilyDescriptor> column_families)
+{
+	::rocksdb::Status s;
+
+	std::vector<::rocksdb::ColumnFamilyHandle *> handles_l;
+	if (read_only)
+	{
+		::rocksdb::DB * db_l;
+		s = ::rocksdb::DB::OpenForReadOnly (options, path.string (), column_families, &handles_l, &db_l);
+		db.reset (db_l);
+	}
+	else
+	{
+		s = ::rocksdb::TransactionDB::Open (options, ::rocksdb::TransactionDBOptions{}, path.string (), column_families, &handles_l, &transaction_db);
+		if (transaction_db)
+		{
+			db.reset (transaction_db);
+		}
+	}
+
+	handles.resize (handles_l.size ());
+	for (size_t i = 0; i < handles_l.size (); ++i)
+	{
+		handles[i].reset (handles_l[i]);
+	}
+
+	if (!s.ok ())
+	{
+		throw std::runtime_error ("Failed to open RocksDB: " + s.ToString ());
+	}
+}
+
+std::vector<::rocksdb::ColumnFamilyDescriptor> backend::create_column_families (column_schema const & schema)
+{
+	std::vector<::rocksdb::ColumnFamilyDescriptor> column_families;
+
+	// Always include default column family
+	column_families.emplace_back (::rocksdb::kDefaultColumnFamilyName, ::rocksdb::ColumnFamilyOptions{});
+
+	for (auto const & [table, name] : schema)
+	{
+		column_families.emplace_back (name, get_cf_options (name));
+	}
+	return column_families;
+}
+
+std::unordered_map<char const *, tables> backend::create_cf_name_table_map () const
+{
+	std::unordered_map<char const *, tables> map{
+		{ "accounts", tables::accounts },
+		{ "blocks", tables::blocks },
+		{ "pending", tables::pending },
+		{ "online_weight", tables::online_weight },
+		{ "meta", tables::meta },
+		{ "peers", tables::peers },
+		{ "confirmation_height", tables::confirmation_height },
+		{ "pruned", tables::pruned },
+		{ "final_votes", tables::final_votes },
+		{ "rep_weights", tables::rep_weights }
+	};
+	return map;
+}
+
+::rocksdb::ColumnFamilyHandle * backend::table_to_column_family (tables table) const
+{
+	auto it = table_handles.find (table);
+	release_assert (it != table_handles.end (), "table not found");
+	return it->second;
+}
+
+::rocksdb::ColumnFamilyHandle * backend::get_column_family (char const * name) const
+{
+	auto iter = std::find_if (handles.begin (), handles.end (), [name] (auto & handle) {
+		return handle->GetName () == name;
+	});
+	debug_assert (iter != handles.end ());
+	return iter->get ();
+}
+
+bool backend::column_family_exists (char const * name) const
+{
+	auto iter = std::find_if (handles.begin (), handles.end (), [name] (auto & handle) {
+		return handle->GetName () == name;
+	});
+	return iter != handles.end ();
+}
+
+int backend::get (store::transaction const & tx, tables table, db_val const & key, db_val & value) const
+{
+	::rocksdb::ReadOptions options;
+	::rocksdb::PinnableSlice slice;
+	auto key_slice = to_slice (key);
+	auto handle = table_to_column_family (table);
+	auto internals = rocksdb::tx (tx);
+
+	auto status = std::visit ([&] (auto && ptr) {
+		using V = std::remove_cvref_t<decltype (ptr)>;
+		if constexpr (std::is_same_v<V, ::rocksdb::Transaction *>)
+		{
+			return ptr->Get (options, handle, key_slice, &slice);
+		}
+		else if constexpr (std::is_same_v<V, ::rocksdb::ReadOptions *>)
+		{
+			return db->Get (*ptr, handle, key_slice, &slice);
+		}
+		else
+		{
+			static_assert (sizeof (V) == 0, "Missing variant handler for type V");
+		}
+	},
+	internals);
+
+	if (status.ok ())
+	{
+		value = from_slice (slice);
+	}
+	return status.code ();
+}
+
+int backend::put (store::write_transaction const & tx, tables table, db_val const & key, db_val const & value)
+{
+	debug_assert (tx.contains (table));
+	auto key_slice = to_slice (key);
+	auto value_slice = to_slice (value);
+	return std::get<::rocksdb::Transaction *> (rocksdb::tx (tx))->Put (table_to_column_family (table), key_slice, value_slice).code ();
+}
+
+int backend::del (store::write_transaction const & tx, tables table, db_val const & key)
+{
+	debug_assert (tx.contains (table));
+	// RocksDB does not report not_found status, it is a pre-condition that the key exists
+	debug_assert (exists (tx, table, key));
+	flush_tombstones_check (table);
+	auto key_slice = to_slice (key);
+	return std::get<::rocksdb::Transaction *> (rocksdb::tx (tx))->Delete (table_to_column_family (table), key_slice).code ();
+}
+
+bool backend::exists (store::transaction const & tx, tables table, db_val const & key) const
+{
+	::rocksdb::PinnableSlice slice;
+	auto key_slice = to_slice (key);
+	auto internals = rocksdb::tx (tx);
+
+	auto status = std::visit ([&] (auto && ptr) {
+		using V = std::remove_cvref_t<decltype (ptr)>;
+		if constexpr (std::is_same_v<V, ::rocksdb::Transaction *>)
+		{
+			::rocksdb::ReadOptions options;
+			options.fill_cache = false;
+			return ptr->Get (options, table_to_column_family (table), key_slice, &slice);
+		}
+		else if constexpr (std::is_same_v<V, ::rocksdb::ReadOptions *>)
+		{
+			return db->Get (*ptr, table_to_column_family (table), key_slice, &slice);
+		}
+		else
+		{
+			static_assert (sizeof (V) == 0, "Missing variant handler for type V");
+		}
+	},
+	internals);
+
+	return status.ok ();
+}
+
+uint64_t backend::count (store::transaction const & tx, tables table) const
+{
+	uint64_t sum = 0;
+
+	// For small tables, iterate to get accurate counts
+	if (table == tables::peers || table == tables::online_weight)
+	{
+		for (auto i = begin (tx, table), n = end (tx, table); i != n; ++i)
+		{
+			++sum;
+		}
+	}
+	// Use estimate for pruned and final_votes
+	else if (table == tables::pruned || table == tables::final_votes)
+	{
+		db->GetIntProperty (table_to_column_family (table), "rocksdb.estimate-num-keys", &sum);
+	}
+	// For other tables, iterate for accuracy (may be slow)
+	else
+	{
+		for (auto i = begin (tx, table), n = end (tx, table); i != n; ++i)
+		{
+			++sum;
+		}
+	}
+
+	return sum;
+}
+
+int backend::drop (store::write_transaction const & tx, tables table)
+{
+	debug_assert (tx.contains (table));
+	auto col = table_to_column_family (table);
+
+	// Dropping/Creating families can cause write stalls, just delete entries manually
+	if (table == tables::peers)
+	{
+		int status = 0;
+		for (auto i = begin (tx, table), n = end (tx, table); i != n; ++i)
+		{
+			auto key_span = i->first;
+			db_val key_val (key_span);
+			status = del (tx, table, key_val);
+			if (!success (status))
+			{
+				return status;
+			}
+		}
+		return status;
+	}
+	else
+	{
+		return clear (col);
+	}
+}
+
+int backend::clear (::rocksdb::ColumnFamilyHandle * column_family)
+{
+	::rocksdb::ReadOptions read_options;
+	::rocksdb::WriteOptions write_options;
+	::rocksdb::WriteBatch write_batch;
+	std::unique_ptr<::rocksdb::Iterator> it (db->NewIterator (read_options, column_family));
+
+	for (it->SeekToFirst (); it->Valid (); it->Next ())
+	{
+		write_batch.Delete (column_family, it->key ());
+	}
+
+	::rocksdb::Status status = db->Write (write_options, &write_batch);
+	release_assert (status.ok (), error_string (status.code ()));
+
+	return status.code ();
+}
+
+store::iterator backend::begin (store::transaction const & tx, tables table) const
+{
+	return store::iterator{ iterator::begin (db.get (), rocksdb::tx (tx), table_to_column_family (table)) };
+}
+
+store::iterator backend::begin (store::transaction const & tx, tables table, db_val const & key) const
+{
+	auto key_slice = to_slice (key);
+	return store::iterator{ iterator::lower_bound (db.get (), rocksdb::tx (tx), table_to_column_family (table), key_slice) };
+}
+
+store::iterator backend::end (store::transaction const & tx, tables table) const
+{
+	return store::iterator{ iterator::end (db.get (), rocksdb::tx (tx), table_to_column_family (table)) };
+}
+
+bool backend::success (int status) const
+{
+	return static_cast<int> (::rocksdb::Status::Code::kOk) == status;
+}
+
+bool backend::not_found (int status) const
+{
+	return static_cast<int> (::rocksdb::Status::Code::kNotFound) == status;
+}
+
+std::string backend::error_string (int status) const
+{
+	return "status: " + std::to_string (status);
+}
+
+store::read_transaction backend::tx_begin_read () const
+{
+	return store::read_transaction{ std::make_unique<nano::store::rocksdb::read_transaction_impl> (db.get ()) };
+}
+
+store::write_transaction backend::tx_begin_write ()
+{
+	release_assert (transaction_db != nullptr);
+	return store::write_transaction{ std::make_unique<nano::store::rocksdb::write_transaction_impl> (transaction_db) };
+}
+
+void backend::backup ()
+{
+	std::unique_ptr<::rocksdb::BackupEngine> backup_engine;
+	::rocksdb::BackupEngine * backup_engine_raw;
+	auto backup_path = database_path.parent_path () / "backup";
+	::rocksdb::BackupEngineOptions backup_options (backup_path.string ());
+	backup_options.share_table_files = true;
+	backup_options.max_background_operations = std::thread::hardware_concurrency ();
+
+	auto status = ::rocksdb::BackupEngine::Open (::rocksdb::Env::Default (), backup_options, &backup_engine_raw);
+	backup_engine.reset (backup_engine_raw);
+	if (!status.ok ())
+	{
+		throw std::runtime_error ("Failed to open backup engine: " + status.ToString ());
+	}
+
+	status = backup_engine->CreateNewBackup (db.get ());
+	if (!status.ok ())
+	{
+		throw std::runtime_error ("Failed to create backup: " + status.ToString ());
+	}
+}
+
+bool backend::copy_db (std::filesystem::path const & destination_path)
+{
+	std::unique_ptr<::rocksdb::BackupEngine> backup_engine;
+	{
+		::rocksdb::BackupEngine * backup_engine_raw;
+		::rocksdb::BackupEngineOptions backup_options (destination_path.string ());
+		backup_options.share_table_files = true;
+		backup_options.max_background_operations = std::thread::hardware_concurrency ();
+		auto status = ::rocksdb::BackupEngine::Open (::rocksdb::Env::Default (), backup_options, &backup_engine_raw);
+		backup_engine.reset (backup_engine_raw);
+		if (!status.ok ())
+		{
+			return false;
+		}
+	}
+
+	auto status = backup_engine->CreateNewBackup (db.get ());
+	if (!status.ok ())
+	{
+		return false;
+	}
+
+	std::vector<::rocksdb::BackupInfo> backup_infos;
+	backup_engine->GetBackupInfo (&backup_infos);
+
+	for (auto const & backup_info : backup_infos)
+	{
+		status = backup_engine->VerifyBackup (backup_info.backup_id);
+		if (!status.ok ())
+		{
+			return false;
+		}
+	}
+
+	{
+		std::unique_ptr<::rocksdb::BackupEngineReadOnly> backup_engine_read;
+		{
+			::rocksdb::BackupEngineReadOnly * backup_engine_read_raw;
+			status = ::rocksdb::BackupEngineReadOnly::Open (::rocksdb::Env::Default (), ::rocksdb::BackupEngineOptions (destination_path.string ()), &backup_engine_read_raw);
+		}
+		if (!status.ok ())
+		{
+			return false;
+		}
+
+		// First remove all files (not directories) in the destination
+		for (auto const & path : std::filesystem::directory_iterator (destination_path))
+		{
+			if (std::filesystem::is_regular_file (path))
+			{
+				std::filesystem::remove (path);
+			}
+		}
+
+		// Now generate the relevant files from the backup
+		status = backup_engine->RestoreDBFromLatestBackup (destination_path.string (), destination_path.string ());
+	}
+
+	// Open it so that it flushes all WAL files
+	if (status.ok ())
+	{
+		try
+		{
+			backend temp_backend (destination_path, config);
+			// Opening a database causes WAL to be flushed
+			return true;
+		}
+		catch (std::exception const &)
+		{
+			return false;
+		}
+	}
+	return false;
+}
+
+std::string backend::vendor_get () const
+{
+	return boost::str (boost::format ("RocksDB %1%.%2%.%3%") % ROCKSDB_MAJOR % ROCKSDB_MINOR % ROCKSDB_PATCH);
+}
+
+std::filesystem::path backend::get_database_path () const
+{
+	return database_path;
+}
+
+nano::store::open_mode backend::get_mode () const
+{
+	return current_mode;
+}
+
+::rocksdb::Options backend::get_db_options ()
+{
+	::rocksdb::Options db_options;
+	db_options.create_if_missing = true;
+	db_options.create_missing_column_families = true;
+
+	db_options.OptimizeLevelStyleCompaction ();
+	db_options.IncreaseParallelism (config.io_threads);
+	db_options.compression = ::rocksdb::kNoCompression;
+
+	auto event_listener_l = new event_listener ([this] (::rocksdb::FlushJobInfo const & flush_job_info) {
+		this->on_flush (flush_job_info);
+	});
+	db_options.listeners.emplace_back (event_listener_l);
+
+	return db_options;
+}
+
+::rocksdb::BlockBasedTableOptions backend::get_table_options () const
+{
+	::rocksdb::BlockBasedTableOptions table_options;
+
+	table_options.data_block_index_type = ::rocksdb::BlockBasedTableOptions::DataBlockIndexType::kDataBlockBinaryAndHash;
+	table_options.format_version = 5;
+	table_options.block_cache = ::rocksdb::NewLRUCache (config.read_cache * 1024 * 1024);
+	table_options.filter_policy.reset (::rocksdb::NewBloomFilterPolicy (10, false));
+
+	return table_options;
+}
+
+::rocksdb::ColumnFamilyOptions backend::get_cf_options (std::string const & cf_name) const
+{
+	::rocksdb::ColumnFamilyOptions cf_options;
+	if (cf_name != ::rocksdb::kDefaultColumnFamilyName)
+	{
+		std::shared_ptr<::rocksdb::TableFactory> table_factory (::rocksdb::NewBlockBasedTableFactory (get_table_options ()));
+		cf_options.table_factory = table_factory;
+		cf_options.write_buffer_size = config.write_cache * 1024 * 1024;
+	}
+	return cf_options;
+}
+
+void backend::generate_tombstone_map ()
+{
+	tombstone_map.emplace (std::piecewise_construct, std::forward_as_tuple (tables::blocks), std::forward_as_tuple (0, 25000));
+	tombstone_map.emplace (std::piecewise_construct, std::forward_as_tuple (tables::accounts), std::forward_as_tuple (0, 25000));
+	tombstone_map.emplace (std::piecewise_construct, std::forward_as_tuple (tables::pending), std::forward_as_tuple (0, 25000));
+}
+
+void backend::flush_tombstones_check (tables table)
+{
+	if (auto it = tombstone_map.find (table); it != tombstone_map.end ())
+	{
+		auto & tombstone_info = it->second;
+		if (++tombstone_info.num_since_last_flush > tombstone_info.max)
+		{
+			tombstone_info.num_since_last_flush = 0;
+			flush_table (table);
+		}
+	}
+}
+
+void backend::flush_table (tables table)
+{
+	db->Flush (::rocksdb::FlushOptions{}, table_to_column_family (table));
+}
+
+void backend::on_flush (::rocksdb::FlushJobInfo const & flush_info)
+{
+	if (auto it = cf_name_table_map.find (flush_info.cf_name.c_str ()); it != cf_name_table_map.end ())
+	{
+		if (auto tomb_it = tombstone_map.find (it->second); tomb_it != tombstone_map.end ())
+		{
+			tomb_it->second.num_since_last_flush = 0;
+		}
+	}
+}
+
+backend::tombstone_info::tombstone_info (uint64_t num, uint64_t max_a) :
+	num_since_last_flush (num),
+	max (max_a)
+{
+}
+} // namespace nano::store::rocksdb
