@@ -2,7 +2,6 @@
 
 #include <nano/lib/id_dispenser.hpp>
 #include <nano/lib/lmdbconfig.hpp>
-#include <nano/store/component.hpp>
 #include <nano/store/lmdb/transaction_impl.hpp>
 
 namespace nano::store::lmdb

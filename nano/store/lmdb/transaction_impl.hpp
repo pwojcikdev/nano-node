@@ -4,7 +4,6 @@
 #include <nano/lib/id_dispenser.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/timer.hpp>
-#include <nano/store/component.hpp>
 #include <nano/store/transaction.hpp>
 
 #include <boost/property_tree/ptree_fwd.hpp>
@@ -22,8 +21,8 @@ namespace nano::store::lmdb
 class txn_callbacks
 {
 public:
-	std::function<void (store::transaction_impl const *)> txn_start{ [] (store::transaction_impl const *) {} };
-	std::function<void (store::transaction_impl const *)> txn_end{ [] (store::transaction_impl const *) {} };
+	std::function<void (store::transaction_impl const *)> txn_start{ [] (store::transaction_impl const *) { } };
+	std::function<void (store::transaction_impl const *)> txn_end{ [] (store::transaction_impl const *) { } };
 };
 
 class read_transaction_impl final : public store::read_transaction_impl

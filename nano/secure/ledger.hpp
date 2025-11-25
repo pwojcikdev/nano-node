@@ -10,6 +10,7 @@
 #include <nano/secure/pending_info.hpp>
 #include <nano/secure/rep_weights.hpp>
 #include <nano/secure/transaction.hpp>
+#include <nano/store/store.hpp>
 
 #include <deque>
 #include <map>

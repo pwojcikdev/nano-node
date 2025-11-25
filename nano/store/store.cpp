@@ -347,6 +347,11 @@ bool ledger_store::copy_db (std::filesystem::path const & destination)
 	return backend.copy_db (destination);
 }
 
+uint64_t ledger_store::count (nano::store::transaction const & tx, tables table) const
+{
+	return backend.count (tx, table);
+}
+
 nano::store::write_transaction ledger_store::tx_begin_write ()
 {
 	return backend.tx_begin_write ();

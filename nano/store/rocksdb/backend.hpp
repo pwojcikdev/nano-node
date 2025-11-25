@@ -3,13 +3,14 @@
 #include <nano/lib/rocksdbconfig.hpp>
 #include <nano/store/backend.hpp>
 
-#include <rocksdb/db.h>
-#include <rocksdb/options.h>
-#include <rocksdb/utilities/transaction_db.h>
-
 #include <functional>
 #include <map>
 #include <unordered_map>
+
+#include <rocksdb/db.h>
+#include <rocksdb/options.h>
+#include <rocksdb/table.h>
+#include <rocksdb/utilities/transaction_db.h>
 
 namespace nano::store::rocksdb
 {

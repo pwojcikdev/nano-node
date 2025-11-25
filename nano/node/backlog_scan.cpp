@@ -4,9 +4,8 @@
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/scheduler/priority.hpp>
 #include <nano/secure/ledger.hpp>
-#include <nano/store/account.hpp>
-#include <nano/store/component.hpp>
-#include <nano/store/confirmation_height.hpp>
+#include <nano/store/ledger/account.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
 
 nano::backlog_scan::backlog_scan (backlog_scan_config const & config_a, nano::ledger & ledger_a, nano::stats & stats_a) :
 	config{ config_a },

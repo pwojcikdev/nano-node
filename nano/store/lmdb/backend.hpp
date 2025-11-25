@@ -6,9 +6,9 @@
 #include <nano/store/lmdb/lmdb_env.hpp>
 #include <nano/store/lmdb/transaction_impl.hpp>
 
-#include <lmdb/libraries/liblmdb/lmdb.h>
-
 #include <map>
+
+#include <lmdb/libraries/liblmdb/lmdb.h>
 
 namespace nano::store::lmdb
 {
@@ -19,7 +19,7 @@ namespace nano::store::lmdb
 class backend : public nano::store::backend
 {
 public:
-	backend (std::filesystem::path const & path, nano::lmdb_config const & config, nano::txn_tracking_config const & txn_tracking_config = {}, std::chrono::milliseconds block_processor_batch_max_time = std::chrono::milliseconds{ 5000 });
+	backend (std::filesystem::path const & path, nano::logger & logger, nano::lmdb_config const & config, nano::txn_tracking_config const & txn_tracking_config = {}, std::chrono::milliseconds block_processor_batch_max_time = std::chrono::milliseconds{ 5000 });
 
 	// CRUD operations
 	int get (store::transaction const & tx, tables table, db_val const & key, db_val & value) const override;

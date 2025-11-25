@@ -28,6 +28,8 @@ public:
 	void initialize (nano::store::write_transaction const &, nano::ledger_constants const & constants);
 	void perform_upgrades ();
 
+	uint64_t count (nano::store::transaction const &, tables table) const;
+
 	std::string vendor_get () const;
 	std::filesystem::path get_database_path () const;
 	nano::store::open_mode get_mode () const;

@@ -27,7 +27,7 @@ std::unique_ptr<nano::store::ledger_store> nano::make_store (nano::logger & logg
 		case nano::database_backend::lmdb:
 		{
 			auto db_path = add_db_postfix ? path / "data.ldb" : path;
-			backend = std::make_unique<nano::store::lmdb::backend> (db_path, node_config.lmdb_config, node_config.diagnostics_config.txn_tracking, node_config.block_processor_batch_max_time);
+			backend = std::make_unique<nano::store::lmdb::backend> (db_path, logger, node_config.lmdb_config, node_config.diagnostics_config.txn_tracking, node_config.block_processor_batch_max_time);
 			break;
 		}
 		case nano::database_backend::rocksdb:
