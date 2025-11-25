@@ -11,7 +11,11 @@
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
 #include <nano/secure/vote.hpp>
+#include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/peer.hpp>
+#include <nano/store/ledger/pending.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 

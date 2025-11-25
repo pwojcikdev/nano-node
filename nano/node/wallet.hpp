@@ -3,6 +3,8 @@
 #include <nano/lib/id_dispenser.hpp>
 #include <nano/lib/lmdbconfig.hpp>
 #include <nano/lib/locks.hpp>
+#include <nano/lib/numbers.hpp>
+#include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/work.hpp>
 #include <nano/node/openclwork.hpp>
 #include <nano/secure/common.hpp>

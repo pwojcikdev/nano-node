@@ -10,6 +10,10 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/final_vote.hpp>
+#include <nano/store/ledger/online_weight.hpp>
+#include <nano/store/ledger/peer.hpp>
 
 #include <boost/format.hpp>
 
@@ -266,7 +270,8 @@ bool copy_database (std::filesystem::path const & data_path, boost::program_opti
 		}
 		if (vm.count ("rebuild_database"))
 		{
-			node.node->store.rebuild_db (store.tx_begin_write ());
+			// TODO: Implement rebuild_db functionality or remove this option
+			// node.node->store.rebuild_db (store.tx_begin_write ());
 		}
 
 		success = node.node->copy_with_compaction (output_path);

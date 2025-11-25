@@ -176,7 +176,7 @@ void nano::online_reps::trim_trended (nano::store::write_transaction const & tra
 	auto const now = std::chrono::system_clock::now ();
 	auto const cutoff = now - config.network_params.node.weight_cutoff;
 
-	std::deque<nano::store::online_weight::iterator::value_type> to_remove;
+	std::deque<nano::store::ledger::online_weight::iterator::value_type> to_remove;
 
 	for (auto it = ledger.store.online_weight.begin (transaction); it != ledger.store.online_weight.end (transaction); ++it)
 	{
@@ -208,7 +208,7 @@ void nano::online_reps::sanitize_trended (nano::store::write_transaction const &
 	auto const cutoff = now - config.network_params.node.weight_cutoff;
 
 	size_t removed_old = 0, removed_future = 0;
-	std::deque<nano::store::online_weight::iterator::value_type> to_remove;
+	std::deque<nano::store::ledger::online_weight::iterator::value_type> to_remove;
 
 	for (auto it = ledger.store.online_weight.begin (transaction); it != ledger.store.online_weight.end (transaction); ++it)
 	{

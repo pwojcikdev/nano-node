@@ -20,6 +20,7 @@ class ledger_store
 {
 public:
 	explicit ledger_store (std::unique_ptr<nano::store::backend>, nano::store::open_mode mode, nano::stats &, nano::logger &, ledger_store_params = {});
+	~ledger_store ();
 
 	nano::store::write_transaction tx_begin_write ();
 	nano::store::read_transaction tx_begin_read () const;
