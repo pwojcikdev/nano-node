@@ -1,4 +1,5 @@
 #include <nano/store/lmdb/backend.hpp>
+#include <nano/store/lmdb/common.hpp>
 #include <nano/store/lmdb/iterator.hpp>
 #include <nano/store/lmdb/utility.hpp>
 
@@ -6,12 +7,12 @@
 
 namespace nano::store::lmdb
 {
-backend::backend (std::filesystem::path const & path, nano::lmdb_config const & config_a, nano::txn_tracking_config const & txn_tracking_config_a, std::chrono::milliseconds block_processor_batch_max_time_a) :
+backend::backend (std::filesystem::path const & path, nano::logger & logger_a, nano::lmdb_config const & config_a, nano::txn_tracking_config const & txn_tracking_config_a, std::chrono::milliseconds block_processor_batch_max_time_a) :
 	database_path{ path },
 	config{ config_a },
 	txn_tracking_config{ txn_tracking_config_a },
 	block_processor_batch_max_time{ block_processor_batch_max_time_a },
-	mdb_txn_tracker{ nano::logger::get (), txn_tracking_config_a, block_processor_batch_max_time_a },
+	mdb_txn_tracker{ logger_a, txn_tracking_config_a, block_processor_batch_max_time_a },
 	txn_tracking_enabled{ txn_tracking_config_a.enable }
 {
 }
@@ -22,9 +23,9 @@ void backend::open_impl (column_schema schema, nano::store::open_mode mode)
 
 	// Create environment with appropriate options
 	auto options = nano::store::lmdb::env::options::make ()
-					   .set_config (config)
-					   .set_use_no_mem_init (true)
-					   .set_read_only (mode == nano::store::open_mode::read_only);
+				   .set_config (config)
+				   .set_use_no_mem_init (true)
+				   .set_read_only (mode == nano::store::open_mode::read_only);
 
 	env_impl = std::make_unique<nano::store::lmdb::env> (database_path, options);
 	env = env_impl.get ();
@@ -141,17 +142,17 @@ store::iterator backend::end (store::transaction const & tx, tables table) const
 
 bool backend::success (int status) const
 {
-	return MDB_SUCCESS == status;
+	return nano::store::lmdb::success (status);
 }
 
 bool backend::not_found (int status) const
 {
-	return MDB_NOTFOUND == status;
+	return nano::store::lmdb::not_found (status);
 }
 
 std::string backend::error_string (int status) const
 {
-	return "status: " + std::to_string (status) + " (" + mdb_strerror (status) + ")";
+	return nano::store::lmdb::error_string (status);
 }
 
 store::read_transaction backend::tx_begin_read () const
@@ -215,5 +216,20 @@ std::filesystem::path backend::get_database_path () const
 nano::store::open_mode backend::get_mode () const
 {
 	return current_mode;
+}
+
+bool success (int status)
+{
+	return MDB_SUCCESS == status;
+}
+
+bool not_found (int status)
+{
+	return MDB_NOTFOUND == status;
+}
+
+std::string error_string (int status)
+{
+	return "status: " + std::to_string (status) + " (" + mdb_strerror (status) + ")";
 }
 } // namespace nano::store::lmdb

@@ -1,5 +1,4 @@
 #include <nano/store/ledger/version.hpp>
-#include <nano/store/lmdb/lmdb.hpp>
 
 namespace nano::store::ledger
 {
@@ -21,7 +20,7 @@ uint64_t version::get (store::transaction const & transaction) const
 	nano::uint256_union version_key{ 1 };
 	db_val data;
 	auto status = backend.get (transaction, tables::meta, version_key, data);
-	uint64_t result = nano::store::lmdb::component::version_minimum; // Default minimum version
+	uint64_t result = 0; // Default minimum version
 	if (backend.success (status))
 	{
 		nano::uint256_union version_value{ data };

@@ -25,7 +25,7 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/vote.hpp>
-#include <nano/store/pending.hpp>
+#include <nano/store/ledger/pending.hpp>
 
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/format.hpp>

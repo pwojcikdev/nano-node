@@ -1,9 +1,8 @@
+#include <nano/lib/config.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/utility.hpp>
-#include <nano/store/lmdb/lmdb.hpp>
+#include <nano/store/lmdb/common.hpp>
 #include <nano/store/lmdb/lmdb_env.hpp>
-
-#include <boost/system/error_code.hpp>
 
 nano::store::lmdb::env::env (std::filesystem::path const & path_a, nano::store::lmdb::env::options options_a) :
 	database_path{ path_a }
