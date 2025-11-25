@@ -132,7 +132,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 			logger.info (nano::log::type::ledger_store, "Ledger backup completed, continuing with upgrade...");
 		}
 
-		perform_upgrades ();
+		perform_upgrades (meta);
 	}
 
 	if (fresh_db)
@@ -150,10 +150,8 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 
 ledger_store::~ledger_store () = default;
 
-void ledger_store::perform_upgrades ()
+void ledger_store::perform_upgrades (nano::store::backend_meta meta)
 {
-	auto meta = backend.get_meta ();
-
 	debug_assert (meta.version < version_current, "perform_upgrades called but no upgrade is necessary");
 	release_assert (meta.version >= version_minimum, "perform_upgrades called but version is below minimum supported version", std::to_string (meta.version));
 
