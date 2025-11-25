@@ -27,7 +27,7 @@ public:
 
 	bool empty (nano::store::transaction const &) const;
 	void initialize (nano::store::write_transaction const &, nano::ledger_constants const & constants);
-	void perform_upgrades ();
+	void perform_upgrades (nano::store::backend_meta);
 
 	uint64_t count (nano::store::transaction const &, tables table) const;
 
