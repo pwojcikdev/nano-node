@@ -148,6 +148,8 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	release_assert (backend.get_meta ().version == version_current, "ledger database version after initialization is not current");
 }
 
+ledger_store::~ledger_store () = default;
+
 void ledger_store::perform_upgrades ()
 {
 	auto meta = backend.get_meta ();

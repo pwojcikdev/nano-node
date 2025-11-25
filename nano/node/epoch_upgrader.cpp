@@ -5,6 +5,7 @@
 #include <nano/node/node.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
+#include <nano/store/ledger/account.hpp>
 
 nano::epoch_upgrader::epoch_upgrader (nano::node & node_a, nano::ledger & ledger_a, nano::store::ledger_store & store_a, nano::network_params & network_params_a, nano::logger & logger_a) :
 	node{ node_a },

@@ -104,7 +104,7 @@ void nano::peer_history::run_one ()
 	auto const now = std::chrono::system_clock::now ();
 	auto const cutoff = now - config.erase_cutoff;
 
-	std::deque<nano::store::peer::iterator::value_type> to_remove;
+	std::deque<nano::store::ledger::peer::iterator::value_type> to_remove;
 
 	for (auto it = store.peer.begin (transaction); it != store.peer.end (transaction); ++it)
 	{
