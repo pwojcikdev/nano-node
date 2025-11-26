@@ -11,7 +11,11 @@
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
 #include <nano/secure/vote.hpp>
-#include <nano/store/block.hpp>
+#include <nano/store/ledger/account.hpp>
+#include <nano/store/ledger/block.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/peer.hpp>
+#include <nano/store/ledger/pending.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -300,7 +304,7 @@ nano::account_info nano::test::account_info (nano::node const & node, nano::acco
 	return {};
 }
 
-void nano::test::print_all_receivable_entries (const nano::store::component & store)
+void nano::test::print_all_receivable_entries (const nano::store::ledger_store & store)
 {
 	std::cout << "Printing all receivable entries:\n";
 	auto const tx = store.tx_begin_read ();
@@ -334,7 +338,7 @@ void nano::test::print_all_account_info (const nano::ledger & ledger)
 	}
 }
 
-void nano::test::print_all_blocks (const nano::store::component & store)
+void nano::test::print_all_blocks (const nano::store::ledger_store & store)
 {
 	auto tx = store.tx_begin_read ();
 	auto i = store.block.begin (tx);
