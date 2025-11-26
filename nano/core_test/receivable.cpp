@@ -1,3 +1,6 @@
+#include <nano/secure/common.hpp>
+#include <nano/store/ledger/pending.hpp>
+#include <nano/store/store.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 

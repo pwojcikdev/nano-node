@@ -1,4 +1,6 @@
 #include <nano/rpc_test/common.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/store.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 

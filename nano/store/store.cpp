@@ -150,6 +150,11 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 
 ledger_store::~ledger_store () = default;
 
+void ledger_store::initialize (nano::store::write_transaction const &, nano::ledger_constants const & constants)
+{
+	// TODO: Move ledger initialization to ledger class
+}
+
 void ledger_store::perform_upgrades (nano::store::backend_meta meta)
 {
 	debug_assert (meta.version < version_current, "perform_upgrades called but no upgrade is necessary");

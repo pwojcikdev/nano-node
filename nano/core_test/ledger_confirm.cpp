@@ -7,6 +7,7 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -758,7 +759,7 @@ TEST (ledger_confirm, pruned_source)
 	nano::test::system system;
 
 	auto path (nano::unique_path ());
-	auto store = nano::make_store (system.logger, path, nano::dev::constants);
+	auto store = nano::make_store (system.logger, system.stats, path, nano::dev::constants);
 
 	nano::ledger ledger (*store, nano::dev::network_params, system.stats, system.logger);
 	ledger.pruning = true;
@@ -842,7 +843,7 @@ TEST (ledger_confirmDeathTest, rollback_added_block)
 		nano::test::system system;
 
 		auto path (nano::unique_path ());
-		auto store = nano::make_store (system.logger, path, nano::dev::constants);
+		auto store = nano::make_store (system.logger, system.stats, path, nano::dev::constants);
 
 		nano::ledger ledger (*store, nano::dev::network_params, system.stats, system.logger);
 		nano::store::write_queue write_queue;
