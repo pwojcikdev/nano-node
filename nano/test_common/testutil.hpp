@@ -413,7 +413,7 @@ namespace test
 	/**
 	 * \brief Debugging function to print all entries in the pending table. Intended to be used to debug unit tests.
 	 */
-	void print_all_receivable_entries (const nano::store::component & store);
+	void print_all_receivable_entries (const nano::store::ledger_store & store);
 
 	/**
 	 * \brief Debugging function to print all accounts in a ledger. Intended to be used to debug unit tests.
@@ -423,7 +423,7 @@ namespace test
 	/**
 	 * \brief Debugging function to print all blocks in a node. Intended to be used to debug unit tests.
 	 */
-	void print_all_blocks (const nano::store::component & store);
+	void print_all_blocks (const nano::store::ledger_store & store);
 
 	/**
 	 * Returns all blocks in the ledger

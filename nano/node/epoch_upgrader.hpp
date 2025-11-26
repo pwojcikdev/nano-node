@@ -16,7 +16,7 @@ namespace nano
 class epoch_upgrader final
 {
 public:
-	epoch_upgrader (nano::node &, nano::ledger &, nano::store::component &, nano::network_params &, nano::logger &);
+	epoch_upgrader (nano::node &, nano::ledger &, nano::store::ledger_store &, nano::network_params &, nano::logger &);
 
 	bool start (nano::raw_key const & prv, nano::epoch epoch, uint64_t count_limit, uint64_t threads);
 	void stop ();
@@ -24,7 +24,7 @@ public:
 private: // Dependencies
 	nano::node & node;
 	nano::ledger & ledger;
-	nano::store::component & store;
+	nano::store::ledger_store & store;
 	nano::network_params & network_params;
 	nano::logger & logger;
 

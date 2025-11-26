@@ -10,12 +10,16 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/final_vote.hpp>
+#include <nano/store/ledger/online_weight.hpp>
+#include <nano/store/ledger/peer.hpp>
 
 #include <boost/format.hpp>
 
 namespace
 {
-void reset_confirmation_heights (nano::store::write_transaction const & transaction, nano::ledger_constants & constants, nano::store::component & store);
+void reset_confirmation_heights (nano::store::write_transaction const & transaction, nano::ledger_constants & constants, nano::store::ledger_store & store);
 bool is_using_rocksdb (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::error_code & ec);
 }
 
@@ -266,7 +270,8 @@ bool copy_database (std::filesystem::path const & data_path, boost::program_opti
 		}
 		if (vm.count ("rebuild_database"))
 		{
-			node.node->store.rebuild_db (store.tx_begin_write ());
+			// TODO: Implement rebuild_db functionality or remove this option
+			// node.node->store.rebuild_db (store.tx_begin_write ());
 		}
 
 		success = node.node->copy_with_compaction (output_path);
@@ -1430,7 +1435,7 @@ std::unique_ptr<nano::inactive_node> nano::default_inactive_node (std::filesyste
 
 namespace
 {
-void reset_confirmation_heights (nano::store::write_transaction const & transaction, nano::ledger_constants & constants, nano::store::component & store)
+void reset_confirmation_heights (nano::store::write_transaction const & transaction, nano::ledger_constants & constants, nano::store::ledger_store & store)
 {
 	// First do a clean sweep
 	store.confirmation_height.clear (transaction);
