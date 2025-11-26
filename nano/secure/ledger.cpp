@@ -1,3 +1,4 @@
+#include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/files.hpp>
@@ -14,23 +15,23 @@
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
 #include <nano/secure/rep_weights.hpp>
-#include <nano/store/account.hpp>
-#include <nano/store/block.hpp>
-#include <nano/store/component.hpp>
-#include <nano/store/confirmation_height.hpp>
-#include <nano/store/final_vote.hpp>
-#include <nano/store/online_weight.hpp>
-#include <nano/store/peer.hpp>
-#include <nano/store/pending.hpp>
-#include <nano/store/pruned.hpp>
-#include <nano/store/rep_weight.hpp>
-#include <nano/store/version.hpp>
+#include <nano/store/ledger/account.hpp>
+#include <nano/store/ledger/block.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/final_vote.hpp>
+#include <nano/store/ledger/online_weight.hpp>
+#include <nano/store/ledger/peer.hpp>
+#include <nano/store/ledger/pending.hpp>
+#include <nano/store/ledger/pruned.hpp>
+#include <nano/store/ledger/rep_weight.hpp>
+#include <nano/store/ledger/version.hpp>
+#include <nano/store/store.hpp>
 
 #include <stack>
 
 #include <cryptopp/words.h>
 
-nano::ledger::ledger (nano::store::component & store_a, nano::network_params const & params_a, nano::stats & stats_a, nano::logger & logger_a, nano::generate_cache_flags generate_cache_flags_a, nano::uint128_t min_rep_weight_a, uint64_t max_backlog_a) :
+nano::ledger::ledger (nano::store::ledger_store & store_a, nano::network_params const & params_a, nano::stats & stats_a, nano::logger & logger_a, nano::generate_cache_flags generate_cache_flags_a, nano::uint128_t min_rep_weight_a, uint64_t max_backlog_a) :
 	constants{ params_a.ledger },
 	work{ params_a.work },
 	store{ store_a },
@@ -76,8 +77,8 @@ void nano::ledger::initialize (nano::generate_cache_flags const & generate_cache
 	if (!is_initialized && store.get_mode () != nano::store::open_mode::read_only)
 	{
 		// Store was empty meaning we just created it, add the genesis block
+		logger.info (nano::log::type::ledger, "Initializing ledger with genesis block: {}", constants.genesis->hash ());
 		auto const transaction = store.tx_begin_write ();
-		logger.info (nano::log::type::ledger, "Initializing ledger with genesis block");
 		store.initialize (transaction, constants);
 	}
 
@@ -838,7 +839,7 @@ bool nano::ledger::migrate_lmdb_to_rocksdb (std::filesystem::path const & data_p
 	{
 		nano::node_config node_config;
 		node_config.database_backend = database_backend::rocksdb;
-		auto rocksdb_store = nano::make_store (logger, data_path_a, nano::dev::constants, false, true, node_config);
+		auto rocksdb_store = nano::make_store (logger, stats, data_path_a, nano::dev::constants, false, true, node_config);
 		auto table_size = store.count (store.tx_begin_read (), tables::blocks);
 		logger.info (nano::log::type::ledger, "Step 1 of 7: Converting {} entries from blocks table", table_size);
 		std::atomic<std::size_t> count = 0;

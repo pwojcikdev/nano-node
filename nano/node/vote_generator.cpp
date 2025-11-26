@@ -13,7 +13,7 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/vote.hpp>
-#include <nano/store/component.hpp>
+#include <nano/store/ledger/final_vote.hpp>
 
 #include <chrono>
 
