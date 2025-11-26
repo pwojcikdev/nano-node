@@ -61,7 +61,7 @@ using column_schema = std::set<column_definition>;
 class backend
 {
 public:
-	virtual ~backend () = default;
+	virtual ~backend ();
 
 	backend_meta open_meta ();
 

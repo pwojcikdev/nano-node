@@ -14,6 +14,7 @@
 #include <nano/store/ledger/rep_weight.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/store.hpp>
+#include <nano/store/typed_iterator_templ.hpp>
 
 namespace nano::store
 {

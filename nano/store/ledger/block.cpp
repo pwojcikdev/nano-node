@@ -1,6 +1,7 @@
 #include <nano/secure/parallel_traversal.hpp>
 #include <nano/store/db_val_templ.hpp>
 #include <nano/store/ledger/block.hpp>
+#include <nano/store/typed_iterator_templ.hpp>
 
 namespace nano::store::ledger
 {

@@ -1,5 +1,6 @@
 #include <nano/secure/parallel_traversal.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/typed_iterator_templ.hpp>
 
 namespace nano::store::ledger
 {

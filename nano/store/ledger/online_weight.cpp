@@ -1,4 +1,5 @@
 #include <nano/store/ledger/online_weight.hpp>
+#include <nano/store/typed_iterator_templ.hpp>
 
 namespace nano::store::ledger
 {
@@ -27,6 +28,16 @@ auto online_weight::begin (store::transaction const & transaction) const -> iter
 auto online_weight::end (store::transaction const & transaction) const -> iterator
 {
 	return iterator{ backend.end (transaction, tables::online_weight) };
+}
+
+auto online_weight::rbegin (store::transaction const & transaction) const -> reverse_iterator
+{
+	return reverse_iterator{ end (transaction) };
+}
+
+auto online_weight::rend (store::transaction const & transaction) const -> reverse_iterator
+{
+	return reverse_iterator{ begin (transaction) };
 }
 
 size_t online_weight::count (store::transaction const & transaction) const

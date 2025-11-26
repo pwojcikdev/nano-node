@@ -1,4 +1,5 @@
 #include <nano/store/ledger/peer.hpp>
+#include <nano/store/typed_iterator_templ.hpp>
 
 namespace nano::store::ledger
 {
