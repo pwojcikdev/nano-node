@@ -11,6 +11,8 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
+#include <nano/store/ledger/pending.hpp>
+#include <nano/store/lmdb/db_val.hpp>
 #include <nano/store/lmdb/iterator.hpp>
 #include <nano/store/lmdb/utility.hpp>
 #include <nano/store/typed_iterator_templ.hpp>
@@ -1528,7 +1530,8 @@ nano::wallets::wallets (bool error_a, nano::node & node_a) :
 		char const * store_path;
 		mdb_env_get_path (env, &store_path);
 		std::filesystem::path const path (store_path);
-		nano::store::lmdb::component::create_backup_file (env, path, node_a.logger);
+		// TODO: Implement create_backup_file functionality for new store architecture
+		// nano::store::lmdb::component::create_backup_file (env, path, node_a.logger);
 	}
 	for (auto & item : items)
 	{

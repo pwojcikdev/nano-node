@@ -10,6 +10,7 @@
 #include <nano/node/ledger_notifications.hpp>
 #include <nano/node/node_observers.hpp>
 #include <nano/node/scheduler/component.hpp>
+#include <nano/store/store.hpp>
 
 #include <boost/asio/io_context.hpp>
 
