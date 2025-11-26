@@ -26,7 +26,7 @@ public:
 class peer_history final
 {
 public:
-	peer_history (peer_history_config const &, nano::store::component &, nano::network &, nano::logger &, nano::stats &);
+	peer_history (peer_history_config const &, nano::store::ledger_store &, nano::network &, nano::logger &, nano::stats &);
 	~peer_history ();
 
 	void start ();
@@ -43,7 +43,7 @@ private:
 
 private: // Dependencies
 	peer_history_config const & config;
-	nano::store::component & store;
+	nano::store::ledger_store & store;
 	nano::network & network;
 	nano::logger & logger;
 	nano::stats & stats;

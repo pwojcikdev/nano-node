@@ -24,110 +24,47 @@ add_library(
   ledger/rep_weight.cpp
   ledger/version.hpp
   ledger/version.cpp
-  account.hpp
-  block.hpp
   block_w_sideband.hpp
   common.hpp
   common.cpp
-  component.hpp
-  confirmation_height.hpp
   db_val.hpp
   db_val_templ.hpp
   iterator.hpp
   meta.hpp
   meta.cpp
-  final_vote.hpp
   fwd.hpp
-  lmdb/account.hpp
-  lmdb/block.hpp
-  lmdb/confirmation_height.hpp
+  lmdb/backend_lmdb.hpp
+  lmdb/backend_lmdb.cpp
   lmdb/db_val.hpp
-  lmdb/final_vote.hpp
   lmdb/iterator.hpp
-  lmdb/lmdb.hpp
+  lmdb/iterator.cpp
   lmdb/lmdb_env.hpp
-  lmdb/iterator.hpp
+  lmdb/lmdb_env.cpp
   lmdb/transaction_lmdb.hpp
-  lmdb/online_weight.hpp
-  lmdb/peer.hpp
-  lmdb/pending.hpp
-  lmdb/pruned.hpp
-  lmdb/rep_weight.hpp
-  lmdb/transaction_lmdb.hpp
-  lmdb/version.hpp
+  lmdb/transaction_lmdb.cpp
+  lmdb/utility.hpp
   lmdb/wallet_value.hpp
-  online_weight.hpp
-  peer.hpp
-  pending.hpp
-  pruned.hpp
-  rep_weight.hpp
-  reverse_iterator.hpp
-  reverse_iterator_templ.hpp
-  rocksdb/account.hpp
-  rocksdb/block.hpp
-  rocksdb/confirmation_height.hpp
+  lmdb/wallet_value.cpp
+  rocksdb/backend_rocksdb.hpp
+  rocksdb/backend_rocksdb.cpp
   rocksdb/db_val.hpp
-  rocksdb/final_vote.hpp
   rocksdb/iterator.hpp
-  rocksdb/online_weight.hpp
-  rocksdb/peer.hpp
-  rocksdb/pending.hpp
-  rocksdb/pruned.hpp
-  rocksdb/rep_weight.hpp
-  rocksdb/rocksdb.hpp
-  rocksdb/iterator.hpp
+  rocksdb/iterator.cpp
   rocksdb/transaction_rocksdb.hpp
+  rocksdb/transaction_rocksdb.cpp
   rocksdb/utility.hpp
-  rocksdb/version.hpp
+  rocksdb/utility.cpp
+  common.hpp
   tables.hpp
   transaction.hpp
-  typed_iterator.hpp
-  typed_iterator_templ.hpp
-  version.hpp
-  versioning.hpp
-  account.cpp
-  block.cpp
-  component.cpp
-  confirmation_height.cpp
-  iterator.cpp
-  final_vote.cpp
-  lmdb/account.cpp
-  lmdb/block.cpp
-  lmdb/confirmation_height.cpp
-  lmdb/final_vote.cpp
-  lmdb/iterator.cpp
-  lmdb/lmdb.cpp
-  lmdb/lmdb_env.cpp
-  lmdb/transaction_lmdb.cpp
-  lmdb/online_weight.cpp
-  lmdb/peer.cpp
-  lmdb/pending.cpp
-  lmdb/pruned.cpp
-  lmdb/rep_weight.cpp
-  lmdb/version.cpp
-  lmdb/wallet_value.cpp
-  online_weight.cpp
-  peer.cpp
-  pending.cpp
-  pruned.cpp
-  rep_weight.cpp
-  rocksdb/account.cpp
-  rocksdb/block.cpp
-  rocksdb/confirmation_height.cpp
-  rocksdb/final_vote.cpp
-  rocksdb/iterator.cpp
-  rocksdb/online_weight.cpp
-  rocksdb/peer.cpp
-  rocksdb/pending.cpp
-  rocksdb/pruned.cpp
-  rocksdb/rep_weight.cpp
-  rocksdb/rocksdb.cpp
-  rocksdb/transaction_rocksdb.cpp
-  rocksdb/utility.cpp
-  rocksdb/version.cpp
   transaction.cpp
+  typed_iterator.hpp
   typed_iterator.cpp
-  version.cpp
+  typed_iterator_templ.hpp
+  iterator.cpp
+  reverse_iterator.hpp
+  reverse_iterator_templ.hpp
+  versioning.hpp
   versioning.cpp
   write_queue.hpp
   write_queue.cpp)

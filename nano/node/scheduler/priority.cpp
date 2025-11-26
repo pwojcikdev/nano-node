@@ -8,6 +8,7 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
 
 nano::scheduler::priority::priority (nano::node_config & node_config, nano::node & node_a, nano::ledger & ledger_a, nano::ledger_notifications & ledger_notifications_a, nano::bucketing & bucketing_a, nano::active_elections & active_a, nano::cementing_set & cementing_set_a, nano::stats & stats_a, nano::logger & logger_a) :
 	config{ node_config.priority_scheduler },

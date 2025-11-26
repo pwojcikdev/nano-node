@@ -8,6 +8,7 @@
 #include <nano/node/cli.hpp>
 #include <nano/node/daemonconfig.hpp>
 #include <nano/node/ledger_notifications.hpp>
+#include <nano/store/store.hpp>
 
 #include <boost/asio/io_context.hpp>
 
