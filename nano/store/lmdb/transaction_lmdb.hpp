@@ -21,8 +21,8 @@ namespace nano::store::lmdb
 class txn_callbacks
 {
 public:
-	std::function<void (store::transaction_impl const *)> txn_start{ [] (store::transaction_impl const *) { } };
-	std::function<void (store::transaction_impl const *)> txn_end{ [] (store::transaction_impl const *) { } };
+	std::function<void (store::transaction_impl const *)> txn_start{ [] (store::transaction_impl const *) {} };
+	std::function<void (store::transaction_impl const *)> txn_end{ [] (store::transaction_impl const *) {} };
 };
 
 class read_transaction_impl final : public store::read_transaction_impl

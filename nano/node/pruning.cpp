@@ -4,6 +4,7 @@
 #include <nano/node/pruning.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
 
 nano::pruning::pruning (nano::node_config const & config_a, nano::node_flags const & flags_a, nano::ledger & ledger_a, nano::stats & stats_a, nano::logger & logger_a) :
 	config{ config_a },
