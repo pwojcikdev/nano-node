@@ -1,5 +1,6 @@
 #include <nano/boost/beast/core/flat_buffer.hpp>
 #include <nano/boost/beast/http.hpp>
+#include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/jsonconfig.hpp>
@@ -28,6 +29,10 @@
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_confirmed.hpp>
 #include <nano/secure/vote.hpp>
+#include <nano/store/ledger/account.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/peer.hpp>
+#include <nano/store/ledger/version.hpp>
 #include <nano/test_common/chains.hpp>
 #include <nano/test_common/network.hpp>
 #include <nano/test_common/system.hpp>
