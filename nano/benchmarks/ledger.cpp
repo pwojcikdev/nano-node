@@ -4,7 +4,7 @@
 #include <nano/node/nodeconfig.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
-#include <nano/store/account.hpp>
+#include <nano/store/ledger/account.hpp>
 
 #include <benchmark/benchmark.h>
 
@@ -20,7 +20,7 @@ static void BM_ledger_iterate_accounts (benchmark::State & state)
 	nano::network_params network_params{ network };
 	auto application_path = nano::working_path (network);
 
-	auto store_impl{ nano::make_store (logger, application_path, network_params.ledger) };
+	auto store_impl{ nano::make_store (logger, stats, application_path, network_params.ledger) };
 	auto & store{ *store_impl };
 
 	auto ledger_impl{ std::make_unique<nano::ledger> (store, network_params, stats, logger, nano::generate_cache_flags::all_disabled ()) };
@@ -63,7 +63,7 @@ static void BM_store_iterate_accounts (benchmark::State & state)
 	nano::node_flags flags;
 	auto application_path = nano::working_path (network);
 
-	auto store_impl{ nano::make_store (logger, application_path, network_params.ledger) };
+	auto store_impl{ nano::make_store (logger, stats, application_path, network_params.ledger) };
 	auto & store{ *store_impl };
 
 	auto transaction = store.tx_begin_read ();

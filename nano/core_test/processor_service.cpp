@@ -6,7 +6,6 @@
 #include <nano/node/make_store.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
-#include <nano/store/component.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -16,7 +15,7 @@ TEST (processor_service, bad_send_signature)
 {
 	nano::test::system system;
 
-	auto store = nano::make_store (system.logger, nano::unique_path (), nano::dev::constants);
+	auto store = nano::make_store (system.logger, system.stats, nano::unique_path (), nano::dev::constants);
 	nano::ledger ledger (*store, nano::dev::network_params, system.stats, system.logger);
 	auto transaction = ledger.tx_begin_write ();
 	nano::work_pool pool{ nano::dev::network_params.network, std::numeric_limits<unsigned>::max () };
@@ -40,7 +39,7 @@ TEST (processor_service, bad_receive_signature)
 {
 	nano::test::system system;
 
-	auto store = nano::make_store (system.logger, nano::unique_path (), nano::dev::constants);
+	auto store = nano::make_store (system.logger, system.stats, nano::unique_path (), nano::dev::constants);
 	nano::ledger ledger (*store, nano::dev::network_params, system.stats, system.logger);
 	auto transaction = ledger.tx_begin_write ();
 	nano::work_pool pool{ nano::dev::network_params.network, std::numeric_limits<unsigned>::max () };

@@ -78,7 +78,7 @@ private:
 	std::map<tables, ::rocksdb::ColumnFamilyHandle *> table_handles;
 	std::map<std::string, tables> name_to_table;
 
-private: // Tombstone management
+public: // Tombstone management
 	class tombstone_info
 	{
 	public:

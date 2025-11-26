@@ -4,8 +4,8 @@
 #include <nano/lib/stats.hpp>
 #include <nano/lib/work.hpp>
 #include <nano/secure/ledger.hpp>
-#include <nano/store/component.hpp>
 #include <nano/store/fwd.hpp>
+#include <nano/store/store.hpp>
 
 namespace nano::test
 {
@@ -17,7 +17,7 @@ public:
 	ledger_context (std::deque<std::shared_ptr<nano::block>> && blocks = std::deque<std::shared_ptr<nano::block>>{});
 
 	nano::ledger & ledger ();
-	nano::store::component & store ();
+	nano::store::ledger_store & store ();
 	std::deque<std::shared_ptr<nano::block>> const & blocks () const;
 	nano::work_pool & pool ();
 	nano::stats & stats ();
@@ -26,7 +26,7 @@ public:
 private:
 	nano::logger logger_m;
 	nano::stats stats_m{ logger_m };
-	std::unique_ptr<nano::store::component> store_m;
+	std::unique_ptr<nano::store::ledger_store> store_m;
 	nano::ledger ledger_m;
 	std::deque<std::shared_ptr<nano::block>> blocks_m;
 	nano::work_pool pool_m;

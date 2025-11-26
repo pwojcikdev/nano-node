@@ -14,7 +14,7 @@ namespace nano
 class rep_weights
 {
 public:
-	explicit rep_weights (nano::store::rep_weight &, nano::uint128_t min_weight = 0);
+	explicit rep_weights (nano::store::ledger::rep_weight_view &, nano::uint128_t min_weight = 0);
 
 	/* Adds or subtracts weight to the representative */
 	void add (store::write_transaction const &, nano::account const & rep, nano::uint128_t const & amount_add);
@@ -44,7 +44,7 @@ public:
 	void verify_consistency (nano::uint128_t burn_balance) const;
 
 private:
-	nano::store::rep_weight & rep_weight_store;
+	nano::store::ledger::rep_weight_view & rep_weight_store;
 	nano::uint128_t const min_weight;
 
 	mutable std::shared_mutex mutex;

@@ -7,6 +7,7 @@
 #include <nano/qt/qt.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
+#include <nano/store/ledger/account.hpp>
 
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
