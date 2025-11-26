@@ -10,7 +10,6 @@
 #include <nano/lib/timer.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/secure/common.hpp>
-#include <nano/store/component.hpp>
 
 #include <boost/endian/conversion.hpp>
 #include <boost/property_tree/json_parser.hpp>
