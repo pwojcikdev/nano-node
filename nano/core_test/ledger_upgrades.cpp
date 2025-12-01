@@ -22,6 +22,7 @@
 #include <nano/store/tables.hpp>
 #include <nano/store/typed_iterator.hpp>
 #include <nano/test_common/common.hpp>
+#include <nano/test_common/make_store.hpp>
 #include <nano/test_common/testutil.hpp>
 
 #include <gtest/gtest.h>
@@ -194,21 +195,21 @@ public:
  */
 TEST (ledger_upgrades, version_too_high)
 {
-	
 	auto path = nano::unique_path ();
-	auto backend = create_backend (path);
-
-	// Create database with a future version
-	backend->create (nano::store::ledger_store::schema_current, 999);
+	{
+		// Create database with a future version
+		auto backend = nano::test::make_backend (path);
+		backend->create (nano::store::ledger_store::schema_current, 999);
+	}
 
 	// Attempting to open through ledger_store should throw
 	ASSERT_THROW (
-		nano::store::ledger_store (
-			create_backend (path),
-			nano::store::open_mode::read_write,
-			nano::test::default_stats (),
-			nano::test::default_logger ()),
-		std::runtime_error);
+	nano::store::ledger_store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ()),
+	std::runtime_error);
 }
 
 /*
@@ -217,19 +218,20 @@ TEST (ledger_upgrades, version_too_high)
 TEST (ledger_upgrades, version_too_low)
 {
 	auto path = nano::unique_path ();
-	auto backend = create_backend (path);
-
-	// Create database with a version below minimum (which is 21)
-	backend->create (schema_v21, 20);
+	{
+		// Create database with a version below minimum
+		auto backend = nano::test::make_backend (path);
+		backend->create (nano::store::ledger_store::schema_current, 7);
+	}
 
 	// Attempting to open through ledger_store should throw
 	ASSERT_THROW (
-		nano::store::ledger_store (
-			create_backend (path),
-			nano::store::open_mode::read_write,
-			nano::test::default_stats (),
-			nano::test::default_logger ()),
-		std::runtime_error);
+	nano::store::ledger_store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ()),
+	std::runtime_error);
 }
 
 /*
@@ -238,18 +240,19 @@ TEST (ledger_upgrades, version_too_low)
 TEST (ledger_upgrades, read_only_prevents_upgrade)
 {
 	auto path = nano::unique_path ();
-
-	// Create a v21 database
-	legacy_database_v21 legacy_db{ path };
+	{
+		// Create a v21 database
+		legacy_database_v21 legacy_db{ path };
+	}
 
 	// Attempting to open in read-only mode should fail because upgrade is needed
 	ASSERT_THROW (
-		nano::store::ledger_store (
-			create_backend (path),
-			nano::store::open_mode::read_only,
-			nano::test::default_stats (),
-			nano::test::default_logger ()),
-		std::runtime_error);
+	nano::store::ledger_store (
+	create_backend (path),
+	nano::store::open_mode::read_only,
+	nano::test::default_stats (),
+	nano::test::default_logger ()),
+	std::runtime_error);
 }
 
 /*
@@ -267,10 +270,10 @@ TEST (ledger_upgrades, upgrade_v21_to_v22)
 
 	// Open through ledger_store which should trigger upgrade
 	auto store = nano::store::ledger_store (
-		create_backend (path),
-		nano::store::open_mode::read_write,
-		nano::test::default_stats (),
-		nano::test::default_logger ());
+	create_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
 
 	// Verify we're at current version after upgrade
 	auto tx = store.tx_begin_read ();
@@ -315,10 +318,10 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_rep_weights)
 
 	// Open through ledger_store which should trigger upgrade
 	auto store = nano::store::ledger_store (
-		create_backend (path),
-		nano::store::open_mode::read_write,
-		nano::test::default_stats (),
-		nano::test::default_logger ());
+	create_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
 
 	// Verify rep weights were correctly calculated
 	auto tx = store.tx_begin_read ();
@@ -359,10 +362,10 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_zero_balance)
 
 	// Open through ledger_store which should trigger upgrade
 	auto store = nano::store::ledger_store (
-		create_backend (path),
-		nano::store::open_mode::read_write,
-		nano::test::default_stats (),
-		nano::test::default_logger ());
+	create_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
 
 	// Verify rep weight only includes non-zero balance accounts
 	auto tx = store.tx_begin_read ();
@@ -384,10 +387,10 @@ TEST (ledger_upgrades, upgrade_v23_to_v24)
 
 	// Open through ledger_store which should trigger upgrade
 	auto store = nano::store::ledger_store (
-		create_backend (path),
-		nano::store::open_mode::read_write,
-		nano::test::default_stats (),
-		nano::test::default_logger ());
+	create_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
 
 	// Verify we're at current version after upgrade
 	auto tx = store.tx_begin_read ();
@@ -416,10 +419,10 @@ TEST (ledger_upgrades, full_upgrade_v21_to_current)
 
 	// Open through ledger_store which should trigger full upgrade chain
 	auto store = nano::store::ledger_store (
-		create_backend (path),
-		nano::store::open_mode::read_write,
-		nano::test::default_stats (),
-		nano::test::default_logger ());
+	create_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
 
 	// Verify final version
 	auto tx = store.tx_begin_read ();
@@ -444,10 +447,10 @@ TEST (ledger_upgrades, current_version_no_upgrade)
 	// Create a current version database
 	{
 		auto store = nano::store::ledger_store (
-			create_backend (path),
-			nano::store::open_mode::read_write,
-			nano::test::default_stats (),
-			nano::test::default_logger ());
+		create_backend (path),
+		nano::store::open_mode::read_write,
+		nano::test::default_stats (),
+		nano::test::default_logger ());
 
 		auto tx = store.tx_begin_write ();
 		store.initialize (tx, nano::dev::constants);
@@ -455,10 +458,10 @@ TEST (ledger_upgrades, current_version_no_upgrade)
 
 	// Open again - should not require any upgrade
 	auto store = nano::store::ledger_store (
-		create_backend (path),
-		nano::store::open_mode::read_write,
-		nano::test::default_stats (),
-		nano::test::default_logger ());
+	create_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
 
 	auto tx = store.tx_begin_read ();
 	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
@@ -474,10 +477,10 @@ TEST (ledger_upgrades, current_version_read_only)
 	// Create and initialize a current version database
 	{
 		auto store = nano::store::ledger_store (
-			create_backend (path),
-			nano::store::open_mode::read_write,
-			nano::test::default_stats (),
-			nano::test::default_logger ());
+		create_backend (path),
+		nano::store::open_mode::read_write,
+		nano::test::default_stats (),
+		nano::test::default_logger ());
 
 		auto tx = store.tx_begin_write ();
 		store.initialize (tx, nano::dev::constants);
@@ -485,10 +488,10 @@ TEST (ledger_upgrades, current_version_read_only)
 
 	// Open in read-only mode - should succeed since no upgrade needed
 	auto store = nano::store::ledger_store (
-		create_backend (path),
-		nano::store::open_mode::read_only,
-		nano::test::default_stats (),
-		nano::test::default_logger ());
+	create_backend (path),
+	nano::store::open_mode::read_only,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
 
 	auto tx = store.tx_begin_read ();
 	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
@@ -536,16 +539,16 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_batch_processing)
 
 	// Open through ledger_store which should trigger upgrade
 	auto store = nano::store::ledger_store (
-		create_backend (path),
-		nano::store::open_mode::read_write,
-		nano::test::default_stats (),
-		nano::test::default_logger ());
+	create_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
 
 	// Verify rep weights were correctly calculated
 	auto tx = store.tx_begin_read ();
 	for (auto const & [rep, expected_weight] : expected_weights)
 	{
 		ASSERT_EQ (store.rep_weight.get (tx, rep), expected_weight)
-			<< "Rep weight mismatch for rep " << rep.to_account ();
+		<< "Rep weight mismatch for rep " << rep.to_account ();
 	}
 }
