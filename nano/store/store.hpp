@@ -14,6 +14,7 @@ namespace nano::store
 struct ledger_store_params
 {
 	bool backup_before_upgrade{ false };
+	bool defer_open{ false }; // If true, skip automatic open/upgrade in constructor (for testing)
 };
 
 class ledger_store

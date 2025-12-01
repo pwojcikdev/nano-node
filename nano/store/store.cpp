@@ -61,6 +61,12 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 {
 	logger.info (nano::log::type::ledger_store, "Initializing ledger store: {}", backend.get_database_path ());
 
+	// Skip automatic open/upgrade when defer_open is set (used for testing individual upgrades)
+	if (params.defer_open)
+	{
+		return;
+	}
+
 	backend_meta meta{};
 
 	bool needs_upgrade = false;
