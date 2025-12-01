@@ -6,6 +6,8 @@
 
 #include <boost/format.hpp>
 
+#include <set>
+
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/utilities/backup_engine.h>
@@ -60,9 +62,53 @@ void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mo
 	current_mode = mode;
 
 	auto options = get_db_options ();
-	auto column_families = create_column_families (schema);
+
+	// Get existing column families from the database (if it exists)
+	std::vector<std::string> existing_cf_names;
+	auto list_status = ::rocksdb::DB::ListColumnFamilies (options, database_path.string (), &existing_cf_names);
+
+	// If database doesn't exist or listing failed, use empty list (all column families will be created)
+	if (!list_status.ok ())
+	{
+		existing_cf_names.clear ();
+	}
+
+	// Build column family descriptors for existing ones
+	std::vector<::rocksdb::ColumnFamilyDescriptor> column_families;
+	column_families.emplace_back (::rocksdb::kDefaultColumnFamilyName, ::rocksdb::ColumnFamilyOptions{});
+
+	std::set<std::string> existing_cf_set (existing_cf_names.begin (), existing_cf_names.end ());
+	std::vector<std::pair<tables, std::string>> missing_column_families;
+
+	for (auto const & [table, name] : schema)
+	{
+		if (existing_cf_set.contains (name))
+		{
+			column_families.emplace_back (name, get_cf_options (name));
+		}
+		else
+		{
+			// Track missing column families to create after opening
+			missing_column_families.emplace_back (table, name);
+		}
+	}
 
 	open_db (database_path, mode == nano::store::open_mode::read_only, options, column_families);
+
+	// Create missing column families (only in write modes)
+	if (mode != nano::store::open_mode::read_only)
+	{
+		for (auto const & [table, name] : missing_column_families)
+		{
+			::rocksdb::ColumnFamilyHandle * handle;
+			auto status = db->CreateColumnFamily (get_cf_options (name), name, &handle);
+			if (!status.ok ())
+			{
+				throw std::runtime_error ("Failed to create column family " + name + ": " + status.ToString ());
+			}
+			handles.emplace_back (handle);
+		}
+	}
 
 	// Build table_handles map
 	for (auto const & [table, name] : schema)
