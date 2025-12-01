@@ -346,6 +346,11 @@ int backend_rocksdb::drop (store::write_transaction const & tx, tables table)
 	}
 }
 
+bool backend_rocksdb::table_exists (std::string const & name) const
+{
+	return column_family_exists (name.c_str ());
+}
+
 int backend_rocksdb::clear (::rocksdb::ColumnFamilyHandle * column_family)
 {
 	::rocksdb::ReadOptions read_options;

@@ -86,5 +86,6 @@ public:
 	static nano::store::column_schema const schema_v21;
 	static nano::store::column_schema const schema_v22;
 	static nano::store::column_schema const schema_v23;
+	static nano::store::column_schema const schema_v24;
 };
 };

@@ -141,6 +141,14 @@ int backend_lmdb::drop (store::write_transaction const & tx, tables table)
 	return mdb_drop (env->tx (tx), table_to_dbi (table), 0);
 }
 
+bool backend_lmdb::table_exists (std::string const & name) const
+{
+	MDB_dbi dbi;
+	auto tx = tx_begin_read ();
+	auto status = mdb_dbi_open (env->tx (tx), name.c_str (), 0, &dbi);
+	return status == MDB_SUCCESS;
+}
+
 store::iterator backend_lmdb::begin (store::transaction const & tx, tables table) const
 {
 	return store::iterator{ iterator::begin (env->tx (tx), table_to_dbi (table)) };

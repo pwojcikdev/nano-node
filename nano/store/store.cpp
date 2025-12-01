@@ -230,7 +230,6 @@ nano::store::column_schema const ledger_store::schema_v22{
 	{ tables::blocks, "blocks" },
 	{ tables::accounts, "accounts" },
 	{ tables::pending, "pending" },
-	{ tables::rep_weights, "rep_weights" },
 	{ tables::online_weight, "online_weight" },
 	{ tables::pruned, "pruned" },
 	{ tables::peers, "peers" },
@@ -251,6 +250,19 @@ nano::store::column_schema const ledger_store::schema_v23{
 	{ tables::confirmation_height, "confirmation_height" },
 	{ tables::final_votes, "final_votes" },
 	{ tables::frontiers, "frontiers" },
+	{ tables::meta, "meta" }
+};
+
+nano::store::column_schema const ledger_store::schema_v24{
+	{ tables::blocks, "blocks" },
+	{ tables::accounts, "accounts" },
+	{ tables::pending, "pending" },
+	{ tables::rep_weights, "rep_weights" },
+	{ tables::online_weight, "online_weight" },
+	{ tables::pruned, "pruned" },
+	{ tables::peers, "peers" },
+	{ tables::confirmation_height, "confirmation_height" },
+	{ tables::final_votes, "final_votes" },
 	{ tables::meta, "meta" }
 };
 

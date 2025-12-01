@@ -81,6 +81,7 @@ public:
 	// Table operations
 	virtual uint64_t count (store::transaction const & tx, tables table) const = 0;
 	virtual int drop (store::write_transaction const & tx, tables table) = 0;
+	virtual bool table_exists (std::string const & name) const = 0;
 
 	// Iterator operations
 	virtual store::iterator begin (store::transaction const & tx, tables table) const = 0;

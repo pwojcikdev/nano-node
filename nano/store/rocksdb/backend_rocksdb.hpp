@@ -33,6 +33,7 @@ public:
 	// Table operations
 	uint64_t count (store::transaction const & tx, tables table) const override;
 	int drop (store::write_transaction const & tx, tables table) override;
+	bool table_exists (std::string const & name) const override;
 
 	// Iterator operations
 	store::iterator begin (store::transaction const & tx, tables table) const override;
