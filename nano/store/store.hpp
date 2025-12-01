@@ -80,7 +80,7 @@ public:
 	static nano::store::version_t constexpr version_minimum{ 21 };
 	static nano::store::version_t constexpr version_current{ 24 };
 
-private:
+public:
 	static nano::store::column_schema const schema_current;
 	static nano::store::column_schema const schema_v21;
 	static nano::store::column_schema const schema_v22;

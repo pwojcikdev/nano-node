@@ -22,6 +22,7 @@ class backend_rocksdb : public nano::store::backend
 {
 public:
 	backend_rocksdb (std::filesystem::path const & path, nano::rocksdb_config const & config);
+	~backend_rocksdb () override;
 
 	// CRUD operations
 	int get (store::transaction const & tx, tables table, db_val const & key, db_val & value) const override;

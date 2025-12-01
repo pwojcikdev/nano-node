@@ -19,6 +19,11 @@ backend_lmdb::backend_lmdb (std::filesystem::path const & path, nano::logger & l
 {
 }
 
+backend_lmdb::~backend_lmdb ()
+{
+	close ();
+}
+
 void backend_lmdb::open_impl (column_schema schema, nano::store::open_mode mode)
 {
 	release_assert (!env, "environment already open");

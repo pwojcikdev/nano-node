@@ -1,24 +1,5 @@
 #include <nano/store/backend.hpp>
 
-namespace nano
-{
-std::string error_backend_messages::message (int ev) const
-{
-	switch (static_cast<nano::error_backend> (ev))
-	{
-		case nano::error_backend::generic:
-			return "Generic backend error";
-		case nano::error_backend::db_not_found:
-			return "Database not found";
-		case nano::error_backend::table_not_found:
-			return "Table not found";
-		case nano::error_backend::failure:
-			return "Backend operation failed";
-	}
-	return "Invalid error code";
-}
-}
-
 namespace nano::store
 {
 nano::store::column_schema const backend::schema_meta{ { tables::meta, "meta" } };
@@ -75,7 +56,7 @@ void backend::close ()
 
 void backend::load_meta ()
 {
-	backend_meta meta;
+	backend_meta meta{};
 	{
 		version_store version{ *this };
 		auto transaction = tx_begin_read ();
@@ -131,5 +112,24 @@ void backend::set_version (store::write_transaction const & transaction, nano::s
 {
 	version_store version_store_impl{ *this };
 	version_store_impl.put_version (transaction, version);
+}
+}
+
+namespace nano
+{
+std::string error_backend_messages::message (int ev) const
+{
+	switch (static_cast<nano::error_backend> (ev))
+	{
+		case nano::error_backend::generic:
+			return "Generic backend error";
+		case nano::error_backend::db_not_found:
+			return "Database not found";
+		case nano::error_backend::table_not_found:
+			return "Table not found";
+		case nano::error_backend::failure:
+			return "Backend operation failed";
+	}
+	return "Invalid error code";
 }
 }

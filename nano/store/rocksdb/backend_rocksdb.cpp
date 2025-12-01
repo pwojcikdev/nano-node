@@ -50,6 +50,11 @@ backend_rocksdb::backend_rocksdb (std::filesystem::path const & path, nano::rock
 	generate_tombstone_map ();
 }
 
+backend_rocksdb::~backend_rocksdb ()
+{
+	close ();
+}
+
 void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mode)
 {
 	current_mode = mode;

@@ -18,6 +18,7 @@ class backend_lmdb : public nano::store::backend
 {
 public:
 	backend_lmdb (std::filesystem::path const & path, nano::logger & logger, nano::lmdb_config const & config, nano::txn_tracking_config const & txn_tracking_config = {}, std::chrono::milliseconds block_processor_batch_max_time = std::chrono::milliseconds{ 5000 });
+	~backend_lmdb () override;
 
 	// CRUD operations
 	int get (store::transaction const & tx, tables table, db_val const & key, db_val & value) const override;
