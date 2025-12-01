@@ -7,6 +7,7 @@ enum class tables;
 
 namespace nano::store
 {
+class backend;
 class ledger_store;
 class read_transaction;
 class transaction;

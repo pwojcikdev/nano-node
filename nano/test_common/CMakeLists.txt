@@ -2,6 +2,8 @@ add_library(
   test_common
   chains.hpp
   chains.cpp
+  common.hpp
+  common.cpp
   ledger_context.hpp
   ledger_context.cpp
   make_store.hpp
