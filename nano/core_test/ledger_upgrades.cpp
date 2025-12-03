@@ -1,10 +1,3 @@
-/**
- * Tests for ledger database upgrades using the new universal backend architecture.
- *
- * These tests verify that database upgrades work correctly through the public
- * ledger_store and backend APIs, without relying on backend-specific implementation details.
- */
-
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
@@ -206,9 +199,6 @@ TEST (ledger_upgrades, current_version_no_upgrade)
 
 namespace
 {
-/*
- * Helper class to create a v21 legacy database with test data
- */
 class legacy_database_v21
 {
 public:
@@ -217,31 +207,24 @@ public:
 		backend{ nano::test::make_backend (path_a) }
 	{
 		backend->create (schema_v21, 21);
+		backend->open (schema_v21, nano::store::open_mode::read_write);
 	}
 
 	// Insert dummy data into unchecked table for testing upgrade that drops it
 	void add_unchecked (uint64_t key_value, uint64_t data_value)
 	{
-		backend->open (schema_v21, nano::store::open_mode::read_write);
-		{
-			auto tx = backend->tx_begin_write ();
-			nano::store::db_val key{ sizeof (key_value), &key_value };
-			nano::store::db_val value{ sizeof (data_value), &data_value };
-			auto status = backend->put (tx, nano::tables::unchecked, key, value);
-			backend->release_assert_success (status);
-		}
-		backend->close ();
+		auto tx = backend->tx_begin_write ();
+		nano::store::db_val key{ sizeof (key_value), &key_value };
+		nano::store::db_val value{ sizeof (data_value), &data_value };
+		auto status = backend->put (tx, nano::tables::unchecked, key, value);
+		backend->release_assert_success (status);
 	}
 
 	void add_account (nano::account const & account, nano::account_info_v22 const & info)
 	{
-		backend->open (schema_v21, nano::store::open_mode::read_write);
-		{
-			auto tx = backend->tx_begin_write ();
-			auto status = backend->put (tx, nano::tables::accounts, account, info);
-			backend->release_assert_success (status);
-		}
-		backend->close ();
+		auto tx = backend->tx_begin_write ();
+		auto status = backend->put (tx, nano::tables::accounts, account, info);
+		backend->release_assert_success (status);
 	}
 
 	std::filesystem::path path;
@@ -260,6 +243,11 @@ TEST (ledger_upgrades, upgrade_v21_to_v22)
 		legacy_database_v21 legacy_db{ path };
 		legacy_db.add_unchecked (1, 100);
 		legacy_db.add_unchecked (2, 200);
+
+		// Verify unchecked table exists before upgrade
+		auto tx = legacy_db.backend->tx_begin_read ();
+		ASSERT_TRUE (legacy_db.backend->table_exists (tx, "unchecked"));
+		ASSERT_EQ (legacy_db.backend->count (tx, nano::tables::unchecked), 2);
 	}
 
 	// Perform the upgrade
@@ -289,9 +277,6 @@ TEST (ledger_upgrades, upgrade_v21_to_v22)
 
 namespace
 {
-/*
- * Helper class to create a v22 legacy database with test data
- */
 class legacy_database_v22
 {
 public:
@@ -300,17 +285,14 @@ public:
 		backend{ nano::test::make_backend (path_a) }
 	{
 		backend->create (schema_v22, 22);
+		backend->open (schema_v22, nano::store::open_mode::read_write);
 	}
 
 	void add_account (nano::account const & account, nano::account_info_v22 const & info)
 	{
-		backend->open (schema_v22, nano::store::open_mode::read_write);
-		{
-			auto tx = backend->tx_begin_write ();
-			auto status = backend->put (tx, nano::tables::accounts, account, info);
-			backend->release_assert_success (status);
-		}
-		backend->close ();
+		auto tx = backend->tx_begin_write ();
+		auto status = backend->put (tx, nano::tables::accounts, account, info);
+		backend->release_assert_success (status);
 	}
 
 	std::filesystem::path path;
@@ -530,9 +512,6 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_stale_rep_weights)
 
 namespace
 {
-/*
- * Helper class to create a v23 legacy database with test data
- */
 class legacy_database_v23
 {
 public:
@@ -541,20 +520,17 @@ public:
 		backend{ nano::test::make_backend (path_a) }
 	{
 		backend->create (schema_v23, 23);
+		backend->open (schema_v23, nano::store::open_mode::read_write);
 	}
 
 	// Insert dummy data into frontiers table for testing upgrade that drops it
 	void add_frontier (uint64_t key_value, uint64_t data_value)
 	{
-		backend->open (schema_v23, nano::store::open_mode::read_write);
-		{
-			auto tx = backend->tx_begin_write ();
-			nano::store::db_val key{ sizeof (key_value), &key_value };
-			nano::store::db_val value{ sizeof (data_value), &data_value };
-			auto status = backend->put (tx, nano::tables::frontiers, key, value);
-			backend->release_assert_success (status);
-		}
-		backend->close ();
+		auto tx = backend->tx_begin_write ();
+		nano::store::db_val key{ sizeof (key_value), &key_value };
+		nano::store::db_val value{ sizeof (data_value), &data_value };
+		auto status = backend->put (tx, nano::tables::frontiers, key, value);
+		backend->release_assert_success (status);
 	}
 
 	std::filesystem::path path;
@@ -573,6 +549,11 @@ TEST (ledger_upgrades, upgrade_v23_to_v24)
 		legacy_database_v23 legacy_db{ path };
 		legacy_db.add_frontier (1, 100);
 		legacy_db.add_frontier (2, 200);
+
+		// Verify frontiers table exists before upgrade
+		auto tx = legacy_db.backend->tx_begin_read ();
+		ASSERT_TRUE (legacy_db.backend->table_exists (tx, "frontiers"));
+		ASSERT_EQ (legacy_db.backend->count (tx, nano::tables::frontiers), 2);
 	}
 
 	// Perform the upgrade
