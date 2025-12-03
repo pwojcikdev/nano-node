@@ -54,7 +54,6 @@ nano::store::column_schema const schema_v22{
 	{ nano::tables::blocks, "blocks" },
 	{ nano::tables::accounts, "accounts" },
 	{ nano::tables::pending, "pending" },
-	{ nano::tables::rep_weights, "rep_weights" },
 	{ nano::tables::online_weight, "online_weight" },
 	{ nano::tables::pruned, "pruned" },
 	{ nano::tables::peers, "peers" },
@@ -127,6 +126,20 @@ public:
 		backend{ create_backend (path_a) }
 	{
 		backend->create (schema_v21, 21);
+	}
+
+	// Insert dummy data into unchecked table for testing upgrade that drops it
+	void add_unchecked (uint64_t key_value, uint64_t data_value)
+	{
+		backend->open (schema_v21, nano::store::open_mode::read_write);
+		{
+			auto tx = backend->tx_begin_write ();
+			nano::store::db_val key{ sizeof (key_value), &key_value };
+			nano::store::db_val value{ sizeof (data_value), &data_value };
+			auto status = backend->put (tx, nano::tables::unchecked, key, value);
+			backend->release_assert_success (status);
+		}
+		backend->close ();
 	}
 
 	void add_account (nano::account const & account, nano::account_info_v22 const & info)
@@ -262,22 +275,34 @@ TEST (ledger_upgrades, upgrade_v21_to_v22)
 {
 	auto path = nano::unique_path ();
 
-	// Create a v21 database
+	// Create a v21 database with data in unchecked table
 	{
 		legacy_database_v21 legacy_db{ path };
 		// The unchecked table exists in the v21 schema
+		legacy_db.add_unchecked (1, 100);
+		legacy_db.add_unchecked (2, 200);
 	}
 
-	// Open through ledger_store which should trigger upgrade
-	auto store = nano::store::ledger_store (
-	create_backend (path),
-	nano::store::open_mode::read_write,
-	nano::test::default_stats (),
-	nano::test::default_logger ());
+	// Create ledger_store with defer_open to manually control upgrade
+	nano::store::ledger_store_params params;
+	params.defer_open = true;
 
-	// Verify we're at current version after upgrade
-	auto tx = store.tx_begin_read ();
-	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
+	nano::store::ledger_store store (
+		create_backend (path),
+		nano::store::open_mode::read_write,
+		nano::test::default_stats (),
+		nano::test::default_logger (),
+		params);
+
+	// Manually perform just the v21->v22 upgrade
+	store.upgrade_v21_to_v22 ();
+
+	// Verify version is now 22 and unchecked table no longer exists
+	auto backend = create_backend (path);
+	backend->open (schema_v22, nano::store::open_mode::read_only);
+	auto tx = backend->tx_begin_read ();
+	ASSERT_EQ (backend->get_version (tx), 22);
+	ASSERT_FALSE (backend->table_exists ("unchecked"));
 }
 
 /*

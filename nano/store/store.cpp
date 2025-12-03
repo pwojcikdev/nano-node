@@ -291,7 +291,9 @@ void ledger_store::upgrade_v22_to_v23 ()
 {
 	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v22 to v23...");
 
-	backend.open (schema_v22, nano::store::open_mode::read_write);
+	// Open with schema_v23 so we can access rep_weights table
+	// This allows us to drop it if a previous upgrade attempt failed halfway
+	backend.open (schema_v23, nano::store::open_mode::read_write);
 	{
 		auto transaction = backend.tx_begin_write ();
 		debug_assert (backend.get_version (transaction) == 22, "unexpected version during upgrade", std::to_string (backend.get_version (transaction)));
