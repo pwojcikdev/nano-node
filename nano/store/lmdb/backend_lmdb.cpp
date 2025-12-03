@@ -39,24 +39,25 @@ void backend_lmdb::open_impl (column_schema schema, nano::store::open_mode mode)
 
 	env = std::make_unique<nano::store::lmdb::env> (database_path, options);
 
-	if (mode == nano::store::open_mode::create)
+	if (mode == nano::store::open_mode::read_only)
 	{
-		// Create all tables specified in schema
+		// Open all tables specified in schema (read-only)
+		auto transaction = tx_begin_read ();
+		for (auto const & [table, name] : schema)
+		{
+			open_table (transaction, table, name.c_str (), 0);
+		}
+	}
+	else
+	{
+		// Create tables if they don't exist (for create and read_write modes)
+		// This allows upgrades to open schemas with new tables
 		auto transaction = tx_begin_write ();
 		for (auto const & [table, name] : schema)
 		{
 			open_table (transaction, table, name.c_str (), MDB_CREATE);
 		}
 		transaction.commit ();
-	}
-	else
-	{
-		// Open all tables specified in schema
-		auto transaction = tx_begin_read ();
-		for (auto const & [table, name] : schema)
-		{
-			open_table (transaction, table, name.c_str (), 0);
-		}
 	}
 }
 

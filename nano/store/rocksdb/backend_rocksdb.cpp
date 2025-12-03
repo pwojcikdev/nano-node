@@ -323,27 +323,7 @@ int backend_rocksdb::drop (store::write_transaction const & tx, tables table)
 {
 	debug_assert (tx.contains (table));
 	auto col = table_to_column_family (table);
-
-	// Dropping/Creating families can cause write stalls, just delete entries manually
-	if (table == tables::peers)
-	{
-		int status = 0;
-		for (auto i = begin (tx, table), n = end (tx, table); i != n; ++i)
-		{
-			auto key_span = i->first;
-			db_val key_val (key_span);
-			status = del (tx, table, key_val);
-			if (!success (status))
-			{
-				return status;
-			}
-		}
-		return status;
-	}
-	else
-	{
-		return clear (col);
-	}
+	return clear (col);
 }
 
 int backend_rocksdb::drop_table (store::write_transaction const & tx, tables table)
