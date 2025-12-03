@@ -380,7 +380,7 @@ bool backend_rocksdb::drop_table (store::write_transaction const & tx, std::stri
 	return true;
 }
 
-bool backend_rocksdb::table_exists (std::string const & name) const
+bool backend_rocksdb::table_exists (store::transaction const & tx, std::string const & name) const
 {
 	return column_family_exists (name.c_str ());
 }

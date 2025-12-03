@@ -163,10 +163,9 @@ bool backend_lmdb::drop_table (store::write_transaction const & tx, std::string 
 	return true;
 }
 
-bool backend_lmdb::table_exists (std::string const & name) const
+bool backend_lmdb::table_exists (store::transaction const & tx, std::string const & name) const
 {
 	MDB_dbi dbi;
-	auto tx = tx_begin_read ();
 	auto status = mdb_dbi_open (env->tx (tx), name.c_str (), 0, &dbi);
 	return status == MDB_SUCCESS;
 }

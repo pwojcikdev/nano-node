@@ -302,7 +302,7 @@ TEST (ledger_upgrades, upgrade_v21_to_v22)
 	backend->open (schema_v22, nano::store::open_mode::read_only);
 	auto tx = backend->tx_begin_read ();
 	ASSERT_EQ (backend->get_version (tx), 22);
-	ASSERT_FALSE (backend->table_exists ("unchecked"));
+	ASSERT_FALSE (backend->table_exists (tx, "unchecked"));
 }
 
 /*
