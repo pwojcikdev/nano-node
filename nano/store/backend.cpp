@@ -29,6 +29,7 @@ auto backend::open (column_schema schema, nano::store::open_mode mode) -> void
 	load_meta ();
 	debug_assert (current_meta.has_value ());
 
+	current_schema = schema;
 	is_open = true;
 }
 
@@ -51,7 +52,13 @@ void backend::close ()
 	close_impl ();
 
 	current_meta.reset ();
+	current_schema.clear ();
 	is_open = false;
+}
+
+auto backend::get_schema () const -> column_schema
+{
+	return current_schema;
 }
 
 void backend::load_meta ()

@@ -105,6 +105,7 @@ public:
 	virtual std::string get_database_path () const = 0;
 	virtual nano::store::open_mode get_mode () const = 0;
 
+	column_schema get_schema () const;
 	backend_meta get_meta () const;
 
 	nano::store::version_t get_version (store::transaction const &) const;
@@ -120,6 +121,7 @@ private:
 private:
 	bool is_open{ false };
 	std::optional<backend_meta> current_meta;
+	column_schema current_schema;
 
 public:
 	static nano::store::column_schema const schema_meta;
