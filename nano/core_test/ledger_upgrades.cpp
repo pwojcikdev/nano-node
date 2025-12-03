@@ -150,7 +150,7 @@ TEST (ledger_upgrades, current_version_read_only)
 	// Create and initialize a current version database
 	auto const path = nano::unique_path ();
 	{
-		auto store = nano::store::ledger_store (
+		nano::store::ledger_store store (
 		nano::test::make_backend (path),
 		nano::store::open_mode::read_write,
 		nano::test::default_stats (),
@@ -161,7 +161,7 @@ TEST (ledger_upgrades, current_version_read_only)
 	}
 
 	// Open in read-only mode - should succeed since no upgrade needed
-	auto store = nano::store::ledger_store (
+	nano::store::ledger_store store (
 	nano::test::make_backend (path),
 	nano::store::open_mode::read_only,
 	nano::test::default_stats (),
@@ -183,7 +183,7 @@ TEST (ledger_upgrades, current_version_no_upgrade)
 	// Create a current version database
 	auto const path = nano::unique_path ();
 	{
-		auto store = nano::store::ledger_store (
+		nano::store::ledger_store store (
 		nano::test::make_backend (path),
 		nano::store::open_mode::read_write,
 		nano::test::default_stats (),
@@ -194,7 +194,7 @@ TEST (ledger_upgrades, current_version_no_upgrade)
 	}
 
 	// Open again - should not require any upgrade
-	auto store = nano::store::ledger_store (
+	nano::store::ledger_store store (
 	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
@@ -258,31 +258,33 @@ TEST (ledger_upgrades, upgrade_v21_to_v22)
 	auto const path = nano::unique_path ();
 	{
 		legacy_database_v21 legacy_db{ path };
-		// The unchecked table exists in the v21 schema
 		legacy_db.add_unchecked (1, 100);
 		legacy_db.add_unchecked (2, 200);
 	}
 
-	// Create ledger_store with defer_open to manually control upgrade
-	nano::store::ledger_store_params params;
-	params.defer_open = true;
+	// Perform the upgrade
+	{
+		nano::store::ledger_store_params params;
+		params.defer_open = true;
 
-	nano::store::ledger_store store (
-	nano::test::make_backend (path),
-	nano::store::open_mode::read_write,
-	nano::test::default_stats (),
-	nano::test::default_logger (),
-	params);
+		nano::store::ledger_store store (
+		nano::test::make_backend (path),
+		nano::store::open_mode::read_write,
+		nano::test::default_stats (),
+		nano::test::default_logger (),
+		params);
 
-	// Manually perform just the v21->v22 upgrade
-	store.upgrade_v21_to_v22 ();
+		store.upgrade_v21_to_v22 ();
+	}
 
 	// Verify version is now 22 and unchecked table no longer exists
-	auto backend = nano::test::make_backend (path);
-	backend->open (schema_v22, nano::store::open_mode::read_only);
-	auto tx = backend->tx_begin_read ();
-	ASSERT_EQ (backend->get_version (tx), 22);
-	ASSERT_FALSE (backend->table_exists (tx, "unchecked"));
+	{
+		auto backend = nano::test::make_backend (path);
+		backend->open (schema_v22, nano::store::open_mode::read_only);
+		auto tx = backend->tx_begin_read ();
+		ASSERT_EQ (backend->get_version (tx), 22);
+		ASSERT_FALSE (backend->table_exists (tx, "unchecked"));
+	}
 }
 
 namespace
@@ -352,7 +354,7 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_rep_weights)
 	}
 
 	// Open through ledger_store which should trigger upgrade
-	auto store = nano::store::ledger_store (
+	nano::store::ledger_store store (
 	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
@@ -395,7 +397,7 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_zero_balance)
 	}
 
 	// Open through ledger_store which should trigger upgrade
-	auto store = nano::store::ledger_store (
+	nano::store::ledger_store store (
 	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
@@ -442,7 +444,7 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_batch_processing)
 	}
 
 	// Open through ledger_store which should trigger upgrade
-	auto store = nano::store::ledger_store (
+	nano::store::ledger_store store (
 	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
@@ -506,7 +508,7 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_stale_rep_weights)
 	}
 
 	// Now open through ledger_store which should properly handle the crash recovery
-	auto store = nano::store::ledger_store (
+	nano::store::ledger_store store (
 	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
@@ -541,6 +543,20 @@ public:
 		backend->create (schema_v23, 23);
 	}
 
+	// Insert dummy data into frontiers table for testing upgrade that drops it
+	void add_frontier (uint64_t key_value, uint64_t data_value)
+	{
+		backend->open (schema_v23, nano::store::open_mode::read_write);
+		{
+			auto tx = backend->tx_begin_write ();
+			nano::store::db_val key{ sizeof (key_value), &key_value };
+			nano::store::db_val value{ sizeof (data_value), &data_value };
+			auto status = backend->put (tx, nano::tables::frontiers, key, value);
+			backend->release_assert_success (status);
+		}
+		backend->close ();
+	}
+
 	std::filesystem::path path;
 	std::unique_ptr<nano::store::backend> backend;
 };
@@ -551,23 +567,37 @@ public:
  */
 TEST (ledger_upgrades, upgrade_v23_to_v24)
 {
-	// Create a v23 database
+	// Create a v23 database with data in frontiers table
 	auto const path = nano::unique_path ();
 	{
 		legacy_database_v23 legacy_db{ path };
-		// The frontiers table exists in the v23 schema
+		legacy_db.add_frontier (1, 100);
+		legacy_db.add_frontier (2, 200);
 	}
 
-	// Open through ledger_store which should trigger upgrade
-	auto store = nano::store::ledger_store (
-	nano::test::make_backend (path),
-	nano::store::open_mode::read_write,
-	nano::test::default_stats (),
-	nano::test::default_logger ());
+	// Perform the upgrade
+	{
+		nano::store::ledger_store_params params;
+		params.defer_open = true;
 
-	// Verify we're at current version after upgrade
-	auto tx = store.tx_begin_read ();
-	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
+		nano::store::ledger_store store (
+		nano::test::make_backend (path),
+		nano::store::open_mode::read_write,
+		nano::test::default_stats (),
+		nano::test::default_logger (),
+		params);
+
+		store.upgrade_v23_to_v24 ();
+	}
+
+	// Verify version is now 24 and frontiers table no longer exists
+	{
+		auto backend = nano::test::make_backend (path);
+		backend->open (nano::store::ledger_store::schema_current, nano::store::open_mode::read_only);
+		auto tx = backend->tx_begin_read ();
+		ASSERT_EQ (backend->get_version (tx), 24);
+		ASSERT_FALSE (backend->table_exists (tx, "frontiers"));
+	}
 }
 
 /*
@@ -590,7 +620,7 @@ TEST (ledger_upgrades, full_upgrade_v21_to_current)
 	}
 
 	// Open through ledger_store which should trigger full upgrade chain
-	auto store = nano::store::ledger_store (
+	nano::store::ledger_store store (
 	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
