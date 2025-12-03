@@ -73,22 +73,27 @@ void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mo
 		existing_cf_names.clear ();
 	}
 
-	// Build column family descriptors for existing ones
+	// Build column family descriptors - open ALL existing column families
+	// This is important so that drop_table can find and drop tables not in current schema
 	std::vector<::rocksdb::ColumnFamilyDescriptor> column_families;
-	column_families.emplace_back (::rocksdb::kDefaultColumnFamilyName, ::rocksdb::ColumnFamilyOptions{});
+	for (auto const & cf_name : existing_cf_names)
+	{
+		column_families.emplace_back (cf_name, get_cf_options (cf_name));
+	}
 
+	// If no existing column families, at least add default
+	if (column_families.empty ())
+	{
+		column_families.emplace_back (::rocksdb::kDefaultColumnFamilyName, ::rocksdb::ColumnFamilyOptions{});
+	}
+
+	// Track which schema tables need to be created
 	std::set<std::string> existing_cf_set (existing_cf_names.begin (), existing_cf_names.end ());
 	std::vector<std::pair<tables, std::string>> missing_column_families;
-
 	for (auto const & [table, name] : schema)
 	{
-		if (existing_cf_set.contains (name))
+		if (!existing_cf_set.contains (name))
 		{
-			column_families.emplace_back (name, get_cf_options (name));
-		}
-		else
-		{
-			// Track missing column families to create after opening
 			missing_column_families.emplace_back (table, name);
 		}
 	}
@@ -110,7 +115,7 @@ void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mo
 		}
 	}
 
-	// Build table_handles map
+	// Build table_handles map for schema tables
 	for (auto const & [table, name] : schema)
 	{
 		table_handles[table] = get_column_family (name.c_str ());
@@ -341,16 +346,38 @@ int backend_rocksdb::clear (store::write_transaction const & tx, tables table)
 	return status.code ();
 }
 
-int backend_rocksdb::drop_table (store::write_transaction const & tx, tables table)
+bool backend_rocksdb::drop_table (store::write_transaction const & tx, std::string const & name)
 {
-	debug_assert (tx.contains (table));
-	auto col = table_to_column_family (table);
-	auto status = db->DropColumnFamily (col);
-	if (status.ok ())
+	if (!column_family_exists (name.c_str ()))
 	{
-		table_handles.erase (table);
+		return false; // Table doesn't exist
 	}
-	return status.code ();
+
+	auto const handle = get_column_family (name.c_str ());
+
+	auto status1 = db->DropColumnFamily (handle);
+	release_assert (success (status1.code ()), error_string (status1.code ()));
+
+	auto status2 = db->DestroyColumnFamilyHandle (handle);
+	release_assert (success (status2.code ()), error_string (status2.code ()));
+
+	// Remove from handles vector
+	std::erase_if (handles, [handle] (auto & h) {
+		if (h.get () == handle)
+		{
+			// The handle resource is deleted by RocksDB
+			[[maybe_unused]] auto ptr = h.release ();
+			return true;
+		}
+		return false;
+	});
+
+	// Remove from table_handles if it was tracked
+	std::erase_if (table_handles, [handle] (auto const & pair) {
+		return pair.second == handle;
+	});
+
+	return true;
 }
 
 bool backend_rocksdb::table_exists (std::string const & name) const

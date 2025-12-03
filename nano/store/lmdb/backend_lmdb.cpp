@@ -142,15 +142,25 @@ int backend_lmdb::clear (store::write_transaction const & tx, tables table)
 	return mdb_drop (env->tx (tx), table_to_dbi (table), /* only empty the db */ 0);
 }
 
-int backend_lmdb::drop_table (store::write_transaction const & tx, tables table)
+bool backend_lmdb::drop_table (store::write_transaction const & tx, std::string const & name)
 {
-	auto dbi = table_to_dbi (table);
-	auto status = mdb_drop (env->tx (tx), dbi, /* delete from database */ 1);
-	if (status == MDB_SUCCESS)
+	MDB_dbi dbi;
+	auto status = mdb_dbi_open (env->tx (tx), name.c_str (), 0, &dbi);
+	if (not_found (status))
 	{
-		table_handles.erase (table);
+		return false; // Table doesn't exist
 	}
-	return status;
+	release_assert (success (status), error_string (status));
+
+	status = mdb_drop (env->tx (tx), dbi, /* delete from database */ 1);
+	release_assert (success (status), error_string (status));
+
+	// Remove from table_handles if it was tracked
+	std::erase_if (table_handles, [dbi] (auto const & pair) {
+		return pair.second == dbi;
+	});
+
+	return true;
 }
 
 bool backend_lmdb::table_exists (std::string const & name) const

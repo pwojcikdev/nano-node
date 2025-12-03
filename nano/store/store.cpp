@@ -276,7 +276,7 @@ void ledger_store::upgrade_v21_to_v22 ()
 		auto transaction = backend.tx_begin_write ();
 		debug_assert (backend.get_version (transaction) == 21, "unexpected version during upgrade", std::to_string (backend.get_version (transaction)));
 
-		backend.drop (transaction, tables::unchecked);
+		backend.drop_table (transaction, "unchecked");
 		transaction.refresh ();
 
 		backend.set_version (transaction, 22);
@@ -364,7 +364,7 @@ void ledger_store::upgrade_v23_to_v24 ()
 		auto transaction = backend.tx_begin_write ();
 		debug_assert (backend.get_version (transaction) == 23, "unexpected version during upgrade", std::to_string (backend.get_version (transaction)));
 
-		backend.drop (transaction, tables::frontiers);
+		backend.drop_table (transaction, "frontiers");
 		transaction.refresh ();
 
 		version.put (transaction, 24);

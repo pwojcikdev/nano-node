@@ -81,7 +81,7 @@ public:
 	// Table operations
 	virtual uint64_t count (store::transaction const & tx, tables table) const = 0;
 	virtual int clear (store::write_transaction const & tx, tables table) = 0; // Empties the table but keeps it
-	virtual int drop_table (store::write_transaction const & tx, tables table) = 0; // Deletes the table entirely
+	virtual bool drop_table (store::write_transaction const & tx, std::string const & name) = 0; // Deletes the table entirely
 	virtual bool table_exists (std::string const & name) const = 0;
 
 	// Iterator operations
