@@ -406,6 +406,126 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_zero_balance)
 	ASSERT_EQ (store.rep_weight.get (tx, rep), 1000);
 }
 
+/*
+ * Test v22 to v23 upgrade with many accounts to verify batch processing
+ */
+TEST (ledger_upgrades, upgrade_v22_to_v23_batch_processing)
+{
+	// Create multiple reps with multiple accounts
+	std::vector<nano::account> reps;
+	std::map<nano::account, nano::uint128_t> expected_weights;
+
+	for (int i = 0; i < 5; ++i)
+	{
+		reps.push_back (nano::account{ static_cast<uint64_t> (1000 + i) });
+		expected_weights[reps.back ()] = 0;
+	}
+
+	// Create a v22 database with many accounts
+	auto const path = nano::unique_path ();
+	{
+		legacy_database_v22 legacy_db{ path };
+
+		for (int i = 0; i < 50; ++i)
+		{
+			nano::account account{ static_cast<uint64_t> (i + 1) };
+			auto & rep = reps[i % reps.size ()];
+			nano::uint128_t balance = (i + 1) * 100;
+
+			nano::account_info_v22 info{};
+			info.representative = rep;
+			info.balance = balance;
+			legacy_db.add_account (account, info);
+
+			expected_weights[rep] += balance;
+		}
+	}
+
+	// Open through ledger_store which should trigger upgrade
+	auto store = nano::store::ledger_store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
+
+	// Verify rep weights were correctly calculated
+	auto tx = store.tx_begin_read ();
+	for (auto const & [rep, expected_weight] : expected_weights)
+	{
+		ASSERT_EQ (store.rep_weight.get (tx, rep), expected_weight)
+		<< "Rep weight mismatch for rep " << rep.to_account ();
+	}
+}
+
+/*
+ * Test v22 to v23 upgrade: handles partially populated rep_weights from failed upgrade
+ * This simulates a scenario where a previous upgrade attempt wrote some data to rep_weights but didn't complete.
+ */
+TEST (ledger_upgrades, upgrade_v22_to_v23_stale_rep_weights)
+{
+	nano::account const rep_a{ 41 };
+	nano::account const rep_b{ 43 };
+	nano::account const rep_stale{ 99 }; // Stale entry from previous failed upgrade
+	nano::account const account_1{ 1 };
+	nano::account const account_2{ 2 };
+
+	auto const path = nano::unique_path ();
+	{
+		// Create v22 database with accounts
+		legacy_database_v22 legacy_db{ path };
+
+		nano::account_info_v22 info1{};
+		info1.representative = rep_a;
+		info1.balance = 1000;
+		legacy_db.add_account (account_1, info1);
+
+		nano::account_info_v22 info2{};
+		info2.representative = rep_b;
+		info2.balance = 500;
+		legacy_db.add_account (account_2, info2);
+	}
+
+	// Simulate a failed upgrade that partially populated rep_weights
+	{
+		auto backend = nano::test::make_backend (path);
+		// Open with schema_v23 to create rep_weights table (but version stays at 22)
+		backend->open (schema_v23, nano::store::open_mode::read_write);
+		{
+			auto tx = backend->tx_begin_write ();
+
+			// Add stale/incorrect data as if upgrade crashed mid-way
+			// - rep_a has wrong value
+			// - rep_stale shouldn't exist (was from deleted account in previous attempt)
+			backend->put (tx, nano::tables::rep_weights, rep_a, nano::amount{ 999999 }); // Wrong value
+			backend->put (tx, nano::tables::rep_weights, rep_stale, nano::amount{ 12345 }); // Stale entry
+
+			// Version is still 22 (upgrade didn't complete)
+			ASSERT_EQ (backend->get_version (tx), 22);
+		}
+		backend->close ();
+	}
+
+	// Now open through ledger_store which should properly handle the crash recovery
+	auto store = nano::store::ledger_store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
+
+	// Verify rep weights are correct (not corrupted by stale data)
+	auto tx = store.tx_begin_read ();
+	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
+
+	// rep_a should have correct weight from account_1 = 1000 (not stale 999999)
+	ASSERT_EQ (store.rep_weight.get (tx, rep_a), 1000);
+
+	// rep_b should have correct weight from account_2 = 500
+	ASSERT_EQ (store.rep_weight.get (tx, rep_b), 500);
+
+	// rep_stale should not exist (it was cleared during proper upgrade)
+	ASSERT_EQ (store.rep_weight.get (tx, rep_stale), 0);
+}
+
 namespace
 {
 /*
@@ -487,55 +607,4 @@ TEST (ledger_upgrades, full_upgrade_v21_to_current)
 
 	// Verify rep_weight was populated during v22->v23 upgrade
 	ASSERT_EQ (store.rep_weight.get (tx, rep), 5000);
-}
-
-/*
- * Test v22->v23 upgrade with many accounts to verify batch processing
- */
-TEST (ledger_upgrades, upgrade_v22_to_v23_batch_processing)
-{
-	// Create multiple reps with multiple accounts
-	std::vector<nano::account> reps;
-	std::map<nano::account, nano::uint128_t> expected_weights;
-
-	for (int i = 0; i < 5; ++i)
-	{
-		reps.push_back (nano::account{ static_cast<uint64_t> (1000 + i) });
-		expected_weights[reps.back ()] = 0;
-	}
-
-	// Create a v22 database with many accounts
-	auto const path = nano::unique_path ();
-	{
-		legacy_database_v22 legacy_db{ path };
-
-		for (int i = 0; i < 50; ++i)
-		{
-			nano::account account{ static_cast<uint64_t> (i + 1) };
-			auto & rep = reps[i % reps.size ()];
-			nano::uint128_t balance = (i + 1) * 100;
-
-			nano::account_info_v22 info{};
-			info.representative = rep;
-			info.balance = balance;
-			legacy_db.add_account (account, info);
-
-			expected_weights[rep] += balance;
-		}
-	}
-
-	// Open through ledger_store which should trigger upgrade
-	auto store = nano::store::ledger_store (
-	nano::test::make_backend (path),
-	nano::store::open_mode::read_write,
-	nano::test::default_stats (),
-	nano::test::default_logger ());
-
-	// Verify rep weights were correctly calculated
-	auto tx = store.tx_begin_read ();
-	for (auto const & [rep, expected_weight] : expected_weights)
-	{
-		ASSERT_EQ (store.rep_weight.get (tx, rep), expected_weight)
-		<< "Rep weight mismatch for rep " << rep.to_account ();
-	}
 }
