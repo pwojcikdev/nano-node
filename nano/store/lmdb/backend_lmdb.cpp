@@ -81,7 +81,7 @@ void backend_lmdb::open_table (store::transaction const & transaction, tables ta
 {
 	MDB_dbi handle{};
 	auto status = mdb_dbi_open (env->tx (transaction), name, flags, &handle);
-	if (status != 0)
+	if (!success (status))
 	{
 		throw std::runtime_error ("Failed to open " + std::string (name) + " database: " + error_string (status));
 	}
@@ -126,7 +126,7 @@ bool backend_lmdb::exists (store::transaction const & tx, tables table, db_val c
 	db_val junk;
 	auto status = get (tx, table, key, junk);
 	release_assert (success (status) || not_found (status), error_string (status));
-	return status == MDB_SUCCESS;
+	return success (status);
 }
 
 uint64_t backend_lmdb::count (store::transaction const & tx, tables table) const
@@ -145,15 +145,15 @@ int backend_lmdb::clear (store::write_transaction const & tx, tables table)
 bool backend_lmdb::drop_table (store::write_transaction const & tx, std::string const & name)
 {
 	MDB_dbi dbi;
-	auto status = mdb_dbi_open (env->tx (tx), name.c_str (), 0, &dbi);
-	if (not_found (status))
+	auto status1 = mdb_dbi_open (env->tx (tx), name.c_str (), 0, &dbi);
+	if (not_found (status1))
 	{
 		return false; // Table doesn't exist
 	}
-	release_assert (success (status), error_string (status));
+	release_assert (success (status1), error_string (status1));
 
-	status = mdb_drop (env->tx (tx), dbi, /* delete from database */ 1);
-	release_assert (success (status), error_string (status));
+	auto status2 = mdb_drop (env->tx (tx), dbi, /* delete from database */ 1);
+	release_assert (success (status2), error_string (status2));
 
 	// Remove from table_handles if it was tracked
 	std::erase_if (table_handles, [dbi] (auto const & pair) {
@@ -167,7 +167,7 @@ bool backend_lmdb::table_exists (store::transaction const & tx, std::string cons
 {
 	MDB_dbi dbi;
 	auto status = mdb_dbi_open (env->tx (tx), name.c_str (), 0, &dbi);
-	return status == MDB_SUCCESS;
+	return success (status);
 }
 
 store::iterator backend_lmdb::begin (store::transaction const & tx, tables table) const

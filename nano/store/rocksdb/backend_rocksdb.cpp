@@ -205,7 +205,7 @@ std::unordered_map<char const *, tables> backend_rocksdb::create_cf_name_table_m
 	auto iter = std::find_if (handles.begin (), handles.end (), [name] (auto & handle) {
 		return handle->GetName () == name;
 	});
-	debug_assert (iter != handles.end ());
+	release_assert (iter != handles.end ());
 	return iter->get ();
 }
 
@@ -251,7 +251,6 @@ int backend_rocksdb::get (store::transaction const & tx, tables table, db_val co
 
 int backend_rocksdb::put (store::write_transaction const & tx, tables table, db_val const & key, db_val const & value)
 {
-	debug_assert (tx.contains (table));
 	auto key_slice = to_slice (key);
 	auto value_slice = to_slice (value);
 	return std::get<::rocksdb::Transaction *> (rocksdb::tx (tx))->Put (table_to_column_family (table), key_slice, value_slice).code ();
@@ -259,7 +258,6 @@ int backend_rocksdb::put (store::write_transaction const & tx, tables table, db_
 
 int backend_rocksdb::del (store::write_transaction const & tx, tables table, db_val const & key)
 {
-	debug_assert (tx.contains (table));
 	// RocksDB does not report not_found status, it is a pre-condition that the key exists
 	debug_assert (exists (tx, table, key));
 	flush_tombstones_check (table);
@@ -325,9 +323,9 @@ uint64_t backend_rocksdb::count (store::transaction const & tx, tables table) co
 	return sum;
 }
 
+// TODO: Temporary impl, optimize this with DeleteRange
 int backend_rocksdb::clear (store::write_transaction const & tx, tables table)
 {
-	debug_assert (tx.contains (table));
 	auto col = table_to_column_family (table);
 
 	::rocksdb::ReadOptions read_options;
