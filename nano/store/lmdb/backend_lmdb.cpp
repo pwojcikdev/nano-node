@@ -137,7 +137,7 @@ uint64_t backend_lmdb::count (store::transaction const & tx, tables table) const
 	return stats.ms_entries;
 }
 
-int backend_lmdb::drop (store::write_transaction const & tx, tables table)
+int backend_lmdb::clear (store::write_transaction const & tx, tables table)
 {
 	return mdb_drop (env->tx (tx), table_to_dbi (table), /* only empty the db */ 0);
 }

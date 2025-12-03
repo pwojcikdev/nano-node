@@ -68,7 +68,7 @@ void confirmation_height::clear (store::write_transaction const & transaction, n
 
 void confirmation_height::clear (store::write_transaction const & transaction)
 {
-	backend.drop (transaction, nano::tables::confirmation_height);
+	backend.clear (transaction, nano::tables::confirmation_height);
 }
 
 auto confirmation_height::begin (store::transaction const & transaction, nano::account const & account) const -> iterator

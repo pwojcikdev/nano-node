@@ -46,7 +46,7 @@ size_t online_weight::count (store::transaction const & transaction) const
 
 void online_weight::clear (store::write_transaction const & transaction)
 {
-	auto status = backend.drop (transaction, tables::online_weight);
+	auto status = backend.clear (transaction, tables::online_weight);
 	backend.release_assert_success (status);
 }
 }

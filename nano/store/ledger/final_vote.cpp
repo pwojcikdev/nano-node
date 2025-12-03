@@ -51,7 +51,7 @@ size_t final_vote::count (store::transaction const & transaction) const
 
 void final_vote::clear (store::write_transaction const & transaction)
 {
-	auto status = backend.drop (transaction, nano::tables::final_votes);
+	auto status = backend.clear (transaction, nano::tables::final_votes);
 	backend.release_assert_success (status);
 }
 

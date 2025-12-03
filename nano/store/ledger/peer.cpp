@@ -44,7 +44,7 @@ size_t peer::count (store::transaction const & transaction) const
 
 void peer::clear (store::write_transaction const & transaction)
 {
-	auto status = backend.drop (transaction, tables::peers);
+	auto status = backend.clear (transaction, tables::peers);
 	backend.release_assert_success (status);
 }
 

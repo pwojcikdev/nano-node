@@ -32,7 +32,7 @@ public:
 
 	// Table operations
 	uint64_t count (store::transaction const & tx, tables table) const override;
-	int drop (store::write_transaction const & tx, tables table) override;
+	int clear (store::write_transaction const & tx, tables table) override;
 	int drop_table (store::write_transaction const & tx, tables table) override;
 	bool table_exists (std::string const & name) const override;
 
@@ -101,8 +101,6 @@ private:
 	void flush_table (tables table);
 	void on_flush (::rocksdb::FlushJobInfo const & flush_info);
 
-	int clear (::rocksdb::ColumnFamilyHandle * column_family);
-
 	std::unordered_map<char const *, tables> create_cf_name_table_map () const;
 };
-} // namespace nano::store::rocksdb
+}

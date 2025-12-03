@@ -45,7 +45,7 @@ size_t pruned::count (store::transaction const & transaction) const
 
 void pruned::clear (store::write_transaction const & transaction)
 {
-	auto status = backend.drop (transaction, tables::pruned);
+	auto status = backend.clear (transaction, tables::pruned);
 	backend.release_assert_success (status);
 }
 

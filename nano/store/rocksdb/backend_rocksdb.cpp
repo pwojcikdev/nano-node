@@ -294,6 +294,7 @@ uint64_t backend_rocksdb::count (store::transaction const & tx, tables table) co
 {
 	uint64_t sum = 0;
 
+	// TODO: This should be configurable somewhere else, hardcoding this like that is not ideal
 	// For small tables, iterate to get accurate counts
 	if (table == tables::peers || table == tables::online_weight)
 	{
@@ -319,11 +320,25 @@ uint64_t backend_rocksdb::count (store::transaction const & tx, tables table) co
 	return sum;
 }
 
-int backend_rocksdb::drop (store::write_transaction const & tx, tables table)
+int backend_rocksdb::clear (store::write_transaction const & tx, tables table)
 {
 	debug_assert (tx.contains (table));
 	auto col = table_to_column_family (table);
-	return clear (col);
+
+	::rocksdb::ReadOptions read_options;
+	::rocksdb::WriteOptions write_options;
+	::rocksdb::WriteBatch write_batch;
+	std::unique_ptr<::rocksdb::Iterator> it (db->NewIterator (read_options, col));
+
+	for (it->SeekToFirst (); it->Valid (); it->Next ())
+	{
+		write_batch.Delete (col, it->key ());
+	}
+
+	::rocksdb::Status status = db->Write (write_options, &write_batch);
+	release_assert (status.ok (), error_string (status.code ()));
+
+	return status.code ();
 }
 
 int backend_rocksdb::drop_table (store::write_transaction const & tx, tables table)
@@ -341,24 +356,6 @@ int backend_rocksdb::drop_table (store::write_transaction const & tx, tables tab
 bool backend_rocksdb::table_exists (std::string const & name) const
 {
 	return column_family_exists (name.c_str ());
-}
-
-int backend_rocksdb::clear (::rocksdb::ColumnFamilyHandle * column_family)
-{
-	::rocksdb::ReadOptions read_options;
-	::rocksdb::WriteOptions write_options;
-	::rocksdb::WriteBatch write_batch;
-	std::unique_ptr<::rocksdb::Iterator> it (db->NewIterator (read_options, column_family));
-
-	for (it->SeekToFirst (); it->Valid (); it->Next ())
-	{
-		write_batch.Delete (column_family, it->key ());
-	}
-
-	::rocksdb::Status status = db->Write (write_options, &write_batch);
-	release_assert (status.ok (), error_string (status.code ()));
-
-	return status.code ();
 }
 
 store::iterator backend_rocksdb::begin (store::transaction const & tx, tables table) const

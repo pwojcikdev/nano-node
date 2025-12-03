@@ -298,7 +298,7 @@ void ledger_store::upgrade_v22_to_v23 ()
 
 		// Always drop rep_weights table to ensure it's empty before populating
 		// This can happen if an upgrade was attempted but failed halfway through
-		backend.drop (transaction, tables::rep_weights);
+		backend.clear (transaction, tables::rep_weights);
 		transaction.refresh ();
 
 		release_assert (rep_weight.begin (backend.tx_begin_read ()) == rep_weight.end (transaction), "rep weights table must be empty before upgrading to v23");
