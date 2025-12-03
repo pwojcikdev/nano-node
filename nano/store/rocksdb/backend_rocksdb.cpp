@@ -346,6 +346,18 @@ int backend_rocksdb::drop (store::write_transaction const & tx, tables table)
 	}
 }
 
+int backend_rocksdb::drop_table (store::write_transaction const & tx, tables table)
+{
+	debug_assert (tx.contains (table));
+	auto col = table_to_column_family (table);
+	auto status = db->DropColumnFamily (col);
+	if (status.ok ())
+	{
+		table_handles.erase (table);
+	}
+	return status.code ();
+}
+
 bool backend_rocksdb::table_exists (std::string const & name) const
 {
 	return column_family_exists (name.c_str ());

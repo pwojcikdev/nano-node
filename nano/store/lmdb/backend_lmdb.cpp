@@ -138,7 +138,18 @@ uint64_t backend_lmdb::count (store::transaction const & tx, tables table) const
 
 int backend_lmdb::drop (store::write_transaction const & tx, tables table)
 {
-	return mdb_drop (env->tx (tx), table_to_dbi (table), 0);
+	return mdb_drop (env->tx (tx), table_to_dbi (table), /* only empty the db */ 0);
+}
+
+int backend_lmdb::drop_table (store::write_transaction const & tx, tables table)
+{
+	auto dbi = table_to_dbi (table);
+	auto status = mdb_drop (env->tx (tx), dbi, /* delete from database */ 1);
+	if (status == MDB_SUCCESS)
+	{
+		table_handles.erase (table);
+	}
+	return status;
 }
 
 bool backend_lmdb::table_exists (std::string const & name) const
