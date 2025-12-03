@@ -16,8 +16,6 @@
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
 #include <nano/store/ledger/version.hpp>
-#include <nano/store/lmdb/backend_lmdb.hpp>
-#include <nano/store/rocksdb/backend_rocksdb.hpp>
 #include <nano/store/store.hpp>
 #include <nano/store/tables.hpp>
 #include <nano/store/typed_iterator.hpp>
@@ -76,45 +74,138 @@ nano::store::column_schema const schema_v23{
 	{ nano::tables::frontiers, "frontiers" },
 	{ nano::tables::meta, "meta" }
 };
-
-/*
- * Helper function to create a backend at a specific path
- */
-std::unique_ptr<nano::store::backend> create_backend (std::filesystem::path const & path)
-{
-	auto backend_type = nano::node_config::env_database_backend ().value_or (nano::database_backend::lmdb);
-	switch (backend_type)
-	{
-		case nano::database_backend::lmdb:
-		{
-			nano::lmdb_config lmdb_config{};
-			return std::make_unique<nano::store::lmdb::backend_lmdb> (path / "data.ldb", nano::test::default_logger (), lmdb_config);
-		}
-		case nano::database_backend::rocksdb:
-		{
-			nano::rocksdb_config rocksdb_config{};
-			return std::make_unique<nano::store::rocksdb::backend_rocksdb> (path / "rocksdb", rocksdb_config);
-		}
-	}
-	release_assert (false, "unknown database backend");
 }
 
 /*
- * Helper function to get database path for ledger_store based on backend type
+ * Test that opening a database with a version higher than supported fails
  */
-std::filesystem::path get_db_path (std::filesystem::path const & base_path)
+TEST (ledger_upgrades, version_too_high)
 {
-	auto backend_type = nano::node_config::env_database_backend ().value_or (nano::database_backend::lmdb);
-	switch (backend_type)
+	// Create database with a future version
+	auto const path = nano::unique_path ();
 	{
-		case nano::database_backend::lmdb:
-			return base_path / "data.ldb";
-		case nano::database_backend::rocksdb:
-			return base_path / "rocksdb";
+		auto backend = nano::test::make_backend (path);
+		backend->create (nano::store::ledger_store::schema_current, 999);
 	}
-	release_assert (false, "unknown database backend");
+
+	// Attempting to open through ledger_store should throw
+	ASSERT_THROW (
+	nano::store::ledger_store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ()),
+	std::runtime_error);
 }
 
+/*
+ * Test that opening a database with a version lower than minimum fails
+ */
+TEST (ledger_upgrades, version_too_low)
+{
+	// Create database with a version below minimum
+	auto const path = nano::unique_path ();
+	{
+		auto backend = nano::test::make_backend (path);
+		backend->create (nano::store::ledger_store::schema_current, 7);
+	}
+
+	// Attempting to open through ledger_store should throw
+	ASSERT_THROW (
+	nano::store::ledger_store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ()),
+	std::runtime_error);
+}
+
+/*
+ * Test that read-only mode prevents upgrades
+ */
+TEST (ledger_upgrades, read_only_prevents_upgrade)
+{
+	// Create a v21 database
+	auto const path = nano::unique_path ();
+	{
+		auto backend = nano::test::make_backend (path);
+		backend->create (schema_v21, 21);
+	}
+
+	// Attempting to open in read-only mode should fail because upgrade is needed
+	ASSERT_THROW (
+	nano::store::ledger_store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_only,
+	nano::test::default_stats (),
+	nano::test::default_logger ()),
+	std::runtime_error);
+}
+
+/*
+ * Test opening an initialized store in read-only mode
+ */
+TEST (ledger_upgrades, current_version_read_only)
+{
+	// Create and initialize a current version database
+	auto const path = nano::unique_path ();
+	{
+		auto store = nano::store::ledger_store (
+		nano::test::make_backend (path),
+		nano::store::open_mode::read_write,
+		nano::test::default_stats (),
+		nano::test::default_logger ());
+
+		auto tx = store.tx_begin_write ();
+		store.initialize (tx, nano::dev::constants);
+	}
+
+	// Open in read-only mode - should succeed since no upgrade needed
+	auto store = nano::store::ledger_store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_only,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
+
+	auto tx = store.tx_begin_read ();
+	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
+
+	// Verify we can read genesis account
+	nano::account_info info;
+	ASSERT_FALSE (store.account.get (tx, nano::dev::genesis_key.pub, info));
+}
+
+/*
+ * Test that a current version database opens without upgrade
+ */
+TEST (ledger_upgrades, current_version_no_upgrade)
+{
+	// Create a current version database
+	auto const path = nano::unique_path ();
+	{
+		auto store = nano::store::ledger_store (
+		nano::test::make_backend (path),
+		nano::store::open_mode::read_write,
+		nano::test::default_stats (),
+		nano::test::default_logger ());
+
+		auto tx = store.tx_begin_write ();
+		store.initialize (tx, nano::dev::constants);
+	}
+
+	// Open again - should not require any upgrade
+	auto store = nano::store::ledger_store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
+
+	auto tx = store.tx_begin_read ();
+	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
+}
+
+namespace
+{
 /*
  * Helper class to create a v21 legacy database with test data
  */
@@ -123,7 +214,7 @@ class legacy_database_v21
 public:
 	legacy_database_v21 (std::filesystem::path const & path_a) :
 		path{ path_a },
-		backend{ create_backend (path_a) }
+		backend{ nano::test::make_backend (path_a) }
 	{
 		backend->create (schema_v21, 21);
 	}
@@ -156,7 +247,46 @@ public:
 	std::filesystem::path path;
 	std::unique_ptr<nano::store::backend> backend;
 };
+}
 
+/*
+ * Test v21 to v22 upgrade: removes unchecked table
+ */
+TEST (ledger_upgrades, upgrade_v21_to_v22)
+{
+	// Create a v21 database with data in unchecked table
+	auto const path = nano::unique_path ();
+	{
+		legacy_database_v21 legacy_db{ path };
+		// The unchecked table exists in the v21 schema
+		legacy_db.add_unchecked (1, 100);
+		legacy_db.add_unchecked (2, 200);
+	}
+
+	// Create ledger_store with defer_open to manually control upgrade
+	nano::store::ledger_store_params params;
+	params.defer_open = true;
+
+	nano::store::ledger_store store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger (),
+	params);
+
+	// Manually perform just the v21->v22 upgrade
+	store.upgrade_v21_to_v22 ();
+
+	// Verify version is now 22 and unchecked table no longer exists
+	auto backend = nano::test::make_backend (path);
+	backend->open (schema_v22, nano::store::open_mode::read_only);
+	auto tx = backend->tx_begin_read ();
+	ASSERT_EQ (backend->get_version (tx), 22);
+	ASSERT_FALSE (backend->table_exists (tx, "unchecked"));
+}
+
+namespace
+{
 /*
  * Helper class to create a v22 legacy database with test data
  */
@@ -165,7 +295,7 @@ class legacy_database_v22
 public:
 	legacy_database_v22 (std::filesystem::path const & path_a) :
 		path{ path_a },
-		backend{ create_backend (path_a) }
+		backend{ nano::test::make_backend (path_a) }
 	{
 		backend->create (schema_v22, 22);
 	}
@@ -184,125 +314,6 @@ public:
 	std::filesystem::path path;
 	std::unique_ptr<nano::store::backend> backend;
 };
-
-/*
- * Helper class to create a v23 legacy database with test data
- */
-class legacy_database_v23
-{
-public:
-	legacy_database_v23 (std::filesystem::path const & path_a) :
-		path{ path_a },
-		backend{ create_backend (path_a) }
-	{
-		backend->create (schema_v23, 23);
-	}
-
-	std::filesystem::path path;
-	std::unique_ptr<nano::store::backend> backend;
-};
-}
-
-/*
- * Test that opening a database with a version higher than supported fails
- */
-TEST (ledger_upgrades, version_too_high)
-{
-	auto path = nano::unique_path ();
-	{
-		// Create database with a future version
-		auto backend = nano::test::make_backend (path);
-		backend->create (nano::store::ledger_store::schema_current, 999);
-	}
-
-	// Attempting to open through ledger_store should throw
-	ASSERT_THROW (
-	nano::store::ledger_store (
-	nano::test::make_backend (path),
-	nano::store::open_mode::read_write,
-	nano::test::default_stats (),
-	nano::test::default_logger ()),
-	std::runtime_error);
-}
-
-/*
- * Test that opening a database with a version lower than minimum fails
- */
-TEST (ledger_upgrades, version_too_low)
-{
-	auto path = nano::unique_path ();
-	{
-		// Create database with a version below minimum
-		auto backend = nano::test::make_backend (path);
-		backend->create (nano::store::ledger_store::schema_current, 7);
-	}
-
-	// Attempting to open through ledger_store should throw
-	ASSERT_THROW (
-	nano::store::ledger_store (
-	nano::test::make_backend (path),
-	nano::store::open_mode::read_write,
-	nano::test::default_stats (),
-	nano::test::default_logger ()),
-	std::runtime_error);
-}
-
-/*
- * Test that read-only mode prevents upgrades
- */
-TEST (ledger_upgrades, read_only_prevents_upgrade)
-{
-	auto path = nano::unique_path ();
-	{
-		// Create a v21 database
-		legacy_database_v21 legacy_db{ path };
-	}
-
-	// Attempting to open in read-only mode should fail because upgrade is needed
-	ASSERT_THROW (
-	nano::store::ledger_store (
-	create_backend (path),
-	nano::store::open_mode::read_only,
-	nano::test::default_stats (),
-	nano::test::default_logger ()),
-	std::runtime_error);
-}
-
-/*
- * Test v21 to v22 upgrade: removes unchecked table
- */
-TEST (ledger_upgrades, upgrade_v21_to_v22)
-{
-	auto path = nano::unique_path ();
-
-	// Create a v21 database with data in unchecked table
-	{
-		legacy_database_v21 legacy_db{ path };
-		// The unchecked table exists in the v21 schema
-		legacy_db.add_unchecked (1, 100);
-		legacy_db.add_unchecked (2, 200);
-	}
-
-	// Create ledger_store with defer_open to manually control upgrade
-	nano::store::ledger_store_params params;
-	params.defer_open = true;
-
-	nano::store::ledger_store store (
-		create_backend (path),
-		nano::store::open_mode::read_write,
-		nano::test::default_stats (),
-		nano::test::default_logger (),
-		params);
-
-	// Manually perform just the v21->v22 upgrade
-	store.upgrade_v21_to_v22 ();
-
-	// Verify version is now 22 and unchecked table no longer exists
-	auto backend = create_backend (path);
-	backend->open (schema_v22, nano::store::open_mode::read_only);
-	auto tx = backend->tx_begin_read ();
-	ASSERT_EQ (backend->get_version (tx), 22);
-	ASSERT_FALSE (backend->table_exists (tx, "unchecked"));
 }
 
 /*
@@ -310,15 +321,14 @@ TEST (ledger_upgrades, upgrade_v21_to_v22)
  */
 TEST (ledger_upgrades, upgrade_v22_to_v23_rep_weights)
 {
-	auto path = nano::unique_path ();
-
-	nano::account const rep_a{ 100 };
-	nano::account const rep_b{ 200 };
 	nano::account const account_1{ 1 };
 	nano::account const account_2{ 2 };
 	nano::account const account_3{ 3 };
+	nano::account const rep_a{ 41 };
+	nano::account const rep_b{ 43 };
 
 	// Create a v22 database with test accounts
+	auto const path = nano::unique_path ();
 	{
 		legacy_database_v22 legacy_db{ path };
 
@@ -343,7 +353,7 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_rep_weights)
 
 	// Open through ledger_store which should trigger upgrade
 	auto store = nano::store::ledger_store (
-	create_backend (path),
+	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
 	nano::test::default_logger ());
@@ -364,13 +374,12 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_rep_weights)
  */
 TEST (ledger_upgrades, upgrade_v22_to_v23_zero_balance)
 {
-	auto path = nano::unique_path ();
-
 	nano::account const rep{ 100 };
 	nano::account const account_with_balance{ 1 };
 	nano::account const account_zero_balance{ 2 };
 
 	// Create a v22 database with accounts (one with zero balance)
+	auto const path = nano::unique_path ();
 	{
 		legacy_database_v22 legacy_db{ path };
 
@@ -387,7 +396,7 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_zero_balance)
 
 	// Open through ledger_store which should trigger upgrade
 	auto store = nano::store::ledger_store (
-	create_backend (path),
+	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
 	nano::test::default_logger ());
@@ -397,14 +406,33 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_zero_balance)
 	ASSERT_EQ (store.rep_weight.get (tx, rep), 1000);
 }
 
+namespace
+{
+/*
+ * Helper class to create a v23 legacy database with test data
+ */
+class legacy_database_v23
+{
+public:
+	legacy_database_v23 (std::filesystem::path const & path_a) :
+		path{ path_a },
+		backend{ nano::test::make_backend (path_a) }
+	{
+		backend->create (schema_v23, 23);
+	}
+
+	std::filesystem::path path;
+	std::unique_ptr<nano::store::backend> backend;
+};
+}
+
 /*
  * Test v23 to v24 upgrade: removes frontiers table
  */
 TEST (ledger_upgrades, upgrade_v23_to_v24)
 {
-	auto path = nano::unique_path ();
-
 	// Create a v23 database
+	auto const path = nano::unique_path ();
 	{
 		legacy_database_v23 legacy_db{ path };
 		// The frontiers table exists in the v23 schema
@@ -412,7 +440,7 @@ TEST (ledger_upgrades, upgrade_v23_to_v24)
 
 	// Open through ledger_store which should trigger upgrade
 	auto store = nano::store::ledger_store (
-	create_backend (path),
+	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
 	nano::test::default_logger ());
@@ -427,12 +455,11 @@ TEST (ledger_upgrades, upgrade_v23_to_v24)
  */
 TEST (ledger_upgrades, full_upgrade_v21_to_current)
 {
-	auto path = nano::unique_path ();
-
 	nano::account const rep{ 100 };
 	nano::account const account{ 1 };
 
 	// Create a v21 database with test data
+	auto const path = nano::unique_path ();
 	{
 		legacy_database_v21 legacy_db{ path };
 
@@ -444,7 +471,7 @@ TEST (ledger_upgrades, full_upgrade_v21_to_current)
 
 	// Open through ledger_store which should trigger full upgrade chain
 	auto store = nano::store::ledger_store (
-	create_backend (path),
+	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
 	nano::test::default_logger ());
@@ -463,76 +490,10 @@ TEST (ledger_upgrades, full_upgrade_v21_to_current)
 }
 
 /*
- * Test that a current version database opens without upgrade
- */
-TEST (ledger_upgrades, current_version_no_upgrade)
-{
-	auto path = nano::unique_path ();
-
-	// Create a current version database
-	{
-		auto store = nano::store::ledger_store (
-		create_backend (path),
-		nano::store::open_mode::read_write,
-		nano::test::default_stats (),
-		nano::test::default_logger ());
-
-		auto tx = store.tx_begin_write ();
-		store.initialize (tx, nano::dev::constants);
-	}
-
-	// Open again - should not require any upgrade
-	auto store = nano::store::ledger_store (
-	create_backend (path),
-	nano::store::open_mode::read_write,
-	nano::test::default_stats (),
-	nano::test::default_logger ());
-
-	auto tx = store.tx_begin_read ();
-	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
-}
-
-/*
- * Test opening an initialized store in read-only mode
- */
-TEST (ledger_upgrades, current_version_read_only)
-{
-	auto path = nano::unique_path ();
-
-	// Create and initialize a current version database
-	{
-		auto store = nano::store::ledger_store (
-		create_backend (path),
-		nano::store::open_mode::read_write,
-		nano::test::default_stats (),
-		nano::test::default_logger ());
-
-		auto tx = store.tx_begin_write ();
-		store.initialize (tx, nano::dev::constants);
-	}
-
-	// Open in read-only mode - should succeed since no upgrade needed
-	auto store = nano::store::ledger_store (
-	create_backend (path),
-	nano::store::open_mode::read_only,
-	nano::test::default_stats (),
-	nano::test::default_logger ());
-
-	auto tx = store.tx_begin_read ();
-	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
-
-	// Verify we can read genesis account
-	nano::account_info info;
-	ASSERT_FALSE (store.account.get (tx, nano::dev::genesis_key.pub, info));
-}
-
-/*
  * Test v22->v23 upgrade with many accounts to verify batch processing
  */
 TEST (ledger_upgrades, upgrade_v22_to_v23_batch_processing)
 {
-	auto path = nano::unique_path ();
-
 	// Create multiple reps with multiple accounts
 	std::vector<nano::account> reps;
 	std::map<nano::account, nano::uint128_t> expected_weights;
@@ -544,6 +505,7 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_batch_processing)
 	}
 
 	// Create a v22 database with many accounts
+	auto const path = nano::unique_path ();
 	{
 		legacy_database_v22 legacy_db{ path };
 
@@ -564,7 +526,7 @@ TEST (ledger_upgrades, upgrade_v22_to_v23_batch_processing)
 
 	// Open through ledger_store which should trigger upgrade
 	auto store = nano::store::ledger_store (
-	create_backend (path),
+	nano::test::make_backend (path),
 	nano::store::open_mode::read_write,
 	nano::test::default_stats (),
 	nano::test::default_logger ());
