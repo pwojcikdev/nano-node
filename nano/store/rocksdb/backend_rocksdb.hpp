@@ -64,17 +64,28 @@ protected:
 	void close_impl () override;
 
 private:
-	std::filesystem::path database_path;
-	nano::rocksdb_config config;
+	void open_db (std::filesystem::path const & path, nano::store::open_mode mode, ::rocksdb::Options const & options, std::vector<::rocksdb::ColumnFamilyDescriptor> column_families);
 
+	::rocksdb::ColumnFamilyHandle * table_to_column_family (tables table) const;
+	::rocksdb::ColumnFamilyHandle * get_column_family (std::string const & name) const;
+	bool column_family_exists (std::string const & name) const;
+
+	::rocksdb::Options get_db_options (nano::store::open_mode mode);
+	::rocksdb::BlockBasedTableOptions get_table_options () const;
+	::rocksdb::ColumnFamilyOptions get_cf_options (std::string const & cf_name) const;
+
+private:
+	std::filesystem::path const database_path;
+	nano::rocksdb_config const config;
+
+	nano::store::open_mode current_mode{ nano::store::open_mode::read_write };
 	std::unique_ptr<::rocksdb::DB> db;
 	::rocksdb::TransactionDB * transaction_db{ nullptr };
 	std::vector<std::unique_ptr<::rocksdb::ColumnFamilyHandle>> handles;
-
 	std::map<tables, ::rocksdb::ColumnFamilyHandle *> table_handles;
-	nano::store::open_mode current_mode{ nano::store::open_mode::read_write };
+	std::map<std::string, tables> name_to_table;
 
-	// Tombstone management
+private: // Tombstone management
 	class tombstone_info
 	{
 	public:
@@ -83,24 +94,10 @@ private:
 		uint64_t const max;
 	};
 	std::unordered_map<tables, tombstone_info> tombstone_map;
-	std::unordered_map<char const *, tables> cf_name_table_map;
-
-	::rocksdb::ColumnFamilyHandle * table_to_column_family (tables table) const;
-	::rocksdb::ColumnFamilyHandle * get_column_family (char const * name) const;
-	bool column_family_exists (char const * name) const;
-
-	::rocksdb::Options get_db_options ();
-	::rocksdb::BlockBasedTableOptions get_table_options () const;
-	::rocksdb::ColumnFamilyOptions get_cf_options (std::string const & cf_name) const;
-
-	void open_db (std::filesystem::path const & path, bool read_only, ::rocksdb::Options const & options, std::vector<::rocksdb::ColumnFamilyDescriptor> column_families);
-	std::vector<::rocksdb::ColumnFamilyDescriptor> create_column_families (column_schema const & schema);
 
 	void generate_tombstone_map ();
 	void flush_tombstones_check (tables table);
 	void flush_table (tables table);
 	void on_flush (::rocksdb::FlushJobInfo const & flush_info);
-
-	std::unordered_map<char const *, tables> create_cf_name_table_map () const;
 };
 }

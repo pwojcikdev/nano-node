@@ -51,18 +51,8 @@ namespace nano::store::rocksdb
 {
 backend_rocksdb::backend_rocksdb (std::filesystem::path const & path, nano::rocksdb_config const & config_a) :
 	database_path{ path },
-	config{ config_a },
-	cf_name_table_map{ create_cf_name_table_map () }
+	config{ config_a }
 {
-	boost::system::error_code error_mkdir, error_chmod;
-	std::filesystem::create_directories (path, error_mkdir);
-	nano::set_secure_perm_directory (path, error_chmod);
-
-	if (error_mkdir)
-	{
-		throw std::runtime_error ("Failed to create database directory: " + path.string ());
-	}
-
 	generate_tombstone_map ();
 }
 
@@ -75,19 +65,31 @@ void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mo
 {
 	current_mode = mode;
 
-	auto options = get_db_options ();
+	// Create database directory if needed
+	if (mode != nano::store::open_mode::read_only)
+	{
+		boost::system::error_code error_mkdir, error_chmod;
+		std::filesystem::create_directories (database_path, error_mkdir);
+		nano::set_secure_perm_directory (database_path, error_chmod);
+
+		if (error_mkdir)
+		{
+			throw std::runtime_error ("Failed to create database directory: " + database_path.string ());
+		}
+	}
+
+	auto const options = get_db_options (mode);
 
 	// Get existing column families from the database (if it exists)
 	std::vector<std::string> existing_cf_names;
 	auto list_status = ::rocksdb::DB::ListColumnFamilies (options, database_path.string (), &existing_cf_names);
 
-	// If database doesn't exist or listing failed, use empty list (all column families will be created)
+	// If database doesn't exist all column families will be created
 	if (!list_status.ok ())
 	{
 		if (is_not_found (list_status))
 		{
-			// Database doesn't exist yet, will be created
-			existing_cf_names.clear ();
+			debug_assert (existing_cf_names.empty ());
 		}
 		else
 		{
@@ -95,51 +97,33 @@ void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mo
 		}
 	}
 
-	// Build column family descriptors - open ALL existing column families
+	// Build column family descriptors - merge existing with schema-required column families
+	// RocksDB with create_missing_column_families=true will auto-create any missing ones
+	std::set<std::string> cf_names_set (existing_cf_names.begin (), existing_cf_names.end ());
+
+	// Add schema column families to the set
+	for (auto const & [table, name] : schema)
+	{
+		cf_names_set.insert (name);
+	}
+
+	// Ensure default column family is always present
+	cf_names_set.insert (::rocksdb::kDefaultColumnFamilyName);
+
+	// Create descriptors for all column families
 	std::vector<::rocksdb::ColumnFamilyDescriptor> column_families;
-	for (auto const & cf_name : existing_cf_names)
+	for (auto const & cf_name : cf_names_set)
 	{
 		column_families.emplace_back (cf_name, get_cf_options (cf_name));
 	}
 
-	// If no existing column families, at least add default
-	if (column_families.empty ())
-	{
-		column_families.emplace_back (::rocksdb::kDefaultColumnFamilyName, ::rocksdb::ColumnFamilyOptions{});
-	}
+	open_db (database_path, mode, options, column_families);
 
-	// Track which schema tables need to be created
-	std::set<std::string> existing_cf_set (existing_cf_names.begin (), existing_cf_names.end ());
-	std::vector<std::pair<tables, std::string>> missing_column_families;
+	// Build table_handles and name_to_table from schema
 	for (auto const & [table, name] : schema)
 	{
-		if (!existing_cf_set.contains (name))
-		{
-			missing_column_families.emplace_back (table, name);
-		}
-	}
-
-	open_db (database_path, mode == nano::store::open_mode::read_only, options, column_families);
-
-	// Create missing column families (only in write modes)
-	if (mode != nano::store::open_mode::read_only)
-	{
-		for (auto const & [table, name] : missing_column_families)
-		{
-			::rocksdb::ColumnFamilyHandle * handle;
-			auto status = db->CreateColumnFamily (get_cf_options (name), name, &handle);
-			if (!status.ok ())
-			{
-				throw std::runtime_error ("Failed to create column family " + name + ": " + status.ToString ());
-			}
-			handles.emplace_back (handle);
-		}
-	}
-
-	// Build table_handles map for schema tables
-	for (auto const & [table, name] : schema)
-	{
-		table_handles[table] = get_column_family (name.c_str ());
+		table_handles[table] = get_column_family (name);
+		name_to_table[name] = table;
 	}
 }
 
@@ -151,12 +135,12 @@ void backend_rocksdb::close_impl ()
 	transaction_db = nullptr;
 }
 
-void backend_rocksdb::open_db (std::filesystem::path const & path, bool read_only, ::rocksdb::Options const & options, std::vector<::rocksdb::ColumnFamilyDescriptor> column_families)
+void backend_rocksdb::open_db (std::filesystem::path const & path, nano::store::open_mode mode, ::rocksdb::Options const & options, std::vector<::rocksdb::ColumnFamilyDescriptor> column_families)
 {
 	::rocksdb::Status s;
 
 	std::vector<::rocksdb::ColumnFamilyHandle *> handles_l;
-	if (read_only)
+	if (mode == nano::store::open_mode::read_only)
 	{
 		::rocksdb::DB * db_l;
 		s = ::rocksdb::DB::OpenForReadOnly (options, path.string (), column_families, &handles_l, &db_l);
@@ -187,35 +171,57 @@ void backend_rocksdb::open_db (std::filesystem::path const & path, bool read_onl
 	}
 }
 
-std::vector<::rocksdb::ColumnFamilyDescriptor> backend_rocksdb::create_column_families (column_schema const & schema)
+::rocksdb::Options backend_rocksdb::get_db_options (nano::store::open_mode mode)
 {
-	std::vector<::rocksdb::ColumnFamilyDescriptor> column_families;
+	::rocksdb::Options db_options;
 
-	// Always include default column family
-	column_families.emplace_back (::rocksdb::kDefaultColumnFamilyName, ::rocksdb::ColumnFamilyOptions{});
+	db_options.create_if_missing = (mode != nano::store::open_mode::read_only);
+	db_options.create_missing_column_families = (mode != nano::store::open_mode::read_only);
 
-	for (auto const & [table, name] : schema)
-	{
-		column_families.emplace_back (name, get_cf_options (name));
-	}
-	return column_families;
+	db_options.OptimizeLevelStyleCompaction ();
+	db_options.IncreaseParallelism (config.io_threads);
+	db_options.compression = ::rocksdb::kNoCompression;
+
+	auto event_listener_l = new event_listener ([this] (::rocksdb::FlushJobInfo const & flush_job_info) {
+		this->on_flush (flush_job_info);
+	});
+	db_options.listeners.emplace_back (event_listener_l);
+
+	return db_options;
 }
 
-std::unordered_map<char const *, tables> backend_rocksdb::create_cf_name_table_map () const
+::rocksdb::BlockBasedTableOptions backend_rocksdb::get_table_options () const
 {
-	std::unordered_map<char const *, tables> map{
-		{ "accounts", tables::accounts },
-		{ "blocks", tables::blocks },
-		{ "pending", tables::pending },
-		{ "online_weight", tables::online_weight },
-		{ "meta", tables::meta },
-		{ "peers", tables::peers },
-		{ "confirmation_height", tables::confirmation_height },
-		{ "pruned", tables::pruned },
-		{ "final_votes", tables::final_votes },
-		{ "rep_weights", tables::rep_weights }
-	};
-	return map;
+	::rocksdb::BlockBasedTableOptions table_options;
+
+	// Improve point lookup performance be using the data block hash index (uses about 5% more space)
+	table_options.data_block_index_type = ::rocksdb::BlockBasedTableOptions::DataBlockIndexType::kDataBlockBinaryAndHash;
+
+	// Using storage format_version 5
+	// Version 5 offers improved read spead, caching and better compression (if enabled)
+	// Any existing ledger data in version 4 will not be migrated. New data will be written in version 5
+	table_options.format_version = 5;
+
+	// Block cache for reads
+	table_options.block_cache = ::rocksdb::NewLRUCache (config.read_cache * 1024 * 1024);
+
+	// Bloom filter to help with point reads. 10bits gives 1% false positive rate
+	table_options.filter_policy.reset (::rocksdb::NewBloomFilterPolicy (10, false));
+
+	return table_options;
+}
+
+::rocksdb::ColumnFamilyOptions backend_rocksdb::get_cf_options (std::string const & cf_name) const
+{
+	::rocksdb::ColumnFamilyOptions cf_options;
+	if (cf_name != ::rocksdb::kDefaultColumnFamilyName)
+	{
+		std::shared_ptr<::rocksdb::TableFactory> table_factory (::rocksdb::NewBlockBasedTableFactory (get_table_options ()));
+		cf_options.table_factory = table_factory;
+		// Size of each memtable (write buffer for this column family)
+		cf_options.write_buffer_size = config.write_cache * 1024 * 1024;
+	}
+	return cf_options;
 }
 
 ::rocksdb::ColumnFamilyHandle * backend_rocksdb::table_to_column_family (tables table) const
@@ -225,7 +231,7 @@ std::unordered_map<char const *, tables> backend_rocksdb::create_cf_name_table_m
 	return it->second;
 }
 
-::rocksdb::ColumnFamilyHandle * backend_rocksdb::get_column_family (char const * name) const
+::rocksdb::ColumnFamilyHandle * backend_rocksdb::get_column_family (std::string const & name) const
 {
 	auto iter = std::find_if (handles.begin (), handles.end (), [name] (auto & handle) {
 		return handle->GetName () == name;
@@ -234,7 +240,7 @@ std::unordered_map<char const *, tables> backend_rocksdb::create_cf_name_table_m
 	return iter->get ();
 }
 
-bool backend_rocksdb::column_family_exists (char const * name) const
+bool backend_rocksdb::column_family_exists (std::string const & name) const
 {
 	auto iter = std::find_if (handles.begin (), handles.end (), [name] (auto & handle) {
 		return handle->GetName () == name;
@@ -371,12 +377,12 @@ int backend_rocksdb::clear (store::write_transaction const & tx, tables table)
 
 bool backend_rocksdb::drop_table (store::write_transaction const & tx, std::string const & name)
 {
-	if (!column_family_exists (name.c_str ()))
+	if (!column_family_exists (name))
 	{
 		return false; // Table doesn't exist
 	}
 
-	auto const handle = get_column_family (name.c_str ());
+	auto const handle = get_column_family (name);
 
 	auto status1 = db->DropColumnFamily (handle);
 	release_assert (success (status1.code ()), error_string (status1.code ()));
@@ -405,7 +411,7 @@ bool backend_rocksdb::drop_table (store::write_transaction const & tx, std::stri
 
 bool backend_rocksdb::table_exists (store::transaction const & tx, std::string const & name) const
 {
-	return column_family_exists (name.c_str ());
+	return column_family_exists (name);
 }
 
 store::iterator backend_rocksdb::begin (store::transaction const & tx, tables table) const
@@ -479,7 +485,9 @@ bool backend_rocksdb::copy_db (std::filesystem::path const & destination_path)
 	{
 		::rocksdb::BackupEngine * backup_engine_raw;
 		::rocksdb::BackupEngineOptions backup_options (destination_path.string ());
+		// Use incremental backups (default)
 		backup_options.share_table_files = true;
+		// Increase number of threads used for copying
 		backup_options.max_background_operations = std::thread::hardware_concurrency ();
 		auto status = ::rocksdb::BackupEngine::Open (::rocksdb::Env::Default (), backup_options, &backup_engine_raw);
 		backup_engine.reset (backup_engine_raw);
@@ -563,48 +571,6 @@ nano::store::open_mode backend_rocksdb::get_mode () const
 	return current_mode;
 }
 
-::rocksdb::Options backend_rocksdb::get_db_options ()
-{
-	::rocksdb::Options db_options;
-	db_options.create_if_missing = true;
-	db_options.create_missing_column_families = true;
-
-	db_options.OptimizeLevelStyleCompaction ();
-	db_options.IncreaseParallelism (config.io_threads);
-	db_options.compression = ::rocksdb::kNoCompression;
-
-	auto event_listener_l = new event_listener ([this] (::rocksdb::FlushJobInfo const & flush_job_info) {
-		this->on_flush (flush_job_info);
-	});
-	db_options.listeners.emplace_back (event_listener_l);
-
-	return db_options;
-}
-
-::rocksdb::BlockBasedTableOptions backend_rocksdb::get_table_options () const
-{
-	::rocksdb::BlockBasedTableOptions table_options;
-
-	table_options.data_block_index_type = ::rocksdb::BlockBasedTableOptions::DataBlockIndexType::kDataBlockBinaryAndHash;
-	table_options.format_version = 5;
-	table_options.block_cache = ::rocksdb::NewLRUCache (config.read_cache * 1024 * 1024);
-	table_options.filter_policy.reset (::rocksdb::NewBloomFilterPolicy (10, false));
-
-	return table_options;
-}
-
-::rocksdb::ColumnFamilyOptions backend_rocksdb::get_cf_options (std::string const & cf_name) const
-{
-	::rocksdb::ColumnFamilyOptions cf_options;
-	if (cf_name != ::rocksdb::kDefaultColumnFamilyName)
-	{
-		std::shared_ptr<::rocksdb::TableFactory> table_factory (::rocksdb::NewBlockBasedTableFactory (get_table_options ()));
-		cf_options.table_factory = table_factory;
-		cf_options.write_buffer_size = config.write_cache * 1024 * 1024;
-	}
-	return cf_options;
-}
-
 void backend_rocksdb::generate_tombstone_map ()
 {
 	tombstone_map.emplace (std::piecewise_construct, std::forward_as_tuple (tables::blocks), std::forward_as_tuple (0, 25000));
@@ -614,6 +580,8 @@ void backend_rocksdb::generate_tombstone_map ()
 
 void backend_rocksdb::flush_tombstones_check (tables table)
 {
+	// Update the number of deletes for some tables, and force a flush if there are too many tombstones
+	// as it can affect read performance.
 	if (auto it = tombstone_map.find (table); it != tombstone_map.end ())
 	{
 		auto & tombstone_info = it->second;
@@ -632,7 +600,8 @@ void backend_rocksdb::flush_table (tables table)
 
 void backend_rocksdb::on_flush (::rocksdb::FlushJobInfo const & flush_info)
 {
-	if (auto it = cf_name_table_map.find (flush_info.cf_name.c_str ()); it != cf_name_table_map.end ())
+	// Reset appropriate tombstone counters
+	if (auto it = name_to_table.find (flush_info.cf_name); it != name_to_table.end ())
 	{
 		if (auto tomb_it = tombstone_map.find (it->second); tomb_it != tombstone_map.end ())
 		{
