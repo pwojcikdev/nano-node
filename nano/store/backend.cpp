@@ -6,10 +6,21 @@ nano::store::column_schema const backend::schema_meta{ { tables::meta, "meta" } 
 
 backend::~backend () = default;
 
-auto backend::meta () -> backend_meta
+auto backend::meta () -> std::optional<backend_meta>
 {
-	// Attempt to open just the meta table which should always exist
-	open (schema_meta, store::open_mode::read_only);
+	// Attempt to open just the meta table to check if database exists
+	try
+	{
+		open (schema_meta, store::open_mode::read_only);
+	}
+	catch (nano::error const & error)
+	{
+		if (error == nano::error_backend::db_not_found)
+		{
+			return std::nullopt;
+		}
+		throw;
+	}
 
 	load_meta ();
 	debug_assert (current_meta.has_value ());

@@ -158,6 +158,11 @@ void backend_rocksdb::open_db (std::filesystem::path const & path, bool read_onl
 
 	if (!s.ok ())
 	{
+		// Detect if the database doesn't exist (for fresh database detection)
+		if (s.IsIOError () || s.IsNotFound ())
+		{
+			throw nano::error (nano::error_backend::db_not_found);
+		}
 		throw std::runtime_error ("Failed to open RocksDB: " + s.ToString ());
 	}
 }

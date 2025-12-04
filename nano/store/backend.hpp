@@ -63,7 +63,7 @@ class backend
 public:
 	virtual ~backend ();
 
-	backend_meta meta ();
+	std::optional<backend_meta> meta ();
 
 	void open (column_schema, nano::store::open_mode mode);
 	void create (column_schema, nano::store::version_t version);

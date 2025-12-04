@@ -59,63 +59,53 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	final_vote{ *final_vote_impl },
 	version{ *version_impl }
 {
-	logger.info (nano::log::type::ledger_store, "Initializing ledger store: {}", backend.get_database_path ());
-
 	// Skip automatic open/upgrade when defer_open is set (used for testing individual upgrades)
 	if (params.defer_open)
 	{
 		return;
 	}
 
-	backend_meta meta{};
+	logger.info (nano::log::type::ledger_store, "Initializing ledger store: {}", backend.get_database_path ());
 
 	bool needs_upgrade = false;
 	bool fresh_db = false;
+	backend_meta meta{};
+
+	if (auto meta_opt = backend.meta ())
 	{
-		// Attempt to get meta information to determine if the exists or needs upgrading
-		try
+		meta = *meta_opt;
+
+		logger.debug (nano::log::type::ledger_store, "Ledger database version: {}", meta.version);
+
+		// Prevent opening future database versions
+		if (meta.version > version_current)
 		{
-			meta = backend.meta ();
+			logger.error (nano::log::type::ledger_store, "The version of the ledger database ({}) is higher than the current ({}) which is supported. Either upgrade your node software or use a different database.", meta.version, version_current);
 
-			logger.debug (nano::log::type::ledger_store, "Ledger database version: {}", meta.version);
-
-			// Prevent opening future database versions
-			if (meta.version > version_current)
-			{
-				logger.error (nano::log::type::ledger_store, "The version of the ledger database ({}) is higher than the current ({}) which is supported. Either upgrade your node software or use a different database.", meta.version, version_current);
-
-				throw std::runtime_error ("Ledger version " + std::to_string (meta.version) + " is higher than current version " + std::to_string (version_current));
-			}
-
-			// Minimum supported upgrade version check
-			if (meta.version < version_minimum)
-			{
-				logger.error (nano::log::type::ledger_store, "The version of the ledger database ({}) is lower than the minimum ({}) which is supported for upgrades. Perform an intermediate upgrade with an older node version or perform a fresh bootstrap.", meta.version, version_minimum);
-
-				throw std::runtime_error ("Ledger version " + std::to_string (meta.version) + " is lower than minimum supported version " + std::to_string (version_minimum));
-			}
-
-			// Check if upgrade is needed
-			if (meta.version < version_current)
-			{
-				needs_upgrade = true;
-
-				logger.info (nano::log::type::ledger_store, "The ledger database needs to be upgraded from version {} to {}", meta.version, version_current);
-			}
+			throw std::runtime_error ("Ledger version " + std::to_string (meta.version) + " is higher than current version " + std::to_string (version_current));
 		}
-		catch (nano::error const & error)
+
+		// Minimum supported upgrade version check
+		if (meta.version < version_minimum)
 		{
-			if (error == nano::error_backend::db_not_found)
-			{
-				fresh_db = true;
+			logger.error (nano::log::type::ledger_store, "The version of the ledger database ({}) is lower than the minimum ({}) which is supported for upgrades. Perform an intermediate upgrade with an older node version or perform a fresh bootstrap.", meta.version, version_minimum);
 
-				logger.info (nano::log::type::ledger_store, "No existing ledger found, a new database will be created.");
-			}
-			else
-			{
-				throw std::runtime_error ("Failed to read meta information from the database: " + error.get_message ());
-			}
+			throw std::runtime_error ("Ledger version " + std::to_string (meta.version) + " is lower than minimum supported version " + std::to_string (version_minimum));
 		}
+
+		// Check if upgrade is needed
+		if (meta.version < version_current)
+		{
+			needs_upgrade = true;
+
+			logger.info (nano::log::type::ledger_store, "The ledger database needs to be upgraded from version {} to {}", meta.version, version_current);
+		}
+	}
+	else
+	{
+		fresh_db = true;
+
+		logger.info (nano::log::type::ledger_store, "No existing ledger found, a new database will be created.");
 	}
 	release_assert (meta.version > 0 || fresh_db);
 
