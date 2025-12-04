@@ -31,7 +31,21 @@ public:
 private:
 	std::function<void (::rocksdb::FlushJobInfo const &)> flush_completed_cb;
 };
-} // namespace
+
+// Checks if status indicates database/path doesn't exist
+bool is_not_found (::rocksdb::Status const & status)
+{
+	if (status.IsNotFound ())
+	{
+		return true;
+	}
+	if (status.IsIOError () && status.subcode () == ::rocksdb::Status::kPathNotFound)
+	{
+		return true;
+	}
+	return false;
+}
+}
 
 namespace nano::store::rocksdb
 {
@@ -70,11 +84,18 @@ void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mo
 	// If database doesn't exist or listing failed, use empty list (all column families will be created)
 	if (!list_status.ok ())
 	{
-		existing_cf_names.clear ();
+		if (is_not_found (list_status))
+		{
+			// Database doesn't exist yet, will be created
+			existing_cf_names.clear ();
+		}
+		else
+		{
+			throw std::runtime_error ("Failed to list existing column families: " + list_status.ToString ());
+		}
 	}
 
 	// Build column family descriptors - open ALL existing column families
-	// This is important so that drop_table can find and drop tables not in current schema
 	std::vector<::rocksdb::ColumnFamilyDescriptor> column_families;
 	for (auto const & cf_name : existing_cf_names)
 	{
@@ -158,12 +179,11 @@ void backend_rocksdb::open_db (std::filesystem::path const & path, bool read_onl
 
 	if (!s.ok ())
 	{
-		// Detect if the database doesn't exist (for fresh database detection)
-		if (s.IsIOError () || s.IsNotFound ())
+		if (is_not_found (s))
 		{
 			throw nano::error (nano::error_backend::db_not_found);
 		}
-		throw std::runtime_error ("Failed to open RocksDB: " + s.ToString ());
+		throw std::runtime_error ("Failed to open RocksDB database: " + s.ToString ());
 	}
 }
 
@@ -626,4 +646,4 @@ backend_rocksdb::tombstone_info::tombstone_info (uint64_t num, uint64_t max_a) :
 	max (max_a)
 {
 }
-} // namespace nano::store::rocksdb
+}
