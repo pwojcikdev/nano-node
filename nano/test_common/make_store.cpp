@@ -13,7 +13,7 @@ std::unique_ptr<nano::store::backend> nano::test::make_backend (std::filesystem:
 {
 	path = path.empty () ? nano::unique_path () : path;
 
-	auto backend_type = nano::node_config::env_database_backend ().value_or (nano::database_backend::lmdb);
+	auto backend_type = nano::default_database_backend ();
 	switch (backend_type)
 	{
 		case nano::database_backend::lmdb:
