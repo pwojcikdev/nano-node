@@ -1390,9 +1390,9 @@ TEST (block_store, reset_renew_existing_transaction)
 	ASSERT_NE (nullptr, block_existing);
 }
 
-TEST (block_store, env_database_backend)
+TEST (block_store, default_database_backend)
 {
-	auto backend = nano::node_config::env_database_backend ();
+	auto backend = nano::default_database_backend ();
 
 	nano::logger logger;
 	nano::stats stats{ logger };
@@ -1411,7 +1411,7 @@ TEST (block_store, env_database_backend)
 
 TEST (block_store, lmdb_bad_path)
 {
-	if (nano::node_config::env_database_backend ().value_or (nano::database_backend::lmdb) != nano::database_backend::lmdb)
+	if (nano::default_database_backend () != nano::database_backend::lmdb)
 	{
 		GTEST_SKIP ();
 	}
@@ -1431,7 +1431,7 @@ TEST (block_store, lmdb_bad_path)
 
 TEST (block_store, rocksdb_bad_path)
 {
-	if (nano::node_config::env_database_backend () != nano::database_backend::rocksdb)
+	if (nano::default_database_backend () != nano::database_backend::rocksdb)
 	{
 		GTEST_SKIP ();
 	}
@@ -1451,7 +1451,7 @@ TEST (block_store, rocksdb_bad_path)
 // The tombstone_count is part of a flush logic bound to the way RocksDB is used by the node.
 TEST (block_store, rocksdb_tombstone_count)
 {
-	if (nano::node_config::env_database_backend () != nano::database_backend::rocksdb)
+	if (nano::default_database_backend () != nano::database_backend::rocksdb)
 	{
 		GTEST_SKIP ();
 	}
