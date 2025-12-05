@@ -634,10 +634,6 @@ TEST (block_store, latest_find)
 	ASSERT_EQ (second, find3);
 }
 
-// Version upgrade tests have been moved to ledger_upgrades.cpp:
-// - TEST (ledger_upgrades, version_too_high)
-// - TEST (ledger_upgrades, version_too_low)
-
 // File can be shared
 TEST (block_store, DISABLED_already_open)
 {
@@ -1288,14 +1284,6 @@ TEST (block_store, pruned_blocks)
 
 	ASSERT_EQ (store->pruned.count (store->tx_begin_read ()), 0);
 }
-
-// Version upgrade tests have been moved to ledger_upgrades.cpp:
-// - TEST (ledger_upgrades, version_too_high)
-// - TEST (ledger_upgrades, version_too_low)
-// - TEST (ledger_upgrades, upgrade_v21_to_v22)
-// - TEST (ledger_upgrades, upgrade_v22_to_v23_rep_weights)
-// - TEST (ledger_upgrades, upgrade_v23_to_v24)
-// - TEST (ledger_upgrades, full_upgrade_v21_to_current)
 
 // Test various confirmation height values as well as clearing them
 TEST (block_store, confirmation_height)
