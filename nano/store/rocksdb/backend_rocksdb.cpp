@@ -456,6 +456,8 @@ store::write_transaction backend_rocksdb::tx_begin_write ()
 
 void backend_rocksdb::backup ()
 {
+	release_assert (db != nullptr, "database must be open to perform backup");
+
 	std::unique_ptr<::rocksdb::BackupEngine> backup_engine;
 	::rocksdb::BackupEngine * backup_engine_raw;
 	auto backup_path = database_path.parent_path () / "backup";

@@ -226,6 +226,8 @@ nano::store::lmdb::txn_callbacks backend_lmdb::create_txn_callbacks () const
 
 void backend_lmdb::backup ()
 {
+	release_assert (env != nullptr, "database must be open to perform backup");
+
 	auto extension = database_path.extension ();
 	auto filename_without_extension = database_path.filename ().replace_extension ("");
 	auto backup_path = database_path.parent_path ();

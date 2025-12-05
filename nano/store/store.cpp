@@ -123,7 +123,9 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 		{
 			logger.info (nano::log::type::ledger_store, "Creating ledger backup before upgrade...");
 
+			backend.open (backend::schema_meta, nano::store::open_mode::read_only);
 			backend.backup ();
+			backend.close ();
 
 			logger.info (nano::log::type::ledger_store, "Ledger backup completed, continuing with upgrade...");
 		}
