@@ -62,6 +62,18 @@ consteval bool is_sanitizer_build ()
 
 namespace nano
 {
+enum class database_backend
+{
+	lmdb,
+	rocksdb
+};
+
+std::string to_string (database_backend);
+std::optional<database_backend> parse_database_backend (std::string);
+}
+
+namespace nano
+{
 uint16_t test_node_port ();
 uint16_t test_rpc_port ();
 uint16_t test_ipc_port ();
@@ -103,6 +115,7 @@ bool is_dev_run ();
 size_t queue_warning_threshold ();
 size_t ledger_thread_stack_size ();
 size_t ledger_max_rollback_depth ();
+nano::database_backend default_database_backend ();
 }
 
 namespace nano

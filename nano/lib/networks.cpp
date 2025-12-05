@@ -1,6 +1,8 @@
 #include <nano/lib/assert.hpp>
 #include <nano/lib/networks.hpp>
 
+#include <boost/algorithm/string/case_conv.hpp>
+
 namespace
 {
 // Initial value is ACTIVE_NETWORK compile flag, but can be overridden by CLI/API
@@ -41,8 +43,10 @@ std::string_view to_string (nano::network_type network)
 	release_assert (false, "invalid network");
 }
 
-std::optional<nano::network_type> parse_network (std::string const & network_name)
+std::optional<nano::network_type> parse_network (std::string network_name)
 {
+	boost::algorithm::to_lower (network_name);
+
 	if (network_name == "live")
 	{
 		return nano::network_type::nano_live_network;

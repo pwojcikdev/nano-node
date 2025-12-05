@@ -7,6 +7,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/version.hpp>
 
+#include <boost/algorithm/string/case_conv.hpp>
 #include <boost/format.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/numeric/conversion/cast.hpp>
@@ -192,6 +193,62 @@ size_t nano::ledger_max_rollback_depth ()
 	}();
 	return env_override.value_or (100000);
 }
+
+/*
+ * database_backend
+ */
+
+std::string nano::to_string (nano::database_backend const value)
+{
+	switch (value)
+	{
+		case nano::database_backend::lmdb:
+			return "lmdb";
+		case nano::database_backend::rocksdb:
+			return "rocksdb";
+	}
+	release_assert (false);
+}
+
+std::optional<nano::database_backend> nano::parse_database_backend (std::string value)
+{
+	boost::algorithm::to_lower (value);
+
+	if (value == "lmdb")
+	{
+		return nano::database_backend::lmdb;
+	}
+	if (value == "rocksdb")
+	{
+		return nano::database_backend::rocksdb;
+	}
+	return {};
+}
+
+nano::database_backend nano::default_database_backend ()
+{
+	static auto const env_override = [] () -> std::optional<nano::database_backend> {
+		if (auto value = nano::env::get<std::string> ("NANO_BACKEND"))
+		{
+			auto backend = parse_database_backend (*value);
+			if (backend.has_value ())
+			{
+				std::cerr << "Default database backend overridden by NANO_BACKEND environment variable: " << to_string (*backend) << std::endl;
+				return *backend;
+			}
+			else
+			{
+				std::cerr << "Unknown database backend in NANO_BACKEND environment variable: " << *value << std::endl;
+			}
+		}
+		return std::nullopt;
+	}();
+	return env_override.value_or (nano::database_backend::lmdb);
+}
+
+/*
+ *
+ */
 
 // Using std::cerr here, since logging may not be initialized yet
 nano::tomlconfig nano::load_toml_file (const std::filesystem::path & config_filename, const std::filesystem::path & data_path, const std::vector<std::string> & config_overrides)
