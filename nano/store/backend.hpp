@@ -9,6 +9,7 @@
 #include <nano/store/tables.hpp>
 #include <nano/store/transaction.hpp>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -54,6 +55,18 @@ struct backend_meta
 using column_definition = std::pair<tables, std::string>;
 using column_schema = std::set<column_definition>;
 
+struct copy_progress
+{
+	size_t current_table_index;
+	size_t total_tables;
+	tables table;
+	std::string table_name;
+	uint64_t entries_copied;
+	uint64_t total_entries;
+};
+
+using copy_progress_callback = std::function<void (copy_progress const &)>;
+
 /**
  * Polymorphic backend interface for key-value database operations.
  * This provides the minimal interface that database backends (LMDB, RocksDB) must implement.
@@ -91,6 +104,15 @@ public:
 	virtual store::iterator begin (store::transaction const & tx, tables table) const = 0;
 	virtual store::iterator begin (store::transaction const & tx, tables table, db_val const & key) const = 0;
 	virtual store::iterator end (store::transaction const & tx, tables table) const = 0;
+
+	// Parallel iteration
+	void for_each_par (tables table,
+	std::function<void (read_transaction const &, iterator, iterator)> const & action) const;
+
+	// Copy all tables to another backend
+	void copy_to (backend & destination,
+	copy_progress_callback progress_callback = nullptr,
+	size_t batch_size = 10000) const;
 
 	// Status checking
 	virtual bool success (int status) const = 0;

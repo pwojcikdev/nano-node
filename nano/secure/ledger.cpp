@@ -25,6 +25,7 @@
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
 #include <nano/store/ledger/version.hpp>
+#include <nano/store/rocksdb/backend_rocksdb.hpp>
 #include <nano/store/store.hpp>
 
 #include <stack>
@@ -809,12 +810,13 @@ auto nano::ledger::block_priority (nano::secure::transaction const & transaction
 }
 
 // A precondition is that the store is an LMDB store
-bool nano::ledger::migrate_lmdb_to_rocksdb (std::filesystem::path const & data_path_a) const
+bool nano::ledger::migrate_lmdb_to_rocksdb (std::filesystem::path const & data_path) const
 {
 	logger.info (nano::log::type::ledger, "Migrating LMDB database to RocksDB. This will take a while...");
 
-	std::filesystem::space_info si = std::filesystem::space (data_path_a);
-	auto file_size = std::filesystem::file_size (data_path_a / "data.ldb");
+	std::filesystem::space_info si = std::filesystem::space (data_path);
+	auto source_db_path = store.backend.get_database_path ();
+	auto file_size = std::filesystem::file_size (source_db_path);
 	const auto estimated_required_space = file_size * 0.65; // RocksDb database size is approximately 65% of the lmdb size
 
 	if (si.available < estimated_required_space)
@@ -823,209 +825,53 @@ bool nano::ledger::migrate_lmdb_to_rocksdb (std::filesystem::path const & data_p
 	}
 
 	boost::system::error_code error_chmod;
-	nano::set_secure_perm_directory (data_path_a, error_chmod);
-	auto rockdb_data_path = data_path_a / "rocksdb";
+	nano::set_secure_perm_directory (data_path, error_chmod);
+	auto rocksdb_data_path = nano::database_path_for_backend (data_path, nano::database_backend::rocksdb);
 
-	if (std::filesystem::exists (rockdb_data_path))
+	if (std::filesystem::exists (rocksdb_data_path))
 	{
-		logger.error (nano::log::type::ledger, "Existing RocksDB folder found in '{}'. Please remove it and try again.", rockdb_data_path.string ());
+		logger.error (nano::log::type::ledger, "Existing RocksDB folder found in '{}'. Please remove it and try again.", rocksdb_data_path.string ());
 		return true;
 	}
 
-	auto error (false);
-
-	// Open rocksdb database
 	try
 	{
-		nano::node_config node_config;
-		node_config.database_backend = database_backend::rocksdb;
-		auto rocksdb_store = nano::make_store (logger, stats, data_path_a, nano::dev::constants, false, true, node_config);
-		auto table_size = store.count (store.tx_begin_read (), tables::blocks);
-		logger.info (nano::log::type::ledger, "Step 1 of 7: Converting {} entries from blocks table", table_size);
-		std::atomic<std::size_t> count = 0;
-		store.block.for_each_par (
-		[&] (store::read_transaction const & /*unused*/, auto i, auto n) {
-			auto rocksdb_transaction = rocksdb_store->tx_begin_write ();
-			for (; i != n; ++i)
-			{
-				rocksdb_transaction.refresh_if_needed ();
-				std::vector<uint8_t> vector;
-				{
-					nano::vectorstream stream (vector);
-					nano::serialize_block (stream, *i->second.block);
-					i->second.sideband.serialize (stream, i->second.block->type ());
-				}
-				rocksdb_store->block.raw_put (rocksdb_transaction, vector, i->first);
+		// Create RocksDB backend directly without initializing (no version set)
+		auto rocksdb_backend = std::make_unique<nano::store::rocksdb::backend_rocksdb> (rocksdb_data_path, nano::rocksdb_config{});
+		rocksdb_backend->open (nano::store::ledger_store::schema_current, nano::store::open_mode::read_write);
 
-				if (auto count_l = ++count; count_l % 5000000 == 0)
-				{
-					logger.info (nano::log::type::ledger, "{} blocks converted ({}%)", count_l, count_l * 100 / table_size);
-				}
-			}
-		});
-		logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count.load (), table_size > 0 ? count.load () * 100 / table_size : 100);
+		auto progress_cb = [&] (nano::store::copy_progress const & p) {
+			auto pct = p.total_entries > 0 ? p.entries_copied * 100 / p.total_entries : 100;
+			logger.info (nano::log::type::ledger,
+			"Table {} of {}: {} - {} / {} ({}%)",
+			p.current_table_index + 1, p.total_tables, p.table_name,
+			p.entries_copied, p.total_entries, pct);
+		};
 
-		table_size = store.count (store.tx_begin_read (), tables::pending);
-		logger.info (nano::log::type::ledger, "Step 2 of 7: Converting {} entries from pending table", table_size);
-		count = 0;
-		store.pending.for_each_par (
-		[&] (store::read_transaction const & /*unused*/, auto i, auto n) {
-			auto rocksdb_transaction = rocksdb_store->tx_begin_write ();
-			for (; i != n; ++i)
-			{
-				rocksdb_transaction.refresh_if_needed ();
-				rocksdb_store->pending.put (rocksdb_transaction, i->first, i->second);
-				if (auto count_l = ++count; count_l % 500000 == 0)
-				{
-					logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count_l, count_l * 100 / table_size);
-				}
-			}
-		});
-		logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count.load (), table_size > 0 ? count.load () * 100 / table_size : 100);
+		store.backend.copy_to (*rocksdb_backend, progress_cb);
 
-		table_size = store.count (store.tx_begin_read (), tables::confirmation_height);
-		logger.info (nano::log::type::ledger, "Step 3 of 7: Converting {} entries from confirmation_height table", table_size);
-		count = 0;
-		store.confirmation_height.for_each_par (
-		[&] (store::read_transaction const & /*unused*/, auto i, auto n) {
-			auto rocksdb_transaction = rocksdb_store->tx_begin_write ();
-			for (; i != n; ++i)
-			{
-				rocksdb_transaction.refresh_if_needed ();
-				rocksdb_store->confirmation_height.put (rocksdb_transaction, i->first, i->second);
-				if (auto count_l = ++count; count_l % 500000 == 0)
-				{
-					logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count_l, count_l * 100 / table_size);
-				}
-			}
-		});
-		logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count.load (), table_size > 0 ? count.load () * 100 / table_size : 100);
+		// Validation: compare counts
+		auto src_tx = store.tx_begin_read ();
+		auto dst_tx = rocksdb_backend->tx_begin_read ();
 
-		table_size = store.count (store.tx_begin_read (), tables::accounts);
-		logger.info (nano::log::type::ledger, "Step 4 of 7: Converting {} entries from accounts table", table_size);
-		count = 0;
-		store.account.for_each_par (
-		[&] (store::read_transaction const & /*unused*/, auto i, auto n) {
-			auto rocksdb_transaction = rocksdb_store->tx_begin_write ();
-			for (; i != n; ++i)
-			{
-				rocksdb_transaction.refresh_if_needed ();
-				rocksdb_store->account.put (rocksdb_transaction, i->first, i->second);
-				if (auto count_l = ++count; count_l % 500000 == 0)
-				{
-					logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count_l, count_l * 100 / table_size);
-				}
-			}
-		});
-		logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count.load (), table_size > 0 ? count.load () * 100 / table_size : 100);
-
-		table_size = store.count (store.tx_begin_read (), tables::rep_weights);
-		logger.info (nano::log::type::ledger, "Step 5 of 7: Converting {} entries from rep_weights table", table_size);
-		count = 0;
-		store.rep_weight.for_each_par (
-		[&] (store::read_transaction const & /*unused*/, auto i, auto n) {
-			auto rocksdb_transaction = rocksdb_store->tx_begin_write ();
-			for (; i != n; ++i)
-			{
-				rocksdb_transaction.refresh_if_needed ();
-				rocksdb_store->rep_weight.put (rocksdb_transaction, i->first, i->second.number ());
-				if (auto count_l = ++count; count_l % 500000 == 0)
-				{
-					logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count_l, count_l * 100 / table_size);
-				}
-			}
-		});
-		logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count.load (), table_size > 0 ? count.load () * 100 / table_size : 100);
-
-		table_size = store.count (store.tx_begin_read (), tables::pruned);
-		logger.info (nano::log::type::ledger, "Step 6 of 7: Converting {} entries from pruned table", table_size);
-		count = 0;
-		store.pruned.for_each_par (
-		[&] (store::read_transaction const & /*unused*/, auto i, auto n) {
-			auto rocksdb_transaction = rocksdb_store->tx_begin_write ();
-			for (; i != n; ++i)
-			{
-				rocksdb_transaction.refresh_if_needed ();
-				rocksdb_store->pruned.put (rocksdb_transaction, i->first);
-				if (auto count_l = ++count; count_l % 500000 == 0)
-				{
-					logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count_l, count_l * 100 / table_size);
-				}
-			}
-		});
-		logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count.load (), table_size > 0 ? count.load () * 100 / table_size : 100);
-
-		table_size = store.count (store.tx_begin_read (), tables::final_votes);
-		logger.info (nano::log::type::ledger, "Step 7 of 7: Converting {} entries from final_votes table", table_size);
-		count = 0;
-		store.final_vote.for_each_par (
-		[&] (store::read_transaction const & /*unused*/, auto i, auto n) {
-			auto rocksdb_transaction = rocksdb_store->tx_begin_write ();
-			for (; i != n; ++i)
-			{
-				rocksdb_transaction.refresh_if_needed ();
-				rocksdb_store->final_vote.put (rocksdb_transaction, i->first, i->second);
-				if (auto count_l = ++count; count_l % 500000 == 0)
-				{
-					logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count_l, count_l * 100 / table_size);
-				}
-			}
-		});
-		logger.info (nano::log::type::ledger, "{} entries converted ({}%)", count.load (), table_size > 0 ? count.load () * 100 / table_size : 100);
-
-		logger.info (nano::log::type::ledger, "Finalizing migration...");
-
-		auto lmdb_transaction (tx_begin_read ());
-		auto version = store.version.get (lmdb_transaction);
-		auto rocksdb_transaction (rocksdb_store->tx_begin_write ());
-		rocksdb_store->version.put (rocksdb_transaction, version);
-
-		for (auto i (store.online_weight.begin (lmdb_transaction)), n (store.online_weight.end (lmdb_transaction)); i != n; ++i)
+		for (auto const & [table, name] : store.backend.get_schema ())
 		{
-			rocksdb_store->online_weight.put (rocksdb_transaction, i->first, i->second);
-		}
-
-		for (auto i (store.peer.begin (lmdb_transaction)), n (store.peer.end (lmdb_transaction)); i != n; ++i)
-		{
-			rocksdb_store->peer.put (rocksdb_transaction, i->first, i->second);
-		}
-
-		// Compare counts
-		error |= store.peer.count (lmdb_transaction) != rocksdb_store->peer.count (rocksdb_transaction);
-		error |= store.pruned.count (lmdb_transaction) != rocksdb_store->pruned.count (rocksdb_transaction);
-		error |= store.final_vote.count (lmdb_transaction) != rocksdb_store->final_vote.count (rocksdb_transaction);
-		error |= store.online_weight.count (lmdb_transaction) != rocksdb_store->online_weight.count (rocksdb_transaction);
-		error |= store.rep_weight.count (lmdb_transaction) != rocksdb_store->rep_weight.count (rocksdb_transaction);
-		error |= store.version.get (lmdb_transaction) != rocksdb_store->version.get (rocksdb_transaction);
-
-		// For large tables a random key is used instead and makes sure it exists
-		auto blocks = random_blocks (lmdb_transaction, 42);
-		release_assert (!blocks.empty ());
-		for (auto const & block : blocks)
-		{
-			auto const account = block->account ();
-
-			error |= rocksdb_store->block.get (rocksdb_transaction, block->hash ()) == nullptr;
-
-			nano::account_info account_info;
-			error |= rocksdb_store->account.get (rocksdb_transaction, account, account_info);
-
-			// If confirmation height exists in the lmdb ledger for this account it should exist in the rocksdb ledger
-			nano::confirmation_height_info confirmation_height_info{};
-			if (!store.confirmation_height.get (lmdb_transaction, account, confirmation_height_info))
+			if (store.count (src_tx, table) != rocksdb_backend->count (dst_tx, table))
 			{
-				error |= rocksdb_store->confirmation_height.get (rocksdb_transaction, account, confirmation_height_info);
+				throw std::runtime_error ("Count mismatch for table: " + name);
 			}
 		}
 
 		logger.info (nano::log::type::ledger, "Migration completed. Make sure to set `database_backend` under [node] to 'rocksdb' in config-node.toml");
 		logger.info (nano::log::type::ledger, "After confirming correct node operation, the data.ldb file can be deleted if no longer required");
+
+		return false; // success
 	}
-	catch (std::exception const &)
+	catch (std::exception const & e)
 	{
-		error = true;
+		logger.error (nano::log::type::ledger, "Migration failed: {}", e.what ());
+		return true; // error
 	}
-	return error;
 }
 
 nano::epoch nano::ledger::version (nano::block const & block)

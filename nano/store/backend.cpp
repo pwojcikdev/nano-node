@@ -1,4 +1,10 @@
+#include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/store/backend.hpp>
+
+#include <array>
+#include <atomic>
+#include <future>
 
 namespace nano::store
 {
@@ -130,6 +136,102 @@ bool backend::empty (store::transaction const & tx) const
 		}
 	}
 	return true;
+}
+
+void backend::for_each_par (tables table, std::function<void (read_transaction const &, iterator, iterator)> const & action) const
+{
+	// Split based on first byte of keys (0-255)
+	// This works regardless of actual key type/length
+	unsigned const thread_count = std::max (10u, std::min (40u, 10 * nano::hardware_concurrency ()));
+	unsigned const split = 256 / thread_count;
+
+	std::vector<std::future<void>> futures;
+	futures.reserve (thread_count);
+
+	for (unsigned i = 0; i < thread_count; ++i)
+	{
+		bool const is_last = (i == thread_count - 1);
+
+		futures.emplace_back (std::async (std::launch::async, [this, table, &action, i, split, is_last] {
+			nano::thread_role::set (nano::thread_role::name::db_parallel_traversal);
+
+			// Create 32-byte key with first byte set to split boundary
+			// Using 32 bytes ensures it works with 256-bit and 512-bit keys
+			std::array<uint8_t, 32> start_bytes{};
+			std::array<uint8_t, 32> end_bytes{};
+			start_bytes[0] = static_cast<uint8_t> (i * split);
+			end_bytes[0] = static_cast<uint8_t> ((i + 1) * split);
+
+			auto tx = this->tx_begin_read ();
+			db_val start_key{ std::span<uint8_t const>{ start_bytes } };
+			db_val end_key{ std::span<uint8_t const>{ end_bytes } };
+
+			action (tx,
+			this->begin (tx, table, start_key),
+			is_last ? this->end (tx, table) : this->begin (tx, table, end_key));
+		}));
+	}
+
+	// Wait for all futures and rethrow any exceptions
+	for (auto & future : futures)
+	{
+		future.get (); // Rethrows exception if one occurred
+	}
+}
+
+void backend::copy_to (backend & destination, copy_progress_callback callback, size_t batch_size) const
+{
+	if (!destination.empty (destination.tx_begin_read ()))
+	{
+		throw std::runtime_error ("copy_to: destination backend is not empty");
+	}
+
+	auto const schema = get_schema ();
+	size_t const total_tables = schema.size ();
+	size_t table_index = 0;
+
+	for (auto const & [table, table_name] : schema)
+	{
+		auto src_tx = tx_begin_read ();
+		uint64_t const total = count (src_tx, table);
+		std::atomic<uint64_t> copied{ 0 };
+
+		auto copy_action = [&] (read_transaction const & /*tx*/, iterator begin_it, iterator end_it) {
+			auto dst_tx = destination.tx_begin_write ();
+			size_t batch_count = 0;
+
+			for (auto it = std::move (begin_it); it != end_it; ++it)
+			{
+				auto const & [key, value] = *it;
+				auto status = destination.put (dst_tx, table, db_val{ key }, db_val{ value });
+				if (!destination.success (status))
+				{
+					throw std::runtime_error ("copy_to: put failed: " + destination.error_string (status));
+				}
+
+				auto current_copied = ++copied;
+				++batch_count;
+
+				if (batch_size > 0 && batch_count >= batch_size)
+				{
+					dst_tx.refresh ();
+					batch_count = 0;
+				}
+
+				if (callback && (current_copied % 100000 == 0 || current_copied == total))
+				{
+					callback (copy_progress{ table_index, total_tables, table, table_name,
+					current_copied, total });
+				}
+			}
+		};
+
+		// Use for_each_par for all tables
+		// It splits by first byte of keys - works regardless of key type
+		for_each_par (table, copy_action);
+
+		++table_index;
+	}
 }
 }
 

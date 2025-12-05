@@ -6,6 +6,18 @@
 #include <nano/store/rocksdb/backend_rocksdb.hpp>
 #include <nano/store/store.hpp>
 
+std::filesystem::path nano::database_path_for_backend (std::filesystem::path const & base_path, database_backend backend_type)
+{
+	switch (backend_type)
+	{
+		case nano::database_backend::lmdb:
+			return base_path / "data.ldb";
+		case nano::database_backend::rocksdb:
+			return base_path / "rocksdb";
+	}
+	release_assert (false, "unknown database backend");
+}
+
 std::unique_ptr<nano::store::ledger_store> nano::make_store (nano::logger & logger, nano::stats & stats, std::filesystem::path const & path, nano::ledger_constants & constants, bool read_only, bool add_db_postfix, nano::node_config node_config)
 {
 	auto decide_backend = [&] () -> nano::database_backend {
@@ -26,13 +38,13 @@ std::unique_ptr<nano::store::ledger_store> nano::make_store (nano::logger & logg
 	{
 		case nano::database_backend::lmdb:
 		{
-			auto db_path = add_db_postfix ? path / "data.ldb" : path;
+			auto db_path = add_db_postfix ? database_path_for_backend (path, backend_type) : path;
 			backend = std::make_unique<nano::store::lmdb::backend_lmdb> (db_path, logger, node_config.lmdb_config, node_config.diagnostics_config.txn_tracking, node_config.block_processor_batch_max_time);
 			break;
 		}
 		case nano::database_backend::rocksdb:
 		{
-			auto db_path = add_db_postfix ? path / "rocksdb" : path;
+			auto db_path = add_db_postfix ? database_path_for_backend (path, backend_type) : path;
 			backend = std::make_unique<nano::store::rocksdb::backend_rocksdb> (db_path, node_config.rocksdb_config);
 			break;
 		}
