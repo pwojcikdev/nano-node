@@ -95,6 +95,7 @@ auto backend::get_meta () const -> backend_meta
 
 auto backend::get_schema () const -> column_schema
 {
+	release_assert (is_open, "backend is not open");
 	return current_schema;
 }
 
@@ -116,6 +117,19 @@ void backend::set_version (store::write_transaction const & transaction, nano::s
 bool backend::empty (store::transaction const & tx, tables table) const
 {
 	return begin (tx, table) == end (tx, table);
+}
+
+bool backend::empty (store::transaction const & tx) const
+{
+	release_assert (is_open, "backend is not open");
+	for (auto const & [table, name] : get_schema ())
+	{
+		if (!empty (tx, table))
+		{
+			return false;
+		}
+	}
+	return true;
 }
 }
 
