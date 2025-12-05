@@ -41,6 +41,7 @@ add_library(
   cli.hpp
   cli.cpp
   common.hpp
+  common.cpp
   config.hpp
   config.cpp
   configbase.hpp

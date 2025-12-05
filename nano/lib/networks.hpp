@@ -24,7 +24,7 @@ enum class network_type : uint16_t
 };
 
 std::string_view to_string (nano::network_type);
-std::optional<nano::network_type> parse_network (std::string const &);
+std::optional<nano::network_type> parse_network (std::string);
 
 /**
  * Current active network. Defaults to the compile-time option, but can be overridden.

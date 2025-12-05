@@ -193,6 +193,31 @@ size_t nano::ledger_max_rollback_depth ()
 	return env_override.value_or (100000);
 }
 
+nano::database_backend nano::default_database_backend ()
+{
+	static auto const env_override = [] () -> std::optional<nano::database_backend> {
+		if (auto value = nano::env::get<std::string> ("NANO_BACKEND"))
+		{
+			auto backend = parse_database_backend (*value);
+			if (backend.has_value ())
+			{
+				std::cerr << "Default database backend overridden by NANO_BACKEND environment variable: " << to_string (*backend) << std::endl;
+				return *backend;
+			}
+			else
+			{
+				std::cerr << "Unknown database backend in NANO_BACKEND environment variable: " << *value << std::endl;
+			}
+		}
+		return std::nullopt;
+	}();
+	return env_override.value_or (nano::database_backend::lmdb);
+}
+
+/*
+ *
+ */
+
 // Using std::cerr here, since logging may not be initialized yet
 nano::tomlconfig nano::load_toml_file (const std::filesystem::path & config_filename, const std::filesystem::path & data_path, const std::vector<std::string> & config_overrides)
 {

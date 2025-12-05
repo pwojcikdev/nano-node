@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/assert.hpp>
+#include <nano/lib/common.hpp>
 #include <nano/lib/networks.hpp>
 #include <nano/lib/tomlconfig.hpp>
 
@@ -103,6 +104,7 @@ bool is_dev_run ();
 size_t queue_warning_threshold ();
 size_t ledger_thread_stack_size ();
 size_t ledger_max_rollback_depth ();
+nano::database_backend default_database_backend ();
 }
 
 namespace nano
