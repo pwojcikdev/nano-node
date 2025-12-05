@@ -77,7 +77,6 @@ public:
 	std::optional<nano::account> linked_account (secure::transaction const &, nano::block const &);
 	nano::account const & epoch_signer (nano::link const &) const;
 	nano::link const & epoch_link (nano::epoch) const;
-	bool migrate_lmdb_to_rocksdb (std::filesystem::path const &) const;
 	bool bootstrap_height_reached () const;
 	std::unordered_map<nano::account, nano::uint128_t> rep_weights_snapshot () const;
 

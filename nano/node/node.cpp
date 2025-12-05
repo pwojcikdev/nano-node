@@ -63,6 +63,7 @@
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
 #include <nano/store/ledger/version.hpp>
+#include <nano/store/rocksdb/backend_rocksdb.hpp>
 #include <nano/store/store.hpp>
 
 #include <boost/format.hpp>
@@ -454,11 +455,6 @@ nano::node::~node ()
 {
 	logger.debug (nano::log::type::node, "Destructing node...");
 	stop ();
-}
-
-bool nano::node::copy_with_compaction (std::filesystem::path const & destination)
-{
-	return store.copy_db (destination);
 }
 
 void nano::node::keepalive (std::string const & address_a, uint16_t port_a)
@@ -1023,6 +1019,78 @@ nano::container_info nano::node::container_info () const
 	info.add ("vote_rebroadcaster", vote_rebroadcaster.container_info ());
 	info.add ("fork_cache", fork_cache.container_info ());
 	return info;
+}
+
+/*
+ *
+ */
+
+bool nano::node::copy_with_compaction (std::filesystem::path const & destination)
+{
+	return store.copy_db (destination);
+}
+
+void nano::node::migrate_lmdb_to_rocksdb (std::filesystem::path const & data_path) const
+{
+	logger.info (nano::log::type::node, "Migrating LMDB database to RocksDB. This will take a while...");
+
+	std::filesystem::space_info si = std::filesystem::space (data_path);
+	auto source_db_path = store.backend.get_database_path ();
+	auto file_size = std::filesystem::file_size (source_db_path);
+	auto const estimated_required_space = file_size * 0.65; // RocksDB database size is approximately 65% of the LMDB size
+
+	if (si.available < estimated_required_space)
+	{
+		logger.warn (nano::log::type::node, "You may not have enough available disk space. Estimated free space requirement is {} GB", estimated_required_space / 1024 / 1024 / 1024);
+	}
+
+	boost::system::error_code error_chmod;
+	nano::set_secure_perm_directory (data_path, error_chmod);
+	auto rocksdb_data_path = nano::database_path_for_backend (data_path, nano::database_backend::rocksdb);
+
+	if (std::filesystem::exists (rocksdb_data_path))
+	{
+		logger.error (nano::log::type::node, "Existing RocksDB folder found in '{}'. Please remove it and try again.", rocksdb_data_path.string ());
+		throw std::runtime_error ("RocksDB folder already exists: " + rocksdb_data_path.string ());
+	}
+
+	try
+	{
+		// Create RocksDB backend directly without initializing (no version set)
+		auto rocksdb_backend = std::make_unique<nano::store::rocksdb::backend_rocksdb> (rocksdb_data_path, config.rocksdb_config);
+		rocksdb_backend->open (nano::store::ledger_store::schema_current, nano::store::open_mode::read_write);
+
+		auto progress_cb = [&] (nano::store::copy_progress const & p) {
+			auto pct = p.total_entries > 0 ? p.entries_copied * 100 / p.total_entries : 100;
+
+			logger.info (nano::log::type::node,
+			"Table {} of {}: {} - {} / {} ({}%)",
+			p.current_table_index + 1, p.total_tables, p.table_name,
+			p.entries_copied, p.total_entries, pct);
+		};
+
+		store.backend.copy_to (*rocksdb_backend, progress_cb);
+
+		// Validation: compare counts
+		auto src_tx = store.tx_begin_read ();
+		auto dst_tx = rocksdb_backend->tx_begin_read ();
+
+		for (auto const & [table, name] : store.backend.get_schema ())
+		{
+			if (store.count (src_tx, table) != rocksdb_backend->count (dst_tx, table))
+			{
+				throw std::runtime_error ("Count mismatch for table: " + name);
+			}
+		}
+	}
+	catch (std::exception const & e)
+	{
+		logger.error (nano::log::type::node, "Migration failed: {}", e.what ());
+		throw;
+	}
+
+	logger.info (nano::log::type::node, "Migration completed. Make sure to set `database_backend` under [node] to 'rocksdb' in config-node.toml");
+	logger.info (nano::log::type::node, "After confirming correct node operation, the data.ldb file can be deleted if no longer required");
 }
 
 /*
