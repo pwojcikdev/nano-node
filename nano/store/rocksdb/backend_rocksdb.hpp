@@ -83,7 +83,7 @@ private:
 	std::map<tables, ::rocksdb::ColumnFamilyHandle *> table_handles;
 	std::map<std::string, tables> name_to_table;
 
-private: // Tombstone management
+public: // Tombstone management
 	class tombstone_info
 	{
 	public:
@@ -91,6 +91,9 @@ private: // Tombstone management
 		std::atomic<uint64_t> num_since_last_flush;
 		uint64_t const max;
 	};
+	std::unordered_map<tables, tombstone_info> const & get_tombstone_map () const { return tombstone_map; }
+
+private:
 	std::unordered_map<tables, tombstone_info> tombstone_map;
 
 	void generate_tombstone_map ();
