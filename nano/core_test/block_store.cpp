@@ -1411,7 +1411,7 @@ TEST (block_store, env_database_backend)
 
 TEST (block_store, lmdb_bad_path)
 {
-	if (nano::node_config::env_database_backend () != nano::database_backend::lmdb)
+	if (nano::node_config::env_database_backend ().value_or (nano::database_backend::lmdb) != nano::database_backend::lmdb)
 	{
 		GTEST_SKIP ();
 	}
