@@ -490,15 +490,11 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 		try
 		{
 			nano::inactive_node node (data_path, node_flags);
-			auto error = node.node->ledger.migrate_lmdb_to_rocksdb (data_path);
-			if (error)
-			{
-				std::cerr << "There was an error migrating" << std::endl;
-			}
+			node.node->migrate_lmdb_to_rocksdb (data_path);
 		}
 		catch (std::exception const & e)
 		{
-			std::cerr << "Error initializing node for migration: " << e.what () << std::endl;
+			std::cerr << "Migration failed: " << e.what () << std::endl;
 		}
 	}
 	else if (vm.count ("rollback"))

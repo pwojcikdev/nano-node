@@ -28,6 +28,7 @@ enum class type
 	test,
 	system,
 	init,
+	cli,
 	config,
 	stats,
 	logging,

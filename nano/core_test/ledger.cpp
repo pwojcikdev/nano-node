@@ -16,8 +16,14 @@
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/final_vote.hpp>
+#include <nano/store/ledger/online_weight.hpp>
+#include <nano/store/ledger/peer.hpp>
+#include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
+#include <nano/store/ledger/version.hpp>
+#include <nano/store/lmdb/backend_lmdb.hpp>
 #include <nano/store/rocksdb/backend_rocksdb.hpp>
 #include <nano/test_common/ledger_context.hpp>
 #include <nano/test_common/make_store.hpp>
@@ -5541,83 +5547,6 @@ TEST (ledger, random_blocks)
 	}
 }
 
-// TODO: Re-implement this test for new store architecture
-/*
-TEST (ledger, migrate_lmdb_to_rocksdb)
-{
-	nano::test::system system{};
-	auto path = nano::unique_path ();
-	nano::logger logger;
-	boost::asio::ip::address_v6 address (boost::asio::ip::make_address_v6 ("::ffff:127.0.0.1"));
-	uint16_t port = 100;
-	nano::store::lmdb::component store{ logger, path / "data.ldb", nano::dev::constants };
-	nano::ledger ledger{ store, nano::dev::network_params, system.stats, system.logger };
-	nano::work_pool pool{ nano::dev::network_params.network, std::numeric_limits<unsigned>::max () };
-
-	std::shared_ptr<nano::block> send = nano::state_block_builder ()
-										.account (nano::dev::genesis_key.pub)
-										.previous (nano::dev::genesis->hash ())
-										.representative (0)
-										.link (nano::account (10))
-										.balance (nano::dev::constants.genesis_amount - 100)
-										.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-										.work (*pool.generate (nano::dev::genesis->hash ()))
-										.build ();
-
-	nano::endpoint_key endpoint_key (address.to_bytes (), port);
-	auto version = nano::store::ledger_store::version_current;
-
-	{
-		auto transaction = ledger.tx_begin_write ();
-
-		// Lower the database to the max version unsupported for upgrades
-		store.confirmation_height.put (transaction, nano::dev::genesis_key.pub, { 2, send->hash () });
-
-		store.online_weight.put (transaction, 100, nano::amount (2));
-		store.peer.put (transaction, endpoint_key, 37);
-
-		store.pending.put (transaction, nano::pending_key (nano::dev::genesis_key.pub, send->hash ()), nano::pending_info (nano::dev::genesis_key.pub, 100, nano::epoch::epoch_0));
-		store.pruned.put (transaction, send->hash ());
-		store.version.put (transaction, version);
-		send->sideband_set ({});
-		store.block.put (transaction, send->hash (), *send);
-		store.final_vote.put (transaction, send->qualified_root (), nano::block_hash (2));
-	}
-
-	auto error = ledger.migrate_lmdb_to_rocksdb (path);
-	ASSERT_FALSE (error);
-
-	nano::store::rocksdb::component rocksdb_store{ logger, path / "rocksdb", nano::dev::constants };
-	auto rocksdb_transaction (rocksdb_store.tx_begin_read ());
-
-	ASSERT_TRUE (rocksdb_store.pending.get (rocksdb_transaction, nano::pending_key (nano::dev::genesis_key.pub, send->hash ())));
-
-	for (auto i = rocksdb_store.online_weight.begin (rocksdb_transaction); i != rocksdb_store.online_weight.end (rocksdb_transaction); ++i)
-	{
-		ASSERT_EQ (i->first, 100);
-		ASSERT_EQ (i->second, 2);
-	}
-
-	ASSERT_EQ (rocksdb_store.online_weight.count (rocksdb_transaction), 1);
-
-	auto block1 = rocksdb_store.block.get (rocksdb_transaction, send->hash ());
-
-	ASSERT_EQ (*send, *block1);
-	ASSERT_TRUE (rocksdb_store.peer.exists (rocksdb_transaction, endpoint_key));
-	ASSERT_EQ (rocksdb_store.version.get (rocksdb_transaction), version);
-	nano::confirmation_height_info confirmation_height_info;
-	ASSERT_FALSE (rocksdb_store.confirmation_height.get (rocksdb_transaction, nano::dev::genesis_key.pub, confirmation_height_info));
-	ASSERT_EQ (confirmation_height_info.height, 2);
-	ASSERT_EQ (confirmation_height_info.frontier, send->hash ());
-	ASSERT_TRUE (rocksdb_store.final_vote.get (rocksdb_transaction, send->qualified_root ()).has_value ());
-	ASSERT_EQ (rocksdb_store.final_vote.get (rocksdb_transaction, send->qualified_root ()).value (), nano::block_hash (2));
-
-	// Retry migration while rocksdb folder is still present
-	auto error_on_retry = ledger.migrate_lmdb_to_rocksdb (path);
-	ASSERT_EQ (error_on_retry, true);
-}
-*/
-
 TEST (ledger, is_send_genesis)
 {
 	auto ctx = nano::test::ledger_empty ();
@@ -5654,6 +5583,89 @@ TEST (ledger, head_block)
 	auto & store = ctx.store ();
 	auto tx = ledger.tx_begin_read ();
 	ASSERT_EQ (*nano::dev::genesis, *ledger.any.block_get (tx, ledger.any.account_head (tx, nano::dev::genesis_key.pub)));
+}
+
+TEST (ledger, copy_to_rocksdb)
+{
+	auto path = nano::unique_path ();
+	nano::logger logger;
+	nano::stats stats{ logger };
+	boost::asio::ip::address_v6 address (boost::asio::ip::make_address_v6 ("::ffff:127.0.0.1"));
+	uint16_t port = 100;
+	nano::work_pool pool{ nano::dev::network_params.network, std::numeric_limits<unsigned>::max () };
+
+	// Create default backend and store
+	auto store = nano::make_store (logger, stats, path, nano::dev::constants);
+	nano::ledger ledger{ *store, nano::dev::network_params, stats, logger };
+
+	auto send = nano::state_block_builder ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (0)
+				.link (nano::account (10))
+				.balance (nano::dev::constants.genesis_amount - 100)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*pool.generate (nano::dev::genesis->hash ()))
+				.build ();
+
+	nano::endpoint_key endpoint_key (address.to_bytes (), port);
+	auto version = nano::store::ledger_store::version_current;
+
+	{
+		auto transaction = ledger.tx_begin_write ();
+
+		store->confirmation_height.put (transaction, nano::dev::genesis_key.pub, { 2, send->hash () });
+		store->online_weight.put (transaction, 100, nano::amount (2));
+		store->peer.put (transaction, endpoint_key, 37);
+		store->pending.put (transaction, nano::pending_key (nano::dev::genesis_key.pub, send->hash ()), nano::pending_info (nano::dev::genesis_key.pub, 100, nano::epoch::epoch_0));
+		store->pruned.put (transaction, send->hash ());
+		store->version.put (transaction, version);
+		send->sideband_set ({});
+		store->block.put (transaction, send->hash (), *send);
+		store->final_vote.put (transaction, send->qualified_root (), nano::block_hash (2));
+	}
+
+	// Create RocksDB backend and copy data
+	{
+		auto rocksdb_backend = std::make_unique<nano::store::rocksdb::backend_rocksdb> (path / "rocksdb_copy", nano::rocksdb_config{});
+		rocksdb_backend->open (nano::store::ledger_store::schema_current, nano::store::open_mode::read_write);
+
+		// Copy the backend
+		store->backend.copy_to (*rocksdb_backend);
+	}
+
+	// Open RocksDB store for verification (creates new backend)
+	{
+		auto rocksdb_backend = std::make_unique<nano::store::rocksdb::backend_rocksdb> (path / "rocksdb_copy", nano::rocksdb_config{});
+		auto rocksdb_store = std::make_unique<nano::store::ledger_store> (std::move (rocksdb_backend), nano::store::open_mode::read_only, stats, logger);
+
+		auto rocksdb_transaction = rocksdb_store->tx_begin_read ();
+
+		ASSERT_TRUE (rocksdb_store->pending.get (rocksdb_transaction, nano::pending_key (nano::dev::genesis_key.pub, send->hash ())));
+
+		for (auto i = rocksdb_store->online_weight.begin (rocksdb_transaction); i != rocksdb_store->online_weight.end (rocksdb_transaction); ++i)
+		{
+			ASSERT_EQ (i->first, 100);
+			ASSERT_EQ (i->second, 2);
+		}
+
+		ASSERT_EQ (rocksdb_store->online_weight.count (rocksdb_transaction), 1);
+
+		auto block1 = rocksdb_store->block.get (rocksdb_transaction, send->hash ());
+		ASSERT_NE (block1, nullptr);
+		ASSERT_EQ (*send, *block1);
+
+		ASSERT_TRUE (rocksdb_store->peer.exists (rocksdb_transaction, endpoint_key));
+		ASSERT_EQ (rocksdb_store->version.get (rocksdb_transaction), version);
+
+		nano::confirmation_height_info confirmation_height_info;
+		ASSERT_FALSE (rocksdb_store->confirmation_height.get (rocksdb_transaction, nano::dev::genesis_key.pub, confirmation_height_info));
+		ASSERT_EQ (confirmation_height_info.height, 2);
+		ASSERT_EQ (confirmation_height_info.frontier, send->hash ());
+
+		ASSERT_TRUE (rocksdb_store->final_vote.get (rocksdb_transaction, send->qualified_root ()).has_value ());
+		ASSERT_EQ (rocksdb_store->final_vote.get (rocksdb_transaction, send->qualified_root ()).value (), nano::block_hash (2));
+	}
 }
 
 // Tests that a fairly complex ledger topology can be cemented in a single batch
