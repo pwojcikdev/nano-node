@@ -1320,11 +1320,6 @@ TEST (block_store, pruned_blocks)
 // Test various confirmation height values as well as clearing them
 TEST (block_store, confirmation_height)
 {
-	if (nano::node_config::env_database_backend () == nano::database_backend::rocksdb)
-	{
-		// Don't test this in rocksdb mode
-		GTEST_SKIP ();
-	}
 	auto path (nano::unique_path ());
 	nano::logger logger;
 	nano::stats stats{ logger };
@@ -1357,7 +1352,7 @@ TEST (block_store, confirmation_height)
 		store->confirmation_height.clear (transaction);
 	}
 	auto transaction (store->tx_begin_read ());
-	ASSERT_EQ (store->confirmation_height.count (transaction), 0);
+	ASSERT_TRUE (store->confirmation_height.empty (transaction));
 	nano::confirmation_height_info confirmation_height_info;
 	ASSERT_TRUE (store->confirmation_height.get (transaction, account1, confirmation_height_info));
 	ASSERT_TRUE (store->confirmation_height.get (transaction, account2, confirmation_height_info));
@@ -1367,11 +1362,6 @@ TEST (block_store, confirmation_height)
 // Test various final vote values as well as clearing them
 TEST (block_store, final_vote)
 {
-	if (nano::node_config::env_database_backend () == nano::database_backend::rocksdb)
-	{
-		// Don't test this in rocksdb mode as deletions cause inaccurate counts
-		GTEST_SKIP ();
-	}
 	auto path (nano::unique_path ());
 	nano::logger logger;
 	nano::stats stats{ logger };
@@ -1381,14 +1371,14 @@ TEST (block_store, final_vote)
 		auto qualified_root = nano::dev::genesis->qualified_root ();
 		auto transaction (store->tx_begin_write ());
 		store->final_vote.put (transaction, qualified_root, nano::block_hash (2));
-		ASSERT_EQ (store->final_vote.count (transaction), 1);
+		ASSERT_FALSE (store->final_vote.empty (transaction));
 		store->final_vote.clear (transaction);
-		ASSERT_EQ (store->final_vote.count (transaction), 0);
+		ASSERT_TRUE (store->final_vote.empty (transaction));
 		store->final_vote.put (transaction, qualified_root, nano::block_hash (2));
-		ASSERT_EQ (store->final_vote.count (transaction), 1);
+		ASSERT_FALSE (store->final_vote.empty (transaction));
 		// Clearing with correct root should remove
 		store->final_vote.del (transaction, qualified_root);
-		ASSERT_EQ (store->final_vote.count (transaction), 0);
+		ASSERT_TRUE (store->final_vote.empty (transaction));
 	}
 }
 
