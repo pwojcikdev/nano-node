@@ -619,3 +619,60 @@ TEST (ledger_upgrades, full_upgrade_v21_to_current)
 	// Verify rep_weight was populated during v22->v23 upgrade
 	ASSERT_EQ (store.rep_weight.get (tx, rep), 5000);
 }
+
+/*
+ * Test that backup is created before upgrade
+ */
+TEST (ledger_upgrades, upgrade_backup)
+{
+	auto const path = nano::unique_path ();
+	auto const is_rocksdb = nano::node_config::env_database_backend ().value_or (nano::database_backend::lmdb) == nano::database_backend::rocksdb;
+
+	// Helper to check if backup exists
+	auto backup_exists = [&] () {
+		if (is_rocksdb)
+		{
+			// RocksDB creates backup/ directory
+			return std::filesystem::exists (path / "backup");
+		}
+		else
+		{
+			// LMDB creates data_backup_<timestamp>.ldb file
+			for (auto const & entry : std::filesystem::directory_iterator (path))
+			{
+				if (entry.path ().filename ().string ().find ("data_backup_") != std::string::npos)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+	};
+
+	// Create a v21 database (requires upgrade to current)
+	{
+		auto backend = nano::test::make_backend (path);
+		backend->create (schema_v21, 21);
+	}
+
+	// Verify no backup exists yet
+	ASSERT_FALSE (backup_exists ());
+
+	// Open with backup_before_upgrade=true, triggering upgrade and backup
+	nano::store::ledger_store_params params;
+	params.backup_before_upgrade = true;
+
+	nano::store::ledger_store store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger (),
+	params);
+
+	// Verify version was upgraded
+	auto tx = store.tx_begin_read ();
+	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
+
+	// Verify backup was created
+	ASSERT_TRUE (backup_exists ());
+}
