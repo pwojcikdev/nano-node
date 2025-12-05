@@ -45,7 +45,6 @@ public:
 
 	std::shared_ptr<nano::node> shared ();
 
-	void copy_with_compaction (std::filesystem::path const &);
 	void keepalive (std::string const &, uint16_t);
 	int store_version ();
 	void inbound (nano::message const &, std::shared_ptr<nano::transport::channel> const &);
@@ -86,13 +85,19 @@ public:
 	 * Attempts to bootstrap block. This is the best effort, there is no guarantee that the block will be bootstrapped.
 	 */
 	void bootstrap_block (nano::block_hash const &);
+
 	nano::account get_node_id () const;
 	nano::telemetry_data local_telemetry () const;
 	std::string identifier () const;
+
 	nano::container_info container_info () const;
 
+	// Ledger management
+	void migrate_lmdb_to_rocksdb (std::filesystem::path const & destination) const;
+	void copy_with_compaction (std::filesystem::path const & destination);
+
 public:
-	const std::filesystem::path application_path;
+	const std::filesystem::path application_path; // aka: data_path
 	const nano::keypair node_id;
 	boost::latch node_initialized_latch;
 	nano::node_config config;
