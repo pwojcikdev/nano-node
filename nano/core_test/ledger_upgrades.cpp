@@ -626,7 +626,7 @@ TEST (ledger_upgrades, full_upgrade_v21_to_current)
 TEST (ledger_upgrades, upgrade_backup)
 {
 	auto const path = nano::unique_path ();
-	auto const is_rocksdb = nano::node_config::env_database_backend ().value_or (nano::database_backend::lmdb) == nano::database_backend::rocksdb;
+	auto const is_rocksdb = nano::default_database_backend () == nano::database_backend::rocksdb;
 
 	// Helper to check if backup exists
 	auto backup_exists = [&] () {
