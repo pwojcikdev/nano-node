@@ -42,18 +42,15 @@ public: // Upgrades
 	void upgrade_v22_to_v23 ();
 	void upgrade_v23_to_v24 ();
 
-private:
-	std::unique_ptr<nano::store::backend> backend_impl;
-	nano::store::backend & backend;
-
-public: // TODO: Shouldn't be public
-	nano::store::write_queue write_queue;
+public:
+	nano::store::write_queue write_queue; // TODO: Shouldn't be public
 
 public:
 	nano::stats & stats;
 	nano::logger & logger;
 
 private:
+	std::unique_ptr<nano::store::backend> backend_impl;
 	std::unique_ptr<nano::store::ledger::block> block_impl;
 	std::unique_ptr<nano::store::ledger::account> account_impl;
 	std::unique_ptr<nano::store::ledger::pending> pending_impl;
@@ -66,6 +63,7 @@ private:
 	std::unique_ptr<nano::store::ledger::version> version_impl;
 
 public:
+	nano::store::backend & backend;
 	nano::store::ledger::block & block;
 	nano::store::ledger::account & account;
 	nano::store::ledger::pending & pending;
