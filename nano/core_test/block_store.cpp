@@ -638,26 +638,6 @@ TEST (block_store, latest_find)
 // - TEST (ledger_upgrades, version_too_high)
 // - TEST (ledger_upgrades, version_too_low)
 
-TEST (block_store, lmdb_bad_path)
-{
-	if (nano::node_config::env_database_backend () == nano::database_backend::rocksdb)
-	{
-		// Don't test this in rocksdb mode - path handling differs
-		GTEST_SKIP ();
-	}
-	nano::logger logger;
-	nano::stats stats{ logger };
-	auto path = nano::unique_path ();
-	std::filesystem::create_directories (path);
-	auto db_path = path / "data.ldb";
-	{
-		std::ofstream stream (db_path.c_str ());
-	}
-	std::filesystem::permissions (db_path, std::filesystem::perms::none);
-	ASSERT_THROW (nano::make_store (logger, stats, path, nano::dev::constants, false, true), std::runtime_error);
-	std::filesystem::permissions (db_path, std::filesystem::perms::all); // Cleanup
-}
-
 // File can be shared
 TEST (block_store, DISABLED_already_open)
 {
@@ -1441,8 +1421,46 @@ TEST (block_store, env_database_backend)
 	}
 }
 
-// This test ensures the tombstone_count is increased when there is a delete. The tombstone_count is part of a flush
-// logic bound to the way RocksDB is used by the node.
+TEST (block_store, lmdb_bad_path)
+{
+	if (nano::node_config::env_database_backend () != nano::database_backend::lmdb)
+	{
+		GTEST_SKIP ();
+	}
+	nano::logger logger;
+	nano::stats stats{ logger };
+	auto path = nano::unique_path ();
+	std::filesystem::create_directories (path);
+	auto db_path = path / "data.ldb";
+	// Create a dummy file and make it inaccessible
+	{
+		std::ofstream stream (db_path.c_str ());
+	}
+	std::filesystem::permissions (db_path, std::filesystem::perms::none);
+	ASSERT_THROW (nano::make_store (logger, stats, path, nano::dev::constants, false, true), std::runtime_error);
+	std::filesystem::permissions (db_path, std::filesystem::perms::all); // Cleanup
+}
+
+TEST (block_store, rocksdb_bad_path)
+{
+	if (nano::node_config::env_database_backend () != nano::database_backend::rocksdb)
+	{
+		GTEST_SKIP ();
+	}
+	nano::logger logger;
+	nano::stats stats{ logger };
+	auto path = nano::unique_path ();
+	std::filesystem::create_directories (path);
+	auto db_path = path / "rocksdb";
+	// Create a file where RocksDB expects a directory
+	{
+		std::ofstream stream (db_path.c_str ());
+	}
+	ASSERT_THROW (nano::make_store (logger, stats, path, nano::dev::constants, false, true), std::runtime_error);
+}
+
+// This test ensures the tombstone_count is increased when there is a delete.
+// The tombstone_count is part of a flush logic bound to the way RocksDB is used by the node.
 TEST (block_store, rocksdb_tombstone_count)
 {
 	if (nano::node_config::env_database_backend () != nano::database_backend::rocksdb)
