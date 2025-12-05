@@ -356,21 +356,21 @@ uint64_t backend_rocksdb::count (store::transaction const & tx, tables table) co
 int backend_rocksdb::clear (store::write_transaction const & tx, tables table)
 {
 	auto col = table_to_column_family (table);
+	auto * txn = std::get<::rocksdb::Transaction *> (rocksdb::tx (tx));
 
 	::rocksdb::ReadOptions read_options;
-	::rocksdb::WriteOptions write_options;
-	::rocksdb::WriteBatch write_batch;
-	std::unique_ptr<::rocksdb::Iterator> it (db->NewIterator (read_options, col));
+	std::unique_ptr<::rocksdb::Iterator> it (txn->GetIterator (read_options, col));
 
 	for (it->SeekToFirst (); it->Valid (); it->Next ())
 	{
-		write_batch.Delete (col, it->key ());
+		auto status = txn->Delete (col, it->key ());
+		if (!status.ok ())
+		{
+			return status.code ();
+		}
 	}
 
-	::rocksdb::Status status = db->Write (write_options, &write_batch);
-	release_assert (status.ok (), error_string (status.code ()));
-
-	return status.code ();
+	return ::rocksdb::Status::kOk;
 }
 
 bool backend_rocksdb::drop_table (store::write_transaction const & tx, std::string const & name)

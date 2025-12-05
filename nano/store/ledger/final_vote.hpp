@@ -21,6 +21,7 @@ public:
 	std::optional<nano::block_hash> get (store::transaction const & tx, nano::qualified_root const & root) const;
 	void del (store::write_transaction const & tx, nano::qualified_root const & root);
 	size_t count (store::transaction const & tx) const;
+	bool empty (store::transaction const & tx) const;
 	void clear (store::write_transaction const & tx);
 	iterator begin (store::transaction const & tx, nano::qualified_root const & root) const;
 	iterator begin (store::transaction const & tx) const;

@@ -80,6 +80,7 @@ public:
 	virtual bool exists (store::transaction const & tx, tables table, db_val const & key) const = 0;
 
 	// Table operations
+	bool empty (store::transaction const & tx, tables table) const;
 	virtual uint64_t count (store::transaction const & tx, tables table) const = 0;
 	virtual int clear (store::write_transaction const & tx, tables table) = 0; // Empties the table but keeps it
 	virtual bool drop_table (store::write_transaction const & tx, std::string const & name) = 0; // Deletes the table entirely

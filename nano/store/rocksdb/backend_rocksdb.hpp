@@ -31,6 +31,8 @@ public:
 	bool exists (store::transaction const & tx, tables table, db_val const & key) const override;
 
 	// Table operations
+	// WARNING: count() may return estimates for some tables
+	// Use empty() for reliable emptiness checks.
 	uint64_t count (store::transaction const & tx, tables table) const override;
 	int clear (store::write_transaction const & tx, tables table) override;
 	bool drop_table (store::write_transaction const & tx, std::string const & name) override;
@@ -91,7 +93,10 @@ public: // Tombstone management
 		std::atomic<uint64_t> num_since_last_flush;
 		uint64_t const max;
 	};
-	std::unordered_map<tables, tombstone_info> const & get_tombstone_map () const { return tombstone_map; }
+	std::unordered_map<tables, tombstone_info> const & get_tombstone_map () const
+	{
+		return tombstone_map;
+	}
 
 private:
 	std::unordered_map<tables, tombstone_info> tombstone_map;

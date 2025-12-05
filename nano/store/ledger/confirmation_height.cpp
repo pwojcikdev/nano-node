@@ -61,6 +61,11 @@ uint64_t confirmation_height::count (store::transaction const & transaction) con
 	return backend.count (transaction, tables::confirmation_height);
 }
 
+bool confirmation_height::empty (store::transaction const & transaction) const
+{
+	return backend.empty (transaction, tables::confirmation_height);
+}
+
 void confirmation_height::clear (store::write_transaction const & transaction, nano::account const & account)
 {
 	del (transaction, account);

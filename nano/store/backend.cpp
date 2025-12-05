@@ -112,6 +112,11 @@ void backend::set_version (store::write_transaction const & transaction, nano::s
 {
 	meta.put_version (transaction, version);
 }
+
+bool backend::empty (store::transaction const & tx, tables table) const
+{
+	return begin (tx, table) == end (tx, table);
+}
 }
 
 namespace nano
