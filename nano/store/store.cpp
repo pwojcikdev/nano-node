@@ -148,19 +148,19 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 
 ledger_store::~ledger_store () = default;
 
-void ledger_store::initialize (nano::store::write_transaction const & transaction, nano::ledger_constants const & constants)
+void ledger_store::initialize (nano::store::write_transaction const & txn, nano::ledger_constants const & constants)
 {
-	release_assert (empty (transaction), "attempt to initialize a non-empty ledger store");
+	release_assert (empty (txn), "attempt to initialize a non-empty ledger store");
 	release_assert (constants.genesis->has_sideband ());
 
 	// TODO: Use designated initialization
-	block.put (transaction, constants.genesis->hash (), *constants.genesis);
-	confirmation_height.put (transaction, constants.genesis->account (), nano::confirmation_height_info{ 1, constants.genesis->hash () });
-	account.put (transaction, constants.genesis->account (), { constants.genesis->hash (), constants.genesis->account (), constants.genesis->hash (), std::numeric_limits<nano::uint128_t>::max (), nano::seconds_since_epoch (), 1, nano::epoch::epoch_0 });
-	rep_weight.put (transaction, constants.genesis->account (), std::numeric_limits<nano::uint128_t>::max ());
+	block.put (txn, constants.genesis->hash (), *constants.genesis);
+	confirmation_height.put (txn, constants.genesis->account (), nano::confirmation_height_info{ 1, constants.genesis->hash () });
+	account.put (txn, constants.genesis->account (), { constants.genesis->hash (), constants.genesis->account (), constants.genesis->hash (), std::numeric_limits<nano::uint128_t>::max (), nano::seconds_since_epoch (), 1, nano::epoch::epoch_0 });
+	rep_weight.put (txn, constants.genesis->account (), std::numeric_limits<nano::uint128_t>::max ());
 }
 
-bool ledger_store::empty (nano::store::transaction const & transaction) const
+bool ledger_store::empty (nano::store::transaction const & txn) const
 {
 	for (auto const & [table, table_name] : schema_current)
 	{
@@ -168,11 +168,11 @@ bool ledger_store::empty (nano::store::transaction const & transaction) const
 		{
 			continue; // Ignore meta table
 		}
-		if (backend.begin (transaction, table) != backend.end (transaction, table))
+		if (backend.begin (txn, table) != backend.end (txn, table))
 		{
 			return false;
 		}
-		debug_assert (backend.count (transaction, table) == 0);
+		debug_assert (backend.count (txn, table) == 0);
 	}
 	return true;
 }
@@ -384,9 +384,9 @@ nano::store::open_mode ledger_store::get_mode () const
 	return backend.get_mode ().value ();
 }
 
-uint64_t ledger_store::count (nano::store::transaction const & transaction, tables table) const
+uint64_t ledger_store::count (nano::store::transaction const & txn, tables table) const
 {
-	return backend.count (transaction, table);
+	return backend.count (txn, table);
 }
 
 nano::store::write_transaction ledger_store::tx_begin_write ()

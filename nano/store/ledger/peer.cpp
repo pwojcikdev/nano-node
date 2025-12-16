@@ -7,17 +7,17 @@ peer::peer (nano::store::backend & backend_a) :
 {
 }
 
-void peer::put (nano::store::write_transaction const & transaction, nano::endpoint_key const & endpoint, nano::millis_t timestamp)
+void peer::put (nano::store::write_transaction const & txn, nano::endpoint_key const & endpoint, nano::millis_t timestamp)
 {
-	auto status = backend.put (transaction, tables::peers, endpoint, timestamp);
+	auto status = backend.put (txn, tables::peers, endpoint, timestamp);
 	backend.release_assert_success (status);
 }
 
-nano::millis_t peer::get (nano::store::transaction const & transaction, nano::endpoint_key const & endpoint) const
+nano::millis_t peer::get (nano::store::transaction const & txn, nano::endpoint_key const & endpoint) const
 {
 	nano::millis_t result{ 0 };
 	nano::store::db_val value;
-	auto status = backend.get (transaction, tables::peers, endpoint, value);
+	auto status = backend.get (txn, tables::peers, endpoint, value);
 	release_assert (backend.success (status) || backend.not_found (status), backend.error_string (status));
 	if (backend.success (status) && value.size () > 0)
 	{
@@ -26,35 +26,35 @@ nano::millis_t peer::get (nano::store::transaction const & transaction, nano::en
 	return result;
 }
 
-void peer::del (nano::store::write_transaction const & transaction, nano::endpoint_key const & endpoint)
+void peer::del (nano::store::write_transaction const & txn, nano::endpoint_key const & endpoint)
 {
-	auto status = backend.del (transaction, tables::peers, endpoint);
+	auto status = backend.del (txn, tables::peers, endpoint);
 	backend.release_assert_success (status);
 }
 
-bool peer::exists (nano::store::transaction const & transaction, nano::endpoint_key const & endpoint) const
+bool peer::exists (nano::store::transaction const & txn, nano::endpoint_key const & endpoint) const
 {
-	return backend.exists (transaction, tables::peers, endpoint);
+	return backend.exists (txn, tables::peers, endpoint);
 }
 
-size_t peer::count (nano::store::transaction const & transaction) const
+size_t peer::count (nano::store::transaction const & txn) const
 {
-	return backend.count (transaction, tables::peers);
+	return backend.count (txn, tables::peers);
 }
 
-void peer::clear (nano::store::write_transaction const & transaction)
+void peer::clear (nano::store::write_transaction const & txn)
 {
-	auto status = backend.clear (transaction, tables::peers);
+	auto status = backend.clear (txn, tables::peers);
 	backend.release_assert_success (status);
 }
 
-auto peer::begin (nano::store::transaction const & transaction) const -> iterator
+auto peer::begin (nano::store::transaction const & txn) const -> iterator
 {
-	return iterator{ backend.begin (transaction, tables::peers) };
+	return iterator{ backend.begin (txn, tables::peers) };
 }
 
-auto peer::end (nano::store::transaction const & transaction) const -> iterator
+auto peer::end (nano::store::transaction const & txn) const -> iterator
 {
-	return iterator{ backend.end (transaction, tables::peers) };
+	return iterator{ backend.end (txn, tables::peers) };
 }
 }

@@ -246,13 +246,13 @@ bool backend_rocksdb::column_family_exists (std::string const & name) const
 	return iter != handles.end ();
 }
 
-int backend_rocksdb::get (nano::store::transaction const & transaction, tables table, nano::store::db_val const & key, nano::store::db_val & value) const
+int backend_rocksdb::get (nano::store::transaction const & txn, tables table, nano::store::db_val const & key, nano::store::db_val & value) const
 {
 	::rocksdb::ReadOptions options;
 	::rocksdb::PinnableSlice slice;
 	auto key_slice = to_slice (key);
 	auto handle = table_to_column_family (table);
-	auto internals = rocksdb::tx (transaction);
+	auto internals = rocksdb::tx (txn);
 
 	auto status = std::visit ([&] (auto && ptr) {
 		using V = std::remove_cvref_t<decltype (ptr)>;
@@ -278,27 +278,27 @@ int backend_rocksdb::get (nano::store::transaction const & transaction, tables t
 	return status.code ();
 }
 
-int backend_rocksdb::put (nano::store::write_transaction const & transaction, tables table, nano::store::db_val const & key, nano::store::db_val const & value)
+int backend_rocksdb::put (nano::store::write_transaction const & txn, tables table, nano::store::db_val const & key, nano::store::db_val const & value)
 {
 	auto key_slice = to_slice (key);
 	auto value_slice = to_slice (value);
-	return std::get<::rocksdb::Transaction *> (rocksdb::tx (transaction))->Put (table_to_column_family (table), key_slice, value_slice).code ();
+	return std::get<::rocksdb::Transaction *> (rocksdb::tx (txn))->Put (table_to_column_family (table), key_slice, value_slice).code ();
 }
 
-int backend_rocksdb::del (nano::store::write_transaction const & transaction, tables table, nano::store::db_val const & key)
+int backend_rocksdb::del (nano::store::write_transaction const & txn, tables table, nano::store::db_val const & key)
 {
 	// RocksDB does not report not_found status, it is a pre-condition that the key exists
-	debug_assert (exists (transaction, table, key));
+	debug_assert (exists (txn, table, key));
 	flush_tombstones_check (table);
 	auto key_slice = to_slice (key);
-	return std::get<::rocksdb::Transaction *> (rocksdb::tx (transaction))->Delete (table_to_column_family (table), key_slice).code ();
+	return std::get<::rocksdb::Transaction *> (rocksdb::tx (txn))->Delete (table_to_column_family (table), key_slice).code ();
 }
 
-bool backend_rocksdb::exists (nano::store::transaction const & transaction, tables table, nano::store::db_val const & key) const
+bool backend_rocksdb::exists (nano::store::transaction const & txn, tables table, nano::store::db_val const & key) const
 {
 	::rocksdb::PinnableSlice slice;
 	auto key_slice = to_slice (key);
-	auto internals = rocksdb::tx (transaction);
+	auto internals = rocksdb::tx (txn);
 
 	auto status = std::visit ([&] (auto && ptr) {
 		using V = std::remove_cvref_t<decltype (ptr)>;
@@ -322,7 +322,7 @@ bool backend_rocksdb::exists (nano::store::transaction const & transaction, tabl
 	return status.ok ();
 }
 
-uint64_t backend_rocksdb::count (nano::store::transaction const & transaction, tables table) const
+uint64_t backend_rocksdb::count (nano::store::transaction const & txn, tables table) const
 {
 	uint64_t sum = 0;
 
@@ -330,7 +330,7 @@ uint64_t backend_rocksdb::count (nano::store::transaction const & transaction, t
 	// For small tables, iterate to get accurate counts
 	if (table == tables::peers || table == tables::online_weight)
 	{
-		for (auto i = begin (transaction, table), n = end (transaction, table); i != n; ++i)
+		for (auto i = begin (txn, table), n = end (txn, table); i != n; ++i)
 		{
 			++sum;
 		}
@@ -343,7 +343,7 @@ uint64_t backend_rocksdb::count (nano::store::transaction const & transaction, t
 	// For other tables, iterate for accuracy (may be slow)
 	else
 	{
-		for (auto i = begin (transaction, table), n = end (transaction, table); i != n; ++i)
+		for (auto i = begin (txn, table), n = end (txn, table); i != n; ++i)
 		{
 			++sum;
 		}
@@ -353,17 +353,17 @@ uint64_t backend_rocksdb::count (nano::store::transaction const & transaction, t
 }
 
 // TODO: Temporary impl, optimize this with DeleteRange
-int backend_rocksdb::clear (nano::store::write_transaction const & transaction, tables table)
+int backend_rocksdb::clear (nano::store::write_transaction const & txn, tables table)
 {
 	auto col = table_to_column_family (table);
-	auto * txn = std::get<::rocksdb::Transaction *> (rocksdb::tx (transaction));
+	auto * rocks_txn = std::get<::rocksdb::Transaction *> (rocksdb::tx (txn));
 
 	::rocksdb::ReadOptions read_options;
-	std::unique_ptr<::rocksdb::Iterator> it (txn->GetIterator (read_options, col));
+	std::unique_ptr<::rocksdb::Iterator> it (rocks_txn->GetIterator (read_options, col));
 
 	for (it->SeekToFirst (); it->Valid (); it->Next ())
 	{
-		auto status = txn->Delete (col, it->key ());
+		auto status = rocks_txn->Delete (col, it->key ());
 		if (!status.ok ())
 		{
 			return status.code ();
@@ -373,7 +373,7 @@ int backend_rocksdb::clear (nano::store::write_transaction const & transaction, 
 	return ::rocksdb::Status::kOk;
 }
 
-bool backend_rocksdb::drop_table (nano::store::write_transaction const & transaction, std::string const & name)
+bool backend_rocksdb::drop_table (nano::store::write_transaction const & txn, std::string const & name)
 {
 	if (!column_family_exists (name))
 	{
@@ -407,25 +407,25 @@ bool backend_rocksdb::drop_table (nano::store::write_transaction const & transac
 	return true;
 }
 
-bool backend_rocksdb::table_exists (nano::store::transaction const & transaction, std::string const & name) const
+bool backend_rocksdb::table_exists (nano::store::transaction const & txn, std::string const & name) const
 {
 	return column_family_exists (name);
 }
 
-nano::store::iterator backend_rocksdb::begin (nano::store::transaction const & transaction, tables table) const
+nano::store::iterator backend_rocksdb::begin (nano::store::transaction const & txn, tables table) const
 {
-	return nano::store::iterator{ iterator::begin (db.get (), rocksdb::tx (transaction), table_to_column_family (table)) };
+	return nano::store::iterator{ iterator::begin (db.get (), rocksdb::tx (txn), table_to_column_family (table)) };
 }
 
-nano::store::iterator backend_rocksdb::begin (nano::store::transaction const & transaction, tables table, nano::store::db_val const & key) const
+nano::store::iterator backend_rocksdb::begin (nano::store::transaction const & txn, tables table, nano::store::db_val const & key) const
 {
 	auto key_slice = to_slice (key);
-	return nano::store::iterator{ iterator::lower_bound (db.get (), rocksdb::tx (transaction), table_to_column_family (table), key_slice) };
+	return nano::store::iterator{ iterator::lower_bound (db.get (), rocksdb::tx (txn), table_to_column_family (table), key_slice) };
 }
 
-nano::store::iterator backend_rocksdb::end (nano::store::transaction const & transaction, tables table) const
+nano::store::iterator backend_rocksdb::end (nano::store::transaction const & txn, tables table) const
 {
-	return nano::store::iterator{ iterator::end (db.get (), rocksdb::tx (transaction), table_to_column_family (table)) };
+	return nano::store::iterator{ iterator::end (db.get (), rocksdb::tx (txn), table_to_column_family (table)) };
 }
 
 bool backend_rocksdb::success (int status) const

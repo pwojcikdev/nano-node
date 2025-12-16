@@ -9,13 +9,13 @@ block::block (nano::store::backend & backend_a) :
 {
 }
 
-void block::put (nano::store::write_transaction const & transaction, nano::block_hash const & hash, nano::block const & block)
+void block::put (nano::store::write_transaction const & txn, nano::block_hash const & hash, nano::block const & block)
 {
 	class block_predecessor_set : public nano::block_visitor
 	{
 	public:
-		block_predecessor_set (nano::store::write_transaction const & transaction_a, nano::store::ledger::block & block_store_a) :
-			transaction{ transaction_a },
+		block_predecessor_set (nano::store::write_transaction const & txn_a, nano::store::ledger::block & block_store_a) :
+			txn{ txn_a },
 			block_store{ block_store_a }
 		{
 		}
@@ -27,12 +27,12 @@ void block::put (nano::store::write_transaction const & transaction, nano::block
 		{
 			auto const hash = block_a.hash ();
 			nano::store::db_val value;
-			block_store.block_raw_get (transaction, block_a.previous (), value);
+			block_store.block_raw_get (txn, block_a.previous (), value);
 			debug_assert (value.size () != 0);
 			auto const type = block_store.block_type_from_raw (value.data ());
 			std::vector<uint8_t> data{ static_cast<uint8_t *> (value.data ()), static_cast<uint8_t *> (value.data ()) + value.size () };
 			std::copy (hash.bytes.begin (), hash.bytes.end (), data.begin () + block_store.block_successor_offset (value.size (), type));
-			block_store.raw_put (transaction, data, block_a.previous ());
+			block_store.raw_put (txn, data, block_a.previous ());
 		}
 
 		void send_block (nano::send_block const & block_a) override
@@ -63,11 +63,11 @@ void block::put (nano::store::write_transaction const & transaction, nano::block
 		}
 
 	private:
-		nano::store::write_transaction const & transaction;
+		nano::store::write_transaction const & txn;
 		nano::store::ledger::block & block_store;
 	};
 
-	debug_assert (block.sideband ().successor.is_zero () || exists (transaction, block.sideband ().successor));
+	debug_assert (block.sideband ().successor.is_zero () || exists (txn, block.sideband ().successor));
 	std::vector<uint8_t> vector;
 	{
 		// TODO: WTF why reimplement deserialization?
@@ -75,23 +75,23 @@ void block::put (nano::store::write_transaction const & transaction, nano::block
 		nano::serialize_block (stream, block);
 		block.sideband ().serialize (stream, block.type ());
 	}
-	raw_put (transaction, vector, hash);
-	block_predecessor_set predecessor{ transaction, *this };
+	raw_put (txn, vector, hash);
+	block_predecessor_set predecessor{ txn, *this };
 	block.visit (predecessor);
-	debug_assert (block.previous ().is_zero () || successor (transaction, block.previous ()) == hash);
+	debug_assert (block.previous ().is_zero () || successor (txn, block.previous ()) == hash);
 }
 
-void block::raw_put (nano::store::write_transaction const & transaction, std::vector<uint8_t> const & data, nano::block_hash const & hash)
+void block::raw_put (nano::store::write_transaction const & txn, std::vector<uint8_t> const & data, nano::block_hash const & hash)
 {
 	nano::store::db_val value{ data.size (), (void *)data.data () };
-	auto status = backend.put (transaction, tables::blocks, hash, value);
+	auto status = backend.put (txn, tables::blocks, hash, value);
 	backend.release_assert_success (status);
 }
 
-std::optional<nano::block_hash> block::successor (nano::store::transaction const & transaction, nano::block_hash const & hash) const
+std::optional<nano::block_hash> block::successor (nano::store::transaction const & txn, nano::block_hash const & hash) const
 {
 	nano::store::db_val value;
-	block_raw_get (transaction, hash, value);
+	block_raw_get (txn, hash, value);
 	nano::block_hash result;
 	if (value.size () != 0)
 	{
@@ -113,21 +113,21 @@ std::optional<nano::block_hash> block::successor (nano::store::transaction const
 	return result;
 }
 
-void block::successor_clear (nano::store::write_transaction const & transaction, nano::block_hash const & hash)
+void block::successor_clear (nano::store::write_transaction const & txn, nano::block_hash const & hash)
 {
 	nano::store::db_val value;
-	block_raw_get (transaction, hash, value);
+	block_raw_get (txn, hash, value);
 	debug_assert (value.size () != 0);
 	auto type = block_type_from_raw (value.data ());
 	std::vector<uint8_t> data{ static_cast<uint8_t *> (value.data ()), static_cast<uint8_t *> (value.data ()) + value.size () };
 	std::fill_n (data.begin () + block_successor_offset (value.size (), type), sizeof (nano::block_hash), uint8_t{ 0 });
-	raw_put (transaction, data, hash);
+	raw_put (txn, data, hash);
 }
 
-std::shared_ptr<nano::block> block::get (nano::store::transaction const & transaction, nano::block_hash const & hash) const
+std::shared_ptr<nano::block> block::get (nano::store::transaction const & txn, nano::block_hash const & hash) const
 {
 	nano::store::db_val value;
-	block_raw_get (transaction, hash, value);
+	block_raw_get (txn, hash, value);
 	std::shared_ptr<nano::block> result;
 	if (value.size () != 0)
 	{
@@ -145,49 +145,49 @@ std::shared_ptr<nano::block> block::get (nano::store::transaction const & transa
 	return result;
 }
 
-void block::del (nano::store::write_transaction const & transaction, nano::block_hash const & hash)
+void block::del (nano::store::write_transaction const & txn, nano::block_hash const & hash)
 {
-	auto status = backend.del (transaction, tables::blocks, hash);
+	auto status = backend.del (txn, tables::blocks, hash);
 	backend.release_assert_success (status);
 }
 
-bool block::exists (nano::store::transaction const & transaction, nano::block_hash const & hash) const
+bool block::exists (nano::store::transaction const & txn, nano::block_hash const & hash) const
 {
-	return backend.exists (transaction, tables::blocks, hash);
+	return backend.exists (txn, tables::blocks, hash);
 }
 
-uint64_t block::count (nano::store::transaction const & transaction) const
+uint64_t block::count (nano::store::transaction const & txn) const
 {
-	return backend.count (transaction, tables::blocks);
+	return backend.count (txn, tables::blocks);
 }
 
-auto block::begin (nano::store::transaction const & transaction) const -> iterator
+auto block::begin (nano::store::transaction const & txn) const -> iterator
 {
-	return iterator{ backend.begin (transaction, tables::blocks) };
+	return iterator{ backend.begin (txn, tables::blocks) };
 }
 
-auto block::begin (nano::store::transaction const & transaction, nano::block_hash const & hash) const -> iterator
+auto block::begin (nano::store::transaction const & txn, nano::block_hash const & hash) const -> iterator
 {
-	return iterator{ backend.begin (transaction, tables::blocks, hash) };
+	return iterator{ backend.begin (txn, tables::blocks, hash) };
 }
 
-auto block::end (nano::store::transaction const & transaction) const -> iterator
+auto block::end (nano::store::transaction const & txn) const -> iterator
 {
-	return iterator{ backend.end (transaction, tables::blocks) };
+	return iterator{ backend.end (txn, tables::blocks) };
 }
 
 void block::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
 {
 	parallel_traversal<nano::uint256_t> (
 	[&action, this] (nano::uint256_t const & start, nano::uint256_t const & end, bool const is_last) {
-		auto transaction = this->backend.tx_begin_read ();
-		action (transaction, this->begin (transaction, start), !is_last ? this->begin (transaction, end) : this->end (transaction));
+		auto txn = this->backend.tx_begin_read ();
+		action (txn, this->begin (txn, start), !is_last ? this->begin (txn, end) : this->end (txn));
 	});
 }
 
-void block::block_raw_get (nano::store::transaction const & transaction, nano::block_hash const & hash, nano::store::db_val & value) const
+void block::block_raw_get (nano::store::transaction const & txn, nano::block_hash const & hash, nano::store::db_val & value) const
 {
-	auto status = backend.get (transaction, tables::blocks, hash, value);
+	auto status = backend.get (txn, tables::blocks, hash, value);
 	release_assert (backend.success (status) || backend.not_found (status), backend.error_string (status));
 }
 

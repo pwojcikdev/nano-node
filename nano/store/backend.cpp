@@ -110,27 +110,27 @@ auto backend::get_mode () const -> std::optional<nano::store::open_mode>
 	return is_open ? std::optional{ current_mode } : std::nullopt;
 }
 
-auto backend::get_version (nano::store::transaction const & transaction) const -> nano::store::version_t
+auto backend::get_version (nano::store::transaction const & txn) const -> nano::store::version_t
 {
-	return meta.get_version (transaction);
+	return meta.get_version (txn);
 }
 
-void backend::set_version (nano::store::write_transaction const & transaction, nano::store::version_t version)
+void backend::set_version (nano::store::write_transaction const & txn, nano::store::version_t version)
 {
-	meta.put_version (transaction, version);
+	meta.put_version (txn, version);
 }
 
-bool backend::empty (nano::store::transaction const & transaction, tables table) const
+bool backend::empty (nano::store::transaction const & txn, tables table) const
 {
-	return begin (transaction, table) == end (transaction, table);
+	return begin (txn, table) == end (txn, table);
 }
 
-bool backend::empty (nano::store::transaction const & transaction) const
+bool backend::empty (nano::store::transaction const & txn) const
 {
 	release_assert (is_open, "backend is not open");
 	for (auto const & [table, name] : get_schema ())
 	{
-		if (!empty (transaction, table))
+		if (!empty (txn, table))
 		{
 			return false;
 		}
@@ -162,13 +162,13 @@ void backend::for_each_par (tables table, std::function<void (read_transaction c
 			start_bytes[0] = static_cast<uint8_t> (i * split);
 			end_bytes[0] = static_cast<uint8_t> ((i + 1) * split);
 
-			auto tx = this->tx_begin_read ();
+			auto txn = this->tx_begin_read ();
 			nano::store::db_val start_key{ std::span<uint8_t const>{ start_bytes } };
 			nano::store::db_val end_key{ std::span<uint8_t const>{ end_bytes } };
 
-			action (tx,
-			this->begin (tx, table, start_key),
-			is_last ? this->end (tx, table) : this->begin (tx, table, end_key));
+			action (txn,
+			this->begin (txn, table, start_key),
+			is_last ? this->end (txn, table) : this->begin (txn, table, end_key));
 		}));
 	}
 
@@ -192,18 +192,18 @@ void backend::copy_to (backend & destination, copy_progress_callback callback, s
 
 	for (auto const & [table, table_name] : schema)
 	{
-		auto src_tx = tx_begin_read ();
-		uint64_t const total = count (src_tx, table);
+		auto src_txn = tx_begin_read ();
+		uint64_t const total = count (src_txn, table);
 		std::atomic<uint64_t> copied{ 0 };
 
 		auto copy_action = [&] (nano::store::read_transaction const &, iterator begin_it, iterator end_it) {
-			auto dst_tx = destination.tx_begin_write ();
+			auto dst_txn = destination.tx_begin_write ();
 			size_t batch_count = 0;
 
 			for (auto it = std::move (begin_it); it != end_it; ++it)
 			{
 				auto const & [key, value] = *it;
-				auto status = destination.put (dst_tx, table, nano::store::db_val{ key }, nano::store::db_val{ value });
+				auto status = destination.put (dst_txn, table, nano::store::db_val{ key }, nano::store::db_val{ value });
 				if (!destination.success (status))
 				{
 					throw std::runtime_error ("copy_to: put failed: " + destination.error_string (status));
@@ -214,7 +214,7 @@ void backend::copy_to (backend & destination, copy_progress_callback callback, s
 
 				if (batch_size > 0 && batch_count >= batch_size)
 				{
-					dst_tx.refresh ();
+					dst_txn.refresh ();
 					batch_count = 0;
 				}
 
