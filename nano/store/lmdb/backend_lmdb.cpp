@@ -24,6 +24,22 @@ backend_lmdb::~backend_lmdb ()
 	close ();
 }
 
+void backend_lmdb::close_impl ()
+{
+	// Close all table handles
+	if (env)
+	{
+		for (auto const & [table, dbi] : table_handles)
+		{
+			mdb_dbi_close (*env, dbi);
+		}
+		table_handles.clear ();
+	}
+
+	// Release environment
+	env.reset ();
+}
+
 void backend_lmdb::open_impl (column_schema schema, nano::store::open_mode mode)
 {
 	release_assert (!env, "environment already open");
@@ -57,22 +73,6 @@ void backend_lmdb::open_impl (column_schema schema, nano::store::open_mode mode)
 		}
 		txn.commit ();
 	}
-}
-
-void backend_lmdb::close_impl ()
-{
-	// Close all table handles
-	if (env)
-	{
-		for (auto const & [table, dbi] : table_handles)
-		{
-			mdb_dbi_close (*env, dbi);
-		}
-	}
-	table_handles.clear ();
-
-	// Release environment
-	env.reset ();
 }
 
 void backend_lmdb::open_table (nano::store::transaction const & txn, tables table, char const * name, unsigned flags)

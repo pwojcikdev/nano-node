@@ -61,6 +61,17 @@ backend_rocksdb::~backend_rocksdb ()
 	close ();
 }
 
+void backend_rocksdb::close_impl ()
+{
+	// Close all table handles first
+	table_handles.clear ();
+	handles.clear ();
+
+	// Release database pointer (rocksdb closes db in the destructor)
+	db.reset ();
+	transaction_db = nullptr;
+}
+
 void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mode)
 {
 	// Create database directory if needed
@@ -125,14 +136,6 @@ void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mo
 	}
 }
 
-void backend_rocksdb::close_impl ()
-{
-	table_handles.clear ();
-	handles.clear ();
-	db.reset ();
-	transaction_db = nullptr;
-}
-
 void backend_rocksdb::open_db (std::filesystem::path const & path, nano::store::open_mode mode, ::rocksdb::Options const & options, std::vector<::rocksdb::ColumnFamilyDescriptor> column_families)
 {
 	::rocksdb::Status s;
@@ -146,11 +149,10 @@ void backend_rocksdb::open_db (std::filesystem::path const & path, nano::store::
 	}
 	else
 	{
-		s = ::rocksdb::TransactionDB::Open (options, ::rocksdb::TransactionDBOptions{}, path.string (), column_families, &handles_l, &transaction_db);
-		if (transaction_db)
-		{
-			db.reset (transaction_db);
-		}
+		::rocksdb::TransactionDB * transaction_db_l;
+		s = ::rocksdb::TransactionDB::Open (options, ::rocksdb::TransactionDBOptions{}, path.string (), column_families, &handles_l, &transaction_db_l);
+		db.reset (transaction_db_l);
+		transaction_db = transaction_db_l;
 	}
 
 	handles.resize (handles_l.size ());
