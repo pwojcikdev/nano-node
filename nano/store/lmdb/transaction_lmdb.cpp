@@ -94,7 +94,7 @@ void nano::store::lmdb::write_transaction_impl::commit ()
 	if (active)
 	{
 		auto status = mdb_txn_commit (handle);
-		release_assert (success (status), "unable to write to the LMDB database", error_string (status));
+		release_assert (success (status), "Unable to write to the LMDB database", error_string (status));
 		handle = nullptr;
 		txn_callbacks.txn_end (this);
 		active = false;

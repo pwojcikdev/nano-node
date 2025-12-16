@@ -58,7 +58,7 @@ void nano::store::rocksdb::write_transaction_impl::commit ()
 	if (active)
 	{
 		auto status = txn->Commit ();
-		release_assert (status.ok (), "unable to write to the RocksDB database", status.ToString ());
+		release_assert (status.ok (), "Unable to write to the RocksDB database", status.ToString ());
 		delete txn;
 		txn = nullptr;
 		active = false;
