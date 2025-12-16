@@ -9,35 +9,38 @@
 
 namespace nano::store::rocksdb
 {
-class read_transaction_impl final : public store::read_transaction_impl
+class read_transaction_impl final : public nano::store::read_transaction_impl
 {
 public:
-	read_transaction_impl (::rocksdb::DB * db);
-	~read_transaction_impl ();
+	explicit read_transaction_impl (::rocksdb::DB * db);
+	~read_transaction_impl () override;
+
 	void reset () override;
 	void renew () override;
 	void * get_handle () const override;
 
 private:
 	::rocksdb::DB * db;
-	::rocksdb::ReadOptions options;
+	::rocksdb::ReadOptions options{};
+	bool active{ false };
 };
 
-class write_transaction_impl final : public store::write_transaction_impl
+class write_transaction_impl final : public nano::store::write_transaction_impl
 {
 public:
-	write_transaction_impl (::rocksdb::TransactionDB * db_a);
-	~write_transaction_impl ();
+	explicit write_transaction_impl (::rocksdb::TransactionDB * db_a);
+	~write_transaction_impl () override;
+
 	void commit () override;
 	void renew () override;
 	void * get_handle () const override;
-	bool contains (nano::tables table_a) const override;
+	bool contains (nano::tables) const override;
 
 private:
 	bool check_no_write_tx () const;
 
-	::rocksdb::Transaction * txn;
 	::rocksdb::TransactionDB * db;
-	bool active{ true };
+	::rocksdb::Transaction * txn{ nullptr };
+	bool active{ false };
 };
 }
