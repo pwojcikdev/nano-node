@@ -53,32 +53,25 @@ void backend_lmdb::open_impl (column_schema schema, nano::store::open_mode mode)
 
 	env = std::make_unique<nano::store::lmdb::env> (database_path, options);
 
-	if (mode == nano::store::open_mode::read_only)
+	bool const read_only = (mode == nano::store::open_mode::read_only);
+
+	MDB_txn * mdb_txn{ nullptr };
+	auto status = mdb_txn_begin (*env, nullptr, read_only ? MDB_RDONLY : 0, &mdb_txn);
+	release_assert (success (status), error_string (status));
+
+	for (auto const & [table, name] : schema)
 	{
-		// Open all tables specified in schema (read-only)
-		auto txn = tx_begin_read ();
-		for (auto const & [table, name] : schema)
-		{
-			open_table (txn, table, name.c_str (), 0);
-		}
+		open_table (mdb_txn, table, name.c_str (), read_only ? 0 : MDB_CREATE);
 	}
-	else
-	{
-		// Create tables if they don't exist (for create and read_write modes)
-		// This allows upgrades to open schemas with new tables
-		auto txn = tx_begin_write ();
-		for (auto const & [table, name] : schema)
-		{
-			open_table (txn, table, name.c_str (), MDB_CREATE);
-		}
-		txn.commit ();
-	}
+
+	status = mdb_txn_commit (mdb_txn);
+	release_assert (success (status), "failed to commit lmdb opening transaction", error_string (status));
 }
 
-void backend_lmdb::open_table (nano::store::transaction const & txn, tables table, char const * name, unsigned flags)
+void backend_lmdb::open_table (MDB_txn * mdb_txn, tables table, char const * name, unsigned flags)
 {
 	MDB_dbi handle{};
-	auto status = mdb_dbi_open (env->tx (txn), name, flags, &handle);
+	auto status = mdb_dbi_open (mdb_txn, name, flags, &handle);
 	if (!success (status))
 	{
 		throw std::runtime_error ("Failed to open " + std::string (name) + " database: " + error_string (status));

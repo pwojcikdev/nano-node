@@ -64,7 +64,7 @@ private:
 	bool txn_tracking_enabled{ false };
 
 	nano::store::lmdb::env::table_handle table_to_dbi (tables table) const;
-	void open_table (nano::store::transaction const &, tables table, char const * name, unsigned flags);
+	void open_table (MDB_txn * mdb_txn, tables table, char const * name, unsigned flags);
 
 	nano::store::lmdb::txn_callbacks create_txn_callbacks () const;
 };
