@@ -37,9 +37,9 @@ nano::uint256_union make_value (uint64_t value)
 }
 }
 
-// =============================================================================
-// CRUD Operations
-// =============================================================================
+/*
+ * Basic CRUD operations
+ */
 
 TEST (backend, basic_put_get)
 {
@@ -78,13 +78,10 @@ TEST (backend, put_overwrite)
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ value1 });
-		write_tx.commit ();
 	}
-
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ value2 });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -136,9 +133,7 @@ TEST (backend, delete_existing)
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ value });
-		write_tx.commit ();
 	}
-
 	{
 		auto write_tx = backend->tx_begin_write ();
 		EXPECT_TRUE (backend->exists (write_tx, nano::tables::accounts, nano::store::db_val{ key }));
@@ -159,7 +154,7 @@ TEST (backend, delete_non_existent)
 	auto write_tx = backend->tx_begin_write ();
 	EXPECT_FALSE (backend->exists (write_tx, nano::tables::accounts, nano::store::db_val{ key }));
 	auto status = backend->del (write_tx, nano::tables::accounts, nano::store::db_val{ key });
-	// Both backends should return success for delete of non-existent key
+	// Backends should return success for delete of non-existent key
 	EXPECT_TRUE (backend->success (status));
 }
 
@@ -175,13 +170,10 @@ TEST (backend, exists_after_delete)
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ value });
-		write_tx.commit ();
 	}
-
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->del (write_tx, nano::tables::accounts, nano::store::db_val{ key });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -200,13 +192,10 @@ TEST (backend, get_after_delete)
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ value });
-		write_tx.commit ();
 	}
-
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->del (write_tx, nano::tables::accounts, nano::store::db_val{ key });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -215,9 +204,9 @@ TEST (backend, get_after_delete)
 	EXPECT_TRUE (backend->not_found (status));
 }
 
-// =============================================================================
-// Binary Data Edge Cases
-// =============================================================================
+/*
+ * Binary data edge cases
+ */
 
 TEST (backend, empty_value)
 {
@@ -325,9 +314,55 @@ TEST (backend, large_value)
 	EXPECT_EQ (std::memcmp (result.data (), large_data.data (), large_data.size ()), 0);
 }
 
-// =============================================================================
-// Iterator Edge Cases (Circular Behavior)
-// =============================================================================
+// Keys should be ordered lexicographically
+TEST (backend, probe_key)
+{
+	// Test that 32-byte probe keys work with longer actual keys (like 64-byte/512-bit)
+	auto backend = nano::test::make_backend ();
+	backend->create (test_schema, 1);
+	backend->open (test_schema, nano::store::open_mode::read_write);
+
+	// Insert 64-byte keys with different first bytes
+	{
+		auto write_tx = backend->tx_begin_write ();
+		for (uint8_t first_byte : { 0x20, 0x60, 0xA0, 0xE0 })
+		{
+			std::array<uint8_t, 64> key{};
+			key[0] = first_byte;
+			key[63] = 0x99; // Some data at the end
+			backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ std::span<uint8_t const>{ key } }, nano::store::db_val{ make_value (first_byte) });
+		}
+	}
+
+	auto read_tx = backend->tx_begin_read ();
+
+	// Probe with 32-byte key (shorter than actual 64-byte keys)
+	{
+		std::array<uint8_t, 32> probe{};
+		probe[0] = 0x50; // Between 0x20 and 0x60
+
+		auto it = backend->begin (read_tx, nano::tables::accounts, nano::store::db_val{ std::span<uint8_t const>{ probe } });
+		ASSERT_FALSE (it.is_end ());
+		auto [k, v] = *it;
+		EXPECT_EQ (k.size (), 64);
+		EXPECT_EQ (k[0], 0x60); // Should find the 64-byte key starting with 0x60
+	}
+
+	// Probe with 32-byte key at boundary
+	{
+		std::array<uint8_t, 32> probe{};
+		probe[0] = 0xA0;
+
+		auto it = backend->begin (read_tx, nano::tables::accounts, nano::store::db_val{ std::span<uint8_t const>{ probe } });
+		ASSERT_FALSE (it.is_end ());
+		auto [k, v] = *it;
+		EXPECT_EQ (k[0], 0xA0);
+	}
+}
+
+/*
+ * Iterators
+ */
 
 TEST (backend, iterator_empty_table)
 {
@@ -355,7 +390,6 @@ TEST (backend, iterator_single_entry)
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ value });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -391,7 +425,6 @@ TEST (backend, iterator_forward)
 		{
 			backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ make_value (0) });
 		}
-		write_tx.commit ();
 	}
 
 	// Verify lexicographic order (key1 < key2 < key3)
@@ -429,7 +462,6 @@ TEST (backend, iterator_decrement_from_end)
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, nano::store::db_val{ make_value (0) });
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key2 }, nano::store::db_val{ make_value (0) });
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key3 }, nano::store::db_val{ make_value (0) });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -457,7 +489,6 @@ TEST (backend, iterator_increment_from_end)
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, nano::store::db_val{ make_value (0) });
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key2 }, nano::store::db_val{ make_value (0) });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -483,7 +514,6 @@ TEST (backend, iterator_wrap_forward)
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ make_value (0) });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -505,7 +535,6 @@ TEST (backend, iterator_wrap_backward)
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ make_value (0) });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -531,7 +560,6 @@ TEST (backend, iterator_lower_bound_exact)
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, nano::store::db_val{ make_value (0) });
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key2 }, nano::store::db_val{ make_value (0) });
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key3 }, nano::store::db_val{ make_value (0) });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -557,7 +585,6 @@ TEST (backend, iterator_lower_bound_between)
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, nano::store::db_val{ make_value (0) });
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key3 }, nano::store::db_val{ make_value (0) });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -585,7 +612,6 @@ TEST (backend, iterator_lower_bound_past_all)
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, nano::store::db_val{ make_value (0) });
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key2 }, nano::store::db_val{ make_value (0) });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -611,7 +637,6 @@ TEST (backend, iterator_reverse_traversal)
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, nano::store::db_val{ make_value (0) });
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key2 }, nano::store::db_val{ make_value (0) });
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key3 }, nano::store::db_val{ make_value (0) });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -646,7 +671,6 @@ TEST (backend, iterator_is_end)
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ make_value (0) });
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -658,9 +682,9 @@ TEST (backend, iterator_is_end)
 	EXPECT_TRUE (end_it.is_end ());
 }
 
-// =============================================================================
-// Transaction Management
-// =============================================================================
+/*
+ * Transactions
+ */
 
 TEST (backend, tx_read_basic)
 {
@@ -825,38 +849,144 @@ TEST (backend, tx_read_isolation)
 	backend->create (test_schema, 1);
 	backend->open (test_schema, nano::store::open_mode::read_write);
 
-	auto key = make_key (1);
+	auto key1 = make_key (1);
+	auto key2 = make_key (2);
+	auto key3 = make_key (3);
 	auto value1 = make_value (100);
 	auto value2 = make_value (200);
 
-	// Initial write
+	// Initial write - add key1
 	{
 		auto write_tx = backend->tx_begin_write ();
-		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ value1 });
-		write_tx.commit ();
+		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, nano::store::db_val{ value1 });
 	}
 
-	// Start read transaction (snapshot)
+	// Start read transaction (snapshot) - should see key1=value1, no key2, no key3
 	auto read_tx = backend->tx_begin_read ();
 
-	// Update value in separate write transaction
+	// Concurrent writes: update key1, add key2, add key3
 	{
 		auto write_tx = backend->tx_begin_write ();
-		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key }, nano::store::db_val{ value2 });
-		write_tx.commit ();
+		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, nano::store::db_val{ value2 });
+		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key2 }, nano::store::db_val{ value2 });
+		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key3 }, nano::store::db_val{ value2 });
 	}
 
-	// Read transaction should still see old value (snapshot isolation)
-	nano::store::db_val result;
-	backend->get (read_tx, nano::tables::accounts, nano::store::db_val{ key }, result);
-	nano::uint256_union result_value;
-	std::memcpy (result_value.bytes.data (), result.data (), result.size ());
-	EXPECT_EQ (result_value, value1);
+	// Test get() isolation - should see old value for key1
+	{
+		nano::store::db_val result;
+		auto status = backend->get (read_tx, nano::tables::accounts, nano::store::db_val{ key1 }, result);
+		ASSERT_TRUE (backend->success (status));
+		nano::uint256_union result_value;
+		std::memcpy (result_value.bytes.data (), result.data (), result.size ());
+		EXPECT_EQ (result_value, value1);
+	}
+
+	// Test exists() isolation - should not see key2 that was added after snapshot
+	{
+		EXPECT_TRUE (backend->exists (read_tx, nano::tables::accounts, nano::store::db_val{ key1 }));
+		EXPECT_FALSE (backend->exists (read_tx, nano::tables::accounts, nano::store::db_val{ key2 }));
+	}
+
+	// Test iterator isolation - should only see key1, not key2 or key3
+	{
+		auto it = backend->begin (read_tx, nano::tables::accounts);
+		auto end = backend->end (read_tx, nano::tables::accounts);
+
+		std::vector<nano::uint256_union> found_keys;
+		for (; it != end; ++it)
+		{
+			auto [k, v] = *it;
+			nano::uint256_union found_key;
+			std::memcpy (found_key.bytes.data (), k.data (), k.size ());
+			found_keys.push_back (found_key);
+		}
+
+		ASSERT_EQ (found_keys.size (), 1);
+		EXPECT_EQ (found_keys[0], key1);
+	}
+
+	// Test iterator with lower_bound isolation
+	{
+		auto it = backend->begin (read_tx, nano::tables::accounts, nano::store::db_val{ key2 });
+		// key2 doesn't exist in snapshot, and key3 also doesn't exist, so should be end
+		EXPECT_TRUE (it.is_end ());
+	}
 }
 
-// =============================================================================
-// Table Operations
-// =============================================================================
+TEST (backend, tx_write_read_isolation)
+{
+	// Skip test for LMDB as it does not support concurrent write transactions
+	if (nano::default_database_backend () == nano::database_backend::lmdb)
+	{
+		GTEST_SKIP ();
+	}
+
+	auto backend = nano::test::make_backend ();
+	backend->create (test_schema, 1);
+	backend->open (test_schema, nano::store::open_mode::read_write);
+
+	auto key1 = make_key (1);
+	auto key2 = make_key (2);
+	auto key3 = make_key (3);
+	auto value1 = make_value (100);
+	auto value2 = make_value (200);
+
+	// Initial write - add key1
+	{
+		auto write_tx = backend->tx_begin_write ();
+		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, nano::store::db_val{ value1 });
+	}
+
+	// Start write transaction - snapshot taken here
+	auto write_tx = backend->tx_begin_write ();
+
+	// Another write transaction commits changes AFTER our write_tx started
+	{
+		auto other_write_tx = backend->tx_begin_write ();
+		backend->put (other_write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, nano::store::db_val{ value2 });
+		backend->put (other_write_tx, nano::tables::accounts, nano::store::db_val{ key2 }, nano::store::db_val{ value2 });
+		backend->put (other_write_tx, nano::tables::accounts, nano::store::db_val{ key3 }, nano::store::db_val{ value2 });
+	}
+
+	// Test get() isolation within write transaction - should see old value for key1
+	{
+		nano::store::db_val result;
+		auto status = backend->get (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }, result);
+		ASSERT_TRUE (backend->success (status));
+		nano::uint256_union result_value;
+		std::memcpy (result_value.bytes.data (), result.data (), result.size ());
+		EXPECT_EQ (result_value, value1);
+	}
+
+	// Test exists() isolation within write transaction
+	{
+		EXPECT_TRUE (backend->exists (write_tx, nano::tables::accounts, nano::store::db_val{ key1 }));
+		EXPECT_FALSE (backend->exists (write_tx, nano::tables::accounts, nano::store::db_val{ key2 }));
+	}
+
+	// Test iterator isolation within write transaction
+	{
+		auto it = backend->begin (write_tx, nano::tables::accounts);
+		auto end = backend->end (write_tx, nano::tables::accounts);
+
+		std::vector<nano::uint256_union> found_keys;
+		for (; it != end; ++it)
+		{
+			auto [k, v] = *it;
+			nano::uint256_union found_key;
+			std::memcpy (found_key.bytes.data (), k.data (), k.size ());
+			found_keys.push_back (found_key);
+		}
+
+		ASSERT_EQ (found_keys.size (), 1);
+		EXPECT_EQ (found_keys[0], key1);
+	}
+}
+
+/*
+ * Table operations
+ */
 
 TEST (backend, count_empty)
 {
@@ -880,7 +1010,6 @@ TEST (backend, count_accuracy)
 		{
 			backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ make_key (i) }, nano::store::db_val{ make_value (i) });
 		}
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -891,7 +1020,6 @@ TEST (backend, count_accuracy)
 		auto write_tx = backend->tx_begin_write ();
 		backend->del (write_tx, nano::tables::accounts, nano::store::db_val{ make_key (0) });
 		backend->del (write_tx, nano::tables::accounts, nano::store::db_val{ make_key (1) });
-		write_tx.commit ();
 	}
 
 	auto read_tx2 = backend->tx_begin_read ();
@@ -908,13 +1036,10 @@ TEST (backend, empty_true_false)
 		auto read_tx = backend->tx_begin_read ();
 		EXPECT_TRUE (backend->empty (read_tx, nano::tables::accounts));
 	}
-
 	{
 		auto write_tx = backend->tx_begin_write ();
 		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ make_key (1) }, nano::store::db_val{ make_value (1) });
-		write_tx.commit ();
 	}
-
 	{
 		auto read_tx = backend->tx_begin_read ();
 		EXPECT_FALSE (backend->empty (read_tx, nano::tables::accounts));
@@ -943,7 +1068,6 @@ TEST (backend, empty_vs_count)
 		{
 			backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ make_key (i) }, nano::store::db_val{ make_value (i) });
 		}
-		write_tx.commit ();
 	}
 
 	{
@@ -964,14 +1088,11 @@ TEST (backend, clear_table)
 		{
 			backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ make_key (i) }, nano::store::db_val{ make_value (i) });
 		}
-		write_tx.commit ();
 	}
-
 	{
 		auto write_tx = backend->tx_begin_write ();
 		auto status = backend->clear (write_tx, nano::tables::accounts);
 		EXPECT_TRUE (backend->success (status));
-		write_tx.commit ();
 	}
 
 	auto read_tx = backend->tx_begin_read ();
@@ -1002,9 +1123,82 @@ TEST (backend, table_exists)
 	EXPECT_FALSE (backend->table_exists (read_tx, "nonexistent_table"));
 }
 
-// =============================================================================
-// Database Lifecycle
-// =============================================================================
+TEST (backend, drop_table)
+{
+	auto backend = nano::test::make_backend ();
+	backend->create (test_schema, 1);
+	backend->open (test_schema, nano::store::open_mode::read_write);
+
+	{
+		auto write_tx = backend->tx_begin_write ();
+		backend->put (write_tx, nano::tables::accounts, nano::store::db_val{ make_key (1) }, nano::store::db_val{ make_value (1) });
+	}
+
+	{
+		auto read_tx = backend->tx_begin_read ();
+		EXPECT_TRUE (backend->table_exists (read_tx, "accounts"));
+	}
+
+	{
+		auto write_tx = backend->tx_begin_write ();
+		EXPECT_TRUE (backend->drop_table (write_tx, "accounts"));
+	}
+
+	{
+		auto read_tx = backend->tx_begin_read ();
+		EXPECT_FALSE (backend->table_exists (read_tx, "accounts"));
+	}
+
+	// Drop non-existent table should return false
+	{
+		auto write_tx = backend->tx_begin_write ();
+		EXPECT_FALSE (backend->drop_table (write_tx, "nonexistent_table"));
+	}
+}
+
+// Test dropping a table that exists in the database but not in the current schema
+// This simulates database upgrades where old tables need to be removed
+TEST (backend, drop_table_not_in_schema)
+{
+	auto path = nano::unique_path ();
+
+	// Schema with an extra table (simulating old version)
+	nano::store::column_schema const old_schema{
+		{ nano::tables::meta, "meta" },
+		{ nano::tables::accounts, "accounts" },
+		{ nano::tables::frontiers, "frontiers" }, // Dropped in v24
+	};
+
+	// Create database with old schema
+	auto backend = nano::test::make_backend (path);
+	{
+		backend->create (old_schema, 1);
+		backend->open (old_schema, nano::store::open_mode::read_write);
+
+		auto write_tx = backend->tx_begin_write ();
+		backend->put (write_tx, nano::tables::frontiers, nano::store::db_val{ make_key (1) }, nano::store::db_val{ make_value (1) });
+	}
+	backend->close ();
+
+	// Reopen with new schema (without frontiers) and drop the old table
+	backend->open (test_schema, nano::store::open_mode::read_write);
+	{
+		auto read_tx = backend->tx_begin_read ();
+		EXPECT_TRUE (backend->table_exists (read_tx, "frontiers"));
+	}
+	{
+		auto write_tx = backend->tx_begin_write ();
+		EXPECT_TRUE (backend->drop_table (write_tx, "frontiers"));
+	}
+	{
+		auto read_tx = backend->tx_begin_read ();
+		EXPECT_FALSE (backend->table_exists (read_tx, "frontiers"));
+	}
+}
+
+/*
+ * Lifecycle
+ */
 
 TEST (backend, open_create_close)
 {
@@ -1060,17 +1254,6 @@ TEST (backend, reopen_persistence)
 	}
 }
 
-TEST (backend, vendor_get)
-{
-	auto backend = nano::test::make_backend ();
-	backend->create (test_schema, 1);
-	backend->open (test_schema, nano::store::open_mode::read_write);
-
-	auto vendor = backend->vendor_get ();
-	// Should contain either "lmdb" or "rocksdb"
-	EXPECT_TRUE (vendor.find ("lmdb") != std::string::npos || vendor.find ("rocksdb") != std::string::npos || vendor.find ("LMDB") != std::string::npos || vendor.find ("RocksDB") != std::string::npos);
-}
-
 TEST (backend, get_database_path)
 {
 	auto path = nano::unique_path ();
@@ -1081,11 +1264,12 @@ TEST (backend, get_database_path)
 	auto db_path = backend->get_database_path ();
 	// Path should contain the unique path we specified
 	EXPECT_FALSE (db_path.empty ());
+	EXPECT_NE (db_path.find (path.string ()), std::string::npos);
 }
 
-// =============================================================================
-// Version Management
-// =============================================================================
+/*
+ * Versioning
+ */
 
 TEST (backend, set_get_version)
 {
@@ -1103,34 +1287,9 @@ TEST (backend, set_get_version)
 	EXPECT_EQ (backend->get_version (read_tx), 42);
 }
 
-TEST (backend, version_persistence)
-{
-	auto path = nano::unique_path ();
-
-	{
-		auto backend = nano::test::make_backend (path);
-		backend->create (test_schema, 1);
-		backend->open (test_schema, nano::store::open_mode::read_write);
-
-		auto write_tx = backend->tx_begin_write ();
-		backend->set_version (write_tx, 99);
-		write_tx.commit ();
-
-		backend->close ();
-	}
-
-	{
-		auto backend = nano::test::make_backend (path);
-		backend->open (test_schema, nano::store::open_mode::read_write);
-
-		auto read_tx = backend->tx_begin_read ();
-		EXPECT_EQ (backend->get_version (read_tx), 99);
-	}
-}
-
-// =============================================================================
-// Error Handling
-// =============================================================================
+/*
+ * Status codes
+ */
 
 TEST (backend, success_not_found)
 {
