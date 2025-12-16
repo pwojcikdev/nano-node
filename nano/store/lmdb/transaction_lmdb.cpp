@@ -29,34 +29,42 @@ private:
 };
 }
 
-nano::store::lmdb::read_transaction_impl::read_transaction_impl (nano::store::lmdb::env const & environment_a, nano::store::lmdb::txn_callbacks txn_callbacks_a) :
-	store::read_transaction_impl (environment_a.store_id),
-	txn_callbacks (txn_callbacks_a)
+/*
+ * read_transaction_impl
+ */
+
+nano::store::lmdb::read_transaction_impl::read_transaction_impl (nano::store::lmdb::env const & env_a, nano::store::lmdb::txn_callbacks txn_callbacks_a) :
+	store::read_transaction_impl{ env_a.store_id },
+	env{ env_a },
+	txn_callbacks{ txn_callbacks_a }
 {
-	auto status (mdb_txn_begin (environment_a, nullptr, MDB_RDONLY, &handle));
-	release_assert (success (status), error_string (status));
-	txn_callbacks.txn_start (this);
+	renew ();
 }
 
 nano::store::lmdb::read_transaction_impl::~read_transaction_impl ()
 {
-	// This uses commit rather than abort, as it is needed when opening databases with a read only transaction
-	auto status (mdb_txn_commit (handle));
-	release_assert (success (status), error_string (status));
-	txn_callbacks.txn_end (this);
+	reset ();
 }
 
 void nano::store::lmdb::read_transaction_impl::reset ()
 {
-	mdb_txn_reset (handle);
-	txn_callbacks.txn_end (this);
+	if (active)
+	{
+		mdb_txn_abort (handle);
+		handle = nullptr;
+		txn_callbacks.txn_end (this);
+		active = false;
+	}
 }
 
 void nano::store::lmdb::read_transaction_impl::renew ()
 {
-	auto status (mdb_txn_renew (handle));
+	release_assert (!active);
+	release_assert (handle == nullptr);
+	auto status = mdb_txn_begin (env, nullptr, MDB_RDONLY, &handle);
 	release_assert (success (status), error_string (status));
 	txn_callbacks.txn_start (this);
+	active = true;
 }
 
 void * nano::store::lmdb::read_transaction_impl::get_handle () const
@@ -64,10 +72,14 @@ void * nano::store::lmdb::read_transaction_impl::get_handle () const
 	return handle;
 }
 
-nano::store::lmdb::write_transaction_impl::write_transaction_impl (nano::store::lmdb::env const & environment_a, nano::store::lmdb::txn_callbacks txn_callbacks_a) :
-	store::write_transaction_impl (environment_a.store_id),
-	env (environment_a),
-	txn_callbacks (txn_callbacks_a)
+/*
+ * write_transaction_impl
+ */
+
+nano::store::lmdb::write_transaction_impl::write_transaction_impl (nano::store::lmdb::env const & env_a, nano::store::lmdb::txn_callbacks txn_callbacks_a) :
+	store::write_transaction_impl (env_a.store_id),
+	env{ env_a },
+	txn_callbacks{ txn_callbacks_a }
 {
 	renew ();
 }
@@ -82,7 +94,8 @@ void nano::store::lmdb::write_transaction_impl::commit ()
 	if (active)
 	{
 		auto status = mdb_txn_commit (handle);
-		release_assert (success (status) && "Unable to write to the LMDB database", error_string (status));
+		release_assert (success (status), "Unable to write to the LMDB database", error_string (status));
+		handle = nullptr;
 		txn_callbacks.txn_end (this);
 		active = false;
 	}
@@ -90,6 +103,8 @@ void nano::store::lmdb::write_transaction_impl::commit ()
 
 void nano::store::lmdb::write_transaction_impl::renew ()
 {
+	release_assert (!active);
+	release_assert (handle == nullptr);
 	auto status (mdb_txn_begin (env, nullptr, 0, &handle));
 	release_assert (success (status), error_string (status));
 	txn_callbacks.txn_start (this);
@@ -106,6 +121,10 @@ bool nano::store::lmdb::write_transaction_impl::contains (nano::tables table_a) 
 	// LMDB locks on every write
 	return true;
 }
+
+/*
+ * mdb_txn_tracker
+ */
 
 nano::mdb_txn_tracker::mdb_txn_tracker (nano::logger & logger_a, nano::txn_tracking_config const & txn_tracking_config_a, std::chrono::milliseconds block_processor_batch_max_time_a) :
 	logger (logger_a),
