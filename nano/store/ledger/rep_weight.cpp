@@ -19,7 +19,7 @@ uint64_t rep_weight::count (nano::store::transaction const & transaction) const
 
 nano::uint128_t rep_weight::get (nano::store::transaction const & transaction, nano::account const & representative) const
 {
-	db_val value;
+	nano::store::db_val value;
 	auto status = backend.get (transaction, tables::rep_weights, representative, value);
 	release_assert (backend.success (status) || backend.not_found (status), backend.error_string (status));
 	nano::uint128_t weight{ 0 };

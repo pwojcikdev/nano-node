@@ -16,7 +16,7 @@ void confirmation_height::put (nano::store::write_transaction const & transactio
 
 bool confirmation_height::get (nano::store::transaction const & transaction, nano::account const & account, nano::confirmation_height_info & confirmation_height_info) const
 {
-	db_val value;
+	nano::store::db_val value;
 	auto status = backend.get (transaction, tables::confirmation_height, account, value);
 	release_assert (backend.success (status) || backend.not_found (status), backend.error_string (status));
 	bool result = true;

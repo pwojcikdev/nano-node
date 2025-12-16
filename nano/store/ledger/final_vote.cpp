@@ -10,7 +10,7 @@ final_vote::final_vote (nano::store::backend & backend_a) :
 
 bool final_vote::put (nano::store::write_transaction const & transaction, nano::qualified_root const & root, nano::block_hash const & hash)
 {
-	db_val value;
+	nano::store::db_val value;
 	auto status = backend.get (transaction, tables::final_votes, root, value);
 	release_assert (backend.success (status) || backend.not_found (status), backend.error_string (status));
 	bool result = true;
@@ -28,7 +28,7 @@ bool final_vote::put (nano::store::write_transaction const & transaction, nano::
 
 std::optional<nano::block_hash> final_vote::get (nano::store::transaction const & transaction, nano::qualified_root const & qualified_root) const
 {
-	db_val result;
+	nano::store::db_val result;
 	auto status = backend.get (transaction, tables::final_votes, qualified_root, result);
 	std::optional<nano::block_hash> final_vote_hash;
 	if (backend.success (status))

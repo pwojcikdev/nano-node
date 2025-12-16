@@ -321,7 +321,7 @@ void ledger_store::upgrade_v22_to_v23 ()
 			if (!account_info.balance.is_zero ())
 			{
 				nano::uint128_t total{ 0 };
-				db_val value;
+				nano::store::db_val value;
 				auto status = backend.get (transaction, tables::rep_weights, account_info.representative, value);
 				if (backend.success (status))
 				{

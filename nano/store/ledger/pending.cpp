@@ -22,7 +22,7 @@ void pending::del (nano::store::write_transaction const & transaction, nano::pen
 
 auto pending::get (nano::store::transaction const & transaction, nano::pending_key const & key) const -> std::optional<nano::pending_info>
 {
-	db_val value;
+	nano::store::db_val value;
 	auto status = backend.get (transaction, tables::pending, key, value);
 	release_assert (backend.success (status) || backend.not_found (status), backend.error_string (status));
 	std::optional<nano::pending_info> result;

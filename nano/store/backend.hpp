@@ -84,10 +84,10 @@ public:
 	void close ();
 
 	// Basic CRUD operations
-	virtual int get (nano::store::transaction const &, tables, db_val const & key, db_val & value) const = 0;
-	virtual int put (nano::store::write_transaction const &, tables, db_val const & key, db_val const & value) = 0;
-	virtual int del (nano::store::write_transaction const &, tables, db_val const & key) = 0;
-	virtual bool exists (nano::store::transaction const &, tables, db_val const & key) const = 0;
+	virtual int get (nano::store::transaction const &, tables, nano::store::db_val const & key, nano::store::db_val & value) const = 0;
+	virtual int put (nano::store::write_transaction const &, tables, nano::store::db_val const & key, nano::store::db_val const & value) = 0;
+	virtual int del (nano::store::write_transaction const &, tables, nano::store::db_val const & key) = 0;
+	virtual bool exists (nano::store::transaction const &, tables, nano::store::db_val const & key) const = 0;
 
 	// Table operations
 	bool empty (nano::store::transaction const &) const; // Checks if all tables are empty
@@ -99,7 +99,7 @@ public:
 
 	// Iterator operations
 	virtual nano::store::iterator begin (nano::store::transaction const &, tables) const = 0;
-	virtual nano::store::iterator begin (nano::store::transaction const &, tables, db_val const & key) const = 0;
+	virtual nano::store::iterator begin (nano::store::transaction const &, tables, nano::store::db_val const & key) const = 0;
 	virtual nano::store::iterator end (nano::store::transaction const &, tables) const = 0;
 
 	// Parallel iteration

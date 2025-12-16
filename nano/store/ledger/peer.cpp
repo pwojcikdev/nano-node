@@ -16,7 +16,7 @@ void peer::put (nano::store::write_transaction const & transaction, nano::endpoi
 nano::millis_t peer::get (nano::store::transaction const & transaction, nano::endpoint_key const & endpoint) const
 {
 	nano::millis_t result{ 0 };
-	db_val value;
+	nano::store::db_val value;
 	auto status = backend.get (transaction, tables::peers, endpoint, value);
 	release_assert (backend.success (status) || backend.not_found (status), backend.error_string (status));
 	if (backend.success (status) && value.size () > 0)

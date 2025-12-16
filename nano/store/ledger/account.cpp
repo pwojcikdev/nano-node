@@ -18,7 +18,7 @@ void account::put (nano::store::write_transaction const & transaction, nano::acc
 
 bool account::get (nano::store::transaction const & transaction, nano::account const & account, nano::account_info & info) const
 {
-	db_val value;
+	nano::store::db_val value;
 	auto status = backend.get (transaction, tables::accounts, account, value);
 	release_assert (backend.success (status) || backend.not_found (status), backend.error_string (status));
 	bool result = true;

@@ -33,7 +33,7 @@ public:
 	void for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const;
 
 private:
-	void block_raw_get (nano::store::transaction const &, nano::block_hash const &, db_val & value) const;
+	void block_raw_get (nano::store::transaction const &, nano::block_hash const &, nano::store::db_val & value) const;
 	size_t block_successor_offset (size_t, nano::block_type) const;
 	nano::block_type block_type_from_raw (void const * data) const; // TODO: Use span
 

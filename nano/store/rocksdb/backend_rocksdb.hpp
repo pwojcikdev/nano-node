@@ -23,10 +23,10 @@ public:
 	backend_rocksdb (std::filesystem::path const & path, nano::rocksdb_config const & config);
 	~backend_rocksdb () override;
 
-	int get (nano::store::transaction const &, tables, db_val const & key, db_val & value) const override;
-	int put (nano::store::write_transaction const &, tables, db_val const & key, db_val const & value) override;
-	int del (nano::store::write_transaction const &, tables, db_val const & key) override;
-	bool exists (nano::store::transaction const &, tables, db_val const & key) const override;
+	int get (nano::store::transaction const &, tables, nano::store::db_val const & key, nano::store::db_val & value) const override;
+	int put (nano::store::write_transaction const &, tables, nano::store::db_val const & key, nano::store::db_val const & value) override;
+	int del (nano::store::write_transaction const &, tables, nano::store::db_val const & key) override;
+	bool exists (nano::store::transaction const &, tables, nano::store::db_val const & key) const override;
 
 	// WARNING: count() may return estimates for some tables
 	// Use empty() for reliable emptiness checks
@@ -36,7 +36,7 @@ public:
 	bool table_exists (nano::store::transaction const &, std::string const & name) const override;
 
 	nano::store::iterator begin (nano::store::transaction const &, tables) const override;
-	nano::store::iterator begin (nano::store::transaction const &, tables, db_val const & key) const override;
+	nano::store::iterator begin (nano::store::transaction const &, tables, nano::store::db_val const & key) const override;
 	nano::store::iterator end (nano::store::transaction const &, tables) const override;
 
 	bool success (int status) const override;

@@ -163,8 +163,8 @@ void backend::for_each_par (tables table, std::function<void (read_transaction c
 			end_bytes[0] = static_cast<uint8_t> ((i + 1) * split);
 
 			auto tx = this->tx_begin_read ();
-			db_val start_key{ std::span<uint8_t const>{ start_bytes } };
-			db_val end_key{ std::span<uint8_t const>{ end_bytes } };
+			nano::store::db_val start_key{ std::span<uint8_t const>{ start_bytes } };
+			nano::store::db_val end_key{ std::span<uint8_t const>{ end_bytes } };
 
 			action (tx,
 			this->begin (tx, table, start_key),
@@ -203,7 +203,7 @@ void backend::copy_to (backend & destination, copy_progress_callback callback, s
 			for (auto it = std::move (begin_it); it != end_it; ++it)
 			{
 				auto const & [key, value] = *it;
-				auto status = destination.put (dst_tx, table, db_val{ key }, db_val{ value });
+				auto status = destination.put (dst_tx, table, nano::store::db_val{ key }, nano::store::db_val{ value });
 				if (!destination.success (status))
 				{
 					throw std::runtime_error ("copy_to: put failed: " + destination.error_string (status));

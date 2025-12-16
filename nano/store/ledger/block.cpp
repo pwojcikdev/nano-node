@@ -26,7 +26,7 @@ void block::put (nano::store::write_transaction const & transaction, nano::block
 		void fill_value (nano::block const & block_a)
 		{
 			auto const hash = block_a.hash ();
-			db_val value;
+			nano::store::db_val value;
 			block_store.block_raw_get (transaction, block_a.previous (), value);
 			debug_assert (value.size () != 0);
 			auto const type = block_store.block_type_from_raw (value.data ());
@@ -83,14 +83,14 @@ void block::put (nano::store::write_transaction const & transaction, nano::block
 
 void block::raw_put (nano::store::write_transaction const & transaction, std::vector<uint8_t> const & data, nano::block_hash const & hash)
 {
-	db_val value{ data.size (), (void *)data.data () };
+	nano::store::db_val value{ data.size (), (void *)data.data () };
 	auto status = backend.put (transaction, tables::blocks, hash, value);
 	backend.release_assert_success (status);
 }
 
 std::optional<nano::block_hash> block::successor (nano::store::transaction const & transaction, nano::block_hash const & hash) const
 {
-	db_val value;
+	nano::store::db_val value;
 	block_raw_get (transaction, hash, value);
 	nano::block_hash result;
 	if (value.size () != 0)
@@ -115,7 +115,7 @@ std::optional<nano::block_hash> block::successor (nano::store::transaction const
 
 void block::successor_clear (nano::store::write_transaction const & transaction, nano::block_hash const & hash)
 {
-	db_val value;
+	nano::store::db_val value;
 	block_raw_get (transaction, hash, value);
 	debug_assert (value.size () != 0);
 	auto type = block_type_from_raw (value.data ());
@@ -126,7 +126,7 @@ void block::successor_clear (nano::store::write_transaction const & transaction,
 
 std::shared_ptr<nano::block> block::get (nano::store::transaction const & transaction, nano::block_hash const & hash) const
 {
-	db_val value;
+	nano::store::db_val value;
 	block_raw_get (transaction, hash, value);
 	std::shared_ptr<nano::block> result;
 	if (value.size () != 0)

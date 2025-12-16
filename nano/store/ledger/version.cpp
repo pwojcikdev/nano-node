@@ -18,7 +18,7 @@ void version::put (nano::store::write_transaction const & transaction, uint64_t 
 uint64_t version::get (nano::store::transaction const & transaction) const
 {
 	nano::uint256_union version_key{ 1 };
-	db_val data;
+	nano::store::db_val data;
 	auto status = backend.get (transaction, tables::meta, version_key, data);
 	uint64_t result = 0; // Default minimum version
 	if (backend.success (status))

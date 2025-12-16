@@ -20,10 +20,10 @@ public:
 	backend_lmdb (std::filesystem::path const & path, nano::logger & logger, nano::lmdb_config const & config, nano::txn_tracking_config const & txn_tracking_config = {}, std::chrono::milliseconds block_processor_batch_max_time = std::chrono::milliseconds{ 5000 });
 	~backend_lmdb () override;
 
-	int get (nano::store::transaction const &, tables, db_val const & key, db_val & value) const override;
-	int put (nano::store::write_transaction const &, tables, db_val const & key, db_val const & value) override;
-	int del (nano::store::write_transaction const &, tables, db_val const & key) override;
-	bool exists (nano::store::transaction const &, tables, db_val const & key) const override;
+	int get (nano::store::transaction const &, tables, nano::store::db_val const & key, nano::store::db_val & value) const override;
+	int put (nano::store::write_transaction const &, tables, nano::store::db_val const & key, nano::store::db_val const & value) override;
+	int del (nano::store::write_transaction const &, tables, nano::store::db_val const & key) override;
+	bool exists (nano::store::transaction const &, tables, nano::store::db_val const & key) const override;
 
 	uint64_t count (nano::store::transaction const &, tables) const override;
 	int clear (nano::store::write_transaction const &, tables) override;
@@ -31,7 +31,7 @@ public:
 	bool table_exists (nano::store::transaction const &, std::string const & name) const override;
 
 	nano::store::iterator begin (nano::store::transaction const &, tables) const override;
-	nano::store::iterator begin (nano::store::transaction const &, tables, db_val const & key) const override;
+	nano::store::iterator begin (nano::store::transaction const &, tables, nano::store::db_val const & key) const override;
 	nano::store::iterator end (nano::store::transaction const &, tables) const override;
 
 	bool success (int status) const override;
