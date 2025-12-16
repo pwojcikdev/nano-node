@@ -250,7 +250,6 @@ bool backend_rocksdb::column_family_exists (std::string const & name) const
 
 int backend_rocksdb::get (nano::store::transaction const & txn, tables table, nano::store::db_val const & key, nano::store::db_val & value) const
 {
-	::rocksdb::ReadOptions options;
 	::rocksdb::PinnableSlice slice;
 	auto key_slice = to_slice (key);
 	auto handle = table_to_column_family (table);
@@ -260,6 +259,8 @@ int backend_rocksdb::get (nano::store::transaction const & txn, tables table, na
 		using V = std::remove_cvref_t<decltype (ptr)>;
 		if constexpr (std::is_same_v<V, ::rocksdb::Transaction *>)
 		{
+			::rocksdb::ReadOptions options;
+			options.snapshot = ptr->GetSnapshot ();
 			return ptr->Get (options, handle, key_slice, &slice);
 		}
 		else if constexpr (std::is_same_v<V, ::rocksdb::ReadOptions *>)
@@ -306,6 +307,7 @@ bool backend_rocksdb::exists (nano::store::transaction const & txn, tables table
 		{
 			::rocksdb::ReadOptions options;
 			options.fill_cache = false;
+			options.snapshot = ptr->GetSnapshot ();
 			return ptr->Get (options, table_to_column_family (table), key_slice, &slice);
 		}
 		else if constexpr (std::is_same_v<V, ::rocksdb::ReadOptions *>)
