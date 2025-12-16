@@ -183,7 +183,7 @@ void backend::copy_to (backend & destination, copy_progress_callback callback, s
 {
 	if (!destination.empty (destination.tx_begin_read ()))
 	{
-		throw std::runtime_error ("copy_to: destination backend is not empty");
+		throw std::runtime_error ("Destination backend is not empty: " + destination.get_database_path ());
 	}
 
 	auto const schema = get_schema ();
