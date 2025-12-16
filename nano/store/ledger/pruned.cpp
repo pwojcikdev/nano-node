@@ -4,29 +4,29 @@
 
 namespace nano::store::ledger
 {
-pruned::pruned (nano::store::backend & backend_a) :
+pruned_view::pruned_view (nano::store::backend & backend_a) :
 	backend{ backend_a }
 {
 }
 
-void pruned::put (nano::store::write_transaction const & txn, nano::block_hash const & hash)
+void pruned_view::put (nano::store::write_transaction const & txn, nano::block_hash const & hash)
 {
 	auto status = backend.put (txn, tables::pruned, hash, nullptr);
 	backend.release_assert_success (status);
 }
 
-void pruned::del (nano::store::write_transaction const & txn, nano::block_hash const & hash)
+void pruned_view::del (nano::store::write_transaction const & txn, nano::block_hash const & hash)
 {
 	auto status = backend.del (txn, tables::pruned, hash);
 	backend.release_assert_success (status);
 }
 
-bool pruned::exists (nano::store::transaction const & txn, nano::block_hash const & hash) const
+bool pruned_view::exists (nano::store::transaction const & txn, nano::block_hash const & hash) const
 {
 	return backend.exists (txn, tables::pruned, hash);
 }
 
-nano::block_hash pruned::random (nano::store::transaction const & txn) const
+nano::block_hash pruned_view::random (nano::store::transaction const & txn) const
 {
 	nano::block_hash random_hash;
 	nano::random_pool::generate_block (random_hash.bytes.data (), random_hash.bytes.size ());
@@ -38,33 +38,33 @@ nano::block_hash pruned::random (nano::store::transaction const & txn) const
 	return existing != end (txn) ? existing->first : 0;
 }
 
-size_t pruned::count (nano::store::transaction const & txn) const
+size_t pruned_view::count (nano::store::transaction const & txn) const
 {
 	return backend.count (txn, tables::pruned);
 }
 
-void pruned::clear (nano::store::write_transaction const & txn)
+void pruned_view::clear (nano::store::write_transaction const & txn)
 {
 	auto status = backend.clear (txn, tables::pruned);
 	backend.release_assert_success (status);
 }
 
-auto pruned::begin (nano::store::transaction const & txn, nano::block_hash const & hash) const -> iterator
+auto pruned_view::begin (nano::store::transaction const & txn, nano::block_hash const & hash) const -> iterator
 {
 	return iterator{ backend.begin (txn, tables::pruned, hash) };
 }
 
-auto pruned::begin (nano::store::transaction const & txn) const -> iterator
+auto pruned_view::begin (nano::store::transaction const & txn) const -> iterator
 {
 	return iterator{ backend.begin (txn, tables::pruned) };
 }
 
-auto pruned::end (nano::store::transaction const & txn) const -> iterator
+auto pruned_view::end (nano::store::transaction const & txn) const -> iterator
 {
 	return iterator{ backend.end (txn, tables::pruned) };
 }
 
-void pruned::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
+void pruned_view::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
 {
 	parallel_traversal<nano::uint256_t> (
 	[&action, this] (nano::uint256_t const & start, nano::uint256_t const & end, bool const is_last) {

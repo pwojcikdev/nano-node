@@ -50,29 +50,29 @@ public:
 
 private:
 	std::unique_ptr<nano::store::backend> backend_impl;
-	std::unique_ptr<nano::store::ledger::block> block_impl;
-	std::unique_ptr<nano::store::ledger::account> account_impl;
-	std::unique_ptr<nano::store::ledger::pending> pending_impl;
-	std::unique_ptr<nano::store::ledger::rep_weight> rep_weight_impl;
-	std::unique_ptr<nano::store::ledger::online_weight> online_weight_impl;
-	std::unique_ptr<nano::store::ledger::pruned> pruned_impl;
-	std::unique_ptr<nano::store::ledger::peer> peer_impl;
-	std::unique_ptr<nano::store::ledger::confirmation_height> confirmation_height_impl;
-	std::unique_ptr<nano::store::ledger::final_vote> final_vote_impl;
-	std::unique_ptr<nano::store::ledger::version> version_impl;
+	std::unique_ptr<nano::store::ledger::block_view> block_impl;
+	std::unique_ptr<nano::store::ledger::account_view> account_impl;
+	std::unique_ptr<nano::store::ledger::pending_view> pending_impl;
+	std::unique_ptr<nano::store::ledger::rep_weight_view> rep_weight_impl;
+	std::unique_ptr<nano::store::ledger::online_weight_view> online_weight_impl;
+	std::unique_ptr<nano::store::ledger::pruned_view> pruned_impl;
+	std::unique_ptr<nano::store::ledger::peer_view> peer_impl;
+	std::unique_ptr<nano::store::ledger::confirmation_height_view> confirmation_height_impl;
+	std::unique_ptr<nano::store::ledger::final_vote_view> final_vote_impl;
+	std::unique_ptr<nano::store::ledger::version_view> version_impl;
 
 public:
 	nano::store::backend & backend;
-	nano::store::ledger::block & block;
-	nano::store::ledger::account & account;
-	nano::store::ledger::pending & pending;
-	nano::store::ledger::rep_weight & rep_weight;
-	nano::store::ledger::online_weight & online_weight;
-	nano::store::ledger::pruned & pruned;
-	nano::store::ledger::peer & peer;
-	nano::store::ledger::confirmation_height & confirmation_height;
-	nano::store::ledger::final_vote & final_vote;
-	nano::store::ledger::version & version;
+	nano::store::ledger::block_view & block;
+	nano::store::ledger::account_view & account;
+	nano::store::ledger::pending_view & pending;
+	nano::store::ledger::rep_weight_view & rep_weight;
+	nano::store::ledger::online_weight_view & online_weight;
+	nano::store::ledger::pruned_view & pruned;
+	nano::store::ledger::peer_view & peer;
+	nano::store::ledger::confirmation_height_view & confirmation_height;
+	nano::store::ledger::final_vote_view & final_vote;
+	nano::store::ledger::version_view & version;
 
 public:
 	static nano::store::version_t constexpr version_minimum{ 21 };

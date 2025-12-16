@@ -9,13 +9,13 @@
 
 namespace nano::store::ledger
 {
-class rep_weight
+class rep_weight_view
 {
 public:
 	using iterator = store::typed_iterator<nano::account, nano::uint128_union>;
 
 public:
-	explicit rep_weight (nano::store::backend &);
+	explicit rep_weight_view (nano::store::backend &);
 
 	uint64_t count (nano::store::transaction const &) const;
 	nano::uint128_t get (nano::store::transaction const &, nano::account const &) const;

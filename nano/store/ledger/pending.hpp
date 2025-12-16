@@ -10,13 +10,13 @@
 
 namespace nano::store::ledger
 {
-class pending
+class pending_view
 {
 public:
 	using iterator = store::typed_iterator<nano::pending_key, nano::pending_info>;
 
 public:
-	explicit pending (nano::store::backend &);
+	explicit pending_view (nano::store::backend &);
 
 	void put (nano::store::write_transaction const &, nano::pending_key const &, nano::pending_info const &);
 	void del (nano::store::write_transaction const &, nano::pending_key const &);

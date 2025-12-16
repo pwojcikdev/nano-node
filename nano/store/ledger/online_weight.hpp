@@ -9,14 +9,14 @@
 
 namespace nano::store::ledger
 {
-class online_weight
+class online_weight_view
 {
 public:
 	using iterator = store::typed_iterator<uint64_t, nano::amount>;
 	using reverse_iterator = store::reverse_iterator<iterator>;
 
 public:
-	explicit online_weight (nano::store::backend &);
+	explicit online_weight_view (nano::store::backend &);
 
 	void put (nano::store::write_transaction const &, uint64_t time, nano::amount const &);
 	void del (nano::store::write_transaction const &, uint64_t time);

@@ -7,17 +7,17 @@
 
 namespace nano::store::ledger
 {
-rep_weight::rep_weight (nano::store::backend & backend_a) :
+rep_weight_view::rep_weight_view (nano::store::backend & backend_a) :
 	backend{ backend_a }
 {
 }
 
-uint64_t rep_weight::count (nano::store::transaction const & txn) const
+uint64_t rep_weight_view::count (nano::store::transaction const & txn) const
 {
 	return backend.count (txn, tables::rep_weights);
 }
 
-nano::uint128_t rep_weight::get (nano::store::transaction const & txn, nano::account const & representative) const
+nano::uint128_t rep_weight_view::get (nano::store::transaction const & txn, nano::account const & representative) const
 {
 	nano::store::db_val value;
 	auto status = backend.get (txn, tables::rep_weights, representative, value);
@@ -31,35 +31,35 @@ nano::uint128_t rep_weight::get (nano::store::transaction const & txn, nano::acc
 	return weight;
 }
 
-void rep_weight::put (nano::store::write_transaction const & txn, nano::account const & representative, nano::uint128_t const & weight)
+void rep_weight_view::put (nano::store::write_transaction const & txn, nano::account const & representative, nano::uint128_t const & weight)
 {
 	nano::uint128_union weight_union{ weight };
 	auto status = backend.put (txn, tables::rep_weights, representative, weight_union);
 	backend.release_assert_success (status);
 }
 
-void rep_weight::del (nano::store::write_transaction const & txn, nano::account const & representative)
+void rep_weight_view::del (nano::store::write_transaction const & txn, nano::account const & representative)
 {
 	auto status = backend.del (txn, tables::rep_weights, representative);
 	backend.release_assert_success (status);
 }
 
-auto rep_weight::begin (nano::store::transaction const & txn, nano::account const & representative) const -> iterator
+auto rep_weight_view::begin (nano::store::transaction const & txn, nano::account const & representative) const -> iterator
 {
 	return iterator{ backend.begin (txn, tables::rep_weights, representative) };
 }
 
-auto rep_weight::begin (nano::store::transaction const & txn) const -> iterator
+auto rep_weight_view::begin (nano::store::transaction const & txn) const -> iterator
 {
 	return iterator{ backend.begin (txn, tables::rep_weights) };
 }
 
-auto rep_weight::end (nano::store::transaction const & txn) const -> iterator
+auto rep_weight_view::end (nano::store::transaction const & txn) const -> iterator
 {
 	return iterator{ backend.end (txn, tables::rep_weights) };
 }
 
-void rep_weight::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
+void rep_weight_view::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
 {
 	parallel_traversal<nano::uint256_t> (
 	[&action, this] (nano::uint256_t const & start, nano::uint256_t const & end, bool const is_last) {

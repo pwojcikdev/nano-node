@@ -3,12 +3,12 @@
 
 namespace nano::store::ledger
 {
-final_vote::final_vote (nano::store::backend & backend_a) :
+final_vote_view::final_vote_view (nano::store::backend & backend_a) :
 	backend{ backend_a }
 {
 }
 
-bool final_vote::put (nano::store::write_transaction const & txn, nano::qualified_root const & root, nano::block_hash const & hash)
+bool final_vote_view::put (nano::store::write_transaction const & txn, nano::qualified_root const & root, nano::block_hash const & hash)
 {
 	nano::store::db_val value;
 	auto status = backend.get (txn, tables::final_votes, root, value);
@@ -26,7 +26,7 @@ bool final_vote::put (nano::store::write_transaction const & txn, nano::qualifie
 	return result;
 }
 
-std::optional<nano::block_hash> final_vote::get (nano::store::transaction const & txn, nano::qualified_root const & qualified_root) const
+std::optional<nano::block_hash> final_vote_view::get (nano::store::transaction const & txn, nano::qualified_root const & qualified_root) const
 {
 	nano::store::db_val result;
 	auto status = backend.get (txn, tables::final_votes, qualified_root, result);
@@ -38,44 +38,44 @@ std::optional<nano::block_hash> final_vote::get (nano::store::transaction const 
 	return final_vote_hash;
 }
 
-void final_vote::del (nano::store::write_transaction const & txn, nano::qualified_root const & root)
+void final_vote_view::del (nano::store::write_transaction const & txn, nano::qualified_root const & root)
 {
 	auto status = backend.del (txn, tables::final_votes, root);
 	backend.release_assert_success (status);
 }
 
-size_t final_vote::count (nano::store::transaction const & txn) const
+size_t final_vote_view::count (nano::store::transaction const & txn) const
 {
 	return backend.count (txn, tables::final_votes);
 }
 
-bool final_vote::empty (nano::store::transaction const & txn) const
+bool final_vote_view::empty (nano::store::transaction const & txn) const
 {
 	return backend.empty (txn, tables::final_votes);
 }
 
-void final_vote::clear (nano::store::write_transaction const & txn)
+void final_vote_view::clear (nano::store::write_transaction const & txn)
 {
 	auto status = backend.clear (txn, nano::tables::final_votes);
 	backend.release_assert_success (status);
 }
 
-auto final_vote::begin (nano::store::transaction const & txn, nano::qualified_root const & root) const -> iterator
+auto final_vote_view::begin (nano::store::transaction const & txn, nano::qualified_root const & root) const -> iterator
 {
 	return iterator{ backend.begin (txn, tables::final_votes, root) };
 }
 
-auto final_vote::begin (nano::store::transaction const & txn) const -> iterator
+auto final_vote_view::begin (nano::store::transaction const & txn) const -> iterator
 {
 	return iterator{ backend.begin (txn, tables::final_votes) };
 }
 
-auto final_vote::end (nano::store::transaction const & txn) const -> iterator
+auto final_vote_view::end (nano::store::transaction const & txn) const -> iterator
 {
 	return iterator{ backend.end (txn, tables::final_votes) };
 }
 
-void final_vote::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
+void final_vote_view::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
 {
 	parallel_traversal<nano::uint512_t> (
 	[&action, this] (nano::uint512_t const & start, nano::uint512_t const & end, bool const is_last) {

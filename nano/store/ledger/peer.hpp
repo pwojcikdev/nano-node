@@ -7,13 +7,13 @@
 
 namespace nano::store::ledger
 {
-class peer
+class peer_view
 {
 public:
 	using iterator = store::typed_iterator<nano::endpoint_key, nano::millis_t>;
 
 public:
-	explicit peer (nano::store::backend &);
+	explicit peer_view (nano::store::backend &);
 
 	void put (nano::store::write_transaction const &, nano::endpoint_key const &, nano::millis_t timestamp);
 	nano::millis_t get (nano::store::transaction const &, nano::endpoint_key const &) const;

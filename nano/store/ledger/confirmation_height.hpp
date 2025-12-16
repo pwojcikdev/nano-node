@@ -10,13 +10,13 @@
 
 namespace nano::store::ledger
 {
-class confirmation_height
+class confirmation_height_view
 {
 public:
 	using iterator = store::typed_iterator<nano::account, nano::confirmation_height_info>;
 
 public:
-	explicit confirmation_height (nano::store::backend &);
+	explicit confirmation_height_view (nano::store::backend &);
 
 	void put (nano::store::write_transaction const &, nano::account const &, nano::confirmation_height_info const &);
 	bool get (nano::store::transaction const &, nano::account const &, nano::confirmation_height_info &) const;

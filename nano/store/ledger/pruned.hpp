@@ -9,13 +9,13 @@
 
 namespace nano::store::ledger
 {
-class pruned
+class pruned_view
 {
 public:
 	using iterator = store::typed_iterator<nano::block_hash, std::nullptr_t>;
 
 public:
-	explicit pruned (nano::store::backend &);
+	explicit pruned_view (nano::store::backend &);
 
 	void put (nano::store::write_transaction const &, nano::block_hash const &);
 	void del (nano::store::write_transaction const &, nano::block_hash const &);

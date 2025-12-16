@@ -11,13 +11,13 @@
 
 namespace nano::store::ledger
 {
-class block
+class block_view
 {
 public:
 	using iterator = store::typed_iterator<nano::block_hash, block_w_sideband>;
 
 public:
-	explicit block (nano::store::backend &);
+	explicit block_view (nano::store::backend &);
 
 	void put (nano::store::write_transaction const &, nano::block_hash const &, nano::block const &);
 	void raw_put (nano::store::write_transaction const &, std::vector<uint8_t> const & data, nano::block_hash const &);

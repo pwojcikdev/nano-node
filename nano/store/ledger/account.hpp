@@ -12,14 +12,14 @@
 
 namespace nano::store::ledger
 {
-class account
+class account_view
 {
 public:
 	using iterator = store::typed_iterator<nano::account, nano::account_info>;
 	using reverse_iterator = store::reverse_iterator<iterator>;
 
 public:
-	explicit account (nano::store::backend &);
+	explicit account_view (nano::store::backend &);
 
 	void put (nano::store::write_transaction const &, nano::account const &, nano::account_info const &);
 	bool get (nano::store::transaction const &, nano::account const &, nano::account_info &) const;

@@ -9,13 +9,13 @@
 
 namespace nano::store::ledger
 {
-class final_vote
+class final_vote_view
 {
 public:
 	using iterator = store::typed_iterator<nano::qualified_root, nano::block_hash>;
 
 public:
-	explicit final_vote (nano::store::backend &);
+	explicit final_vote_view (nano::store::backend &);
 
 	bool put (nano::store::write_transaction const &, nano::qualified_root const &, nano::block_hash const &);
 	std::optional<nano::block_hash> get (nano::store::transaction const &, nano::qualified_root const &) const;
