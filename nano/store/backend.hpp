@@ -29,27 +29,11 @@ REGISTER_ERROR_CODES (nano, error_backend)
 
 namespace nano::store
 {
-class backend_table
-{
-};
-
-enum class backend_status
-{
-	success,
-	not_found,
-	failure
-};
-
-struct backend_error
-{
-	backend_status status;
-};
-
-using version_t = uint64_t;
+using backend_version_t = uint64_t;
 
 struct backend_meta
 {
-	version_t version;
+	backend_version_t version;
 };
 
 using column_definition = std::pair<tables, std::string>;
@@ -80,7 +64,7 @@ public:
 	std::optional<backend_meta> fetch_meta ();
 
 	void open (column_schema, nano::store::open_mode mode);
-	void create (column_schema, nano::store::version_t version);
+	void create (column_schema, nano::store::backend_version_t version);
 	void close ();
 
 	// Basic CRUD operations
@@ -133,8 +117,8 @@ public:
 	column_schema get_schema () const;
 	backend_meta get_meta () const;
 
-	nano::store::version_t get_version (nano::store::transaction const &) const;
-	void set_version (nano::store::write_transaction const &, nano::store::version_t version);
+	nano::store::backend_version_t get_version (nano::store::transaction const &) const;
+	void set_version (nano::store::write_transaction const &, nano::store::backend_version_t version);
 
 protected:
 	virtual void open_impl (column_schema, nano::store::open_mode) = 0;

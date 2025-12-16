@@ -75,8 +75,8 @@ public:
 	nano::store::ledger::version_view & version;
 
 public:
-	static nano::store::version_t constexpr version_minimum{ 21 };
-	static nano::store::version_t constexpr version_current{ 24 };
+	static nano::store::backend_version_t constexpr version_minimum{ 21 };
+	static nano::store::backend_version_t constexpr version_current{ 24 };
 
 public:
 	static nano::store::column_schema const schema_current;

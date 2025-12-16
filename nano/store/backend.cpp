@@ -29,7 +29,7 @@ void backend::open (column_schema schema, nano::store::open_mode mode)
 	debug_assert (current_meta.has_value ());
 }
 
-void backend::create (column_schema schema, nano::store::version_t version)
+void backend::create (column_schema schema, nano::store::backend_version_t version)
 {
 	if (is_open)
 	{
@@ -110,12 +110,12 @@ auto backend::get_mode () const -> std::optional<nano::store::open_mode>
 	return is_open ? std::optional{ current_mode } : std::nullopt;
 }
 
-auto backend::get_version (nano::store::transaction const & txn) const -> nano::store::version_t
+auto backend::get_version (nano::store::transaction const & txn) const -> nano::store::backend_version_t
 {
 	return meta.get_version (txn);
 }
 
-void backend::set_version (nano::store::write_transaction const & txn, nano::store::version_t version)
+void backend::set_version (nano::store::write_transaction const & txn, nano::store::backend_version_t version)
 {
 	meta.put_version (txn, version);
 }
