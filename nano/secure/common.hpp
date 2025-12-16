@@ -115,6 +115,8 @@ public:
 	confirmation_height_info () = default;
 	confirmation_height_info (uint64_t, nano::block_hash const &);
 
+	auto operator<=> (confirmation_height_info const &) const = default;
+
 	void serialize (nano::stream &) const;
 	bool deserialize (nano::stream &);
 

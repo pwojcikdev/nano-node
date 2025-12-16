@@ -112,22 +112,22 @@ inline db_val::operator uint64_t () const
 
 inline db_val::operator nano::uint128_union () const
 {
-	return convert<nano::uint128_union> ();
+	return read_as_bytes<nano::uint128_union> ();
 }
 
 inline db_val::operator nano::uint256_union () const
 {
-	return convert<nano::uint256_union> ();
+	return read_as_bytes<nano::uint256_union> ();
 }
 
 inline db_val::operator nano::uint512_union () const
 {
-	return convert<nano::uint512_union> ();
+	return read_as_bytes<nano::uint512_union> ();
 }
 
 inline db_val::operator nano::qualified_root () const
 {
-	return convert<nano::qualified_root> ();
+	return read_as_bytes<nano::qualified_root> ();
 }
 
 inline db_val::operator nano::account_info () const
@@ -199,17 +199,17 @@ inline db_val::operator std::shared_ptr<nano::block> () const
 
 inline db_val::operator nano::amount () const
 {
-	return convert<nano::amount> ();
+	return read_as_bytes<nano::amount> ();
 }
 
 inline db_val::operator nano::block_hash () const
 {
-	return convert<nano::block_hash> ();
+	return read_as_bytes<nano::block_hash> ();
 }
 
 inline db_val::operator nano::public_key () const
 {
-	return convert<nano::public_key> ();
+	return read_as_bytes<nano::public_key> ();
 }
 
 inline db_val::operator std::array<char, 64> () const
@@ -298,7 +298,7 @@ inline auto db_val::convert_buffer_to_value () noexcept -> void
 }
 
 template <typename T>
-inline auto db_val::convert () const -> T
+inline auto db_val::read_as_bytes () const -> T
 {
 	T result;
 	debug_assert (span_view.size () == sizeof (result));

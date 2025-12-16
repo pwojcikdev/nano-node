@@ -87,6 +87,12 @@ public:
 	template <typename Block>
 	auto convert_to_block () const -> std::shared_ptr<Block>;
 
+	template <typename T>
+	T convert_to () const
+	{
+		return static_cast<T> (*this);
+	}
+
 	explicit operator std::shared_ptr<nano::send_block> () const;
 	explicit operator std::shared_ptr<nano::receive_block> () const;
 	explicit operator std::shared_ptr<nano::open_block> () const;
@@ -109,6 +115,6 @@ public:
 
 private:
 	template <typename T>
-	auto convert () const -> T;
+	auto read_as_bytes () const -> T;
 };
 }
