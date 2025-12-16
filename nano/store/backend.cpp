@@ -120,17 +120,17 @@ void backend::set_version (nano::store::write_transaction const & transaction, n
 	meta.put_version (transaction, version);
 }
 
-bool backend::empty (nano::store::transaction const & tx, tables table) const
+bool backend::empty (nano::store::transaction const & transaction, tables table) const
 {
-	return begin (tx, table) == end (tx, table);
+	return begin (transaction, table) == end (transaction, table);
 }
 
-bool backend::empty (nano::store::transaction const & tx) const
+bool backend::empty (nano::store::transaction const & transaction) const
 {
 	release_assert (is_open, "backend is not open");
 	for (auto const & [table, name] : get_schema ())
 	{
-		if (!empty (tx, table))
+		if (!empty (transaction, table))
 		{
 			return false;
 		}
@@ -196,7 +196,7 @@ void backend::copy_to (backend & destination, copy_progress_callback callback, s
 		uint64_t const total = count (src_tx, table);
 		std::atomic<uint64_t> copied{ 0 };
 
-		auto copy_action = [&] (read_transaction const & /*tx*/, iterator begin_it, iterator end_it) {
+		auto copy_action = [&] (nano::store::read_transaction const &, iterator begin_it, iterator end_it) {
 			auto dst_tx = destination.tx_begin_write ();
 			size_t batch_count = 0;
 

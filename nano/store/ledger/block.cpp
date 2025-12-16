@@ -26,7 +26,7 @@ void block::put (nano::store::write_transaction const & transaction, nano::block
 		void fill_value (nano::block const & block_a)
 		{
 			auto const hash = block_a.hash ();
-			nano::store::db_val value;
+			db_val value;
 			block_store.block_raw_get (transaction, block_a.previous (), value);
 			debug_assert (value.size () != 0);
 			auto const type = block_store.block_type_from_raw (value.data ());

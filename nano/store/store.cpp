@@ -321,7 +321,7 @@ void ledger_store::upgrade_v22_to_v23 ()
 			if (!account_info.balance.is_zero ())
 			{
 				nano::uint128_t total{ 0 };
-				nano::store::db_val value;
+				db_val value;
 				auto status = backend.get (transaction, tables::rep_weights, account_info.representative, value);
 				if (backend.success (status))
 				{
@@ -384,9 +384,9 @@ nano::store::open_mode ledger_store::get_mode () const
 	return backend.get_mode ().value ();
 }
 
-uint64_t ledger_store::count (nano::store::transaction const & tx, tables table) const
+uint64_t ledger_store::count (nano::store::transaction const & transaction, tables table) const
 {
-	return backend.count (tx, table);
+	return backend.count (transaction, table);
 }
 
 nano::store::write_transaction ledger_store::tx_begin_write ()
