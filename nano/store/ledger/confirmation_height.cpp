@@ -3,18 +3,18 @@
 
 namespace nano::store::ledger
 {
-confirmation_height::confirmation_height (store::backend & backend_a) :
+confirmation_height::confirmation_height (nano::store::backend & backend_a) :
 	backend{ backend_a }
 {
 }
 
-void confirmation_height::put (store::write_transaction const & transaction, nano::account const & account, nano::confirmation_height_info const & confirmation_height_info)
+void confirmation_height::put (nano::store::write_transaction const & transaction, nano::account const & account, nano::confirmation_height_info const & confirmation_height_info)
 {
 	auto status = backend.put (transaction, tables::confirmation_height, account, confirmation_height_info);
 	backend.release_assert_success (status);
 }
 
-bool confirmation_height::get (store::transaction const & transaction, nano::account const & account, nano::confirmation_height_info & confirmation_height_info) const
+bool confirmation_height::get (nano::store::transaction const & transaction, nano::account const & account, nano::confirmation_height_info & confirmation_height_info) const
 {
 	db_val value;
 	auto status = backend.get (transaction, tables::confirmation_height, account, value);
@@ -34,7 +34,7 @@ bool confirmation_height::get (store::transaction const & transaction, nano::acc
 	return result;
 }
 
-std::optional<nano::confirmation_height_info> confirmation_height::get (store::transaction const & transaction, nano::account const & account)
+std::optional<nano::confirmation_height_info> confirmation_height::get (nano::store::transaction const & transaction, nano::account const & account)
 {
 	nano::confirmation_height_info info;
 	bool error = get (transaction, account, info);
@@ -45,53 +45,53 @@ std::optional<nano::confirmation_height_info> confirmation_height::get (store::t
 	return info;
 }
 
-bool confirmation_height::exists (store::transaction const & transaction, nano::account const & account) const
+bool confirmation_height::exists (nano::store::transaction const & transaction, nano::account const & account) const
 {
 	return backend.exists (transaction, tables::confirmation_height, account);
 }
 
-void confirmation_height::del (store::write_transaction const & transaction, nano::account const & account)
+void confirmation_height::del (nano::store::write_transaction const & transaction, nano::account const & account)
 {
 	auto status = backend.del (transaction, tables::confirmation_height, account);
 	backend.release_assert_success (status);
 }
 
-uint64_t confirmation_height::count (store::transaction const & transaction) const
+uint64_t confirmation_height::count (nano::store::transaction const & transaction) const
 {
 	return backend.count (transaction, tables::confirmation_height);
 }
 
-bool confirmation_height::empty (store::transaction const & transaction) const
+bool confirmation_height::empty (nano::store::transaction const & transaction) const
 {
 	return backend.empty (transaction, tables::confirmation_height);
 }
 
-void confirmation_height::clear (store::write_transaction const & transaction, nano::account const & account)
+void confirmation_height::clear (nano::store::write_transaction const & transaction, nano::account const & account)
 {
 	del (transaction, account);
 }
 
-void confirmation_height::clear (store::write_transaction const & transaction)
+void confirmation_height::clear (nano::store::write_transaction const & transaction)
 {
 	backend.clear (transaction, nano::tables::confirmation_height);
 }
 
-auto confirmation_height::begin (store::transaction const & transaction, nano::account const & account) const -> iterator
+auto confirmation_height::begin (nano::store::transaction const & transaction, nano::account const & account) const -> iterator
 {
 	return iterator{ backend.begin (transaction, tables::confirmation_height, account) };
 }
 
-auto confirmation_height::begin (store::transaction const & transaction) const -> iterator
+auto confirmation_height::begin (nano::store::transaction const & transaction) const -> iterator
 {
 	return iterator{ backend.begin (transaction, tables::confirmation_height) };
 }
 
-auto confirmation_height::end (store::transaction const & transaction) const -> iterator
+auto confirmation_height::end (nano::store::transaction const & transaction) const -> iterator
 {
 	return iterator{ backend.end (transaction, tables::confirmation_height) };
 }
 
-void confirmation_height::for_each_par (std::function<void (store::read_transaction const &, iterator, iterator)> const & action) const
+void confirmation_height::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
 {
 	parallel_traversal<nano::uint256_t> (
 	[&action, this] (nano::uint256_t const & start, nano::uint256_t const & end, bool const is_last) {

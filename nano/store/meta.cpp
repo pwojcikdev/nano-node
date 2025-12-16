@@ -5,12 +5,12 @@
 
 namespace nano::store
 {
-meta_view::meta_view (store::backend & backend_a) :
+meta_view::meta_view (nano::store::backend & backend_a) :
 	backend{ backend_a }
 {
 }
 
-void meta_view::put_version (store::write_transaction const & transaction, uint64_t version)
+void meta_view::put_version (nano::store::write_transaction const & transaction, uint64_t version)
 {
 	nano::uint256_union db_key{ version_key };
 	nano::uint256_union db_value{ version };
@@ -18,7 +18,7 @@ void meta_view::put_version (store::write_transaction const & transaction, uint6
 	backend.release_assert_success (status);
 }
 
-auto meta_view::get_version (store::transaction const & transaction) const -> uint64_t
+auto meta_view::get_version (nano::store::transaction const & transaction) const -> uint64_t
 {
 	nano::uint256_union db_key{ version_key };
 	db_val data;
@@ -33,7 +33,7 @@ auto meta_view::get_version (store::transaction const & transaction) const -> ui
 	return result;
 }
 
-bool meta_view::version_exists (store::transaction const & transaction) const
+bool meta_view::version_exists (nano::store::transaction const & transaction) const
 {
 	nano::uint256_union db_key{ version_key };
 	return backend.exists (transaction, tables::meta, db_key);

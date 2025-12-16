@@ -2,49 +2,49 @@
 
 namespace nano::store::ledger
 {
-online_weight::online_weight (store::backend & backend_a) :
+online_weight::online_weight (nano::store::backend & backend_a) :
 	backend{ backend_a }
 {
 }
 
-void online_weight::put (store::write_transaction const & transaction, uint64_t time, nano::amount const & amount)
+void online_weight::put (nano::store::write_transaction const & transaction, uint64_t time, nano::amount const & amount)
 {
 	auto status = backend.put (transaction, tables::online_weight, time, amount);
 	backend.release_assert_success (status);
 }
 
-void online_weight::del (store::write_transaction const & transaction, uint64_t time)
+void online_weight::del (nano::store::write_transaction const & transaction, uint64_t time)
 {
 	auto status = backend.del (transaction, tables::online_weight, time);
 	backend.release_assert_success (status);
 }
 
-auto online_weight::begin (store::transaction const & transaction) const -> iterator
+auto online_weight::begin (nano::store::transaction const & transaction) const -> iterator
 {
 	return iterator{ backend.begin (transaction, tables::online_weight) };
 }
 
-auto online_weight::end (store::transaction const & transaction) const -> iterator
+auto online_weight::end (nano::store::transaction const & transaction) const -> iterator
 {
 	return iterator{ backend.end (transaction, tables::online_weight) };
 }
 
-auto online_weight::rbegin (store::transaction const & transaction) const -> reverse_iterator
+auto online_weight::rbegin (nano::store::transaction const & transaction) const -> reverse_iterator
 {
 	return reverse_iterator{ std::prev (end (transaction)) };
 }
 
-auto online_weight::rend (store::transaction const & transaction) const -> reverse_iterator
+auto online_weight::rend (nano::store::transaction const & transaction) const -> reverse_iterator
 {
 	return reverse_iterator{ end (transaction) };
 }
 
-size_t online_weight::count (store::transaction const & transaction) const
+size_t online_weight::count (nano::store::transaction const & transaction) const
 {
 	return backend.count (transaction, tables::online_weight);
 }
 
-void online_weight::clear (store::write_transaction const & transaction)
+void online_weight::clear (nano::store::write_transaction const & transaction)
 {
 	auto status = backend.clear (transaction, tables::online_weight);
 	backend.release_assert_success (status);

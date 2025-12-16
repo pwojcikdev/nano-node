@@ -4,17 +4,17 @@
 
 namespace nano::store::ledger
 {
-block::block (store::backend & backend_a) :
+block::block (nano::store::backend & backend_a) :
 	backend{ backend_a }
 {
 }
 
-void block::put (store::write_transaction const & transaction, nano::block_hash const & hash, nano::block const & block)
+void block::put (nano::store::write_transaction const & transaction, nano::block_hash const & hash, nano::block const & block)
 {
 	class block_predecessor_set : public nano::block_visitor
 	{
 	public:
-		block_predecessor_set (store::write_transaction const & transaction_a, store::ledger::block & block_store_a) :
+		block_predecessor_set (nano::store::write_transaction const & transaction_a, nano::store::ledger::block & block_store_a) :
 			transaction{ transaction_a },
 			block_store{ block_store_a }
 		{
@@ -26,7 +26,7 @@ void block::put (store::write_transaction const & transaction, nano::block_hash 
 		void fill_value (nano::block const & block_a)
 		{
 			auto const hash = block_a.hash ();
-			store::db_val value;
+			nano::store::db_val value;
 			block_store.block_raw_get (transaction, block_a.previous (), value);
 			debug_assert (value.size () != 0);
 			auto const type = block_store.block_type_from_raw (value.data ());
@@ -63,8 +63,8 @@ void block::put (store::write_transaction const & transaction, nano::block_hash 
 		}
 
 	private:
-		store::write_transaction const & transaction;
-		store::ledger::block & block_store;
+		nano::store::write_transaction const & transaction;
+		nano::store::ledger::block & block_store;
 	};
 
 	debug_assert (block.sideband ().successor.is_zero () || exists (transaction, block.sideband ().successor));
@@ -81,14 +81,14 @@ void block::put (store::write_transaction const & transaction, nano::block_hash 
 	debug_assert (block.previous ().is_zero () || successor (transaction, block.previous ()) == hash);
 }
 
-void block::raw_put (store::write_transaction const & transaction, std::vector<uint8_t> const & data, nano::block_hash const & hash)
+void block::raw_put (nano::store::write_transaction const & transaction, std::vector<uint8_t> const & data, nano::block_hash const & hash)
 {
 	db_val value{ data.size (), (void *)data.data () };
 	auto status = backend.put (transaction, tables::blocks, hash, value);
 	backend.release_assert_success (status);
 }
 
-std::optional<nano::block_hash> block::successor (store::transaction const & transaction, nano::block_hash const & hash) const
+std::optional<nano::block_hash> block::successor (nano::store::transaction const & transaction, nano::block_hash const & hash) const
 {
 	db_val value;
 	block_raw_get (transaction, hash, value);
@@ -113,7 +113,7 @@ std::optional<nano::block_hash> block::successor (store::transaction const & tra
 	return result;
 }
 
-void block::successor_clear (store::write_transaction const & transaction, nano::block_hash const & hash)
+void block::successor_clear (nano::store::write_transaction const & transaction, nano::block_hash const & hash)
 {
 	db_val value;
 	block_raw_get (transaction, hash, value);
@@ -124,7 +124,7 @@ void block::successor_clear (store::write_transaction const & transaction, nano:
 	raw_put (transaction, data, hash);
 }
 
-std::shared_ptr<nano::block> block::get (store::transaction const & transaction, nano::block_hash const & hash) const
+std::shared_ptr<nano::block> block::get (nano::store::transaction const & transaction, nano::block_hash const & hash) const
 {
 	db_val value;
 	block_raw_get (transaction, hash, value);
@@ -145,38 +145,38 @@ std::shared_ptr<nano::block> block::get (store::transaction const & transaction,
 	return result;
 }
 
-void block::del (store::write_transaction const & transaction, nano::block_hash const & hash)
+void block::del (nano::store::write_transaction const & transaction, nano::block_hash const & hash)
 {
 	auto status = backend.del (transaction, tables::blocks, hash);
 	backend.release_assert_success (status);
 }
 
-bool block::exists (store::transaction const & transaction, nano::block_hash const & hash) const
+bool block::exists (nano::store::transaction const & transaction, nano::block_hash const & hash) const
 {
 	return backend.exists (transaction, tables::blocks, hash);
 }
 
-uint64_t block::count (store::transaction const & transaction) const
+uint64_t block::count (nano::store::transaction const & transaction) const
 {
 	return backend.count (transaction, tables::blocks);
 }
 
-auto block::begin (store::transaction const & transaction) const -> iterator
+auto block::begin (nano::store::transaction const & transaction) const -> iterator
 {
 	return iterator{ backend.begin (transaction, tables::blocks) };
 }
 
-auto block::begin (store::transaction const & transaction, nano::block_hash const & hash) const -> iterator
+auto block::begin (nano::store::transaction const & transaction, nano::block_hash const & hash) const -> iterator
 {
 	return iterator{ backend.begin (transaction, tables::blocks, hash) };
 }
 
-auto block::end (store::transaction const & transaction) const -> iterator
+auto block::end (nano::store::transaction const & transaction) const -> iterator
 {
 	return iterator{ backend.end (transaction, tables::blocks) };
 }
 
-void block::for_each_par (std::function<void (store::read_transaction const &, iterator, iterator)> const & action) const
+void block::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
 {
 	parallel_traversal<nano::uint256_t> (
 	[&action, this] (nano::uint256_t const & start, nano::uint256_t const & end, bool const is_last) {
@@ -185,7 +185,7 @@ void block::for_each_par (std::function<void (store::read_transaction const &, i
 	});
 }
 
-void block::block_raw_get (store::transaction const & transaction, nano::block_hash const & hash, store::db_val & value) const
+void block::block_raw_get (nano::store::transaction const & transaction, nano::block_hash const & hash, nano::store::db_val & value) const
 {
 	auto status = backend.get (transaction, tables::blocks, hash, value);
 	release_assert (backend.success (status) || backend.not_found (status), backend.error_string (status));

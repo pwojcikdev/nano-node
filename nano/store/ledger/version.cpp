@@ -2,12 +2,12 @@
 
 namespace nano::store::ledger
 {
-version::version (store::backend & backend_a) :
+version::version (nano::store::backend & backend_a) :
 	backend{ backend_a }
 {
 }
 
-void version::put (store::write_transaction const & transaction, uint64_t version)
+void version::put (nano::store::write_transaction const & transaction, uint64_t version)
 {
 	nano::uint256_union version_key{ 1 };
 	nano::uint256_union version_value{ version };
@@ -15,7 +15,7 @@ void version::put (store::write_transaction const & transaction, uint64_t versio
 	backend.release_assert_success (status);
 }
 
-uint64_t version::get (store::transaction const & transaction) const
+uint64_t version::get (nano::store::transaction const & transaction) const
 {
 	nano::uint256_union version_key{ 1 };
 	db_val data;

@@ -66,7 +66,7 @@ auto backend::fetch_meta () -> std::optional<backend_meta>
 	// Attempt to open just the meta table to check if database exists
 	try
 	{
-		open (schema_meta, store::open_mode::read_only);
+		open (schema_meta, nano::store::open_mode::read_only);
 	}
 	catch (nano::error const & error)
 	{
@@ -110,22 +110,22 @@ auto backend::get_mode () const -> std::optional<nano::store::open_mode>
 	return is_open ? std::optional{ current_mode } : std::nullopt;
 }
 
-auto backend::get_version (store::transaction const & transaction) const -> nano::store::version_t
+auto backend::get_version (nano::store::transaction const & transaction) const -> nano::store::version_t
 {
 	return meta.get_version (transaction);
 }
 
-void backend::set_version (store::write_transaction const & transaction, nano::store::version_t version)
+void backend::set_version (nano::store::write_transaction const & transaction, nano::store::version_t version)
 {
 	meta.put_version (transaction, version);
 }
 
-bool backend::empty (store::transaction const & tx, tables table) const
+bool backend::empty (nano::store::transaction const & tx, tables table) const
 {
 	return begin (tx, table) == end (tx, table);
 }
 
-bool backend::empty (store::transaction const & tx) const
+bool backend::empty (nano::store::transaction const & tx) const
 {
 	release_assert (is_open, "backend is not open");
 	for (auto const & [table, name] : get_schema ())

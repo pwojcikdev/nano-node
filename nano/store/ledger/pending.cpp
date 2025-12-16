@@ -3,24 +3,24 @@
 
 namespace nano::store::ledger
 {
-pending::pending (store::backend & backend_a) :
+pending::pending (nano::store::backend & backend_a) :
 	backend{ backend_a }
 {
 }
 
-void pending::put (store::write_transaction const & transaction, nano::pending_key const & key, nano::pending_info const & pending)
+void pending::put (nano::store::write_transaction const & transaction, nano::pending_key const & key, nano::pending_info const & pending)
 {
 	auto status = backend.put (transaction, tables::pending, key, pending);
 	backend.release_assert_success (status);
 }
 
-void pending::del (store::write_transaction const & transaction, nano::pending_key const & key)
+void pending::del (nano::store::write_transaction const & transaction, nano::pending_key const & key)
 {
 	auto status = backend.del (transaction, tables::pending, key);
 	backend.release_assert_success (status);
 }
 
-auto pending::get (store::transaction const & transaction, nano::pending_key const & key) const -> std::optional<nano::pending_info>
+auto pending::get (nano::store::transaction const & transaction, nano::pending_key const & key) const -> std::optional<nano::pending_info>
 {
 	db_val value;
 	auto status = backend.get (transaction, tables::pending, key, value);
@@ -37,33 +37,33 @@ auto pending::get (store::transaction const & transaction, nano::pending_key con
 	return result;
 }
 
-bool pending::exists (store::transaction const & transaction, nano::pending_key const & key) const
+bool pending::exists (nano::store::transaction const & transaction, nano::pending_key const & key) const
 {
 	return backend.exists (transaction, tables::pending, key);
 }
 
-bool pending::any (store::transaction const & transaction, nano::account const & account) const
+bool pending::any (nano::store::transaction const & transaction, nano::account const & account) const
 {
 	auto iterator = begin (transaction, nano::pending_key{ account, 0 });
 	return iterator != end (transaction) && nano::pending_key (iterator->first).account == account;
 }
 
-auto pending::begin (store::transaction const & transaction, nano::pending_key const & key) const -> iterator
+auto pending::begin (nano::store::transaction const & transaction, nano::pending_key const & key) const -> iterator
 {
 	return iterator{ backend.begin (transaction, tables::pending, key) };
 }
 
-auto pending::begin (store::transaction const & transaction) const -> iterator
+auto pending::begin (nano::store::transaction const & transaction) const -> iterator
 {
 	return iterator{ backend.begin (transaction, tables::pending) };
 }
 
-auto pending::end (store::transaction const & transaction) const -> iterator
+auto pending::end (nano::store::transaction const & transaction) const -> iterator
 {
 	return iterator{ backend.end (transaction, tables::pending) };
 }
 
-void pending::for_each_par (std::function<void (store::read_transaction const &, iterator, iterator)> const & action) const
+void pending::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
 {
 	parallel_traversal<nano::uint512_t> (
 	[&action, this] (nano::uint512_t const & start, nano::uint512_t const & end, bool const is_last) {

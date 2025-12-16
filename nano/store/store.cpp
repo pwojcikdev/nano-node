@@ -301,8 +301,8 @@ void ledger_store::upgrade_v22_to_v23 ()
 			auto transaction = backend.tx_begin_read ();
 
 			// Manually create v22 compatible iterator to read accounts
-			auto it = store::typed_iterator<nano::account, nano::account_info_v22>{ backend.begin (transaction, tables::accounts) };
-			auto const end = store::typed_iterator<nano::account, nano::account_info_v22>{ backend.end (transaction, tables::accounts) };
+			auto it = nano::store::typed_iterator<nano::account, nano::account_info_v22>{ backend.begin (transaction, tables::accounts) };
+			auto const end = nano::store::typed_iterator<nano::account, nano::account_info_v22>{ backend.end (transaction, tables::accounts) };
 
 			for (; it != end; ++it)
 			{
