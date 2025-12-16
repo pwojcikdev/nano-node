@@ -116,7 +116,13 @@ int backend_lmdb::put (nano::store::write_transaction const & txn, tables table,
 int backend_lmdb::del (nano::store::write_transaction const & txn, tables table, nano::store::db_val const & key)
 {
 	auto mdb_key = to_mdb_val (key);
-	return mdb_del (env->tx (txn), table_to_dbi (table), &mdb_key, nullptr);
+	auto status = mdb_del (env->tx (txn), table_to_dbi (table), &mdb_key, nullptr);
+	// Treat not_found as success for delete operations (key already absent)
+	if (status == MDB_NOTFOUND)
+	{
+		return MDB_SUCCESS;
+	}
+	return status;
 }
 
 bool backend_lmdb::exists (nano::store::transaction const & txn, tables table, nano::store::db_val const & key) const

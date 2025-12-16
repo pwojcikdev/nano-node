@@ -287,8 +287,6 @@ int backend_rocksdb::put (nano::store::write_transaction const & txn, tables tab
 
 int backend_rocksdb::del (nano::store::write_transaction const & txn, tables table, nano::store::db_val const & key)
 {
-	// RocksDB does not report not_found status, it is a pre-condition that the key exists
-	debug_assert (exists (txn, table, key));
 	flush_tombstones_check (table);
 	auto key_slice = to_slice (key);
 	return std::get<::rocksdb::Transaction *> (rocksdb::tx (txn))->Delete (table_to_column_family (table), key_slice).code ();
