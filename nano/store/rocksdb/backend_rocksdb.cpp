@@ -365,23 +365,35 @@ bool backend_rocksdb::count_is_exact (tables table) const
 	return false;
 }
 
-// TODO: Temporary impl, optimize this with DeleteRange
 int backend_rocksdb::clear (nano::store::write_transaction const & txn, tables table)
 {
-	auto col = table_to_column_family (table);
-	auto * rocks_txn = std::get<::rocksdb::Transaction *> (rocksdb::tx (txn));
+	auto * cf = table_to_column_family (table);
+	auto * rtxn = std::get<::rocksdb::Transaction *> (rocksdb::tx (txn));
 
-	::rocksdb::ReadOptions read_options;
-	std::unique_ptr<::rocksdb::Iterator> it (rocks_txn->GetIterator (read_options, col));
+	::rocksdb::ReadOptions ro;
+	std::unique_ptr<::rocksdb::Iterator> it (rtxn->GetIterator (ro, cf));
 
-	for (it->SeekToFirst (); it->Valid (); it->Next ())
+	it->SeekToFirst ();
+	if (!it->Valid ())
 	{
-		auto status = rocks_txn->Delete (col, it->key ());
-		if (!status.ok ())
-		{
-			return status.code ();
-		}
+		return ::rocksdb::Status::kOk; // Table is already empty
 	}
+
+	const std::string first_key = it->key ().ToString ();
+
+	it->SeekToLast ();
+	if (!it->Valid ())
+	{
+		return ::rocksdb::Status::kOk; // Defensive check, should not happen
+	}
+
+	std::string end_key = it->key ().ToString ();
+	end_key.push_back ('\0'); // Make end strictly greater than last_key (exclusive end)
+
+	// Add a range tombstone INTO the transaction’s write batch
+	auto * wbwi = rtxn->GetWriteBatch (); // WriteBatchWithIndex*
+	auto * wb = wbwi->GetWriteBatch (); // WriteBatch*
+	wb->DeleteRange (cf, first_key, ::rocksdb::Slice (end_key));
 
 	return ::rocksdb::Status::kOk;
 }
