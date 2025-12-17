@@ -39,6 +39,7 @@ add_executable(
   message.cpp
   message_deserializer.cpp
   memory_pool.cpp
+  migrations.cpp
   network.cpp
   network_filter.cpp
   network_functions.cpp
