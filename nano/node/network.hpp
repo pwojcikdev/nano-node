@@ -2,8 +2,8 @@
 
 #include <nano/lib/logging.hpp>
 #include <nano/lib/network_filter.hpp>
+#include <nano/messages/messages.hpp>
 #include <nano/node/endpoint.hpp>
-#include <nano/node/messages.hpp>
 #include <nano/node/peer_exclusion.hpp>
 #include <nano/node/transport/common.hpp>
 #include <nano/node/transport/fwd.hpp>

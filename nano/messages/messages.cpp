@@ -3,16 +3,15 @@
 #include <nano/lib/config.hpp>
 #include <nano/lib/enum_util.hpp>
 #include <nano/lib/jsonconfig.hpp>
+#include <nano/lib/keypair.hpp>
 #include <nano/lib/memory.hpp>
+#include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/stats_enums.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/lib/work.hpp>
-#include <nano/node/election.hpp>
-#include <nano/node/endpoint.hpp>
-#include <nano/node/messages.hpp>
-#include <nano/node/network.hpp>
+#include <nano/messages/messages.hpp>
 
 #include <boost/asio/ip/address_v6.hpp>
 #include <boost/endian/conversion.hpp>

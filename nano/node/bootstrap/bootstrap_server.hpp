@@ -3,9 +3,9 @@
 #include <nano/lib/locks.hpp>
 #include <nano/lib/observer_set.hpp>
 #include <nano/lib/rate_limiting.hpp>
+#include <nano/messages/messages.hpp>
 #include <nano/node/fair_queue.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/messages.hpp>
 
 #include <atomic>
 #include <memory>

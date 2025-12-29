@@ -1,9 +1,9 @@
 #pragma once
 
 #include <nano/lib/utility.hpp>
+#include <nano/messages/messages.hpp>
 #include <nano/node/endpoint.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/messages.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/secure/common.hpp>
 
