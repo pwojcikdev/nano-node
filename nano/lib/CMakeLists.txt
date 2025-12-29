@@ -75,6 +75,8 @@ add_library(
   json_error_response.hpp
   jsonconfig.hpp
   jsonconfig.cpp
+  keypair.hpp
+  keypair.cpp
   lmdbconfig.hpp
   lmdbconfig.cpp
   locks.hpp

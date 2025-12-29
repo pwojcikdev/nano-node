@@ -13,6 +13,7 @@ class block_visitor;
 class container_info;
 class error;
 class jsonconfig;
+class keypair;
 class logger;
 class mutable_block_visitor;
 class network_constants;
