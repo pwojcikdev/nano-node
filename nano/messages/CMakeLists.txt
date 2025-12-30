@@ -1,4 +1,37 @@
-add_library(nano_messages messages.hpp messages.cpp)
+add_library(
+  nano_messages
+  asc_pull.hpp
+  asc_pull.cpp
+  bulk_pull.hpp
+  bulk_pull.cpp
+  bulk_pull_account.hpp
+  bulk_pull_account.cpp
+  bulk_push.hpp
+  bulk_push.cpp
+  confirm.hpp
+  confirm.cpp
+  deserialize_message.hpp
+  deserialize_message.cpp
+  frontier_req.hpp
+  frontier_req.cpp
+  fwd.hpp
+  keepalive.hpp
+  keepalive.cpp
+  message.hpp
+  message.cpp
+  message_header.hpp
+  message_header.cpp
+  message_type.hpp
+  message_type.cpp
+  message_visitor.hpp
+  messages.hpp
+  node_id_handshake.hpp
+  node_id_handshake.cpp
+  publish.hpp
+  publish.cpp
+  telemetry.hpp
+  telemetry.cpp
+  uniquers.hpp)
 
 target_link_libraries(nano_messages nano_lib Boost::endian)
 
