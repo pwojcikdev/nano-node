@@ -9,23 +9,23 @@
  * asc_pull_req
  */
 
-nano::asc_pull_req::asc_pull_req (const nano::network_constants & constants) :
-	message (constants, nano::message_type::asc_pull_req)
+nano::messages::asc_pull_req::asc_pull_req (nano::network_constants const & constants) :
+	message (constants, message_type::asc_pull_req)
 {
 }
 
-nano::asc_pull_req::asc_pull_req (bool & error, nano::stream & stream, const nano::message_header & header) :
+nano::messages::asc_pull_req::asc_pull_req (bool & error, nano::stream & stream, message_header const & header) :
 	message (header)
 {
 	error = deserialize (stream);
 }
 
-void nano::asc_pull_req::visit (nano::message_visitor & visitor) const
+void nano::messages::asc_pull_req::visit (message_visitor & visitor) const
 {
 	visitor.asc_pull_req (*this);
 }
 
-void nano::asc_pull_req::serialize (nano::stream & stream) const
+void nano::messages::asc_pull_req::serialize (nano::stream & stream) const
 {
 	header.serialize (stream);
 	nano::write (stream, type);
@@ -34,9 +34,9 @@ void nano::asc_pull_req::serialize (nano::stream & stream) const
 	serialize_payload (stream);
 }
 
-bool nano::asc_pull_req::deserialize (nano::stream & stream)
+bool nano::messages::asc_pull_req::deserialize (nano::stream & stream)
 {
-	debug_assert (header.type == nano::message_type::asc_pull_req);
+	debug_assert (header.type == message_type::asc_pull_req);
 	bool error = false;
 	try
 	{
@@ -52,14 +52,14 @@ bool nano::asc_pull_req::deserialize (nano::stream & stream)
 	return error;
 }
 
-void nano::asc_pull_req::serialize_payload (nano::stream & stream) const
+void nano::messages::asc_pull_req::serialize_payload (nano::stream & stream) const
 {
 	debug_assert (verify_consistency ());
 
 	std::visit ([&stream] (auto && pld) { pld.serialize (stream); }, payload);
 }
 
-void nano::asc_pull_req::deserialize_payload (nano::stream & stream)
+void nano::messages::asc_pull_req::deserialize_payload (nano::stream & stream)
 {
 	switch (type)
 	{
@@ -89,7 +89,7 @@ void nano::asc_pull_req::deserialize_payload (nano::stream & stream)
 	}
 }
 
-void nano::asc_pull_req::update_header ()
+void nano::messages::asc_pull_req::update_header ()
 {
 	// TODO: Avoid serializing the payload twice
 	std::vector<uint8_t> bytes;
@@ -102,17 +102,17 @@ void nano::asc_pull_req::update_header ()
 	header.extensions = std::bitset<16> (bytes.size ());
 }
 
-std::size_t nano::asc_pull_req::size (const nano::message_header & header)
+std::size_t nano::messages::asc_pull_req::size (message_header const & header)
 {
 	uint16_t payload_length = nano::narrow_cast<uint16_t> (header.extensions.to_ulong ());
 	return partial_size + payload_length;
 }
 
-bool nano::asc_pull_req::verify_consistency () const
+bool nano::messages::asc_pull_req::verify_consistency () const
 {
 	struct consistency_visitor
 	{
-		nano::asc_pull_type type;
+		asc_pull_type type;
 
 		void operator() (empty_payload) const
 		{
@@ -135,9 +135,9 @@ bool nano::asc_pull_req::verify_consistency () const
 	return true; // Just for convenience of calling from asserts
 }
 
-void nano::asc_pull_req::operator() (nano::object_stream & obs) const
+void nano::messages::asc_pull_req::operator() (nano::object_stream & obs) const
 {
-	nano::message::operator() (obs); // Write common data
+	message::operator() (obs); // Write common data
 
 	obs.write ("type", type);
 	obs.write ("id", id);
@@ -149,21 +149,21 @@ void nano::asc_pull_req::operator() (nano::object_stream & obs) const
  * asc_pull_req::blocks_payload
  */
 
-void nano::asc_pull_req::blocks_payload::serialize (nano::stream & stream) const
+void nano::messages::asc_pull_req::blocks_payload::serialize (nano::stream & stream) const
 {
 	nano::write (stream, start);
 	nano::write (stream, count);
 	nano::write (stream, start_type);
 }
 
-void nano::asc_pull_req::blocks_payload::deserialize (nano::stream & stream)
+void nano::messages::asc_pull_req::blocks_payload::deserialize (nano::stream & stream)
 {
 	nano::read (stream, start);
 	nano::read (stream, count);
 	nano::read (stream, start_type);
 }
 
-void nano::asc_pull_req::blocks_payload::operator() (nano::object_stream & obs) const
+void nano::messages::asc_pull_req::blocks_payload::operator() (nano::object_stream & obs) const
 {
 	obs.write ("start", start);
 	obs.write ("start_type", start_type);
@@ -174,19 +174,19 @@ void nano::asc_pull_req::blocks_payload::operator() (nano::object_stream & obs) 
  * asc_pull_req::account_info_payload
  */
 
-void nano::asc_pull_req::account_info_payload::serialize (stream & stream) const
+void nano::messages::asc_pull_req::account_info_payload::serialize (nano::stream & stream) const
 {
 	nano::write (stream, target);
 	nano::write (stream, target_type);
 }
 
-void nano::asc_pull_req::account_info_payload::deserialize (stream & stream)
+void nano::messages::asc_pull_req::account_info_payload::deserialize (nano::stream & stream)
 {
 	nano::read (stream, target);
 	nano::read (stream, target_type);
 }
 
-void nano::asc_pull_req::account_info_payload::operator() (nano::object_stream & obs) const
+void nano::messages::asc_pull_req::account_info_payload::operator() (nano::object_stream & obs) const
 {
 	obs.write ("target", target);
 	obs.write ("target_type", target_type);
@@ -196,19 +196,19 @@ void nano::asc_pull_req::account_info_payload::operator() (nano::object_stream &
  * asc_pull_req::frontiers_payload
  */
 
-void nano::asc_pull_req::frontiers_payload::serialize (nano::stream & stream) const
+void nano::messages::asc_pull_req::frontiers_payload::serialize (nano::stream & stream) const
 {
 	nano::write (stream, start);
 	nano::write_big_endian (stream, count);
 }
 
-void nano::asc_pull_req::frontiers_payload::deserialize (nano::stream & stream)
+void nano::messages::asc_pull_req::frontiers_payload::deserialize (nano::stream & stream)
 {
 	nano::read (stream, start);
 	nano::read_big_endian (stream, count);
 }
 
-void nano::asc_pull_req::frontiers_payload::operator() (nano::object_stream & obs) const
+void nano::messages::asc_pull_req::frontiers_payload::operator() (nano::object_stream & obs) const
 {
 	obs.write ("start", start);
 	obs.write ("count", count);
@@ -218,23 +218,23 @@ void nano::asc_pull_req::frontiers_payload::operator() (nano::object_stream & ob
  * asc_pull_ack
  */
 
-nano::asc_pull_ack::asc_pull_ack (const nano::network_constants & constants) :
-	message (constants, nano::message_type::asc_pull_ack)
+nano::messages::asc_pull_ack::asc_pull_ack (nano::network_constants const & constants) :
+	message (constants, message_type::asc_pull_ack)
 {
 }
 
-nano::asc_pull_ack::asc_pull_ack (bool & error, nano::stream & stream, const nano::message_header & header) :
+nano::messages::asc_pull_ack::asc_pull_ack (bool & error, nano::stream & stream, message_header const & header) :
 	message (header)
 {
 	error = deserialize (stream);
 }
 
-void nano::asc_pull_ack::visit (nano::message_visitor & visitor) const
+void nano::messages::asc_pull_ack::visit (message_visitor & visitor) const
 {
 	visitor.asc_pull_ack (*this);
 }
 
-void nano::asc_pull_ack::serialize (nano::stream & stream) const
+void nano::messages::asc_pull_ack::serialize (nano::stream & stream) const
 {
 	debug_assert (header.extensions.to_ulong () > 0); // Block payload must have at least `not_a_block` terminator
 	header.serialize (stream);
@@ -244,9 +244,9 @@ void nano::asc_pull_ack::serialize (nano::stream & stream) const
 	serialize_payload (stream);
 }
 
-bool nano::asc_pull_ack::deserialize (nano::stream & stream)
+bool nano::messages::asc_pull_ack::deserialize (nano::stream & stream)
 {
-	debug_assert (header.type == nano::message_type::asc_pull_ack);
+	debug_assert (header.type == message_type::asc_pull_ack);
 	bool error = false;
 	try
 	{
@@ -262,14 +262,14 @@ bool nano::asc_pull_ack::deserialize (nano::stream & stream)
 	return error;
 }
 
-void nano::asc_pull_ack::serialize_payload (nano::stream & stream) const
+void nano::messages::asc_pull_ack::serialize_payload (nano::stream & stream) const
 {
 	debug_assert (verify_consistency ());
 
 	std::visit ([&stream] (auto && pld) { pld.serialize (stream); }, payload);
 }
 
-void nano::asc_pull_ack::deserialize_payload (nano::stream & stream)
+void nano::messages::asc_pull_ack::deserialize_payload (nano::stream & stream)
 {
 	switch (type)
 	{
@@ -299,7 +299,7 @@ void nano::asc_pull_ack::deserialize_payload (nano::stream & stream)
 	}
 }
 
-void nano::asc_pull_ack::update_header ()
+void nano::messages::asc_pull_ack::update_header ()
 {
 	// TODO: Avoid serializing the payload twice
 	std::vector<uint8_t> bytes;
@@ -312,17 +312,17 @@ void nano::asc_pull_ack::update_header ()
 	header.extensions = std::bitset<16> (bytes.size ());
 }
 
-std::size_t nano::asc_pull_ack::size (const nano::message_header & header)
+std::size_t nano::messages::asc_pull_ack::size (message_header const & header)
 {
 	uint16_t payload_length = nano::narrow_cast<uint16_t> (header.extensions.to_ulong ());
 	return partial_size + payload_length;
 }
 
-bool nano::asc_pull_ack::verify_consistency () const
+bool nano::messages::asc_pull_ack::verify_consistency () const
 {
 	struct consistency_visitor
 	{
-		nano::asc_pull_type type;
+		asc_pull_type type;
 
 		void operator() (empty_payload) const
 		{
@@ -345,9 +345,9 @@ bool nano::asc_pull_ack::verify_consistency () const
 	return true; // Just for convenience of calling from asserts
 }
 
-void nano::asc_pull_ack::operator() (nano::object_stream & obs) const
+void nano::messages::asc_pull_ack::operator() (nano::object_stream & obs) const
 {
-	nano::message::operator() (obs); // Write common data
+	message::operator() (obs); // Write common data
 
 	obs.write ("type", type);
 	obs.write ("id", id);
@@ -359,7 +359,7 @@ void nano::asc_pull_ack::operator() (nano::object_stream & obs) const
  * asc_pull_ack::blocks_payload
  */
 
-void nano::asc_pull_ack::blocks_payload::serialize (nano::stream & stream) const
+void nano::messages::asc_pull_ack::blocks_payload::serialize (nano::stream & stream) const
 {
 	debug_assert (blocks.size () <= max_blocks);
 
@@ -372,7 +372,7 @@ void nano::asc_pull_ack::blocks_payload::serialize (nano::stream & stream) const
 	nano::write (stream, nano::block_type::not_a_block);
 }
 
-void nano::asc_pull_ack::blocks_payload::deserialize (nano::stream & stream)
+void nano::messages::asc_pull_ack::blocks_payload::deserialize (nano::stream & stream)
 {
 	auto current = nano::deserialize_block (stream);
 	while (current && blocks.size () < max_blocks)
@@ -382,7 +382,7 @@ void nano::asc_pull_ack::blocks_payload::deserialize (nano::stream & stream)
 	}
 }
 
-void nano::asc_pull_ack::blocks_payload::operator() (nano::object_stream & obs) const
+void nano::messages::asc_pull_ack::blocks_payload::operator() (nano::object_stream & obs) const
 {
 	obs.write_range ("blocks", blocks);
 }
@@ -391,7 +391,7 @@ void nano::asc_pull_ack::blocks_payload::operator() (nano::object_stream & obs) 
  * asc_pull_ack::account_info_payload
  */
 
-void nano::asc_pull_ack::account_info_payload::serialize (nano::stream & stream) const
+void nano::messages::asc_pull_ack::account_info_payload::serialize (nano::stream & stream) const
 {
 	nano::write (stream, account);
 	nano::write (stream, account_open);
@@ -401,7 +401,7 @@ void nano::asc_pull_ack::account_info_payload::serialize (nano::stream & stream)
 	nano::write_big_endian (stream, account_conf_height);
 }
 
-void nano::asc_pull_ack::account_info_payload::deserialize (nano::stream & stream)
+void nano::messages::asc_pull_ack::account_info_payload::deserialize (nano::stream & stream)
 {
 	nano::read (stream, account);
 	nano::read (stream, account_open);
@@ -411,7 +411,7 @@ void nano::asc_pull_ack::account_info_payload::deserialize (nano::stream & strea
 	nano::read_big_endian (stream, account_conf_height);
 }
 
-void nano::asc_pull_ack::account_info_payload::operator() (nano::object_stream & obs) const
+void nano::messages::asc_pull_ack::account_info_payload::operator() (nano::object_stream & obs) const
 {
 	obs.write ("account", account);
 	obs.write ("open", account_open);
@@ -425,14 +425,14 @@ void nano::asc_pull_ack::account_info_payload::operator() (nano::object_stream &
  * asc_pull_ack::frontiers_payload
  */
 
-void nano::asc_pull_ack::frontiers_payload::serialize_frontier (nano::stream & stream, nano::asc_pull_ack::frontiers_payload::frontier const & frontier)
+void nano::messages::asc_pull_ack::frontiers_payload::serialize_frontier (nano::stream & stream, frontier const & frontier)
 {
 	auto const & [account, hash] = frontier;
 	nano::write (stream, account);
 	nano::write (stream, hash);
 }
 
-nano::asc_pull_ack::frontiers_payload::frontier nano::asc_pull_ack::frontiers_payload::deserialize_frontier (nano::stream & stream)
+nano::messages::asc_pull_ack::frontiers_payload::frontier nano::messages::asc_pull_ack::frontiers_payload::deserialize_frontier (nano::stream & stream)
 {
 	nano::account account;
 	nano::block_hash hash;
@@ -441,7 +441,7 @@ nano::asc_pull_ack::frontiers_payload::frontier nano::asc_pull_ack::frontiers_pa
 	return { account, hash };
 }
 
-void nano::asc_pull_ack::frontiers_payload::serialize (nano::stream & stream) const
+void nano::messages::asc_pull_ack::frontiers_payload::serialize (nano::stream & stream) const
 {
 	debug_assert (frontiers.size () <= max_frontiers);
 
@@ -452,7 +452,7 @@ void nano::asc_pull_ack::frontiers_payload::serialize (nano::stream & stream) co
 	serialize_frontier (stream, { nano::account{ 0 }, nano::block_hash{ 0 } });
 }
 
-void nano::asc_pull_ack::frontiers_payload::deserialize (nano::stream & stream)
+void nano::messages::asc_pull_ack::frontiers_payload::deserialize (nano::stream & stream)
 {
 	auto current = deserialize_frontier (stream);
 	while ((!current.first.is_zero () && !current.second.is_zero ()) && frontiers.size () < max_frontiers)
@@ -462,7 +462,7 @@ void nano::asc_pull_ack::frontiers_payload::deserialize (nano::stream & stream)
 	}
 }
 
-void nano::asc_pull_ack::frontiers_payload::operator() (nano::object_stream & obs) const
+void nano::messages::asc_pull_ack::frontiers_payload::operator() (nano::object_stream & obs) const
 {
 	obs.write_range ("frontiers", frontiers, [] (auto const & entry, nano::object_stream & obs) {
 		auto & [account, hash] = entry;

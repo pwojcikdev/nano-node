@@ -2,6 +2,7 @@
 
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/work.hpp>
+#include <nano/messages/fwd.hpp>
 #include <nano/node/endpoint.hpp>
 #include <nano/node/vote_with_weight_info.hpp>
 #include <nano/node/websocket_stream.hpp>
@@ -26,7 +27,6 @@ class ledger;
 class logger;
 class node;
 class node_observers;
-class telemetry_data;
 class vote;
 enum class vote_code;
 class wallets;
@@ -100,7 +100,7 @@ namespace websocket
 		message work_failed (nano::work_version const version, nano::block_hash const & root, uint64_t difficulty, uint64_t publish_threshold, std::chrono::milliseconds const & duration, std::vector<std::string> const & bad_peers);
 		message bootstrap_started (std::string const & id_a, std::string const & mode_a);
 		message bootstrap_exited (std::string const & id_a, std::string const & mode_a, std::chrono::steady_clock::time_point const start_time_a, uint64_t const total_blocks_a);
-		message telemetry_received (nano::telemetry_data const &, nano::endpoint const &);
+		message telemetry_received (nano::messages::telemetry_data const &, nano::endpoint const &);
 		message new_block_arrived (nano::block const & block_a);
 
 	private:
