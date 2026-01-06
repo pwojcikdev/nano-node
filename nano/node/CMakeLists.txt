@@ -223,7 +223,7 @@ target_link_libraries(
   nano_lib
   nano_messages
   nano_store
-  secure
+  nano_secure
   rpc
   libminiupnpc-static
   argon2
