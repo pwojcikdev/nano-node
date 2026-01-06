@@ -55,7 +55,27 @@ nano::store::txn_tracker::txn_tracker (nano::logger & logger_a, txn_tracking_con
 {
 }
 
-void nano::store::txn_tracker::serialize_json (boost::property_tree::ptree & json, std::chrono::milliseconds min_read_time, std::chrono::milliseconds min_write_time)
+void nano::store::txn_tracker::add (transaction_impl const * transaction_impl)
+{
+	nano::lock_guard<nano::mutex> guard (mutex);
+	debug_assert (std::find_if (stats.cbegin (), stats.cend (), matches_txn (transaction_impl)) == stats.cend ());
+	stats.emplace_back (transaction_impl);
+}
+
+void nano::store::txn_tracker::erase (transaction_impl const * transaction_impl)
+{
+	nano::unique_lock<nano::mutex> lk (mutex);
+	auto it = std::find_if (stats.begin (), stats.end (), matches_txn (transaction_impl));
+	if (it != stats.end ())
+	{
+		auto tracker_stats_copy = *it;
+		stats.erase (it);
+		lk.unlock ();
+		log_if_held_long_enough (tracker_stats_copy);
+	}
+}
+
+void nano::store::txn_tracker::serialize (boost::property_tree::ptree & json, std::chrono::milliseconds min_read_time, std::chrono::milliseconds min_write_time)
 {
 	// Copying is cheap compared to generating the stack trace strings, so reduce time holding the mutex
 	std::vector<txn_stats> copy_stats;
@@ -135,26 +155,6 @@ void nano::store::txn_tracker::log_if_held_long_enough (txn_stats const & stats)
 	}
 }
 
-void nano::store::txn_tracker::add (transaction_impl const * transaction_impl)
-{
-	nano::lock_guard<nano::mutex> guard (mutex);
-	debug_assert (std::find_if (stats.cbegin (), stats.cend (), matches_txn (transaction_impl)) == stats.cend ());
-	stats.emplace_back (transaction_impl);
-}
-
-void nano::store::txn_tracker::erase (transaction_impl const * transaction_impl)
-{
-	nano::unique_lock<nano::mutex> lk (mutex);
-	auto it = std::find_if (stats.begin (), stats.end (), matches_txn (transaction_impl));
-	if (it != stats.end ())
-	{
-		auto tracker_stats_copy = *it;
-		stats.erase (it);
-		lk.unlock ();
-		log_if_held_long_enough (tracker_stats_copy);
-	}
-}
-
 /*
  * txn_tracking_config
  */
@@ -164,7 +164,6 @@ nano::error nano::store::txn_tracking_config::serialize_toml (nano::tomlconfig &
 	toml.put ("enable", enable, "Enable or disable database transaction tracing.\ntype:bool");
 	toml.put ("min_read_txn_time", min_read_txn_time.count (), "Log stacktrace when read transactions are held longer than this duration.\ntype:milliseconds");
 	toml.put ("min_write_txn_time", min_write_txn_time.count (), "Log stacktrace when write transactions are held longer than this duration.\ntype:milliseconds");
-	toml.put ("ignore_writes_below_block_processor_max_time", ignore_writes_below_block_processor_max_time, "Ignore any block processor writes less than block_processor_batch_max_time.\ntype:bool");
 	return toml.get_error ();
 }
 
@@ -172,15 +171,8 @@ nano::error nano::store::txn_tracking_config::deserialize_toml (nano::tomlconfig
 {
 	toml.get_optional<bool> ("enable", enable);
 
-	auto min_read_txn_time_l = static_cast<unsigned long> (min_read_txn_time.count ());
-	toml.get_optional ("min_read_txn_time", min_read_txn_time_l);
-	min_read_txn_time = std::chrono::milliseconds (min_read_txn_time_l);
-
-	auto min_write_txn_time_l = static_cast<unsigned long> (min_write_txn_time.count ());
-	toml.get_optional ("min_write_txn_time", min_write_txn_time_l);
-	min_write_txn_time = std::chrono::milliseconds (min_write_txn_time_l);
-
-	toml.get_optional<bool> ("ignore_writes_below_block_processor_max_time", ignore_writes_below_block_processor_max_time);
+	toml.get_duration ("min_read_txn_time", min_read_txn_time);
+	toml.get_duration ("min_write_txn_time", min_write_txn_time);
 
 	return toml.get_error ();
 }

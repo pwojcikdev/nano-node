@@ -12,6 +12,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace nano::store
@@ -30,9 +31,6 @@ public:
 	bool enable{ false };
 	std::chrono::milliseconds min_read_txn_time{ 5000 };
 	std::chrono::milliseconds min_write_txn_time{ 500 };
-	bool ignore_writes_below_block_processor_max_time{ true };
-	/** Time threshold for filtering block processor writes (used when ignore_writes_below_block_processor_max_time is true) */
-	std::chrono::milliseconds block_processor_batch_max_time{ 5000 };
 };
 
 /**
@@ -58,10 +56,6 @@ public:
 public:
 	nano::timer<std::chrono::milliseconds> timer;
 	nano::store::transaction_impl const * txn_impl;
-	std::string thread_name;
-
-	// Smart pointer so that we don't need the full definition which causes min/max issues on Windows
-	std::shared_ptr<boost::stacktrace::stacktrace> stacktrace;
 };
 
 /**
@@ -73,15 +67,31 @@ class txn_tracker
 public:
 	txn_tracker (nano::logger &, txn_tracking_config const & txn_tracking_config);
 
-	void serialize_json (boost::property_tree::ptree & json, std::chrono::milliseconds min_read_time, std::chrono::milliseconds min_write_time);
 	void add (transaction_impl const * transaction_impl);
 	void erase (transaction_impl const * transaction_impl);
 
+	void serialize (boost::property_tree::ptree & json, std::chrono::milliseconds min_read_time, std::chrono::milliseconds min_write_time);
+
 private:
-	nano::mutex mutex;
-	std::vector<txn_stats> stats;
-	nano::logger & logger;
 	txn_tracking_config config;
+
+private:
+	struct entry
+	{
+		nano::store::transaction_impl const * txn;
+		std::chrono::steady_clock::time_point timestamp;
+		std::string thread_name;
+		// Smart pointer so that we don't need the full definition which causes min/max issues on Windows
+		std::shared_ptr<boost::stacktrace::stacktrace> stacktrace;
+	};
+
+
+
+private:
+	std::vector<txn_stats> stats;
+
+	nano::mutex mutex;
+	nano::logger & logger;
 
 	void log_if_held_long_enough (txn_stats const & stats) const;
 };
