@@ -1,7 +1,7 @@
+#include <nano/lib/endpoint.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/memory.hpp>
-#include <nano/node/endpoint.hpp>
 
 #include <gtest/gtest.h>
 

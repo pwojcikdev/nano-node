@@ -1,6 +1,7 @@
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/config.hpp>
+#include <nano/lib/endpoint.hpp>
 #include <nano/lib/json_error_response.hpp>
 #include <nano/lib/jsonconfig.hpp>
 #include <nano/lib/stats_sinks.hpp>
@@ -11,7 +12,6 @@
 #include <nano/node/bootstrap/bootstrap_service.hpp>
 #include <nano/node/cementing_set.hpp>
 #include <nano/node/election.hpp>
-#include <nano/node/endpoint.hpp>
 #include <nano/node/json_handler.hpp>
 #include <nano/node/node.hpp>
 #include <nano/node/node_rpc_config.hpp>

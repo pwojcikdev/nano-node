@@ -1,6 +1,6 @@
 #pragma once
 
-#include <nano/node/endpoint.hpp>
+#include <nano/lib/endpoint.hpp>
 #include <nano/test_common/system.hpp>
 
 namespace nano

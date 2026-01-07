@@ -1,7 +1,7 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/endpoint.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/node/election.hpp>
-#include <nano/node/endpoint.hpp>
 #include <nano/node/local_vote_history.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/node.hpp>

@@ -1,11 +1,11 @@
 #pragma once
 
+#include <nano/lib/endpoint.hpp>
 #include <nano/lib/errors.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/work.hpp>
 #include <nano/lib/work_version.hpp>
-#include <nano/node/endpoint.hpp>
 
 #include <boost/asio.hpp>
 #include <boost/asio/steady_timer.hpp>
