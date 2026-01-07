@@ -1,9 +1,9 @@
 #pragma once
 
 #include <nano/lib/async.hpp>
+#include <nano/lib/endpoint.hpp>
 #include <nano/lib/fwd.hpp>
 #include <nano/lib/observer_set.hpp>
-#include <nano/node/endpoint.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/transport/common.hpp>
 #include <nano/node/transport/tcp_config.hpp>
