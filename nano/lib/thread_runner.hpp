@@ -46,4 +46,4 @@ constexpr unsigned asio_handler_tracking_threshold ()
 	return NANO_ASIO_HANDLER_TRACKING;
 #endif
 }
-} // namespace nano
+}
