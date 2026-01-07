@@ -41,6 +41,8 @@ add_library(
   char_traits.hpp
   cli.hpp
   cli.cpp
+  endpoint.hpp
+  endpoint.cpp
   common.hpp
   common.cpp
   config.hpp

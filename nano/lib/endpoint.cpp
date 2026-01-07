@@ -1,14 +1,9 @@
-#include <nano/lib/blocks.hpp>
-#include <nano/lib/memory.hpp>
-#include <nano/lib/stream.hpp>
-#include <nano/lib/vote.hpp>
-#include <nano/node/active_elections.hpp>
-#include <nano/node/election.hpp>
-#include <nano/node/endpoint.hpp>
-#include <nano/node/network.hpp>
-#include <nano/node/wallet.hpp>
+#include <nano/lib/endpoint.hpp>
+#include <nano/lib/numbers.hpp>
+#include <nano/secure/common.hpp>
 
-#include <boost/format.hpp>
+#include <boost/asio/ip/address.hpp>
+#include <boost/lexical_cast.hpp>
 
 uint64_t nano::ip_address_hash_raw (boost::asio::ip::address const & ip_a, uint16_t port)
 {
@@ -137,9 +132,4 @@ bool nano::parse_tcp_endpoint (std::string const & string, nano::tcp_endpoint & 
 		endpoint_a = nano::tcp_endpoint (address, port);
 	}
 	return result;
-}
-
-nano::node_singleton_memory_pool_purge_guard::node_singleton_memory_pool_purge_guard () :
-	cleanup_guard ({ nano::block_memory_pool_purge, nano::purge_shared_ptr_singleton_pool_memory<nano::vote>, nano::purge_shared_ptr_singleton_pool_memory<nano::election> })
-{
 }

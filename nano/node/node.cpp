@@ -1,7 +1,9 @@
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/endpoint.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/formatting.hpp>
+#include <nano/lib/memory.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/lib/thread_pool.hpp>
 #include <nano/lib/thread_runner.hpp>
@@ -22,7 +24,6 @@
 #include <nano/node/daemonconfig.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/election_status.hpp>
-#include <nano/node/endpoint.hpp>
 #include <nano/node/fork_cache.hpp>
 #include <nano/node/ledger_notifications.hpp>
 #include <nano/node/local_block_broadcaster.hpp>
@@ -1026,4 +1027,13 @@ nano::keypair nano::load_or_create_node_id (std::filesystem::path const & applic
 
 		return kp;
 	}
+}
+
+/*
+ *
+ */
+
+nano::node_singleton_memory_pool_purge_guard::node_singleton_memory_pool_purge_guard () :
+	cleanup_guard ({ nano::block_memory_pool_purge, nano::purge_shared_ptr_singleton_pool_memory<nano::vote>, nano::purge_shared_ptr_singleton_pool_memory<nano::election> })
+{
 }

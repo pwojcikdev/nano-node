@@ -78,9 +78,6 @@ add_library(
   election_behavior.hpp
   election_insertion_result.hpp
   election_status.hpp
-  endpoint.cpp
-  endpoint.hpp
-  endpoint_templ.hpp
   epoch_upgrader.hpp
   epoch_upgrader.cpp
   fair_queue.hpp
