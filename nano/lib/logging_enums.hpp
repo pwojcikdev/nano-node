@@ -95,6 +95,7 @@ enum class type
 	request_aggregator,
 	vote_rebroadcaster,
 	migration,
+	work_pool,
 
 	// bootstrap
 	bulk_pull_client,

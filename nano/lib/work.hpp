@@ -2,8 +2,10 @@
 
 #include <nano/lib/config.hpp>
 #include <nano/lib/locks.hpp>
+#include <nano/lib/logging.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/observer_set.hpp>
+#include <nano/lib/stats.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/node/openclwork.hpp>
 
@@ -51,7 +53,10 @@ public:
 	boost::optional<uint64_t> generate (nano::root const &);
 	boost::optional<uint64_t> generate (nano::root const &, uint64_t);
 	size_t size ();
+
 	nano::network_constants & network_constants;
+	nano::logger logger{ "work_pool" };
+	nano::stats stats{ logger };
 	std::atomic<int> ticket;
 	bool done;
 	std::vector<std::thread> threads;

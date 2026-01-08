@@ -128,6 +128,7 @@ enum class type
 	online_reps,
 	pruning,
 	fork_cache,
+	work_pool,
 
 	_last // Must be the last enum
 };
@@ -711,6 +712,12 @@ enum class detail
 
 	// fork_cache
 	overfill_entry,
+
+	// work_pool
+	work_generation,
+	work_cancelled,
+	work_loop_iteration,
+	work_observer_notify,
 
 	_last // Must be the last enum
 };

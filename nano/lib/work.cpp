@@ -3,6 +3,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/constants.hpp>
 #include <nano/lib/epoch.hpp>
+#include <nano/lib/stats_enums.hpp>
 #include <nano/lib/thread_roles.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/lib/work.hpp>
@@ -41,6 +42,9 @@ nano::work_pool::work_pool (nano::network_constants & network_constants, unsigne
 		// One thread to handle OpenCL
 		++count;
 	}
+
+	logger.debug (nano::log::type::work_pool, "Starting {} work threads (pow_rate_limiter: {}ns)", count, pow_rate_limiter_a.count ());
+
 	for (auto i (0u); i < count; ++i)
 	{
 		threads.emplace_back ([this, i] () {
@@ -71,12 +75,19 @@ void nano::work_pool::loop (uint64_t thread)
 	blake2b_init (&hash, sizeof (output));
 	nano::unique_lock<nano::mutex> lock{ mutex };
 	auto pow_sleep = pow_rate_limiter;
+
+	logger.debug (nano::log::type::work_pool, "Thread {} started", thread);
+
 	while (!done)
 	{
+		stats.inc (nano::stat::type::work_pool, nano::stat::detail::work_loop_iteration);
+
 		auto empty (pending.empty ());
 		if (thread == 0)
 		{
 			// Only work thread 0 notifies work observers
+			stats.inc (nano::stat::type::work_pool, nano::stat::detail::work_observer_notify);
+			logger.debug (nano::log::type::work_pool, "Thread {} notifying observers (working: {}, observer_count: {})", thread, !empty, work_observers.size ());
 			work_observers.notify (!empty);
 		}
 		if (!empty)
@@ -84,6 +95,11 @@ void nano::work_pool::loop (uint64_t thread)
 			auto current_l (pending.front ());
 			int ticket_l (ticket);
 			lock.unlock ();
+
+			logger.debug (nano::log::type::work_pool, "Thread {} starting work generation for root {} (difficulty: {:x}, pending: {})",
+				thread, current_l.item.to_string (), current_l.difficulty, pending.size ());
+			auto start_time = std::chrono::steady_clock::now ();
+
 			output = 0;
 			boost::optional<uint64_t> opt_work;
 			if (thread == 0 && opencl)
@@ -131,20 +147,31 @@ void nano::work_pool::loop (uint64_t thread)
 				++ticket;
 				pending.pop_front ();
 				lock.unlock ();
+
+				auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds> (std::chrono::steady_clock::now () - start_time);
+				stats.inc (nano::stat::type::work_pool, nano::stat::detail::work_generation);
+				logger.info (nano::log::type::work_pool, "Thread {} completed work generation for root {} in {}ms (work: {:x})",
+					thread, current_l.item.to_string (), elapsed.count (), work);
+
 				current_l.callback (work);
 				lock.lock ();
 			}
 			else
 			{
 				// A different thread found a solution
+				logger.debug (nano::log::type::work_pool, "Thread {} stopped (another thread found solution for root {})", thread, current_l.item.to_string ());
 			}
 		}
 		else
 		{
 			// Wait for a work request
+			logger.debug (nano::log::type::work_pool, "Thread {} waiting for work request...", thread);
 			producer_condition.wait (lock);
+			logger.debug (nano::log::type::work_pool, "Thread {} woke up (done: {}, pending: {})", thread, done, pending.size ());
 		}
 	}
+
+	logger.debug (nano::log::type::work_pool, "Thread {} exiting", thread);
 }
 
 void nano::work_pool::cancel (nano::root const & root_a)
@@ -159,6 +186,7 @@ void nano::work_pool::cancel (nano::root const & root_a)
 				++ticket;
 			}
 		}
+		auto initial_size = pending.size ();
 		pending.remove_if ([&root_a] (decltype (pending)::value_type const & item_a) {
 			bool result{ false };
 			if (item_a.item == root_a)
@@ -171,6 +199,13 @@ void nano::work_pool::cancel (nano::root const & root_a)
 			}
 			return result;
 		});
+		auto removed = initial_size - pending.size ();
+		if (removed > 0)
+		{
+			stats.inc (nano::stat::type::work_pool, nano::stat::detail::work_cancelled);
+			logger.debug (nano::log::type::work_pool, "Cancelled work for root {} (removed {} items, pending: {})",
+				root_a.to_string (), removed, pending.size ());
+		}
 	}
 }
 
@@ -192,11 +227,14 @@ void nano::work_pool::generate (nano::work_version const version_a, nano::root c
 		{
 			nano::lock_guard<nano::mutex> lock{ mutex };
 			pending.emplace_back (version_a, root_a, difficulty_a, callback_a);
+			logger.debug (nano::log::type::work_pool, "Queued work generation for root {} (difficulty: {:x}, pending: {})",
+				root_a.to_string (), difficulty_a, pending.size ());
 		}
 		producer_condition.notify_all ();
 	}
 	else if (callback_a)
 	{
+		logger.warn (nano::log::type::work_pool, "No work threads available, returning empty result for root {}", root_a.to_string ());
 		callback_a (boost::none);
 	}
 }
