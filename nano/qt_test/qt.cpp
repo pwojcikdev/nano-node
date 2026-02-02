@@ -690,17 +690,16 @@ TEST (wallet, startup_work)
 	auto wallet (std::make_shared<nano_qt::wallet> (*test_application, processor, *system.nodes[0], system.wallet (0), account));
 	wallet->start ();
 	QTest::mouseClick (wallet->show_advanced, Qt::LeftButton);
-	uint64_t work1;
-	ASSERT_TRUE (wallet->wallet_m->get_work (nano::dev::genesis_key.pub, work1));
+	auto work1_result = wallet->wallet_m->get_work (nano::dev::genesis_key.pub);
+	ASSERT_TRUE (work1_result);
 	QTest::mouseClick (wallet->accounts_button, Qt::LeftButton);
 	QTest::keyClicks (wallet->accounts.account_key_line, "34F0A37AAD20F4A260F0A5B3CB3D7FB50673212263E58A380BC10474BB039CE4");
 	QTest::mouseClick (wallet->accounts.account_key_button, Qt::LeftButton);
 	system.deadline_set (10s);
-	auto again (true);
-	while (again)
+	// Wait until genesis key is removed from wallet (work lookup fails)
+	while (wallet->wallet_m->get_work (nano::dev::genesis_key.pub))
 	{
 		ASSERT_NO_ERROR (system.poll ());
-		again = wallet->wallet_m->get_work (nano::dev::genesis_key.pub, work1);
 	}
 }
 
@@ -894,17 +893,17 @@ TEST (wallet, seed_work_generation)
 	auto pub (nano::pub_key (prv));
 	QTest::keyClicks (wallet->import.seed, seed.to_string ().c_str ());
 	QTest::keyClicks (wallet->import.clear_line, "clear keys");
-	uint64_t work (0);
+	nano::result<uint64_t> work_result = nano::error (nano::error_common::account_not_found_wallet);
 	QTest::mouseClick (wallet->import.import_seed, Qt::LeftButton);
 	system.deadline_set (10s);
-	while (work == 0)
+	while (!work_result || work_result.value () == 0)
 	{
 		auto ec = system.poll ();
-		system.wallet (0)->get_work (pub, work);
+		work_result = system.wallet (0)->get_work (pub);
 		ASSERT_NO_ERROR (ec);
 	}
 	auto transaction = system.nodes[0]->ledger.tx_begin_read ();
-	ASSERT_GE (nano::dev::network_params.work.difficulty (nano::work_version::work_1, system.nodes[0]->ledger.latest_root (transaction, pub), work), system.nodes[0]->default_difficulty (nano::work_version::work_1));
+	ASSERT_GE (nano::dev::network_params.work.difficulty (nano::work_version::work_1, system.nodes[0]->ledger.latest_root (transaction, pub), work_result.value ()), system.nodes[0]->default_difficulty (nano::work_version::work_1));
 }
 
 TEST (wallet, backup_seed)
