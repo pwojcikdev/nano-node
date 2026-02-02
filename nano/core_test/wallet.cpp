@@ -534,10 +534,10 @@ TEST (wallet, work)
 	system.deadline_set (20s);
 	while (!done)
 	{
-		uint64_t work (0);
-		if (!wallet->get_work (nano::dev::genesis_key.pub, work))
+		auto work_result = wallet->get_work (nano::dev::genesis_key.pub);
+		if (work_result)
 		{
-			done = nano::dev::network_params.work.difficulty (nano::dev::genesis->work_version (), nano::dev::genesis->hash (), work) >= system.nodes[0]->default_difficulty (nano::dev::genesis->work_version ());
+			done = nano::dev::network_params.work.difficulty (nano::dev::genesis->work_version (), nano::dev::genesis->hash (), work_result.value ()) >= system.nodes[0]->default_difficulty (nano::dev::genesis->work_version ());
 		}
 		ASSERT_NO_ERROR (system.poll ());
 	}
@@ -549,19 +549,19 @@ TEST (wallet, work_generate)
 	auto & node1 (*system.nodes[0]);
 	auto wallet (system.wallet (0));
 	nano::uint128_t amount1 (node1.balance (nano::dev::genesis_key.pub));
-	uint64_t work1;
 	wallet->insert_adhoc (nano::dev::genesis_key.prv);
 	nano::account account1 = system.wallet (0)->accounts ().front ();
 	nano::keypair key;
 	auto block (wallet->send_action (nano::dev::genesis_key.pub, key.pub, 100));
 	ASSERT_TIMELY (10s, node1.ledger.any.account_balance (node1.ledger.tx_begin_read (), nano::dev::genesis_key.pub) != amount1);
 	system.deadline_set (10s);
-	auto again (true);
+	auto again = true;
 	while (again)
 	{
 		ASSERT_NO_ERROR (system.poll ());
 		auto block_transaction = node1.ledger.tx_begin_read ();
-		again = wallet->get_work (account1, work1) || nano::dev::network_params.work.difficulty (block->work_version (), node1.ledger.latest_root (block_transaction, account1), work1) < node1.default_difficulty (block->work_version ());
+		auto work_result = wallet->get_work (account1);
+		again = !work_result || nano::dev::network_params.work.difficulty (block->work_version (), node1.ledger.latest_root (block_transaction, account1), work_result.value ()) < node1.default_difficulty (block->work_version ());
 	}
 }
 
@@ -570,7 +570,6 @@ TEST (wallet, work_cache_delayed)
 	nano::test::system system (1);
 	auto & node1 (*system.nodes[0]);
 	auto wallet (system.wallet (0));
-	uint64_t work1;
 	wallet->insert_adhoc (nano::dev::genesis_key.prv);
 	nano::account account1 = system.wallet (0)->accounts ().front ();
 	nano::keypair key;
@@ -580,17 +579,20 @@ TEST (wallet, work_cache_delayed)
 	ASSERT_EQ (block2->hash (), node1.latest (nano::dev::genesis_key.pub));
 	ASSERT_EQ (block2->hash (), node1.wallets.delayed_work->operator[] (nano::dev::genesis_key.pub).as_block_hash ());
 	auto threshold (node1.default_difficulty (nano::work_version::work_1));
-	auto again (true);
+	nano::result<uint64_t> work_result = nano::error (nano::error_common::account_not_found_wallet);
 	system.deadline_set (10s);
+	auto again = true;
 	while (again)
 	{
 		ASSERT_NO_ERROR (system.poll ());
-		if (!wallet->get_work (account1, work1))
+		work_result = wallet->get_work (account1);
+		if (work_result)
 		{
-			again = nano::dev::network_params.work.difficulty (nano::work_version::work_1, block2->hash (), work1) < threshold;
+			again = nano::dev::network_params.work.difficulty (nano::work_version::work_1, block2->hash (), work_result.value ()) < threshold;
 		}
 	}
-	ASSERT_GE (nano::dev::network_params.work.difficulty (nano::work_version::work_1, block2->hash (), work1), threshold);
+	ASSERT_TRUE (work_result);
+	ASSERT_GE (nano::dev::network_params.work.difficulty (nano::work_version::work_1, block2->hash (), work_result.value ()), threshold);
 }
 
 TEST (wallet, insert_locked)
@@ -698,9 +700,9 @@ TEST (wallet, no_work)
 	ASSERT_NE (nullptr, block);
 	ASSERT_NE (0, block->block_work ());
 	ASSERT_GE (nano::dev::network_params.work.difficulty (*block), nano::dev::network_params.work.threshold (block->work_version (), block->sideband ().details));
-	uint64_t cached_work (0);
-	system.wallet (0)->get_work (nano::dev::genesis_key.pub, cached_work);
-	ASSERT_EQ (0, cached_work);
+	auto cached_work_result = system.wallet (0)->get_work (nano::dev::genesis_key.pub);
+	ASSERT_TRUE (cached_work_result);
+	ASSERT_EQ (0, cached_work_result.value ());
 }
 
 TEST (wallet, send_race)

@@ -4953,9 +4953,8 @@ void nano::json_handler::wallet_work_get ()
 		boost::property_tree::ptree works;
 		for (auto const & account : wallet->accounts ())
 		{
-			uint64_t work (0);
-			auto error_work (wallet->get_work (account, work));
-			(void)error_work;
+			auto work_result = wallet->get_work (account);
+			auto work = work_result ? work_result.value () : 0;
 			works.put (account.to_account (), nano::to_string_hex (work));
 		}
 		response_l.add_child ("works", works);
@@ -5103,16 +5102,14 @@ void nano::json_handler::work_get ()
 	auto account (account_impl ());
 	if (!ec)
 	{
-		if (!wallet->exists (account))
+		auto work_result = wallet->get_work (account);
+		if (work_result)
 		{
-			ec = nano::error_common::account_not_found_wallet;
+			response_l.put ("work", nano::to_string_hex (work_result.value ()));
 		}
 		else
 		{
-			uint64_t work (0);
-			auto error_work (wallet->get_work (account, work));
-			(void)error_work;
-			response_l.put ("work", nano::to_string_hex (work));
+			ec = work_result.error ();
 		}
 	}
 	response_errors ();

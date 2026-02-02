@@ -110,7 +110,7 @@ public:
 	void write_backup (nano::store::transaction const &, std::filesystem::path const & path) const;
 	bool move (nano::store::write_transaction const &, nano::wallet_store & source, std::vector<nano::public_key> const & keys);
 	bool import (nano::store::write_transaction const &, nano::wallet_store & source);
-	bool work_get (nano::store::transaction const &, nano::public_key const & pub, uint64_t & work) const;
+	std::optional<uint64_t> work_get (nano::store::transaction const &, nano::public_key const &) const;
 	void work_put (nano::store::write_transaction const &, nano::public_key const & pub, uint64_t work);
 	unsigned version (nano::store::transaction const &) const;
 	void version_put (nano::store::write_transaction const &, unsigned version);
@@ -205,7 +205,7 @@ public:
 	// Work cache
 	void work_cache_blocking (nano::account const & account, nano::root const & root);
 	void work_ensure (nano::account const & account, nano::root const & root);
-	bool get_work (nano::public_key const & pub, uint64_t & work) const;
+	nano::result<uint64_t> get_work (nano::public_key const &) const;
 	void set_work (nano::public_key const & pub, uint64_t work);
 
 	// Receivable

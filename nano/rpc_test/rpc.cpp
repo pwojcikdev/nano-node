@@ -3457,9 +3457,9 @@ TEST (rpc, work_get)
 	request.put ("account", nano::dev::genesis_key.pub.to_account ());
 	auto response (wait_response (system, rpc_ctx, request));
 	std::string work_text (response.get<std::string> ("work"));
-	uint64_t work (1);
-	node->wallets.items.begin ()->second->get_work (nano::dev::genesis_key.pub, work);
-	ASSERT_EQ (nano::to_string_hex (work), work_text);
+	auto work_result = node->wallets.items.begin ()->second->get_work (nano::dev::genesis_key.pub);
+	ASSERT_TRUE (work_result);
+	ASSERT_EQ (nano::to_string_hex (work_result.value ()), work_text);
 }
 
 TEST (rpc, wallet_work_get)
@@ -3478,9 +3478,9 @@ TEST (rpc, wallet_work_get)
 		std::string account_text (works.first);
 		ASSERT_EQ (nano::dev::genesis_key.pub.to_account (), account_text);
 		std::string work_text (works.second.get<std::string> (""));
-		uint64_t work (1);
-		node->wallets.items.begin ()->second->get_work (nano::dev::genesis_key.pub, work);
-		ASSERT_EQ (nano::to_string_hex (work), work_text);
+		auto work_result = node->wallets.items.begin ()->second->get_work (nano::dev::genesis_key.pub);
+		ASSERT_TRUE (work_result);
+		ASSERT_EQ (nano::to_string_hex (work_result.value ()), work_text);
 	}
 }
 
@@ -3499,9 +3499,9 @@ TEST (rpc, work_set)
 	auto response (wait_response (system, rpc_ctx, request));
 	std::string success (response.get<std::string> ("success"));
 	ASSERT_TRUE (success.empty ());
-	uint64_t work1 (1);
-	node->wallets.items.begin ()->second->get_work (nano::dev::genesis_key.pub, work1);
-	ASSERT_EQ (work1, work0);
+	auto work1_result = node->wallets.items.begin ()->second->get_work (nano::dev::genesis_key.pub);
+	ASSERT_TRUE (work1_result);
+	ASSERT_EQ (work1_result.value (), work0);
 }
 
 TEST (rpc, search_receivable_all)

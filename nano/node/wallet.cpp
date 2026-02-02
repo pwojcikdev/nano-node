@@ -445,19 +445,14 @@ bool nano::wallet_store::import (nano::store::write_transaction const & transact
 	return result;
 }
 
-bool nano::wallet_store::work_get (nano::store::transaction const & transaction_a, nano::public_key const & pub_a, uint64_t & work_a) const
+std::optional<uint64_t> nano::wallet_store::work_get (nano::store::transaction const & transaction, nano::public_key const & pub) const
 {
-	auto result (false);
-	auto entry (entry_get_raw (transaction_a, pub_a));
+	auto entry = entry_get_raw (transaction, pub);
 	if (!entry.key.is_zero ())
 	{
-		work_a = entry.work;
+		return entry.work;
 	}
-	else
-	{
-		result = true;
-	}
-	return result;
+	return std::nullopt;
 }
 
 void nano::wallet_store::work_put (nano::store::write_transaction const & transaction_a, nano::public_key const & pub_a, uint64_t work_a)
@@ -933,7 +928,7 @@ std::shared_ptr<nano::block> nano::wallet::receive_action (nano::block_hash cons
 
 					if (work_a == 0)
 					{
-						store.work_get (transaction, account_a, work_a);
+						work_a = store.work_get (transaction, account_a).value_or (0);
 					}
 					auto info = wallets.ledger.any.account_get (ledger_txn, account_a);
 					if (info)
@@ -1004,7 +999,7 @@ std::shared_ptr<nano::block> nano::wallet::change_action (nano::account const & 
 				release_assert (prv_result, "failed to fetch private key for account in wallet change_action", source_a.to_account ());
 				if (work_a == 0)
 				{
-					store.work_get (transaction, source_a, work_a);
+					work_a = store.work_get (transaction, source_a).value_or (0);
 				}
 				block = std::make_shared<nano::state_block> (source_a, info->head, representative_a, info->balance, 0, prv_result.value (), source_a, work_a);
 				details.epoch = info->epoch ();
@@ -1098,7 +1093,7 @@ std::shared_ptr<nano::block> nano::wallet::send_action (nano::account const & so
 						release_assert (prv_result, "failed to fetch private key for account in wallet send_action", source_a.to_account ());
 						if (work_a == 0)
 						{
-							store.work_get (transaction, source_a, work_a);
+							work_a = store.work_get (transaction, source_a).value_or (0);
 						}
 						block = std::make_shared<nano::state_block> (source_a, info->head, info->representative, balance.value ().number () - amount_a, account_a, prv_result.value (), source_a, work_a);
 						details.epoch = info->epoch ();
@@ -1556,10 +1551,15 @@ uint32_t nano::wallet::get_deterministic_index () const
 	return store.deterministic_index_get (transaction);
 }
 
-bool nano::wallet::get_work (nano::public_key const & pub_a, uint64_t & work_a) const
+nano::result<uint64_t> nano::wallet::get_work (nano::public_key const & pub) const
 {
 	auto transaction = wallets.tx_begin_read ();
-	return store.work_get (transaction, pub_a, work_a);
+	auto result = store.work_get (transaction, pub);
+	if (result)
+	{
+		return *result;
+	}
+	return nano::error (nano::error_common::account_not_found_wallet);
 }
 
 void nano::wallet::set_work (nano::public_key const & pub_a, uint64_t work_a)
