@@ -314,57 +314,51 @@ nano::key_type nano::wallet_store::key_type (nano::wallet_value const & value_a)
 	return result;
 }
 
-bool nano::wallet_store::fetch (nano::store::transaction const & transaction_a, nano::account const & pub, nano::raw_key & prv) const
+nano::result<nano::raw_key> nano::wallet_store::fetch (nano::store::transaction const & transaction, nano::account const & pub) const
 {
-	auto result (false);
-	if (valid_password (transaction_a))
+	if (!valid_password (transaction))
 	{
-		nano::wallet_value value (entry_get_raw (transaction_a, pub));
-		if (!value.key.is_zero ())
+		return nano::error (nano::error_common::wallet_locked);
+	}
+
+	auto value = entry_get_raw (transaction, pub);
+	if (value.key.is_zero ())
+	{
+		return nano::error (nano::error_common::account_not_found_wallet);
+	}
+
+	nano::raw_key prv;
+	switch (key_type (value))
+	{
+		case nano::key_type::deterministic:
 		{
-			switch (key_type (value))
-			{
-				case nano::key_type::deterministic:
-				{
-					nano::raw_key seed_l;
-					seed (seed_l, transaction_a);
-					uint32_t index (static_cast<uint32_t> (value.key.number () & static_cast<uint32_t> (-1)));
-					prv = deterministic_key (transaction_a, index);
-					break;
-				}
-				case nano::key_type::adhoc:
-				{
-					// Ad-hoc keys
-					nano::raw_key password_l;
-					wallet_key (password_l, transaction_a);
-					prv.decrypt (value.key, password_l, pub.owords[0].number ());
-					break;
-				}
-				default:
-				{
-					result = true;
-					break;
-				}
-			}
+			nano::raw_key seed_l;
+			seed (seed_l, transaction);
+			auto index = static_cast<uint32_t> (value.key.number () & static_cast<uint32_t> (-1));
+			prv = deterministic_key (transaction, index);
+			break;
 		}
-		else
+		case nano::key_type::adhoc:
 		{
-			result = true;
+			nano::raw_key password_l;
+			wallet_key (password_l, transaction);
+			prv.decrypt (value.key, password_l, pub.owords[0].number ());
+			break;
+		}
+		default:
+		{
+			return nano::error (nano::error_common::bad_private_key);
 		}
 	}
-	else
+
+	// Verify the key
+	nano::public_key compare = nano::pub_key (prv);
+	if (pub != compare)
 	{
-		result = true;
+		return nano::error (nano::error_common::bad_private_key);
 	}
-	if (!result)
-	{
-		nano::public_key compare (nano::pub_key (prv));
-		if (!(pub == compare))
-		{
-			result = true;
-		}
-	}
-	return result;
+
+	return prv;
 }
 
 bool nano::wallet_store::valid_public_key (nano::public_key const & pub) const
@@ -413,14 +407,14 @@ bool nano::wallet_store::move (nano::store::write_transaction const & transactio
 	auto result (false);
 	for (auto i (keys.begin ()), n (keys.end ()); i != n; ++i)
 	{
-		nano::raw_key prv;
-		auto error (other_a.fetch (transaction_a, *i, prv));
-		result = result | error;
-		if (!result)
+		auto prv_result = other_a.fetch (transaction_a, *i);
+		if (!prv_result)
 		{
-			insert_adhoc (transaction_a, prv);
-			other_a.erase (transaction_a, *i);
+			result = true;
+			break;
 		}
+		insert_adhoc (transaction_a, prv_result.value ());
+		other_a.erase (transaction_a, *i);
 	}
 	return result;
 }
@@ -432,21 +426,21 @@ bool nano::wallet_store::import (nano::store::write_transaction const & transact
 	auto result (false);
 	for (auto i (other_a.begin (transaction_a)), n (other_a.end (transaction_a)); i != n; ++i)
 	{
-		nano::raw_key prv;
-		auto error (other_a.fetch (transaction_a, i->first, prv));
-		result = result | error;
-		if (!result)
+		auto prv_result = other_a.fetch (transaction_a, i->first);
+		if (!prv_result)
 		{
-			if (!prv.is_zero ())
-			{
-				insert_adhoc (transaction_a, prv);
-			}
-			else
-			{
-				insert_watch (transaction_a, i->first);
-			}
-			other_a.erase (transaction_a, i->first);
+			result = true;
+			break;
 		}
+		if (!prv_result.value ().is_zero ())
+		{
+			insert_adhoc (transaction_a, prv_result.value ());
+		}
+		else
+		{
+			insert_watch (transaction_a, i->first);
+		}
+		other_a.erase (transaction_a, i->first);
 	}
 	return result;
 }
@@ -709,6 +703,7 @@ nano::mdb_wallets_store::mdb_wallets_store (std::filesystem::path const & path_a
 {
 }
 
+
 /*
  * wallet
  */
@@ -928,8 +923,8 @@ std::shared_ptr<nano::block> nano::wallet::receive_action (nano::block_hash cons
 			auto pending_info = wallets.ledger.any.pending_get (ledger_txn, nano::pending_key (account_a, send_hash_a));
 			if (pending_info)
 			{
-				nano::raw_key prv;
-				if (!store.fetch (transaction, account_a, prv))
+				auto prv_result = store.fetch (transaction, account_a);
+				if (prv_result)
 				{
 					logger.info (nano::log::type::wallet, "Receiving block: {} from account: {}, amount: {} raw",
 					send_hash_a,
@@ -943,12 +938,12 @@ std::shared_ptr<nano::block> nano::wallet::receive_action (nano::block_hash cons
 					auto info = wallets.ledger.any.account_get (ledger_txn, account_a);
 					if (info)
 					{
-						block = std::make_shared<nano::state_block> (account_a, info->head, info->representative, info->balance.number () + pending_info->amount.number (), send_hash_a, prv, account_a, work_a);
+						block = std::make_shared<nano::state_block> (account_a, info->head, info->representative, info->balance.number () + pending_info->amount.number (), send_hash_a, prv_result.value (), account_a, work_a);
 						details.epoch = std::max (info->epoch (), pending_info->epoch);
 					}
 					else
 					{
-						block = std::make_shared<nano::state_block> (account_a, 0, representative_a, pending_info->amount, reinterpret_cast<nano::link const &> (send_hash_a), prv, account_a, work_a);
+						block = std::make_shared<nano::state_block> (account_a, 0, representative_a, pending_info->amount, reinterpret_cast<nano::link const &> (send_hash_a), prv_result.value (), account_a, work_a);
 						details.epoch = pending_info->epoch;
 					}
 				}
@@ -1005,14 +1000,13 @@ std::shared_ptr<nano::block> nano::wallet::change_action (nano::account const & 
 
 				auto info = wallets.ledger.any.account_get (ledger_txn, source_a);
 				release_assert (info, "could not find account info for account in wallet change_action", source_a.to_account ());
-				nano::raw_key prv;
-				auto error2 (store.fetch (transaction, source_a, prv));
-				release_assert (!error2, "failed to fetch private key for account in wallet change_action", source_a.to_account ());
+				auto prv_result = store.fetch (transaction, source_a);
+				release_assert (prv_result, "failed to fetch private key for account in wallet change_action", source_a.to_account ());
 				if (work_a == 0)
 				{
 					store.work_get (transaction, source_a, work_a);
 				}
-				block = std::make_shared<nano::state_block> (source_a, info->head, representative_a, info->balance, 0, prv, source_a, work_a);
+				block = std::make_shared<nano::state_block> (source_a, info->head, representative_a, info->balance, 0, prv_result.value (), source_a, work_a);
 				details.epoch = info->epoch ();
 			}
 			else
@@ -1100,14 +1094,13 @@ std::shared_ptr<nano::block> nano::wallet::send_action (nano::account const & so
 
 						auto info = wallets.ledger.any.account_get (ledger_txn, source_a);
 						release_assert (info, "could not find account info for account in wallet send_action", source_a.to_account ());
-						nano::raw_key prv;
-						auto error2 (store.fetch (transaction, source_a, prv));
-						release_assert (!error2, "failed to fetch private key for account in wallet send_action", source_a.to_account ());
+						auto prv_result = store.fetch (transaction, source_a);
+						release_assert (prv_result, "failed to fetch private key for account in wallet send_action", source_a.to_account ());
 						if (work_a == 0)
 						{
 							store.work_get (transaction, source_a, work_a);
 						}
-						block = std::make_shared<nano::state_block> (source_a, info->head, info->representative, balance.value ().number () - amount_a, account_a, prv, source_a, work_a);
+						block = std::make_shared<nano::state_block> (source_a, info->head, info->representative, balance.value ().number () - amount_a, account_a, prv_result.value (), source_a, work_a);
 						details.epoch = info->epoch ();
 						if (id_mdb_val && block != nullptr)
 						{
@@ -1575,10 +1568,10 @@ void nano::wallet::set_work (nano::public_key const & pub_a, uint64_t work_a)
 	store.work_put (transaction, pub_a, work_a);
 }
 
-bool nano::wallet::fetch_prv (nano::account const & pub_a, nano::raw_key & prv_a) const
+nano::result<nano::raw_key> nano::wallet::fetch_prv (nano::account const & pub_a) const
 {
 	auto transaction = wallets.tx_begin_read ();
-	return store.fetch (transaction, pub_a, prv_a);
+	return store.fetch (transaction, pub_a);
 }
 
 bool nano::wallet::live ()
@@ -2064,12 +2057,11 @@ void nano::wallets::refresh_rep_keys_cache ()
 			{
 				if (wallet->store.valid_password (wallet_txn))
 				{
-					nano::raw_key prv;
-					auto error = wallet->store.fetch (wallet_txn, account, prv);
-					release_assert (!error, "failed to fetch private key for representative account", account.to_account ());
+					auto prv_result = wallet->store.fetch (wallet_txn, account);
+					release_assert (prv_result, "failed to fetch private key for representative account", account.to_account ());
 
 					// Store private key spread across multiple heap allocations via fan to avoid plaintext keys in memory at rest
-					new_cache.emplace_back (account, std::make_unique<nano::fan> (prv, config.password_fanout));
+					new_cache.emplace_back (account, std::make_unique<nano::fan> (prv_result.value (), config.password_fanout));
 				}
 				else
 				{

@@ -40,8 +40,9 @@ TEST (wallet, no_key)
 	nano::kdf kdf{ nano::dev::network_params.kdf_work };
 	nano::wallet_store wallet (kdf, transaction, env, nano::dev::genesis_key.pub, 1, "0");
 	nano::keypair key1;
-	nano::raw_key prv1;
-	ASSERT_TRUE (wallet.fetch (transaction, key1.pub, prv1));
+	auto result = wallet.fetch (transaction, key1.pub);
+	ASSERT_FALSE (result);
+	ASSERT_EQ (result.error (), nano::error_common::account_not_found_wallet);
 	ASSERT_TRUE (wallet.valid_password (transaction));
 }
 
@@ -60,9 +61,12 @@ TEST (wallet, fetch_locked)
 	key3 = 1;
 	wallet.password.value_set (key3);
 	ASSERT_FALSE (wallet.valid_password (transaction));
-	nano::raw_key key4;
-	ASSERT_TRUE (wallet.fetch (transaction, key1.pub, key4));
-	ASSERT_TRUE (wallet.fetch (transaction, key2, key4));
+	auto result1 = wallet.fetch (transaction, key1.pub);
+	ASSERT_FALSE (result1);
+	ASSERT_EQ (result1.error (), nano::error_common::wallet_locked);
+	auto result2 = wallet.fetch (transaction, key2);
+	ASSERT_FALSE (result2);
+	ASSERT_EQ (result2.error (), nano::error_common::wallet_locked);
 }
 
 TEST (wallet, retrieval)
@@ -74,13 +78,14 @@ TEST (wallet, retrieval)
 	nano::keypair key1;
 	ASSERT_TRUE (wallet.valid_password (transaction));
 	wallet.insert_adhoc (transaction, key1.prv);
-	nano::raw_key prv1;
-	ASSERT_FALSE (wallet.fetch (transaction, key1.pub, prv1));
+	auto result1 = wallet.fetch (transaction, key1.pub);
+	ASSERT_TRUE (result1);
 	ASSERT_TRUE (wallet.valid_password (transaction));
-	ASSERT_EQ (key1.prv, prv1);
+	ASSERT_EQ (key1.prv, result1.value ());
 	wallet.password.values[0]->bytes[16] ^= 1;
-	nano::raw_key prv2;
-	ASSERT_TRUE (wallet.fetch (transaction, key1.pub, prv2));
+	auto result2 = wallet.fetch (transaction, key1.pub);
+	ASSERT_FALSE (result2);
+	ASSERT_EQ (result2.error (), nano::error_common::wallet_locked);
 	ASSERT_FALSE (wallet.valid_password (transaction));
 }
 
@@ -276,17 +281,17 @@ TEST (wallet, rekey)
 	ASSERT_EQ (default_password_key, password);
 	nano::keypair key1;
 	wallet.insert_adhoc (transaction, key1.prv);
-	nano::raw_key prv1;
-	wallet.fetch (transaction, key1.pub, prv1);
-	ASSERT_EQ (key1.prv, prv1);
+	auto result1 = wallet.fetch (transaction, key1.pub);
+	ASSERT_TRUE (result1);
+	ASSERT_EQ (key1.prv, result1.value ());
 	ASSERT_FALSE (wallet.rekey (transaction, "1"));
 	wallet.password.value (password);
 	nano::raw_key password1;
 	wallet.derive_key (password1, transaction, "1");
 	ASSERT_EQ (password1, password);
-	nano::raw_key prv2;
-	wallet.fetch (transaction, key1.pub, prv2);
-	ASSERT_EQ (key1.prv, prv2);
+	auto result2 = wallet.fetch (transaction, key1.pub);
+	ASSERT_TRUE (result2);
+	ASSERT_EQ (key1.prv, result2.value ());
 	*wallet.password.values[0] = 2;
 	ASSERT_TRUE (wallet.rekey (transaction, "2"));
 }
@@ -426,9 +431,9 @@ TEST (wallet, serialize_json_one)
 	ASSERT_EQ (wallet1.check (transaction), wallet2.check (transaction));
 	ASSERT_EQ (wallet1.representative (transaction), wallet2.representative (transaction));
 	ASSERT_TRUE (wallet2.exists (transaction, key.pub));
-	nano::raw_key prv;
-	wallet2.fetch (transaction, key.pub, prv);
-	ASSERT_EQ (key.prv, prv);
+	auto prv_result = wallet2.fetch (transaction, key.pub);
+	ASSERT_TRUE (prv_result);
+	ASSERT_EQ (key.prv, prv_result.value ());
 }
 
 TEST (wallet, serialize_json_password)
@@ -455,9 +460,9 @@ TEST (wallet, serialize_json_password)
 	ASSERT_EQ (wallet1.check (transaction), wallet2.check (transaction));
 	ASSERT_EQ (wallet1.representative (transaction), wallet2.representative (transaction));
 	ASSERT_TRUE (wallet2.exists (transaction, key.pub));
-	nano::raw_key prv;
-	wallet2.fetch (transaction, key.pub, prv);
-	ASSERT_EQ (key.prv, prv);
+	auto prv_result = wallet2.fetch (transaction, key.pub);
+	ASSERT_TRUE (prv_result);
+	ASSERT_EQ (key.prv, prv_result.value ());
 }
 
 TEST (wallet_store, move)
@@ -616,9 +621,9 @@ TEST (wallet, deterministic_keys)
 	wallet.deterministic_index_set (transaction, 1);
 	ASSERT_EQ (1, wallet.deterministic_index_get (transaction));
 	auto key4 (wallet.deterministic_insert (transaction));
-	nano::raw_key key5;
-	ASSERT_FALSE (wallet.fetch (transaction, key4, key5));
-	ASSERT_EQ (key3, key5);
+	auto key5_result = wallet.fetch (transaction, key4);
+	ASSERT_TRUE (key5_result);
+	ASSERT_EQ (key3, key5_result.value ());
 	ASSERT_EQ (2, wallet.deterministic_index_get (transaction));
 	wallet.deterministic_index_set (transaction, 1);
 	ASSERT_EQ (1, wallet.deterministic_index_get (transaction));
@@ -627,9 +632,9 @@ TEST (wallet, deterministic_keys)
 	auto key8 (wallet.deterministic_insert (transaction));
 	ASSERT_EQ (key4, key8);
 	auto key6 (wallet.deterministic_insert (transaction));
-	nano::raw_key key7;
-	ASSERT_FALSE (wallet.fetch (transaction, key6, key7));
-	ASSERT_NE (key5, key7);
+	auto key7_result = wallet.fetch (transaction, key6);
+	ASSERT_TRUE (key7_result);
+	ASSERT_NE (key5_result.value (), key7_result.value ());
 	ASSERT_EQ (3, wallet.deterministic_index_get (transaction));
 	nano::keypair key9;
 	ASSERT_EQ (key9.pub, wallet.insert_adhoc (transaction, key9.prv));

@@ -1090,9 +1090,9 @@ TEST (node, fork_no_vote_quorum)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				 .work (*system.work.generate (block->hash ()))
 				 .build ();
-	nano::raw_key key3;
-	ASSERT_FALSE (system.wallet (1)->fetch_prv (key1, key3));
-	auto vote = std::make_shared<nano::vote> (key1, key3, 0, 0, std::vector<nano::block_hash>{ send2->hash () });
+	auto key3_result = system.wallet (1)->fetch_prv (key1);
+	ASSERT_TRUE (key3_result);
+	auto vote = std::make_shared<nano::vote> (key1, key3_result.value (), 0, 0, std::vector<nano::block_hash>{ send2->hash () });
 	nano::messages::confirm_ack confirm{ nano::dev::network_params.network, vote };
 	auto channel = node2.network.find_node_id (node3.node_id.pub);
 	ASSERT_NE (nullptr, channel);

@@ -4,6 +4,7 @@
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
+#include <nano/lib/result.hpp>
 #include <nano/lib/thread_pool.hpp>
 #include <nano/lib/work.hpp>
 #include <nano/node/fwd.hpp>
@@ -15,6 +16,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <unordered_set>
 
@@ -96,7 +98,7 @@ public:
 	void erase (nano::store::write_transaction const &, nano::account const & pub);
 	nano::wallet_value entry_get_raw (nano::store::transaction const &, nano::account const & pub) const;
 	void entry_put_raw (nano::store::write_transaction const &, nano::account const & pub, nano::wallet_value const & entry);
-	bool fetch (nano::store::transaction const &, nano::account const & pub, nano::raw_key & result) const;
+	nano::result<nano::raw_key> fetch (nano::store::transaction const &, nano::account const & pub) const;
 	bool exists (nano::store::transaction const &, nano::account const & pub) const;
 	void destroy (nano::store::write_transaction const &);
 	iterator find (nano::store::transaction const &, nano::account const & key) const;
@@ -184,7 +186,7 @@ public:
 	std::unordered_set<nano::account> reps () const;
 
 	// Key retrieval
-	bool fetch_prv (nano::account const & pub, nano::raw_key & result) const;
+	nano::result<nano::raw_key> fetch_prv (nano::account const & pub) const;
 
 	// Block actions
 	std::shared_ptr<nano::block> change_action (nano::account const & source, nano::account const & representative, uint64_t work = 0, bool generate_work = true);

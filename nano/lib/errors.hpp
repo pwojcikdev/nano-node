@@ -231,7 +231,7 @@ public:
 		return *this;
 	}
 
-	explicit operator std::error_code () const;
+	operator std::error_code () const;
 	explicit operator bool () const;
 	explicit operator std::string () const;
 	std::string get_message () const;

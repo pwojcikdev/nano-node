@@ -1531,17 +1531,20 @@ void nano::json_handler::block_create ()
 	}
 	if (!ec && wallet != 0 && account != 0)
 	{
-		auto existing (node.wallets.items.find (wallet));
+		auto existing = node.wallets.items.find (wallet);
 		if (existing != node.wallets.items.end ())
 		{
-			wallet_locked_impl (existing->second);
-			wallet_account_impl (existing->second, account);
-			if (!ec)
+			auto prv_result = existing->second->fetch_prv (account);
+			if (prv_result)
 			{
-				existing->second->fetch_prv (account, prv);
+				prv = prv_result.value ();
 				auto block_transaction = node.ledger.tx_begin_read ();
 				previous = node.ledger.any.account_head (block_transaction, account);
 				balance = node.ledger.any.account_balance (block_transaction, account).value_or (0);
+			}
+			else
+			{
+				ec = prv_result.error ();
 			}
 		}
 		else
@@ -3884,11 +3887,14 @@ void nano::json_handler::sign ()
 				auto wallet (wallet_impl ());
 				if (!ec)
 				{
-					wallet_locked_impl (wallet);
-					wallet_account_impl (wallet, account);
-					if (!ec)
+					auto prv_result = wallet->fetch_prv (account);
+					if (prv_result)
 					{
-						wallet->fetch_prv (account, prv);
+						prv = prv_result.value ();
+					}
+					else
+					{
+						ec = prv_result.error ();
 					}
 				}
 			}
