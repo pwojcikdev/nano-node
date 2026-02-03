@@ -660,21 +660,18 @@ TEST (wallet, reseed)
 	nano::raw_key seed2;
 	seed2 = 2;
 	wallet.seed_set (transaction, seed1);
-	nano::raw_key seed3;
-	wallet.seed (seed3, transaction);
+	auto seed3 = wallet.seed (transaction);
 	ASSERT_EQ (seed1, seed3);
 	auto key1 (wallet.deterministic_insert (transaction));
 	ASSERT_EQ (1, wallet.deterministic_index_get (transaction));
 	wallet.seed_set (transaction, seed2);
 	ASSERT_EQ (0, wallet.deterministic_index_get (transaction));
-	nano::raw_key seed4;
-	wallet.seed (seed4, transaction);
+	auto seed4 = wallet.seed (transaction);
 	ASSERT_EQ (seed2, seed4);
 	auto key2 (wallet.deterministic_insert (transaction));
 	ASSERT_NE (key1, key2);
 	wallet.seed_set (transaction, seed1);
-	nano::raw_key seed5;
-	wallet.seed (seed5, transaction);
+	auto seed5 = wallet.seed (transaction);
 	ASSERT_EQ (seed1, seed5);
 	auto key3 (wallet.deterministic_insert (transaction));
 	ASSERT_EQ (key1, key3);
@@ -751,7 +748,9 @@ TEST (wallet, password_race_corrupt_seed)
 	nano::raw_key seed;
 	{
 		ASSERT_FALSE (wallet->rekey ("4567"));
-		wallet->get_seed (seed);
+		auto seed_result = wallet->get_seed ();
+		ASSERT_TRUE (seed_result);
+		seed = seed_result.value ();
 		ASSERT_FALSE (wallet->enter_password ("4567"));
 	}
 	std::vector<std::thread> threads;
@@ -785,21 +784,21 @@ TEST (wallet, password_race_corrupt_seed)
 	{
 		if (!wallet->enter_password ("1234"))
 		{
-			nano::raw_key seed_now;
-			wallet->get_seed (seed_now);
-			ASSERT_EQ (seed_now, seed);
+			auto seed_now = wallet->get_seed ();
+			ASSERT_TRUE (seed_now);
+			ASSERT_EQ (seed_now.value (), seed);
 		}
 		else if (!wallet->enter_password ("0000"))
 		{
-			nano::raw_key seed_now;
-			wallet->get_seed (seed_now);
-			ASSERT_EQ (seed_now, seed);
+			auto seed_now = wallet->get_seed ();
+			ASSERT_TRUE (seed_now);
+			ASSERT_EQ (seed_now.value (), seed);
 		}
 		else if (!wallet->enter_password ("4567"))
 		{
-			nano::raw_key seed_now;
-			wallet->get_seed (seed_now);
-			ASSERT_EQ (seed_now, seed);
+			auto seed_now = wallet->get_seed ();
+			ASSERT_TRUE (seed_now);
+			ASSERT_EQ (seed_now.value (), seed);
 		}
 		else
 		{
@@ -824,9 +823,9 @@ TEST (wallet, change_seed)
 	ASSERT_TIMELY (5s, nano::test::exists (*system.nodes[0], { block }));
 	{
 		wallet->change_seed (seed1);
-		nano::raw_key seed2;
-		wallet->get_seed (seed2);
-		ASSERT_EQ (seed1, seed2);
+		auto seed2 = wallet->get_seed ();
+		ASSERT_TRUE (seed2);
+		ASSERT_EQ (seed1, seed2.value ());
 		ASSERT_EQ (index + 1, wallet->get_deterministic_index ());
 	}
 	ASSERT_TRUE (wallet->exists (pub));
@@ -842,9 +841,9 @@ TEST (wallet, deterministic_restore)
 	uint32_t index (4);
 	{
 		wallet->change_seed (seed1);
-		nano::raw_key seed2;
-		wallet->get_seed (seed2);
-		ASSERT_EQ (seed1, seed2);
+		auto seed2 = wallet->get_seed ();
+		ASSERT_TRUE (seed2);
+		ASSERT_EQ (seed1, seed2.value ());
 		ASSERT_EQ (1, wallet->get_deterministic_index ());
 		auto prv = nano::deterministic_key (seed1, index);
 		pub = nano::pub_key (prv);

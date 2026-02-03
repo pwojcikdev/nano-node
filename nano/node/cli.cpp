@@ -1071,9 +1071,9 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 				{
 					if (!existing->second->enter_password (password))
 					{
-						nano::raw_key seed;
-						existing->second->get_seed (seed);
-						std::cout << boost::str (boost::format ("Seed: %1%\n") % seed.to_string ());
+						auto seed_result = existing->second->get_seed ();
+						release_assert (seed_result);
+						std::cout << boost::str (boost::format ("Seed: %1%\n") % seed_result.value ().to_string ());
 						for (auto const & account : existing->second->accounts ())
 						{
 							auto key_result = existing->second->fetch_prv (account);

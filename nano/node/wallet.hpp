@@ -80,7 +80,7 @@ public:
 	bool valid_public_key (nano::public_key const &) const;
 	bool attempt_password (nano::store::transaction const &, std::string const & password);
 	void wallet_key (nano::raw_key & result, nano::store::transaction const &) const;
-	void seed (nano::raw_key & result, nano::store::transaction const &) const;
+	nano::raw_key seed (nano::store::transaction const &) const;
 	void seed_set (nano::store::write_transaction const &, nano::raw_key const & seed);
 	nano::key_type key_type (nano::wallet_value const &) const;
 	nano::public_key deterministic_insert (nano::store::write_transaction const &);
@@ -172,7 +172,7 @@ public:
 	nano::key_type key_type (nano::account const & account) const;
 
 	// Seed management
-	bool get_seed (nano::raw_key & result) const;
+	nano::result<nano::raw_key> get_seed () const;
 	nano::public_key change_seed (nano::raw_key const & seed, uint32_t count = 0);
 	void deterministic_restore ();
 	uint32_t deterministic_check (uint32_t index);

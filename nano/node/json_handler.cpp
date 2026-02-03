@@ -4929,17 +4929,17 @@ void nano::json_handler::wallet_republish ()
 
 void nano::json_handler::wallet_seed ()
 {
-	auto wallet (wallet_impl ());
+	auto wallet = wallet_impl ();
 	if (!ec)
 	{
-		nano::raw_key seed;
-		if (!wallet->get_seed (seed))
+		auto seed_result = wallet->get_seed ();
+		if (seed_result)
 		{
-			response_l.put ("seed", seed.to_string ());
+			response_l.put ("seed", seed_result.value ().to_string ());
 		}
 		else
 		{
-			ec = nano::error_common::wallet_locked;
+			ec = seed_result.error ();
 		}
 	}
 	response_errors ();

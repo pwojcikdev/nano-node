@@ -639,9 +639,9 @@ TEST (rpc, wallet_create_seed)
 	auto existing (node->wallets.items.find (wallet_id));
 	ASSERT_NE (node->wallets.items.end (), existing);
 	{
-		nano::raw_key seed0;
-		existing->second->get_seed (seed0);
-		ASSERT_EQ (seed, seed0);
+		auto seed0 = existing->second->get_seed ();
+		ASSERT_TRUE (seed0);
+		ASSERT_EQ (seed, seed0.value ());
 	}
 	auto account_text (response.get<std::string> ("last_restored_account"));
 	nano::account account;
@@ -2564,15 +2564,15 @@ TEST (rpc, wallet_seed)
 	nano::test::system system;
 	auto node = add_ipc_enabled_node (system);
 	auto const rpc_ctx = add_rpc (system, node);
-	nano::raw_key seed;
-	system.wallet (0)->get_seed (seed);
+	auto seed = system.wallet (0)->get_seed ();
+	ASSERT_TRUE (seed);
 	boost::property_tree::ptree request;
 	request.put ("action", "wallet_seed");
 	request.put ("wallet", node->wallets.items.begin ()->first.to_string ());
 	auto response (wait_response (system, rpc_ctx, request));
 	{
 		std::string seed_text (response.get<std::string> ("seed"));
-		ASSERT_EQ (seed.to_string (), seed_text);
+		ASSERT_EQ (seed.value ().to_string (), seed_text);
 	}
 }
 
@@ -2584,9 +2584,9 @@ TEST (rpc, wallet_change_seed)
 	nano::raw_key seed;
 	nano::random_pool::generate_block (seed.bytes.data (), seed.bytes.size ());
 	{
-		nano::raw_key seed0;
-		system0.wallet (0)->get_seed (seed0);
-		ASSERT_NE (seed, seed0);
+		auto seed0 = system0.wallet (0)->get_seed ();
+		ASSERT_TRUE (seed0);
+		ASSERT_NE (seed, seed0.value ());
 	}
 	auto prv = nano::deterministic_key (seed, 0);
 	auto pub (nano::pub_key (prv));
@@ -2596,9 +2596,9 @@ TEST (rpc, wallet_change_seed)
 	request.put ("seed", seed.to_string ());
 	auto response (wait_response (system0, rpc_ctx, request));
 	{
-		nano::raw_key seed0;
-		system0.wallet (0)->get_seed (seed0);
-		ASSERT_EQ (seed, seed0);
+		auto seed0 = system0.wallet (0)->get_seed ();
+		ASSERT_TRUE (seed0);
+		ASSERT_EQ (seed, seed0.value ());
 	}
 	auto account_text (response.get<std::string> ("last_restored_account"));
 	nano::account account;
@@ -2863,15 +2863,15 @@ TEST (rpc, deterministic_key)
 {
 	nano::test::system system0;
 	auto node = add_ipc_enabled_node (system0);
-	nano::raw_key seed;
-	system0.wallet (0)->get_seed (seed);
+	auto seed = system0.wallet (0)->get_seed ();
+	ASSERT_TRUE (seed);
 	nano::account account0 (system0.wallet (0)->deterministic_insert ());
 	nano::account account1 (system0.wallet (0)->deterministic_insert ());
 	nano::account account2 (system0.wallet (0)->deterministic_insert ());
 	auto const rpc_ctx = add_rpc (system0, node);
 	boost::property_tree::ptree request;
 	request.put ("action", "deterministic_key");
-	request.put ("seed", seed.to_string ());
+	request.put ("seed", seed.value ().to_string ());
 	request.put ("index", "0");
 	auto response0 (wait_response (system0, rpc_ctx, request));
 	std::string validate_text (response0.get<std::string> ("account"));

@@ -332,8 +332,7 @@ nano::result<nano::raw_key> nano::wallet_store::fetch (nano::store::transaction 
 	{
 		case nano::key_type::deterministic:
 		{
-			nano::raw_key seed_l;
-			seed (seed_l, transaction);
+			auto seed_l = seed (transaction);
 			auto index = static_cast<uint32_t> (value.key.number () & static_cast<uint32_t> (-1));
 			prv = deterministic_key (transaction, index);
 			break;
@@ -499,12 +498,14 @@ void nano::wallet_store::wallet_key (nano::raw_key & prv_a, nano::store::transac
 	prv_a.decrypt (wallet_l, password_l, salt (transaction_a).owords[0]);
 }
 
-void nano::wallet_store::seed (nano::raw_key & prv_a, nano::store::transaction const & transaction_a) const
+nano::raw_key nano::wallet_store::seed (nano::store::transaction const & transaction) const
 {
-	nano::wallet_value value (entry_get_raw (transaction_a, nano::wallet_store::seed_special));
-	nano::raw_key password_l;
-	wallet_key (password_l, transaction_a);
-	prv_a.decrypt (value.key, password_l, salt (transaction_a).owords[seed_iv_index]);
+	nano::wallet_value value (entry_get_raw (transaction, nano::wallet_store::seed_special));
+	nano::raw_key password;
+	wallet_key (password, transaction);
+	nano::raw_key result;
+	result.decrypt (value.key, password, salt (transaction).owords[seed_iv_index]);
+	return result;
 }
 
 void nano::wallet_store::seed_set (nano::store::write_transaction const & transaction_a, nano::raw_key const & prv_a)
@@ -548,12 +549,10 @@ nano::public_key nano::wallet_store::deterministic_insert (nano::store::write_tr
 	return result;
 }
 
-nano::raw_key nano::wallet_store::deterministic_key (nano::store::transaction const & transaction_a, uint32_t index_a) const
+nano::raw_key nano::wallet_store::deterministic_key (nano::store::transaction const & transaction, uint32_t index) const
 {
-	debug_assert (valid_password (transaction_a));
-	nano::raw_key seed_l;
-	seed (seed_l, transaction_a);
-	return nano::deterministic_key (seed_l, index_a);
+	debug_assert (valid_password (transaction));
+	return nano::deterministic_key (seed (transaction), index);
 }
 
 uint32_t nano::wallet_store::deterministic_index_get (nano::store::transaction const & transaction_a) const
@@ -1534,15 +1533,14 @@ nano::account nano::wallet::get_representative () const
 	return store.representative (transaction);
 }
 
-bool nano::wallet::get_seed (nano::raw_key & seed_a) const
+nano::result<nano::raw_key> nano::wallet::get_seed () const
 {
 	auto transaction = wallets.tx_begin_read ();
 	if (!store.valid_password (transaction))
 	{
-		return true; // error: wallet locked
+		return nano::error (nano::error_common::wallet_locked);
 	}
-	store.seed (seed_a, transaction);
-	return false;
+	return store.seed (transaction);
 }
 
 uint32_t nano::wallet::get_deterministic_index () const
