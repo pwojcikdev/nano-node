@@ -1058,11 +1058,11 @@ TEST (node, fork_no_vote_quorum)
 	auto & node2 (*system.nodes[1]);
 	auto & node3 (*system.nodes[2]);
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	auto key4 (system.wallet (0)->deterministic_insert ());
+	auto key4 = system.wallet (0)->deterministic_insert ().value ();
 	system.wallet (0)->send_action (nano::dev::genesis_key.pub, key4, nano::dev::constants.genesis_amount / 4);
-	auto key1 (system.wallet (1)->deterministic_insert ());
+	auto key1 = system.wallet (1)->deterministic_insert ().value ();
 	system.wallet (1)->set_representative (key1);
-	auto block (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key1, node1.config.receive_minimum.number ()));
+	auto block = system.wallet (0)->send_action (nano::dev::genesis_key.pub, key1, node1.config.receive_minimum.number ());
 	ASSERT_NE (nullptr, block);
 	ASSERT_TIMELY (30s, node3.balance (key1) == node1.config.receive_minimum.number () && node2.balance (key1) == node1.config.receive_minimum.number () && node1.balance (key1) == node1.config.receive_minimum.number ());
 	ASSERT_EQ (node1.config.receive_minimum.number (), node1.weight (key1));
@@ -1082,7 +1082,7 @@ TEST (node, fork_no_vote_quorum)
 	nano::test::process (node1, { send1 });
 	nano::test::process (node2, { send1 });
 	nano::test::process (node3, { send1 });
-	auto key2 (system.wallet (2)->deterministic_insert ());
+	auto key2 = system.wallet (2)->deterministic_insert ().value ();
 	auto send2 = nano::send_block_builder ()
 				 .previous (block->hash ())
 				 .destination (key2)

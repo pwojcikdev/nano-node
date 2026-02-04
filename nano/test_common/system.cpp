@@ -128,7 +128,8 @@ std::shared_ptr<nano::node> nano::test::system::add_node (nano::node_config cons
 	auto wallet = node->wallets.create (nano::random_wallet_id ());
 	if (rep)
 	{
-		wallet->insert_adhoc (rep->prv);
+		auto result = wallet->insert_adhoc (rep->prv);
+		debug_assert (result);
 	}
 	node->start ();
 
@@ -589,9 +590,10 @@ void nano::test::system::generate_send_new (nano::node & node_a, std::vector<nan
 	}
 	if (!amount.is_zero ())
 	{
-		auto pub (node_a.wallets.items.begin ()->second->deterministic_insert ());
-		accounts_a.push_back (pub);
-		auto hash (wallet (0)->send_sync (source, pub, amount));
+		auto pub_result = node_a.wallets.items.begin ()->second->deterministic_insert ();
+		debug_assert (pub_result);
+		accounts_a.push_back (pub_result.value ());
+		auto hash = wallet (0)->send_sync (source, pub_result.value (), amount);
 		(void)hash;
 		debug_assert (!hash.is_zero ());
 	}
@@ -601,7 +603,8 @@ void nano::test::system::generate_mass_activity (uint32_t count_a, nano::node & 
 {
 	std::vector<nano::account> accounts;
 	auto dev_genesis_key = nano::dev::genesis_key;
-	wallet (0)->insert_adhoc (dev_genesis_key.prv);
+	auto insert_result = wallet (0)->insert_adhoc (dev_genesis_key.prv);
+	debug_assert (insert_result);
 	accounts.push_back (dev_genesis_key.pub);
 	auto previous (std::chrono::steady_clock::now ());
 	for (uint32_t i (0); i < count_a; ++i)

@@ -161,9 +161,9 @@ public:
 	void lock ();
 
 	// Account management
-	nano::public_key insert_adhoc (nano::raw_key const & prv, bool generate_work = true);
-	nano::public_key deterministic_insert (uint32_t index, bool generate_work = true);
-	nano::public_key deterministic_insert (bool generate_work = true);
+	nano::result<nano::public_key> insert_adhoc (nano::raw_key const & prv, bool generate_work = true);
+	nano::result<nano::public_key> deterministic_insert (uint32_t index, bool generate_work = true);
+	nano::result<nano::public_key> deterministic_insert (bool generate_work = true);
 	bool insert_watch (nano::public_key const & pub);
 	void remove_account (nano::account const & account);
 	std::vector<nano::account> accounts () const;
@@ -231,6 +231,7 @@ private:
 	bool enter_password_impl (nano::store::transaction const &, std::string const & password);
 	bool insert_watch_impl (nano::store::write_transaction const &, nano::public_key const & pub);
 	nano::public_key deterministic_insert_impl (nano::store::write_transaction const &, bool generate_work = true);
+	nano::public_key deterministic_insert_impl (nano::store::write_transaction const &, uint32_t index, bool generate_work = true);
 	void work_update_impl (nano::store::write_transaction const &, nano::account const & account, nano::root const & root, uint64_t work);
 	bool search_receivable_impl (nano::store::transaction const &);
 	void init_free_accounts_impl (nano::store::transaction const &);

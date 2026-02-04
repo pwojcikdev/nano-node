@@ -553,12 +553,11 @@ void nano::json_handler::account_block_count ()
 void nano::json_handler::account_create ()
 {
 	node.workers.post (create_worker_task ([] (std::shared_ptr<nano::json_handler> const & rpc_l) {
-		auto wallet (rpc_l->wallet_impl ());
+		auto wallet = rpc_l->wallet_impl ();
 		if (!rpc_l->ec)
 		{
 			bool const generate_work = rpc_l->request.get<bool> ("work", true);
-			nano::account new_key;
-			auto index_text (rpc_l->request.get_optional<std::string> ("index"));
+			auto index_text = rpc_l->request.get_optional<std::string> ("index");
 			if (index_text.is_initialized ())
 			{
 				uint64_t index;
@@ -568,23 +567,27 @@ void nano::json_handler::account_create ()
 				}
 				else
 				{
-					new_key = wallet->deterministic_insert (static_cast<uint32_t> (index), generate_work);
+					auto key_result = wallet->deterministic_insert (static_cast<uint32_t> (index), generate_work);
+					if (key_result)
+					{
+						rpc_l->response_l.put ("account", key_result.value ().to_account ());
+					}
+					else
+					{
+						rpc_l->ec = key_result.error ();
+					}
 				}
 			}
 			else
 			{
-				new_key = wallet->deterministic_insert (generate_work);
-			}
-
-			if (!rpc_l->ec)
-			{
-				if (!new_key.is_zero ())
+				auto key_result = wallet->deterministic_insert (generate_work);
+				if (key_result)
 				{
-					rpc_l->response_l.put ("account", new_key.to_account ());
+					rpc_l->response_l.put ("account", key_result.value ().to_account ());
 				}
 				else
 				{
-					rpc_l->ec = nano::error_common::wallet_locked;
+					rpc_l->ec = key_result.error ();
 				}
 			}
 		}
@@ -954,19 +957,19 @@ void nano::json_handler::accounts_representatives ()
 void nano::json_handler::accounts_create ()
 {
 	node.workers.post (create_worker_task ([] (std::shared_ptr<nano::json_handler> const & rpc_l) {
-		auto wallet (rpc_l->wallet_impl ());
-		auto count (rpc_l->count_impl ());
+		auto wallet = rpc_l->wallet_impl ();
+		auto count = rpc_l->count_impl ();
 		if (!rpc_l->ec)
 		{
 			bool const generate_work = rpc_l->request.get<bool> ("work", false);
 			boost::property_tree::ptree accounts;
-			for (auto i (0); accounts.size () < count; ++i)
+			for (decltype (count) i = 0; i < count; ++i)
 			{
-				nano::account new_key (wallet->deterministic_insert (generate_work));
-				if (!new_key.is_zero ())
+				auto key_result = wallet->deterministic_insert (generate_work);
+				if (key_result)
 				{
 					boost::property_tree::ptree entry;
-					entry.put ("", new_key.to_account ());
+					entry.put ("", key_result.value ().to_account ());
 					accounts.push_back (std::make_pair ("", entry));
 				}
 			}
@@ -4335,22 +4338,22 @@ void nano::json_handler::validate_account_number ()
 void nano::json_handler::wallet_add ()
 {
 	node.workers.post (create_worker_task ([] (std::shared_ptr<nano::json_handler> const & rpc_l) {
-		auto wallet (rpc_l->wallet_impl ());
+		auto wallet = rpc_l->wallet_impl ();
 		if (!rpc_l->ec)
 		{
-			std::string key_text (rpc_l->request.get<std::string> ("key"));
+			std::string key_text = rpc_l->request.get<std::string> ("key");
 			nano::raw_key key;
 			if (!key.decode_hex (key_text))
 			{
 				bool const generate_work = rpc_l->request.get<bool> ("work", true);
-				auto pub (wallet->insert_adhoc (key, generate_work));
-				if (!pub.is_zero ())
+				auto pub_result = wallet->insert_adhoc (key, generate_work);
+				if (pub_result)
 				{
-					rpc_l->response_l.put ("account", pub.to_account ());
+					rpc_l->response_l.put ("account", pub_result.value ().to_account ());
 				}
 				else
 				{
-					rpc_l->ec = nano::error_common::wallet_locked;
+					rpc_l->ec = pub_result.error ();
 				}
 			}
 			else

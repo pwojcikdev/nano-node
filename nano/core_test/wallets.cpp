@@ -95,7 +95,9 @@ TEST (wallets, create_from_json)
 		auto wallets = make_wallets (node);
 		auto wallet = wallets.create (id);
 		ASSERT_NE (nullptr, wallet);
-		account = wallet->deterministic_insert ();
+		auto account_result = wallet->deterministic_insert ();
+		ASSERT_TRUE (account_result);
+		account = account_result.value ();
 		wallet->serialize_json (json);
 		ASSERT_FALSE (json.empty ());
 		wallets.destroy (id);
@@ -190,9 +192,9 @@ TEST (wallets, vote_minimum)
 	ASSERT_EQ (nano::block_status::progress, node1.process (open2));
 	auto wallet (node1.wallets.items.begin ()->second);
 	ASSERT_EQ (0, wallet->reps ().size ());
-	wallet->insert_adhoc (nano::dev::genesis_key.prv);
-	wallet->insert_adhoc (key1.prv);
-	wallet->insert_adhoc (key2.prv);
+	ASSERT_TRUE (wallet->insert_adhoc (nano::dev::genesis_key.prv));
+	ASSERT_TRUE (wallet->insert_adhoc (key1.prv));
+	ASSERT_TRUE (wallet->insert_adhoc (key2.prv));
 	node1.wallets.refresh_reps ();
 	ASSERT_EQ (2, wallet->reps ().size ());
 }
@@ -205,10 +207,10 @@ TEST (wallets, exists)
 	nano::keypair key2;
 	ASSERT_FALSE (node.wallets.exists (key1.pub));
 	ASSERT_FALSE (node.wallets.exists (key2.pub));
-	system.wallet (0)->insert_adhoc (key1.prv);
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (key1.prv));
 	ASSERT_TRUE (node.wallets.exists (key1.pub));
 	ASSERT_FALSE (node.wallets.exists (key2.pub));
-	system.wallet (0)->insert_adhoc (key2.prv);
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (key2.prv));
 	ASSERT_TRUE (node.wallets.exists (key1.pub));
 	ASSERT_TRUE (node.wallets.exists (key2.pub));
 }
@@ -230,7 +232,7 @@ TEST (wallets, search_receivable)
 		auto wallet_id = wallets.begin ()->first;
 		auto wallet = wallets.begin ()->second;
 
-		wallet->insert_adhoc (nano::dev::genesis_key.prv);
+		ASSERT_TRUE (wallet->insert_adhoc (nano::dev::genesis_key.prv));
 		nano::block_builder builder;
 		auto send = builder.state ()
 					.account (nano::dev::genesis_key.pub)
@@ -265,7 +267,7 @@ TEST (wallets, search_receivable)
 		ASSERT_TIMELY (5s, node.block_confirmed (send->hash ()) && node.active.empty ());
 
 		// Re-insert the key
-		wallet->insert_adhoc (nano::dev::genesis_key.prv);
+		ASSERT_TRUE (wallet->insert_adhoc (nano::dev::genesis_key.prv));
 
 		// Pending search should create the receive block
 		ASSERT_EQ (2, node.ledger.block_count ());
@@ -298,7 +300,7 @@ TEST (wallets, rep_scan)
 
 	// Insert a key that initially has no balance (not a representative)
 	nano::keypair key;
-	wallet->insert_adhoc (key.prv);
+	ASSERT_TRUE (wallet->insert_adhoc (key.prv));
 
 	// Initially the account should not be detected as a representative
 	ASSERT_EQ (0, wallet->reps ().count (key.pub));
@@ -350,7 +352,7 @@ TEST (wallets, receivable_scan)
 	auto & node = *system.add_node (config);
 
 	auto wallet = node.wallets.items.begin ()->second;
-	wallet->insert_adhoc (nano::dev::genesis_key.prv);
+	ASSERT_TRUE (wallet->insert_adhoc (nano::dev::genesis_key.prv));
 
 	// Create a send block to self (creates a receivable)
 	nano::block_builder builder;

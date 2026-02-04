@@ -307,13 +307,21 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 					password = vm["password"].as<std::string> ();
 				}
 				auto inactive_node = nano::default_inactive_node (data_path, vm);
-				auto wallet (inactive_node->node->wallets.open (wallet_id));
+				auto wallet = inactive_node->node->wallets.open (wallet_id);
 				if (wallet != nullptr)
 				{
 					if (!wallet->enter_password (password))
 					{
-						auto pub (wallet->deterministic_insert ());
-						std::cout << boost::str (boost::format ("Account: %1%\n") % pub.to_account ());
+						auto pub_result = wallet->deterministic_insert ();
+						if (pub_result)
+						{
+							std::cout << boost::str (boost::format ("Account: %1%\n") % pub_result.value ().to_account ());
+						}
+						else
+						{
+							std::cerr << "Failed to create account\n";
+							ec = pub_result.error ();
+						}
 					}
 					else
 					{
@@ -891,7 +899,7 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 					password = vm["password"].as<std::string> ();
 				}
 				auto inactive_node = nano::default_inactive_node (data_path, vm);
-				auto wallet (inactive_node->node->wallets.open (wallet_id));
+				auto wallet = inactive_node->node->wallets.open (wallet_id);
 				if (wallet != nullptr)
 				{
 					if (!wallet->enter_password (password))
@@ -899,7 +907,12 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 						nano::raw_key key;
 						if (!key.decode_hex (vm["key"].as<std::string> ()))
 						{
-							wallet->insert_adhoc (key);
+							auto result = wallet->insert_adhoc (key);
+							if (!result)
+							{
+								std::cerr << "Failed to add key\n";
+								ec = result.error ();
+							}
 						}
 						else
 						{

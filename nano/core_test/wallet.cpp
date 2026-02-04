@@ -605,7 +605,9 @@ TEST (wallet, insert_locked)
 		wallet->enter_password ("");
 	}
 	ASSERT_TRUE (wallet->is_locked ());
-	ASSERT_TRUE (wallet->insert_adhoc (nano::keypair ().prv).is_zero ());
+	auto insert_result = wallet->insert_adhoc (nano::keypair ().prv);
+	ASSERT_FALSE (insert_result);
+	ASSERT_EQ (insert_result.error (), nano::error_common::wallet_locked);
 }
 
 TEST (wallet, deterministic_keys)
@@ -685,7 +687,9 @@ TEST (wallet, insert_deterministic_locked)
 	ASSERT_FALSE (wallet->is_locked ());
 	wallet->enter_password ("");
 	ASSERT_TRUE (wallet->is_locked ());
-	ASSERT_TRUE (wallet->deterministic_insert ().is_zero ());
+	auto insert_result = wallet->deterministic_insert ();
+	ASSERT_FALSE (insert_result);
+	ASSERT_EQ (insert_result.error (), nano::error_common::wallet_locked);
 }
 
 TEST (wallet, no_work)

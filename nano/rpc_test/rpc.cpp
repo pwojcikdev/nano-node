@@ -1126,7 +1126,7 @@ TEST (rpc, account_history)
 	}
 
 	// Test filtering
-	auto account2 (system.wallet (0)->deterministic_insert ());
+	auto account2 = system.wallet (0)->deterministic_insert ().value ();
 	auto send2 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, account2, node0->config.receive_minimum.number ()));
 	ASSERT_NE (nullptr, send2);
 	auto receive2 (system.wallet (0)->receive_action (send2->hash (), account2, node0->config.receive_minimum.number (), send2->destination ()));
@@ -2527,7 +2527,7 @@ TEST (rpc, account_remove)
 {
 	nano::test::system system0;
 	auto node = add_ipc_enabled_node (system0);
-	auto key1 (system0.wallet (0)->deterministic_insert ());
+	auto key1 = system0.wallet (0)->deterministic_insert ().value ();
 	ASSERT_TRUE (system0.wallet (0)->exists (key1));
 	auto const rpc_ctx = add_rpc (system0, node);
 	boost::property_tree::ptree request;
@@ -2865,9 +2865,9 @@ TEST (rpc, deterministic_key)
 	auto node = add_ipc_enabled_node (system0);
 	auto seed = system0.wallet (0)->get_seed ();
 	ASSERT_TRUE (seed);
-	nano::account account0 (system0.wallet (0)->deterministic_insert ());
-	nano::account account1 (system0.wallet (0)->deterministic_insert ());
-	nano::account account2 (system0.wallet (0)->deterministic_insert ());
+	auto account0 = system0.wallet (0)->deterministic_insert ().value ();
+	auto account1 = system0.wallet (0)->deterministic_insert ().value ();
+	auto account2 = system0.wallet (0)->deterministic_insert ().value ();
 	auto const rpc_ctx = add_rpc (system0, node);
 	boost::property_tree::ptree request;
 	request.put ("action", "deterministic_key");
@@ -3214,9 +3214,9 @@ TEST (rpc, wallet_info)
 	auto send2 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key.pub, 1));
 	ASSERT_TIMELY (5s, node->block_confirmed (send2->hash ()));
 
-	nano::account account (system.wallet (0)->deterministic_insert ());
+	auto account = system.wallet (0)->deterministic_insert ().value ();
 	system.wallet (0)->remove_account (account);
-	account = system.wallet (0)->deterministic_insert ();
+	account = system.wallet (0)->deterministic_insert ().value ();
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;
 	request.put ("action", "wallet_info");
@@ -5217,7 +5217,7 @@ TEST (rpc, online_reps)
 	auto weight2 (item2->second.get<std::string> ("weight"));
 	ASSERT_EQ (node2->weight (nano::dev::genesis_key.pub).convert_to<std::string> (), weight2);
 	// Test accounts filter
-	auto new_rep (system.wallet (1)->deterministic_insert ());
+	auto new_rep = system.wallet (1)->deterministic_insert ().value ();
 	auto send (system.wallet (0)->send_action (nano::dev::genesis_key.pub, new_rep, node1->config.receive_minimum.number ()));
 	ASSERT_NE (nullptr, send);
 	ASSERT_TIMELY (10s, node2->block (send->hash ()));
