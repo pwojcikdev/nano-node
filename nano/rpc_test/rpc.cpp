@@ -4613,6 +4613,29 @@ TEST (rpc, accounts_create)
 	ASSERT_EQ (8, accounts.size ());
 }
 
+TEST (rpc, accounts_create_locked)
+{
+	nano::test::system system;
+	auto node = add_ipc_enabled_node (system);
+	auto const rpc_ctx = add_rpc (system, node);
+
+	// Lock the wallet
+	system.wallet (0)->rekey ("password");
+	system.wallet (0)->enter_password ("");
+	ASSERT_TRUE (system.wallet (0)->is_locked ());
+
+	boost::property_tree::ptree request;
+	request.put ("action", "accounts_create");
+	request.put ("wallet", node->wallets.items.begin ()->first.to_string ());
+	request.put ("count", "8");
+	auto response = wait_response (system, rpc_ctx, request);
+
+	// Should return wallet_locked error
+	auto error = response.get_optional<std::string> ("error");
+	ASSERT_TRUE (error);
+	ASSERT_EQ ("Wallet is locked", error.value ());
+}
+
 TEST (rpc, block_create)
 {
 	nano::test::system system;
