@@ -4580,6 +4580,30 @@ TEST (rpc, accounts_create)
 	ASSERT_EQ (8, accounts.size ());
 }
 
+// Test that accounts_create with a locked wallet returns empty accounts list (not an error)
+TEST (rpc, accounts_create_locked)
+{
+	nano::test::system system;
+	auto node = add_ipc_enabled_node (system);
+	auto const rpc_ctx = add_rpc (system, node);
+
+	// Lock the wallet
+	system.wallet (0)->rekey ("password");
+	system.wallet (0)->enter_password ("");
+	ASSERT_TRUE (system.wallet (0)->is_locked ());
+
+	boost::property_tree::ptree request;
+	request.put ("action", "accounts_create");
+	request.put ("wallet", node->wallets.items.begin ()->first.to_string ());
+	request.put ("count", "8");
+	auto response = wait_response (system, rpc_ctx, request);
+
+	// Should return empty accounts list, not an error
+	auto & accounts = response.get_child ("accounts");
+	ASSERT_EQ (0, accounts.size ());
+	ASSERT_FALSE (response.get_optional<std::string> ("error"));
+}
+
 TEST (rpc, block_create)
 {
 	nano::test::system system;
