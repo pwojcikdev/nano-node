@@ -107,8 +107,10 @@ TEST (system, receive_while_synchronizing)
 		nano::keypair key;
 		auto node1 (std::make_shared<nano::node> (system.io_ctx, system.get_available_port (), nano::unique_path (), system.work));
 		auto wallet (node1->wallets.create (1));
-		wallet->insert_adhoc (nano::dev::genesis_key.prv); // For voting
-		ASSERT_EQ (key.pub, wallet->insert_adhoc (key.prv));
+		ASSERT_TRUE (wallet->insert_adhoc (nano::dev::genesis_key.prv)); // For voting
+		auto insert_result = wallet->insert_adhoc (key.prv);
+		ASSERT_TRUE (insert_result);
+		ASSERT_EQ (key.pub, insert_result.value ());
 		node1->start ();
 		system.nodes.push_back (node1);
 		ASSERT_NE (nullptr, nano::test::establish_tcp (system, *node1, node->network.endpoint ()));
