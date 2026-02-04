@@ -53,6 +53,7 @@ void nano::wallet_store::wallet_key (nano::raw_key & prv_a, nano::store::transac
 
 nano::raw_key nano::wallet_store::seed (nano::store::transaction const & transaction) const
 {
+	release_assert (valid_password (transaction), "wallet is locked or password is invalid");
 	nano::wallet_value value (entry_get_raw (transaction, nano::wallet_store::seed_special));
 	nano::raw_key password;
 	wallet_key (password, transaction);
@@ -104,8 +105,9 @@ nano::public_key nano::wallet_store::deterministic_insert (nano::store::write_tr
 
 nano::raw_key nano::wallet_store::deterministic_key (nano::store::transaction const & transaction, uint32_t index) const
 {
-	debug_assert (valid_password (transaction));
-	return nano::deterministic_key (seed (transaction), index);
+	release_assert (valid_password (transaction), "wallet is locked or password is invalid");
+	auto wallet_seed = seed (transaction);
+	return nano::deterministic_key (wallet_seed, index);
 }
 
 uint32_t nano::wallet_store::deterministic_index_get (nano::store::transaction const & transaction_a) const
@@ -212,6 +214,10 @@ void nano::wallet_store::derive_key (nano::raw_key & prv_a, nano::store::transac
 	auto salt_l (salt (transaction_a));
 	kdf.phs (prv_a, password_a, salt_l);
 }
+
+/*
+ * fan
+ */
 
 nano::fan::fan (nano::raw_key const & key, std::size_t count_a)
 {
@@ -435,7 +441,7 @@ nano::account nano::wallet_store::representative (nano::store::transaction const
 
 nano::public_key nano::wallet_store::insert_adhoc (nano::store::write_transaction const & transaction_a, nano::raw_key const & prv)
 {
-	debug_assert (valid_password (transaction_a));
+	release_assert (valid_password (transaction_a), "wallet is locked or password is invalid");
 	nano::public_key pub (nano::pub_key (prv));
 	nano::raw_key password_l;
 	wallet_key (password_l, transaction_a);
@@ -603,8 +609,9 @@ void nano::wallet_store::write_backup (nano::store::transaction const & transact
 
 bool nano::wallet_store::move (nano::store::write_transaction const & transaction_a, nano::wallet_store & other_a, std::vector<nano::public_key> const & keys)
 {
-	debug_assert (valid_password (transaction_a));
-	debug_assert (other_a.valid_password (transaction_a));
+	release_assert (valid_password (transaction_a), "wallet is locked or password is invalid");
+	release_assert (other_a.valid_password (transaction_a), "other wallet is locked or password is invalid");
+
 	auto result (false);
 	for (auto i (keys.begin ()), n (keys.end ()); i != n; ++i)
 	{
@@ -622,8 +629,9 @@ bool nano::wallet_store::move (nano::store::write_transaction const & transactio
 
 bool nano::wallet_store::import (nano::store::write_transaction const & transaction_a, nano::wallet_store & other_a)
 {
-	debug_assert (valid_password (transaction_a));
-	debug_assert (other_a.valid_password (transaction_a));
+	release_assert (valid_password (transaction_a), "wallet is locked or password is invalid");
+	release_assert (other_a.valid_password (transaction_a), "other wallet is locked or password is invalid");
+
 	auto result (false);
 	for (auto i (other_a.begin (transaction_a)), n (end (transaction_a)); i != n; ++i)
 	{
