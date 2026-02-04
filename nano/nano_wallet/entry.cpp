@@ -153,7 +153,9 @@ public:
 					}
 					else
 					{
-						wallet_config.account = wallet->deterministic_insert ();
+						auto insert_result = wallet->deterministic_insert ();
+						release_assert (insert_result);
+						wallet_config.account = insert_result.value ();
 					}
 				}
 

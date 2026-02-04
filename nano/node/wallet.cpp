@@ -755,80 +755,95 @@ bool nano::wallet::enter_password_impl (nano::store::transaction const & transac
 	return result;
 }
 
-nano::public_key nano::wallet::deterministic_insert_impl (nano::store::write_transaction const & transaction_a, bool generate_work_a)
+nano::public_key nano::wallet::deterministic_insert_impl (nano::store::write_transaction const & transaction, bool generate_work)
 {
-	nano::public_key key{};
-	if (store.valid_password (transaction_a))
+	auto key = store.deterministic_insert (transaction);
+
+	logger.info (nano::log::type::wallet, "Deterministically inserted new account: {}", key.to_account ());
+
+	if (generate_work)
 	{
-		key = store.deterministic_insert (transaction_a);
-
-		logger.info (nano::log::type::wallet, "Deterministically inserted new account: {}", key.to_account ());
-
-		if (generate_work_a)
-		{
-			work_ensure (key, key);
-		}
-
-		if (wallets.check_rep (key))
-		{
-			logger.info (nano::log::type::wallet, "New account qualified as a representative: {}", key.to_account ());
-			representatives.lock ()->insert (key);
-		}
+		work_ensure (key, key);
 	}
+
+	if (wallets.check_rep (key))
+	{
+		logger.info (nano::log::type::wallet, "New account qualified as a representative: {}", key.to_account ());
+		representatives.lock ()->insert (key);
+	}
+
 	return key;
 }
 
-nano::public_key nano::wallet::deterministic_insert (uint32_t const index, bool generate_work_a)
+nano::public_key nano::wallet::deterministic_insert_impl (nano::store::write_transaction const & transaction, uint32_t index, bool generate_work)
 {
-	auto transaction (wallets.tx_begin_write ());
-	nano::public_key key{};
-	if (store.valid_password (transaction))
+	auto key = store.deterministic_insert (transaction, index);
+
+	logger.info (nano::log::type::wallet, "Deterministically inserted new account: {} with index: {}", key.to_account (), index);
+
+	if (generate_work)
 	{
-		key = store.deterministic_insert (transaction, index);
-
-		logger.info (nano::log::type::wallet, "Deterministically inserted new account: {}", key.to_account ());
-
-		if (generate_work_a)
-		{
-			work_ensure (key, key);
-		}
+		work_ensure (key, key);
 	}
+
+	if (wallets.check_rep (key))
+	{
+		logger.info (nano::log::type::wallet, "New account qualified as a representative: {}", key.to_account ());
+		representatives.lock ()->insert (key);
+	}
+
 	return key;
 }
 
-nano::public_key nano::wallet::deterministic_insert (bool generate_work_a)
+nano::result<nano::public_key> nano::wallet::deterministic_insert (uint32_t index, bool generate_work)
 {
-	auto transaction (wallets.tx_begin_write ());
-	auto result (deterministic_insert_impl (transaction, generate_work_a));
-	return result;
+	auto transaction = wallets.tx_begin_write ();
+
+	if (!store.valid_password (transaction))
+	{
+		return nano::error (nano::error_common::wallet_locked);
+	}
+
+	return deterministic_insert_impl (transaction, index, generate_work);
 }
 
-nano::public_key nano::wallet::insert_adhoc (nano::raw_key const & key_a, bool generate_work_a)
+nano::result<nano::public_key> nano::wallet::deterministic_insert (bool generate_work)
 {
-	nano::public_key key{};
-	auto transaction (wallets.tx_begin_write ());
-	if (store.valid_password (transaction))
+	auto transaction = wallets.tx_begin_write ();
+
+	if (!store.valid_password (transaction))
 	{
-		key = store.insert_adhoc (transaction, key_a);
-
-		logger.info (nano::log::type::wallet, "Ad-hoc inserted new account: {}", key.to_account ());
-
-		auto ledger_txn = wallets.ledger.tx_begin_read ();
-		if (generate_work_a)
-		{
-			work_ensure (key, wallets.ledger.latest_root (ledger_txn, key));
-		}
-
-		// Makes sure that the representatives container will
-		// be in sync with any added keys.
-		transaction.commit ();
-
-		if (wallets.check_rep (key))
-		{
-			logger.info (nano::log::type::wallet, "New account qualified as a representative: {}", key.to_account ());
-			representatives.lock ()->insert (key);
-		}
+		return nano::error (nano::error_common::wallet_locked);
 	}
+
+	return deterministic_insert_impl (transaction, generate_work);
+}
+
+nano::result<nano::public_key> nano::wallet::insert_adhoc (nano::raw_key const & prv, bool generate_work)
+{
+	auto transaction = wallets.tx_begin_write ();
+
+	if (!store.valid_password (transaction))
+	{
+		return nano::error (nano::error_common::wallet_locked);
+	}
+
+	auto key = store.insert_adhoc (transaction, prv);
+
+	logger.info (nano::log::type::wallet, "Ad-hoc inserted new account: {}", key.to_account ());
+
+	auto ledger_txn = wallets.ledger.tx_begin_read ();
+	if (generate_work)
+	{
+		work_ensure (key, wallets.ledger.latest_root (ledger_txn, key));
+	}
+
+	if (wallets.check_rep (key))
+	{
+		logger.info (nano::log::type::wallet, "New account qualified as a representative: {}", key.to_account ());
+		representatives.lock ()->insert (key);
+	}
+
 	return key;
 }
 

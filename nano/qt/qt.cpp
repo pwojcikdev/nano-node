@@ -186,12 +186,19 @@ nano_qt::accounts::accounts (nano_qt::wallet & wallet_a) :
 		nano::raw_key key;
 		if (!key.decode_hex (key_text))
 		{
-			show_line_ok (*account_key_line);
-			account_key_line->clear ();
-			this->wallet.wallet_m->insert_adhoc (key);
-			this->wallet.accounts.refresh ();
-			this->wallet.accounts.refresh_wallet_balance ();
-			this->wallet.history.refresh ();
+			auto result = this->wallet.wallet_m->insert_adhoc (key);
+			if (result)
+			{
+				show_line_ok (*account_key_line);
+				account_key_line->clear ();
+				this->wallet.accounts.refresh ();
+				this->wallet.accounts.refresh_wallet_balance ();
+				this->wallet.history.refresh ();
+			}
+			else
+			{
+				show_line_error (*account_key_line);
+			}
 		}
 		else
 		{
@@ -202,30 +209,28 @@ nano_qt::accounts::accounts (nano_qt::wallet & wallet_a) :
 		this->wallet.pop_main_stack ();
 	});
 	QObject::connect (create_account, &QPushButton::released, [this] () {
+		auto result = this->wallet.wallet_m->deterministic_insert ();
+		if (result)
 		{
-			if (!this->wallet.wallet_m->is_locked ())
-			{
-				this->wallet.wallet_m->deterministic_insert ();
-				show_button_success (*create_account);
-				create_account->setText ("New account was created");
-				this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
-					this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
-						show_button_ok (*create_account);
-						create_account->setText ("Create account");
-					}));
-				});
-			}
-			else
-			{
-				show_button_error (*create_account);
-				create_account->setText ("Wallet is locked, unlock it to create account");
-				this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
-					this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
-						show_button_ok (*create_account);
-						create_account->setText ("Create account");
-					}));
-				});
-			}
+			show_button_success (*create_account);
+			create_account->setText ("New account was created");
+			this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
+				this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
+					show_button_ok (*create_account);
+					create_account->setText ("Create account");
+				}));
+			});
+		}
+		else
+		{
+			show_button_error (*create_account);
+			create_account->setText ("Wallet is locked, unlock it to create account");
+			this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
+				this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
+					show_button_ok (*create_account);
+					create_account->setText ("Create account");
+				}));
+			});
 		}
 		refresh ();
 	});
