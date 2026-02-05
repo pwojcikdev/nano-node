@@ -40,6 +40,7 @@ public: // Upgrades
 	void upgrade_v21_to_v22 ();
 	void upgrade_v22_to_v23 ();
 	void upgrade_v23_to_v24 ();
+	void upgrade_v24_to_v25 ();
 
 public:
 	nano::store::write_queue write_queue; // TODO: Shouldn't be public
@@ -51,6 +52,7 @@ public:
 private:
 	std::unique_ptr<nano::store::backend> backend_impl;
 	std::unique_ptr<nano::store::ledger::block_view> block_impl;
+	std::unique_ptr<nano::store::ledger::blocks_topo_view> blocks_topo_impl;
 	std::unique_ptr<nano::store::ledger::account_view> account_impl;
 	std::unique_ptr<nano::store::ledger::pending_view> pending_impl;
 	std::unique_ptr<nano::store::ledger::rep_weight_view> rep_weight_impl;
@@ -64,6 +66,7 @@ private:
 public:
 	nano::store::backend & backend;
 	nano::store::ledger::block_view & block;
+	nano::store::ledger::blocks_topo_view & blocks_topo;
 	nano::store::ledger::account_view & account;
 	nano::store::ledger::pending_view & pending;
 	nano::store::ledger::rep_weight_view & rep_weight;
@@ -76,7 +79,7 @@ public:
 
 public:
 	static nano::store::backend_version_t constexpr version_minimum{ 21 };
-	static nano::store::backend_version_t constexpr version_current{ 24 };
+	static nano::store::backend_version_t constexpr version_current{ 25 };
 
 public:
 	static nano::store::column_schema const schema_current;
@@ -84,5 +87,6 @@ public:
 	static nano::store::column_schema const schema_v22;
 	static nano::store::column_schema const schema_v23;
 	static nano::store::column_schema const schema_v24;
+	static nano::store::column_schema const schema_v25;
 };
 };

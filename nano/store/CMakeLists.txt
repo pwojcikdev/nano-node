@@ -8,6 +8,8 @@ add_library(
   ledger/account.cpp
   ledger/block.hpp
   ledger/block.cpp
+  ledger/blocks_topo.hpp
+  ledger/blocks_topo.cpp
   ledger/confirmation_height.hpp
   ledger/confirmation_height.cpp
   ledger/final_vote.hpp

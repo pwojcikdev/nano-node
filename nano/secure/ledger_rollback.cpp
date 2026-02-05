@@ -9,6 +9,7 @@
 #include <nano/secure/rep_weights.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
+#include <nano/store/ledger/blocks_topo.hpp>
 #include <nano/store/ledger/pending.hpp>
 
 nano::ledger_rollback::ledger_rollback (nano::secure::write_transaction const & transaction_a, nano::ledger & ledger_a, std::deque<std::shared_ptr<nano::block>> & list_a, size_t depth_a, size_t max_depth_a) :
@@ -38,6 +39,7 @@ void nano::ledger_rollback::send_block (nano::send_block const & block_a)
 		ledger.rep_weights.add (transaction, info->representative, pending.value ().amount);
 		nano::account_info new_info (block_a.hashables.previous, info->representative, info->open_block, ledger.any.block_balance (transaction, block_a.hashables.previous).value (), nano::seconds_since_epoch (), info->block_count - 1, nano::epoch::epoch_0);
 		ledger.update_account (transaction, pending.value ().source, *info, new_info);
+		ledger.store.blocks_topo.del (transaction, block_a.sideband ().topo_height, hash);
 		ledger.store.block.del (transaction, hash);
 		ledger.store.block.successor_clear (transaction, block_a.hashables.previous);
 		ledger.stats.inc (nano::stat::type::rollback, nano::stat::detail::send);
@@ -56,6 +58,7 @@ void nano::ledger_rollback::receive_block (nano::receive_block const & block_a)
 	ledger.rep_weights.sub (transaction, info->representative, amount);
 	nano::account_info new_info (block_a.hashables.previous, info->representative, info->open_block, ledger.any.block_balance (transaction, block_a.hashables.previous).value (), nano::seconds_since_epoch (), info->block_count - 1, nano::epoch::epoch_0);
 	ledger.update_account (transaction, destination_account, *info, new_info);
+	ledger.store.blocks_topo.del (transaction, block_a.sideband ().topo_height, hash);
 	ledger.store.block.del (transaction, hash);
 	ledger.store.pending.put (transaction, nano::pending_key (destination_account, block_a.hashables.source), { source_account.value_or (0), amount, nano::epoch::epoch_0 });
 	ledger.store.block.successor_clear (transaction, block_a.hashables.previous);
@@ -71,6 +74,7 @@ void nano::ledger_rollback::open_block (nano::open_block const & block_a)
 	ledger.rep_weights.sub (transaction, block_a.representative_field ().value (), amount);
 	nano::account_info new_info;
 	ledger.update_account (transaction, destination_account, new_info, new_info);
+	ledger.store.blocks_topo.del (transaction, block_a.sideband ().topo_height, hash);
 	ledger.store.block.del (transaction, hash);
 	ledger.store.pending.put (transaction, nano::pending_key (destination_account, block_a.hashables.source), { source_account.value_or (0), amount, nano::epoch::epoch_0 });
 	ledger.stats.inc (nano::stat::type::rollback, nano::stat::detail::open);
@@ -88,6 +92,7 @@ void nano::ledger_rollback::change_block (nano::change_block const & block_a)
 	release_assert (rep_block != nullptr);
 	auto representative = rep_block->representative_field ().value ();
 	ledger.rep_weights.move (transaction, block_a.hashables.representative, representative, balance);
+	ledger.store.blocks_topo.del (transaction, block_a.sideband ().topo_height, hash);
 	ledger.store.block.del (transaction, hash);
 	nano::account_info new_info (block_a.hashables.previous, representative, info->open_block, info->balance, nano::seconds_since_epoch (), info->block_count - 1, nano::epoch::epoch_0);
 	ledger.update_account (transaction, account, *info, new_info);
@@ -164,5 +169,6 @@ void nano::ledger_rollback::state_block (nano::state_block const & block_a)
 	{
 		ledger.stats.inc (nano::stat::type::rollback, nano::stat::detail::open);
 	}
+	ledger.store.blocks_topo.del (transaction, block_a.sideband ().topo_height, hash);
 	ledger.store.block.del (transaction, hash);
 }

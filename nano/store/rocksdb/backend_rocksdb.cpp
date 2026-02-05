@@ -352,6 +352,7 @@ bool backend_rocksdb::count_is_exact (nano::store::table table) const
 			return false;
 		case nano::store::table::accounts:
 		case nano::store::table::blocks:
+		case nano::store::table::blocks_topo:
 		case nano::store::table::confirmation_height:
 		case nano::store::table::default_unused:
 		case nano::store::table::meta:

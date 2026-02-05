@@ -17,6 +17,7 @@ class account_view;
 class block_view;
 class confirmation_height_view;
 class final_vote_view;
+class blocks_topo_view;
 class online_weight_view;
 class peer_view;
 class pending_view;

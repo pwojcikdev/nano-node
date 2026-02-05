@@ -9,6 +9,7 @@ enum class table
 {
 	accounts,
 	blocks,
+	blocks_topo,
 	confirmation_height,
 	default_unused, // RocksDB only
 	final_votes,

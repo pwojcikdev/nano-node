@@ -144,7 +144,8 @@ nano::ledger_constants::ledger_constants (nano::network_type network_type) :
 	/* is_send */ false,
 	/* is_receive */ false,
 	/* is_epoch */ false,
-	/* source_epoch */ nano::epoch::epoch_0 });
+	/* source_epoch */ nano::epoch::epoch_0,
+	/* topo_height */ uint64_t{ 1 } });
 
 	nano_dev_genesis->sideband_set (nano::block_sideband{
 	/* account */ nano_dev_genesis->account_field ().value (),
@@ -156,7 +157,8 @@ nano::ledger_constants::ledger_constants (nano::network_type network_type) :
 	/* is_send */ false,
 	/* is_receive */ false,
 	/* is_epoch */ false,
-	/* source_epoch */ nano::epoch::epoch_0 });
+	/* source_epoch */ nano::epoch::epoch_0,
+	/* topo_height */ uint64_t{ 1 } });
 
 	nano_live_genesis->sideband_set (nano::block_sideband{
 	/* account */ nano_live_genesis->account_field ().value (),
@@ -168,7 +170,8 @@ nano::ledger_constants::ledger_constants (nano::network_type network_type) :
 	/* is_send */ false,
 	/* is_receive */ false,
 	/* is_epoch */ false,
-	/* source_epoch */ nano::epoch::epoch_0 });
+	/* source_epoch */ nano::epoch::epoch_0,
+	/* topo_height */ uint64_t{ 1 } });
 
 	nano_test_genesis->sideband_set (nano::block_sideband{
 	/* account */ nano_test_genesis->account_field ().value (),
@@ -180,7 +183,8 @@ nano::ledger_constants::ledger_constants (nano::network_type network_type) :
 	/* is_send */ false,
 	/* is_receive */ false,
 	/* is_epoch */ false,
-	/* source_epoch */ nano::epoch::epoch_0 });
+	/* source_epoch */ nano::epoch::epoch_0,
+	/* topo_height */ uint64_t{ 1 } });
 
 	nano::account epoch_v2_signer;
 	switch (network_type)

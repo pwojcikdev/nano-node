@@ -17,6 +17,7 @@
 #include <nano/secure/rep_weights.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
+#include <nano/store/ledger/blocks_topo.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
 #include <nano/store/ledger/final_vote.hpp>
 #include <nano/store/ledger/online_weight.hpp>
@@ -773,6 +774,7 @@ uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a
 		if (block_l != nullptr)
 		{
 			release_assert (confirmed.block_exists (transaction_a, hash));
+			store.blocks_topo.del (transaction_a, block_l->sideband ().topo_height, hash);
 			store.block.del (transaction_a, hash);
 			store.pruned.put (transaction_a, hash);
 			hash = block_l->previous ();
