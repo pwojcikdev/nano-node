@@ -883,7 +883,7 @@ TEST (wallet, password_race_corrupt_seed)
 	auto wallet = system.wallet (0);
 	nano::raw_key seed;
 	{
-		ASSERT_FALSE (wallet->rekey ("4567"));
+		ASSERT_TRUE (wallet->rekey ("4567"));
 		auto seed_result = wallet->get_seed ();
 		ASSERT_TRUE (seed_result);
 		seed = seed_result.value ();

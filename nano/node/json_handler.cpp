@@ -2978,16 +2978,18 @@ void nano::json_handler::password_change ()
 		auto wallet (rpc_l->wallet_impl ());
 		if (!rpc_l->ec)
 		{
-			rpc_l->wallet_locked_impl (wallet);
-			if (!rpc_l->ec)
+			std::string password_text (rpc_l->request.get<std::string> ("password"));
+			auto result = wallet->rekey (password_text);
+			if (result)
 			{
-				std::string password_text (rpc_l->request.get<std::string> ("password"));
-				bool error (wallet->rekey (password_text));
-				rpc_l->response_l.put ("changed", error ? "0" : "1");
-				if (!error)
-				{
-					rpc_l->node.logger.warn (nano::log::type::rpc, "Wallet password changed");
-				}
+				rpc_l->response_l.put ("changed", "1");
+				// TODO: Log wallet id
+				rpc_l->node.logger.warn (nano::log::type::rpc, "Wallet password changed");
+			}
+			else
+			{
+				rpc_l->response_l.put ("changed", "0");
+				rpc_l->ec = result.error ();
 			}
 		}
 		rpc_l->response_errors ();

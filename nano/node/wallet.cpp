@@ -1456,10 +1456,18 @@ void nano::wallet::deterministic_restore_impl (nano::store::write_transaction co
 	}
 }
 
-bool nano::wallet::rekey (std::string const & password_a)
+nano::result<void> nano::wallet::rekey (std::string const & password)
 {
 	auto transaction = wallets.tx_begin_write ();
-	return store.rekey (transaction, password_a);
+
+	if (!store.valid_password (transaction))
+	{
+		return nano::error (nano::error_common::wallet_locked);
+	}
+
+	store.rekey (transaction, password);
+
+	return outcome::success ();
 }
 
 bool nano::wallet::is_locked () const

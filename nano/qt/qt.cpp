@@ -1574,14 +1574,22 @@ nano_qt::settings::settings (nano_qt::wallet & wallet_a) :
 			{
 				if (new_password->text () == retype_password->text ())
 				{
-					this->wallet.wallet_m->rekey (std::string (new_password->text ().toLocal8Bit ()));
+					auto result = this->wallet.wallet_m->rekey (std::string (new_password->text ().toLocal8Bit ()));
 					new_password->clear ();
 					retype_password->clear ();
 					retype_password->setPlaceholderText ("Retype password");
-					show_button_success (*change);
-					change->setText ("Password was changed");
-					this->wallet.node.logger.warn (nano::log::type::qt, "Wallet password changed");
-					update_locked (false, false);
+					if (result)
+					{
+						show_button_success (*change);
+						change->setText ("Password was changed");
+						this->wallet.node.logger.warn (nano::log::type::qt, "Wallet password changed");
+						update_locked (false, false);
+					}
+					else
+					{
+						show_button_error (*change);
+						change->setText (("Error changing password: " + result.error ().get_message ()).c_str ());
+					}
 					this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 						this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 							show_button_ok (*change);

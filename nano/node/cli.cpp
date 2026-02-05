@@ -1041,11 +1041,11 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 				if (vm.count ("password") > 0)
 				{
 					std::string password (vm["password"].as<std::string> ());
-					auto error (wallet->rekey (password));
-					if (error)
+					auto result = wallet->rekey (password);
+					if (!result)
 					{
 						std::cerr << "Password change error\n";
-						ec = nano::error_cli::invalid_arguments;
+						ec = result.error ();
 					}
 				}
 				if (vm.count ("seed") || vm.count ("key"))

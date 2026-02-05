@@ -150,7 +150,7 @@ public:
 	// Password and lock management
 	void enter_initial_password ();
 	bool enter_password (std::string const & password);
-	bool rekey (std::string const & password);
+	nano::result<void> rekey (std::string const & password);
 	bool is_locked () const;
 	void lock ();
 
