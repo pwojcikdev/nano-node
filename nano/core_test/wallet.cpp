@@ -7,6 +7,7 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/store/lmdb/wallet_value.hpp>
+#include <nano/test_common/chains.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -718,7 +719,7 @@ TEST (wallet, reseed)
 	ASSERT_EQ (key1, key3);
 }
 
-TEST (wallet, insert_deterministic_locked)
+TEST (wallet, deterministic_insert_locked)
 {
 	nano::test::system system (1);
 	auto wallet (system.wallet (0));
@@ -727,6 +728,96 @@ TEST (wallet, insert_deterministic_locked)
 	wallet->enter_password ("");
 	ASSERT_TRUE (wallet->is_locked ());
 	ASSERT_TRUE (wallet->deterministic_insert ().is_zero ());
+}
+
+TEST (wallet, deterministic_insert_index_locked)
+{
+	nano::test::system system (1);
+	auto wallet (system.wallet (0));
+	wallet->rekey ("1");
+	ASSERT_FALSE (wallet->is_locked ());
+	wallet->enter_password ("");
+	ASSERT_TRUE (wallet->is_locked ());
+	auto insert_result = wallet->deterministic_insert (uint32_t{ 0 });
+	ASSERT_FALSE (insert_result);
+	ASSERT_EQ (insert_result.error (), nano::error_common::wallet_locked);
+}
+
+// Test that insert_adhoc adds representative accounts to the reps set
+TEST (wallet, insert_adhoc_checks_rep)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	auto wallet = system.wallet (0);
+
+	// Create a keypair and set it up as a representative outside the wallet
+	nano::keypair key;
+	nano::test::setup_new_account (system, node, node.config.vote_minimum.number (), nano::dev::genesis_key, key, key.pub, true);
+
+	// Verify the account has voting weight
+	ASSERT_GE (node.ledger.weight (key.pub), node.config.vote_minimum.number ());
+
+	// Insert the account using insert_adhoc
+	auto insert_result = wallet->insert_adhoc (key.prv);
+	ASSERT_TRUE (insert_result);
+	ASSERT_EQ (key.pub, insert_result.value ());
+
+	// The account should be immediately added to the wallet's representatives set
+	ASSERT_TRUE (wallet->reps ().contains (key.pub));
+}
+
+// Test that deterministic_insert (auto-index) adds representative accounts to the reps set
+TEST (wallet, deterministic_insert_checks_rep)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	auto wallet = system.wallet (0);
+
+	// Get the wallet's seed and compute the keypair at index 0
+	auto seed_result = wallet->get_seed ();
+	ASSERT_TRUE (seed_result);
+	nano::keypair key{ nano::deterministic_key (seed_result.value (), 0) };
+
+	// Set up the account as a representative outside the wallet
+	nano::test::setup_new_account (system, node, node.config.vote_minimum.number (), nano::dev::genesis_key, key, key.pub, true);
+
+	// Verify the account has voting weight
+	ASSERT_GE (node.ledger.weight (key.pub), node.config.vote_minimum.number ());
+
+	// Insert the account using auto-index (should pick up index 0)
+	auto insert_result = wallet->deterministic_insert ();
+	ASSERT_TRUE (insert_result);
+	ASSERT_EQ (key.pub, insert_result.value ());
+
+	// The account should be immediately added to the wallet's representatives set
+	ASSERT_TRUE (wallet->reps ().contains (key.pub));
+}
+
+// Test that deterministic_insert (explicit index) adds representative accounts to the reps set
+TEST (wallet, deterministic_insert_index_checks_rep)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	auto wallet = system.wallet (0);
+
+	// Get the wallet's seed and compute the keypair at index 0
+	auto seed_result = wallet->get_seed ();
+	ASSERT_TRUE (seed_result);
+	nano::keypair key{ nano::deterministic_key (seed_result.value (), 0) };
+
+	// Set up the account as a representative outside the wallet
+	nano::test::setup_new_account (system, node, node.config.vote_minimum.number (), nano::dev::genesis_key, key, key.pub, true);
+
+	// Verify the account has voting weight
+	ASSERT_GE (node.ledger.weight (key.pub), node.config.vote_minimum.number ());
+
+	// Insert the account using explicit index
+	auto insert_result = wallet->deterministic_insert (uint32_t{ 0 });
+	ASSERT_TRUE (insert_result);
+	ASSERT_EQ (key.pub, insert_result.value ());
+
+	// The account should be immediately added to the wallet's representatives set
+	ASSERT_TRUE (wallet->reps ().contains (key.pub));
 }
 
 TEST (wallet, no_work)
