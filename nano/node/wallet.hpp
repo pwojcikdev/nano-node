@@ -159,7 +159,7 @@ public:
 	nano::result<nano::public_key> deterministic_insert (uint32_t index, bool generate_work = true);
 	nano::result<nano::public_key> deterministic_insert (bool generate_work = true);
 	bool insert_watch (nano::public_key const & pub);
-	void remove_account (nano::account const & account);
+	nano::result<void> remove_account (nano::account const & account);
 	std::vector<nano::account> accounts () const;
 	bool exists (nano::public_key const & pub);
 	bool move_accounts (wallet & source, std::vector<nano::public_key> const & accounts);

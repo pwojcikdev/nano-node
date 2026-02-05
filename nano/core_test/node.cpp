@@ -374,7 +374,7 @@ TEST (node, search_receivable_confirmed)
 	ASSERT_NE (nullptr, send2);
 	ASSERT_TIMELY (5s, nano::test::confirmed (*node, { send2 }));
 
-	system.wallet (0)->remove_account (nano::dev::genesis_key.pub);
+	ASSERT_TRUE (system.wallet (0)->remove_account (nano::dev::genesis_key.pub));
 
 	system.wallet (0)->insert_adhoc (key2.prv);
 	ASSERT_FALSE (system.wallet (0)->search_receivable ());
@@ -405,7 +405,7 @@ TEST (node, search_receivable_pruned)
 	ASSERT_TIMELY (10s, node1->active.empty () && node2->active.empty ());
 	ASSERT_TIMELY (5s, node1->ledger.confirmed.block_exists_or_pruned (node1->ledger.tx_begin_read (), send2->hash ()));
 	ASSERT_TIMELY_EQ (5s, node2->ledger.cemented_count (), 3);
-	system.wallet (0)->remove_account (nano::dev::genesis_key.pub);
+	ASSERT_TRUE (system.wallet (0)->remove_account (nano::dev::genesis_key.pub));
 
 	// Pruning
 	{
@@ -2779,7 +2779,7 @@ TEST (node, bidirectional_tcp)
 		ASSERT_NO_ERROR (system.poll ());
 	}
 	// Test block propagation & confirmation from node 2 (remove representative from node 1)
-	system.wallet (0)->remove_account (nano::dev::genesis_key.pub);
+	ASSERT_TRUE (system.wallet (0)->remove_account (nano::dev::genesis_key.pub));
 	/* Test block propagation from node 2
 	Node 2 has only ephemeral TCP port open. Node 1 cannot establish connection to node 2 listening port */
 	auto send2 = builder.make_block ()

@@ -1284,13 +1284,10 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 					nano::account account_id;
 					if (!account_id.decode_account (vm["account"].as<std::string> ()))
 					{
-						if (wallet->second->exists (account_id))
+						auto result = wallet->second->remove_account (account_id);
+						if (!result)
 						{
-							wallet->second->remove_account (account_id);
-						}
-						else
-						{
-							std::cerr << "Account not found in wallet\n";
+							std::cerr << "Failed to remove account: " << result.error ().get_message () << "\n";
 							ec = nano::error_cli::invalid_arguments;
 						}
 					}

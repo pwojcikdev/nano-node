@@ -1475,10 +1475,23 @@ void nano::wallet::lock ()
 	store.password.value_set (empty);
 }
 
-void nano::wallet::remove_account (nano::account const & account_a)
+nano::result<void> nano::wallet::remove_account (nano::account const & account)
 {
 	auto transaction = wallets.tx_begin_write ();
-	store.erase (transaction, account_a);
+
+	if (!store.valid_password (transaction))
+	{
+		return nano::error (nano::error_common::wallet_locked);
+	}
+
+	if (!store.exists (transaction, account))
+	{
+		return nano::error (nano::error_common::account_not_found_wallet);
+	}
+
+	store.erase (transaction, account);
+
+	return outcome::success ();
 }
 
 std::vector<nano::account> nano::wallet::accounts () const

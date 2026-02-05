@@ -1192,7 +1192,7 @@ TEST (wallet, search_receivable)
 	ASSERT_TIMELY (5s, election = node.active.election (send->qualified_root ()));
 
 	// Erase the key so the confirmation does not trigger an automatic receive
-	wallet.remove_account (nano::dev::genesis_key.pub);
+	ASSERT_TRUE (wallet.remove_account (nano::dev::genesis_key.pub));
 
 	// Now confirm the election
 	election->force_confirm ();

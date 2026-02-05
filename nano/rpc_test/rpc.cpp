@@ -3182,7 +3182,7 @@ TEST (rpc, wallet_info)
 	ASSERT_TIMELY (5s, node->block_confirmed (send2->hash ()));
 
 	auto account = system.wallet (0)->deterministic_insert ().value ();
-	system.wallet (0)->remove_account (account);
+	ASSERT_TRUE (system.wallet (0)->remove_account (account));
 	account = system.wallet (0)->deterministic_insert ().value ();
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;

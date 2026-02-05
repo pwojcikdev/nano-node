@@ -782,12 +782,14 @@ void nano::json_handler::account_remove ()
 		auto account (rpc_l->account_impl ());
 		if (!rpc_l->ec)
 		{
-			rpc_l->wallet_locked_impl (wallet);
-			rpc_l->wallet_account_impl (wallet, account);
-			if (!rpc_l->ec)
+			auto result = wallet->remove_account (account);
+			if (result)
 			{
-				wallet->remove_account (account);
 				rpc_l->response_l.put ("removed", "1");
+			}
+			else
+			{
+				rpc_l->ec = result.error ();
 			}
 		}
 		rpc_l->response_errors ();
