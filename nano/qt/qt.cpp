@@ -238,10 +238,9 @@ nano_qt::accounts::accounts (nano_qt::wallet & wallet_a) :
 		this->wallet.push_main_stack (this->wallet.import.window);
 	});
 	QObject::connect (backup_seed, &QPushButton::released, [this] () {
-		if (!this->wallet.wallet_m->is_locked ())
+		auto seed_result = this->wallet.wallet_m->get_seed ();
+		if (seed_result)
 		{
-			auto seed_result = this->wallet.wallet_m->get_seed ();
-			release_assert (seed_result);
 			this->wallet.application.clipboard ()->setText (QString (seed_result.value ().to_string ().c_str ()));
 			show_button_success (*backup_seed);
 			backup_seed->setText ("Seed was copied to clipboard");
