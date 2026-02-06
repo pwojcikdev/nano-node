@@ -154,7 +154,12 @@ public:
 					else
 					{
 						auto insert_result = wallet->deterministic_insert ();
-						release_assert (insert_result);
+						if (!insert_result)
+						{
+							splash->hide ();
+							show_error ("Unable to create initial wallet account: " + insert_result.error ().get_message ());
+							std::exit (1);
+						}
 						wallet_config.account = insert_result.value ();
 					}
 				}
