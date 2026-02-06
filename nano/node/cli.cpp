@@ -1085,24 +1085,31 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 					if (!existing->second->enter_password (password))
 					{
 						auto seed_result = existing->second->get_seed ();
-						release_assert (seed_result);
-						std::cout << boost::str (boost::format ("Seed: %1%\n") % seed_result.value ().to_string ());
-						for (auto const & account : existing->second->accounts ())
+						if (seed_result)
 						{
-							auto key_result = existing->second->fetch_prv (account);
-							debug_assert (key_result);
-							if (key_result)
+							std::cout << boost::str (boost::format ("Seed: %1%\n") % seed_result.value ().to_string ());
+							for (auto const & account : existing->second->accounts ())
 							{
-								std::cout << boost::str (boost::format ("Pub: %1% Prv: %2%\n") % account.to_account () % key_result.value ().to_string ());
-								if (nano::pub_key (key_result.value ()) != account)
+								auto key_result = existing->second->fetch_prv (account);
+								debug_assert (key_result);
+								if (key_result)
 								{
-									std::cerr << boost::str (boost::format ("Invalid private key %1%\n") % key_result.value ().to_string ());
+									std::cout << boost::str (boost::format ("Pub: %1% Prv: %2%\n") % account.to_account () % key_result.value ().to_string ());
+									if (nano::pub_key (key_result.value ()) != account)
+									{
+										std::cerr << boost::str (boost::format ("Invalid private key %1%\n") % key_result.value ().to_string ());
+									}
+								}
+								else
+								{
+									std::cerr << boost::str (boost::format ("Unable to fetch private key for account %1% (%2%)\n") % account.to_account () % key_result.error ());
 								}
 							}
-							else
-							{
-								std::cerr << boost::str (boost::format ("Unable to fetch private key for account %1% (%2%)\n") % account.to_account () % key_result.error ());
-							}
+						}
+						else
+						{
+							std::cerr << boost::str (boost::format ("Unable to retrieve seed: %1%\n") % seed_result.error ());
+							ec = seed_result.error ();
 						}
 					}
 					else
