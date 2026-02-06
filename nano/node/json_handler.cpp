@@ -963,15 +963,18 @@ void nano::json_handler::accounts_create ()
 		{
 			bool const generate_work = rpc_l->request.get<bool> ("work", false);
 			boost::property_tree::ptree accounts;
+			// TODO: this should be atomic, either all accounts are created or none
 			for (decltype (count) i = 0; i < count; ++i)
 			{
 				auto key_result = wallet->deterministic_insert (generate_work);
-				if (key_result)
+				if (!key_result)
 				{
-					boost::property_tree::ptree entry;
-					entry.put ("", key_result.value ().to_account ());
-					accounts.push_back (std::make_pair ("", entry));
+					rpc_l->ec = key_result.error ();
+					break;
 				}
+				boost::property_tree::ptree entry;
+				entry.put ("", key_result.value ().to_account ());
+				accounts.push_back (std::make_pair ("", entry));
 			}
 			rpc_l->response_l.add_child ("accounts", accounts);
 		}
