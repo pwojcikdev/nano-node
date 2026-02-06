@@ -2,7 +2,7 @@
 
 #include <nano/lib/rate_limiting.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/transport/traffic_type.hpp>
+#include <nano/transport/traffic_type.hpp>
 
 namespace nano
 {

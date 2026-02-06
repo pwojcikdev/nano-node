@@ -5,9 +5,9 @@
 #include <nano/lib/network_filter.hpp>
 #include <nano/messages/messages.hpp>
 #include <nano/node/peer_exclusion.hpp>
-#include <nano/node/transport/common.hpp>
-#include <nano/node/transport/fwd.hpp>
-#include <nano/node/transport/tcp_channels.hpp>
+#include <nano/transport/common.hpp>
+#include <nano/transport/handshake.hpp>
+#include <nano/transport/tcp_channels.hpp>
 
 #include <deque>
 #include <memory>
@@ -84,7 +84,7 @@ public:
 	size_t minimum_fanout{ 2 };
 };
 
-class network final
+class network final : public nano::transport::handshake_provider
 {
 public:
 	network (nano::node &, uint16_t port);
@@ -155,9 +155,9 @@ public:
 
 public: // Handshake
 	/** Verifies that handshake response matches our query. @returns true if OK */
-	bool verify_handshake_response (nano::messages::node_id_handshake::response_payload const & response, nano::endpoint const & remote_endpoint);
-	std::optional<nano::messages::node_id_handshake::query_payload> prepare_handshake_query (nano::endpoint const & remote_endpoint);
-	nano::messages::node_id_handshake::response_payload prepare_handshake_response (nano::messages::node_id_handshake::query_payload const & query, bool v2) const;
+	bool verify_handshake_response (nano::messages::node_id_handshake::response_payload const & response, nano::endpoint const & remote_endpoint) override;
+	std::optional<nano::messages::node_id_handshake::query_payload> prepare_handshake_query (nano::endpoint const & remote_endpoint) override;
+	nano::messages::node_id_handshake::response_payload prepare_handshake_response (nano::messages::node_id_handshake::query_payload const & query, bool v2) const override;
 
 private:
 	void run_cleanup ();

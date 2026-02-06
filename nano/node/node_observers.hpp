@@ -2,9 +2,10 @@
 
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/utility.hpp>
+#include <nano/messages/telemetry.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/transport/transport.hpp>
 #include <nano/node/vote_with_weight_info.hpp>
+#include <nano/transport/transport.hpp>
 
 namespace nano
 {

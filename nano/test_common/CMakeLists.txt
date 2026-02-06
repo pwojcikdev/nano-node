@@ -19,7 +19,14 @@ add_library(
   telemetry.hpp
   telemetry.cpp
   testutil.hpp
-  testutil.cpp)
+  testutil.cpp
+  transport/fwd.hpp
+  transport/fake.hpp
+  transport/fake.cpp
+  transport/inproc.hpp
+  transport/inproc.cpp
+  transport/test_channel.hpp
+  transport/test_channel.cpp)
 
 target_link_libraries(test_common node gtest)
 

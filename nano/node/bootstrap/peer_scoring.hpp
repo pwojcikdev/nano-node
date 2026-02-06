@@ -1,7 +1,7 @@
 #pragma once
 
 #include <nano/node/fwd.hpp>
-#include <nano/node/transport/traffic_type.hpp>
+#include <nano/transport/traffic_type.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/member.hpp>

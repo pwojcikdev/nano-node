@@ -1,9 +1,9 @@
 #include <nano/lib/thread_roles.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/peer_history.hpp>
-#include <nano/node/transport/channel.hpp>
 #include <nano/store/ledger/peer.hpp>
 #include <nano/store/ledger_store.hpp>
+#include <nano/transport/channel.hpp>
 
 nano::peer_history::peer_history (nano::peer_history_config const & config_a, nano::store::ledger_store & store_a, nano::network & network_a, nano::logger & logger_a, nano::stats & stats_a) :
 	config{ config_a },

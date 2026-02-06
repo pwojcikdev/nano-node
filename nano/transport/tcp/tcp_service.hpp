@@ -1,17 +1,21 @@
 #pragma once
 
 #include <nano/lib/async.hpp>
+#include <nano/lib/constants.hpp>
 #include <nano/lib/container_info.hpp>
-#include <nano/lib/logging.hpp>
+#include <nano/lib/endpoint.hpp>
 #include <nano/lib/locks.hpp>
+#include <nano/lib/logging.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/observer_set.hpp>
 #include <nano/lib/random.hpp>
 #include <nano/lib/stats.hpp>
-#include <nano/node/transport/tcp_config.hpp>
 #include <nano/transport/common.hpp>
 #include <nano/transport/fwd.hpp>
+#include <nano/transport/handshake.hpp>
 #include <nano/transport/tcp/fwd.hpp>
+#include <nano/transport/tcp/handshake.hpp>
+#include <nano/transport/tcp_config.hpp>
 
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -41,7 +45,7 @@ struct tcp_service_params
 class tcp_service
 {
 public:
-	tcp_service (asio::io_context &, tcp_config const &, nano::stats &, nano::logger &, tcp_service_params = {});
+	tcp_service (asio::io_context &, tcp_config const &, nano::network_constants const &, handshake_provider &, nano::stats &, nano::logger &, tcp_service_params = {});
 	~tcp_service ();
 
 	void start ();
@@ -103,6 +107,7 @@ private:
 	asio::awaitable<asio::ip::tcp::socket> accept_socket ();
 	asio::awaitable<asio::ip::tcp::socket> connect_socket (asio::ip::tcp::endpoint const &);
 	asio::awaitable<void> connect_impl (asio::ip::tcp::endpoint);
+	asio::awaitable<void> run_handshake (std::shared_ptr<asio::ip::tcp::socket>, connection_type);
 	accept_result accept_one (asio::ip::tcp::socket, connection_type);
 
 	// === Limit Checks ===
@@ -117,6 +122,7 @@ private:
 	// === Dependencies ===
 	asio::io_context & io_ctx;
 	tcp_config const & config;
+	handshake_service handshaker;
 	nano::stats & stats;
 	nano::logger & logger;
 
@@ -133,6 +139,7 @@ private:
 		// std::shared_ptr<tcp_socket> socket;
 		// std::shared_ptr<tcp_server> server;
 		asio::ip::tcp::endpoint endpoint;
+		std::shared_ptr<asio::ip::tcp::socket> socket;
 		asio::ip::address ip;
 		asio::ip::address subnetwork;
 		bool outbound;
@@ -231,7 +238,7 @@ private:
 		asio::ip::tcp::endpoint endpoint;
 		asio::ip::address ip;
 		asio::ip::address subnetwork;
-		nano::async::task task;
+		mutable nano::async::task task;
 		std::chrono::steady_clock::time_point started;
 
 		// Extractors for multi-index

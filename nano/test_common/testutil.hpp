@@ -3,10 +3,10 @@
 #include <nano/lib/locks.hpp>
 #include <nano/lib/timer.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/transport/fwd.hpp>
-#include <nano/node/transport/test_channel.hpp>
 #include <nano/secure/account_info.hpp>
 #include <nano/store/fwd.hpp>
+#include <nano/test_common/transport/fwd.hpp>
+#include <nano/test_common/transport/test_channel.hpp>
 
 #include <gtest/gtest.h>
 

@@ -1,17 +1,19 @@
-#include <nano/transport/tcp/tcp_service.hpp>
-
 #include <nano/lib/thread_roles.hpp>
 #include <nano/lib/utility.hpp>
+#include <nano/transport/tcp/tcp_service.hpp>
+#include <nano/transport/transport.hpp>
 
+#include <boost/asio/detached.hpp>
 #include <boost/asio/use_awaitable.hpp>
 
 using namespace std::chrono_literals;
 
 namespace nano::transport::tcp
 {
-tcp_service::tcp_service (asio::io_context & io_ctx_a, tcp_config const & config_a, nano::stats & stats_a, nano::logger & logger_a, tcp_service_params params) :
+tcp_service::tcp_service (asio::io_context & io_ctx_a, tcp_config const & config_a, nano::network_constants const & network_constants_a, handshake_provider & handshake_a, nano::stats & stats_a, nano::logger & logger_a, tcp_service_params params) :
 	io_ctx{ io_ctx_a },
 	config{ config_a },
+	handshaker{ network_constants_a, handshake_a },
 	stats{ stats_a },
 	logger{ logger_a },
 	acceptor{ io_ctx_a },
@@ -176,7 +178,7 @@ bool tcp_service::connect (asio::ip::tcp::endpoint const & endpoint)
 	attempt_entry entry{
 		.endpoint = endpoint,
 		.ip = ip,
-		.subnetwork = ip, // TODO: map_address_to_subnetwork
+		.subnetwork = nano::transport::map_address_to_subnetwork (ip),
 		.task = std::move (task),
 		.started = std::chrono::steady_clock::now ()
 	};
@@ -291,7 +293,8 @@ auto tcp_service::accept_one (asio::ip::tcp::socket socket, connection_type type
 {
 	debug_assert (strand.running_in_this_thread ());
 
-	auto const endpoint = socket.remote_endpoint ();
+	auto socket_ptr = std::make_shared<asio::ip::tcp::socket> (std::move (socket));
+	auto const endpoint = socket_ptr->remote_endpoint ();
 	auto const ip = endpoint.address ();
 
 	nano::lock_guard<nano::mutex> lock{ mutex };
@@ -319,8 +322,9 @@ auto tcp_service::accept_one (asio::ip::tcp::socket socket, connection_type type
 	// Add to connections
 	connection_entry entry{
 		.endpoint = endpoint,
+		.socket = socket_ptr,
 		.ip = ip,
-		.subnetwork = ip, // TODO: map_address_to_subnetwork
+		.subnetwork = nano::transport::map_address_to_subnetwork (ip),
 		.outbound = (type == connection_type::outbound),
 		.started = std::chrono::steady_clock::now ()
 	};
@@ -335,7 +339,56 @@ auto tcp_service::accept_one (asio::ip::tcp::socket socket, connection_type type
 	stats.inc (nano::stat::type::tcp_server, nano::stat::detail::accept_success, type == connection_type::inbound ? nano::stat::dir::in : nano::stat::dir::out);
 	logger.debug (nano::log::type::tcp_server, "Accepted connection: {} ({})", endpoint, type == connection_type::inbound ? "inbound" : "outbound");
 
+	asio::co_spawn (strand, run_handshake (socket_ptr, type), asio::detached);
+
 	return accept_result::accepted;
+}
+
+asio::awaitable<void> tcp_service::run_handshake (std::shared_ptr<asio::ip::tcp::socket> socket, connection_type type)
+{
+	debug_assert (strand.running_in_this_thread ());
+
+	auto const endpoint = socket->remote_endpoint ();
+	auto const ip = endpoint.address ();
+
+	std::optional<nano::account> node_id;
+
+	try
+	{
+		node_id = co_await handshaker.run (*socket, type);
+	}
+	catch (boost::system::system_error const & ex)
+	{
+		logger.debug (nano::log::type::tcp_server, "Handshake network error: {} ({})", endpoint, ex.code ().message ());
+	}
+	catch (...)
+	{
+		logger.debug (nano::log::type::tcp_server, "Handshake failed with unknown error ({})", endpoint);
+	}
+
+	if (node_id)
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		auto erased = connections.get<tag_endpoint> ().erase (endpoint);
+		if (erased > 0)
+		{
+			channels.get<tag_endpoint> ().insert ({ .endpoint = endpoint,
+			.node_id = *node_id,
+			.ip = ip,
+			.subnetwork = nano::transport::map_address_to_subnetwork (ip),
+			.last_bootstrap_attempt = std::chrono::steady_clock::now () });
+			stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake, type == connection_type::inbound ? nano::stat::dir::in : nano::stat::dir::out);
+		}
+	}
+	else
+	{
+		boost::system::error_code ec;
+		socket->close (ec);
+
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		connections.get<tag_endpoint> ().erase (endpoint);
+		stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_abort, type == connection_type::inbound ? nano::stat::dir::in : nano::stat::dir::out);
+	}
 }
 
 auto tcp_service::check_limits (asio::ip::address const & ip, connection_type type) const -> accept_result
@@ -346,7 +399,7 @@ auto tcp_service::check_limits (asio::ip::address const & ip, connection_type ty
 	{
 		if (count_per_type (connection_type::inbound) >= config.max_inbound_connections)
 		{
-			stats.inc (nano::stat::type::tcp_server, nano::stat::detail::max_connections, nano::stat::dir::in);
+			stats.inc (nano::stat::type::tcp_server, nano::stat::detail::max_attempts, nano::stat::dir::in);
 			return accept_result::rejected_max_inbound;
 		}
 	}
@@ -355,7 +408,7 @@ auto tcp_service::check_limits (asio::ip::address const & ip, connection_type ty
 	{
 		if (count_per_type (connection_type::outbound) >= config.max_outbound_connections)
 		{
-			stats.inc (nano::stat::type::tcp_server, nano::stat::detail::max_connections, nano::stat::dir::out);
+			stats.inc (nano::stat::type::tcp_server, nano::stat::detail::max_attempts, nano::stat::dir::out);
 			return accept_result::rejected_max_outbound;
 		}
 	}
@@ -468,7 +521,8 @@ void tcp_service::timeout ()
 		{
 			stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_timeout);
 			logger.debug (nano::log::type::tcp_server, "Handshake timed out: {}", it->endpoint);
-			// Mark for removal - will be purged
+			boost::system::error_code ec;
+			it->socket->close (ec);
 		}
 	}
 }
@@ -488,7 +542,7 @@ void tcp_service::purge (nano::unique_lock<nano::mutex> & lock)
 	auto const handshake_cutoff = now - config.handshake_timeout;
 
 	erase_if (connections, [handshake_cutoff] (auto const & conn) {
-		return conn.started < handshake_cutoff;
+		return conn.started < handshake_cutoff || !conn.socket->is_open ();
 	});
 
 	lock.unlock ();

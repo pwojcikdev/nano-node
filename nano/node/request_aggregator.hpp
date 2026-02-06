@@ -6,8 +6,8 @@
 #include <nano/lib/threading.hpp>
 #include <nano/node/fair_queue.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/transport/channel.hpp>
-#include <nano/node/transport/transport.hpp>
+#include <nano/transport/channel.hpp>
+#include <nano/transport/transport.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/member.hpp>

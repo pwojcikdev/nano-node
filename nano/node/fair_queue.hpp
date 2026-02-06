@@ -1,7 +1,7 @@
 #pragma once
 
 #include <nano/lib/utility.hpp>
-#include <nano/node/transport/channel.hpp>
+#include <nano/transport/channel.hpp>
 
 #include <algorithm>
 #include <chrono>

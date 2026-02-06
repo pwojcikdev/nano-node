@@ -2,8 +2,8 @@
 
 #include <nano/lib/locks.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/transport/channel.hpp>
-#include <nano/node/transport/transport.hpp>
+#include <nano/transport/channel.hpp>
+#include <nano/transport/transport.hpp>
 
 #include <boost/circular_buffer.hpp>
 #include <boost/multi_index/hashed_index.hpp>

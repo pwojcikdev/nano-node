@@ -44,8 +44,6 @@
 #include <nano/node/scheduler/optimistic.hpp>
 #include <nano/node/scheduler/priority.hpp>
 #include <nano/node/telemetry.hpp>
-#include <nano/node/transport/loopback.hpp>
-#include <nano/node/transport/tcp_listener.hpp>
 #include <nano/node/vote_generator.hpp>
 #include <nano/node/vote_processor.hpp>
 #include <nano/node/vote_rebroadcaster.hpp>
@@ -66,6 +64,9 @@
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 #include <nano/store/rocksdb/backend_rocksdb.hpp>
+#include <nano/transport/loopback.hpp>
+#include <nano/transport/tcp_listener.hpp>
+#include <nano/transport/tcp_server.hpp>
 
 #include <boost/format.hpp>
 #include <boost/property_tree/json_parser.hpp>
@@ -145,7 +146,16 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	//
 	network_impl{ std::make_unique<nano::network> (*this, config.peering_port.has_value () ? *config.peering_port : 0) },
 	network{ *network_impl },
-	loopback_channel{ std::make_shared<nano::transport::loopback_channel> (*this) },
+	loopback_channel{ std::make_shared<nano::transport::loopback_channel> (
+	stats, network_params.network.protocol_version, network.endpoint (), node_id.pub,
+	[this] (nano::messages::message const & message, std::shared_ptr<nano::transport::channel> const & channel) {
+		inbound (message, channel);
+	},
+	[this] (nano::transport::channel::callback_t callback) {
+		io_ctx.post ([callback_l = std::move (callback)] () mutable {
+			callback_l (boost::system::errc::make_error_code (boost::system::errc::success), 0);
+		});
+	}) },
 	telemetry_impl{ std::make_unique<nano::telemetry> (flags, *this, network, observers, network_params, stats) },
 	telemetry{ *telemetry_impl },
 	// BEWARE: `bootstrap` takes `network.port` instead of `config.peering_port` because when the user doesn't specify
@@ -155,7 +165,30 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	//         Thus, be very careful if you change the order: if `bootstrap` gets constructed before `network`,
 	//         the latter would inherit the port from the former (if TCP is active, otherwise `network` picks first)
 	//
-	tcp_listener_impl{ std::make_unique<nano::transport::tcp_listener> (network.port, config.tcp, *this) },
+	tcp_listener_impl{ std::make_unique<nano::transport::tcp_listener> (
+	io_ctx, network.port, config.tcp, stats, logger, nano::transport::tcp_listener_params{
+													 .default_port = network_params.network.default_node_port,
+													 .dev_network = network_params.network.is_dev_network (),
+													 .disable_max_peers_per_ip = flags.disable_max_peers_per_ip,
+													 .disable_max_peers_per_subnetwork = flags.disable_max_peers_per_subnetwork,
+													 .max_peers_per_ip = config.network.max_peers_per_ip,
+													 .max_peers_per_subnetwork = config.network.max_peers_per_subnetwork,
+													 },
+	[this] (asio::ip::address const & ip) {
+		return network.excluded_peers.check (ip);
+	},
+	[this] (std::shared_ptr<nano::transport::tcp_socket> const & socket) {
+		auto disable_realtime = [this] () {
+			return flags.disable_tcp_realtime;
+		};
+		auto create_channel = [this] (std::shared_ptr<nano::transport::tcp_socket> const & socket_a, std::shared_ptr<nano::transport::tcp_server> const & server_a, nano::account const & node_id) {
+			return network.tcp_channels.create (socket_a, server_a, node_id);
+		};
+		auto message_put = [this] (std::unique_ptr<nano::messages::message> message, std::shared_ptr<nano::transport::tcp_channel> const & channel_a) {
+			return message_processor.put (std::move (message), channel_a);
+		};
+		return std::make_shared<nano::transport::tcp_server> (io_ctx, network_params.network, network.filter, block_uniquer, vote_uniquer, network, stats, logger, std::move (disable_realtime), std::move (create_channel), std::move (message_put), socket);
+	}) },
 	tcp_listener{ *tcp_listener_impl },
 	port_mapping_impl{ std::make_unique<nano::port_mapping> (*this) },
 	port_mapping{ *port_mapping_impl },
@@ -225,6 +258,10 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	node_seq{ seq }
 {
 	logger.debug (nano::log::type::node, "Constructing node...");
+
+	tcp_listener.connection_accepted.add ([this] (auto const & socket, auto const &) {
+		observers.socket_connected.notify (socket);
+	});
 
 	vote_cache.rep_weight_query = [this] (nano::account const & rep) {
 		return ledger.weight (rep);
@@ -488,8 +525,6 @@ void nano::node::keepalive (std::string const & address_a, uint16_t port_a)
 
 void nano::node::inbound (const nano::messages::message & message, const std::shared_ptr<nano::transport::channel> & channel)
 {
-	debug_assert (channel->owner () == shared_from_this ()); // This node should be the channel owner
-
 	debug_assert (message.header.network == network_params.network.current_network);
 	debug_assert (message.header.version_using >= network_params.network.protocol_version_min);
 

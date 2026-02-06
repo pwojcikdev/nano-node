@@ -6,6 +6,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/work.hpp>
+#include <nano/node/bandwidth_limiter.hpp>
 #include <nano/node/distributed_work_factory.hpp>
 #include <nano/node/epoch_upgrader.hpp>
 #include <nano/node/fwd.hpp>
@@ -16,7 +17,6 @@
 #include <nano/node/portmapping.hpp>
 #include <nano/node/rep_tiers.hpp>
 #include <nano/node/repcrawler.hpp>
-#include <nano/node/transport/tcp_server.hpp>
 #include <nano/node/unchecked_map.hpp>
 #include <nano/node/vote_cache.hpp>
 #include <nano/node/wallet.hpp>

@@ -25,7 +25,35 @@ nano::network::network (nano::node & node_a, uint16_t port_a) :
 	syn_cookies{ node.config.network.max_peers_per_ip, node.logger },
 	resolver{ node.io_ctx },
 	filter{ node.config.network.duplicate_filter_size, node.config.network.duplicate_filter_cutoff },
-	tcp_channels{ node },
+	tcp_channels{ node.io_ctx, node.network_params.network, node.stats, node.logger, nano::transport::tcp_channels_params{
+																					 .allow_local_peers = node.config.allow_local_peers,
+																					 .disable_max_peers_per_ip = node.flags.disable_max_peers_per_ip,
+																					 .disable_max_peers_per_subnetwork = node.flags.disable_max_peers_per_subnetwork,
+																					 .disable_tcp_realtime = node.flags.disable_tcp_realtime,
+																					 .max_peers_per_ip = node.config.network.max_peers_per_ip,
+																					 .max_peers_per_subnetwork = node.config.network.max_peers_per_subnetwork,
+																					 .protocol_version = node.network_params.network.protocol_version,
+																					 .protocol_version_min = node.network_params.network.protocol_version_min,
+																					 .keepalive_period = node.network_params.network.keepalive_period,
+																					 },
+		[this] (std::size_t size, nano::transport::traffic_type type) {
+			return node.outbound_limiter.should_pass (size, type);
+		},
+		[this] (nano::endpoint const & endpoint, bool allow_local_peers) {
+			return not_a_peer (endpoint, allow_local_peers);
+		},
+		[this] (nano::tcp_endpoint const & endpoint) {
+			return excluded_peers.check (endpoint);
+		},
+		[this] (std::array<nano::endpoint, 8> & peers) {
+			random_fill (peers);
+		},
+		[&node_a] (nano::endpoint const & endpoint) {
+			return node_a.tcp_listener.connect (endpoint.address (), endpoint.port ());
+		},
+		[&node_a] (std::shared_ptr<nano::transport::tcp_channel> const & channel) {
+			node_a.observers.channel_connected.notify (channel);
+		} },
 	port{ port_a }
 {
 	node.observers.channel_connected.add ([this] (std::shared_ptr<nano::transport::channel> const & channel) {

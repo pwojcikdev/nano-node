@@ -1,6 +1,6 @@
 #include <nano/node/bootstrap/bootstrap_config.hpp>
 #include <nano/node/bootstrap/peer_scoring.hpp>
-#include <nano/node/transport/channel.hpp>
+#include <nano/transport/channel.hpp>
 
 /*
  * peer_scoring

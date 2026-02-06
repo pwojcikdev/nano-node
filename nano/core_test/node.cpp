@@ -15,9 +15,6 @@
 #include <nano/node/scheduler/component.hpp>
 #include <nano/node/scheduler/manual.hpp>
 #include <nano/node/scheduler/priority.hpp>
-#include <nano/node/transport/fake.hpp>
-#include <nano/node/transport/inproc.hpp>
-#include <nano/node/transport/tcp_listener.hpp>
 #include <nano/node/vote_generator.hpp>
 #include <nano/node/vote_router.hpp>
 #include <nano/secure/ledger.hpp>
@@ -30,6 +27,9 @@
 #include <nano/test_common/network.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
+#include <nano/test_common/transport/fake.hpp>
+#include <nano/test_common/transport/inproc.hpp>
+#include <nano/transport/tcp_listener.hpp>
 
 #include <gtest/gtest.h>
 

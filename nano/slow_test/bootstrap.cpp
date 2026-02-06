@@ -4,7 +4,6 @@
 #include <nano/node/bootstrap/bootstrap_service.hpp>
 #include <nano/node/ipc/ipc_server.hpp>
 #include <nano/node/json_handler.hpp>
-#include <nano/node/transport/transport.hpp>
 #include <nano/rpc/rpc.hpp>
 #include <nano/rpc/rpc_request_processor.hpp>
 #include <nano/secure/ledger.hpp>
@@ -12,6 +11,7 @@
 #include <nano/test_common/rate_observer.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
+#include <nano/transport/transport.hpp>
 
 #include <gtest/gtest.h>
 

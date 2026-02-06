@@ -4,15 +4,15 @@
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/scheduler/component.hpp>
 #include <nano/node/scheduler/priority.hpp>
-#include <nano/node/transport/fake.hpp>
-#include <nano/node/transport/inproc.hpp>
-#include <nano/node/transport/tcp_listener.hpp>
-#include <nano/node/transport/tcp_socket.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/test_common/network.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
+#include <nano/test_common/transport/fake.hpp>
+#include <nano/test_common/transport/inproc.hpp>
+#include <nano/transport/tcp_listener.hpp>
+#include <nano/transport/tcp_socket.hpp>
 
 #include <gtest/gtest.h>
 

@@ -1,9 +1,9 @@
 #include <nano/node/telemetry.hpp>
-#include <nano/node/transport/fake.hpp>
 #include <nano/test_common/network.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/telemetry.hpp>
 #include <nano/test_common/testutil.hpp>
+#include <nano/test_common/transport/fake.hpp>
 
 #include <gtest/gtest.h>
 
