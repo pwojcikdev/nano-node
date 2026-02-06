@@ -1,6 +1,9 @@
+#include <nano/lib/block_type.hpp>
+#include <nano/lib/blocks.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/store/backend.hpp>
+#include <nano/store/db_val_templ.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
@@ -10,8 +13,13 @@
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
+
+#include <array>
+#include <unordered_map>
+#include <vector>
 
 namespace nano::store
 {
@@ -25,6 +33,7 @@ nano::store::column_schema const ledger_store::schema_current{
 	{ nano::store::table::peers, "peers" },
 	{ nano::store::table::confirmation_height, "confirmation_height" },
 	{ nano::store::table::final_votes, "final_votes" },
+	{ nano::store::table::topology, "topology" },
 	{ nano::store::table::meta, "meta" }
 };
 }
@@ -44,6 +53,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	peer_impl{ std::make_unique<nano::store::ledger::peer_view> (*backend_impl) },
 	confirmation_height_impl{ std::make_unique<nano::store::ledger::confirmation_height_view> (*backend_impl) },
 	final_vote_impl{ std::make_unique<nano::store::ledger::final_vote_view> (*backend_impl) },
+	topology_impl{ std::make_unique<nano::store::ledger::topology_view> (*backend_impl) },
 	version_impl{ std::make_unique<nano::store::ledger::version_view> (*backend_impl) },
 	backend{ *backend_impl },
 	block{ *block_impl },
@@ -55,6 +65,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	peer{ *peer_impl },
 	confirmation_height{ *confirmation_height_impl },
 	final_vote{ *final_vote_impl },
+	topology{ *topology_impl },
 	version{ *version_impl }
 {
 	// Skip automatic open/upgrade when defer_open is set (used for testing individual upgrades)
@@ -153,6 +164,7 @@ void ledger_store::initialize (nano::store::write_transaction const & txn, nano:
 
 	// TODO: Use designated initialization
 	block.put (txn, constants.genesis->hash (), *constants.genesis);
+	topology.put (txn, constants.genesis->sideband ().topology, constants.genesis->hash ());
 	confirmation_height.put (txn, constants.genesis->account (), nano::confirmation_height_info{ 1, constants.genesis->hash () });
 	account.put (txn, constants.genesis->account (), { constants.genesis->hash (), constants.genesis->account (), constants.genesis->hash (), std::numeric_limits<nano::uint128_t>::max (), nano::seconds_since_epoch (), 1, nano::epoch::epoch_0 });
 	rep_weight.put (txn, constants.genesis->account (), std::numeric_limits<nano::uint128_t>::max ());
@@ -192,6 +204,9 @@ void ledger_store::perform_upgrades (nano::store::backend_meta meta)
 			upgrade_v23_to_v24 ();
 			[[fallthrough]];
 		case 24:
+			upgrade_v24_to_v25 ();
+			[[fallthrough]];
+		case 25:
 			break;
 		default:
 			release_assert (false, "invalid ledger database version for upgrade", std::to_string (meta.version));
@@ -253,6 +268,20 @@ nano::store::column_schema const ledger_store::schema_v24{
 	{ nano::store::table::peers, "peers" },
 	{ nano::store::table::confirmation_height, "confirmation_height" },
 	{ nano::store::table::final_votes, "final_votes" },
+	{ nano::store::table::meta, "meta" }
+};
+
+nano::store::column_schema const ledger_store::schema_v25{
+	{ nano::store::table::blocks, "blocks" },
+	{ nano::store::table::accounts, "accounts" },
+	{ nano::store::table::pending, "pending" },
+	{ nano::store::table::rep_weights, "rep_weights" },
+	{ nano::store::table::online_weight, "online_weight" },
+	{ nano::store::table::pruned, "pruned" },
+	{ nano::store::table::peers, "peers" },
+	{ nano::store::table::confirmation_height, "confirmation_height" },
+	{ nano::store::table::final_votes, "final_votes" },
+	{ nano::store::table::topology, "topology" },
 	{ nano::store::table::meta, "meta" }
 };
 
@@ -362,6 +391,184 @@ void ledger_store::upgrade_v23_to_v24 ()
 	backend.close ();
 
 	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v23 to v24 completed");
+}
+
+namespace
+{
+	std::array<nano::block_hash, 2> topology_dependencies (nano::block const & block)
+	{
+		std::array<nano::block_hash, 2> result{ 0, 0 };
+
+		switch (block.type ())
+		{
+			case nano::block_type::send:
+			case nano::block_type::change:
+				result[0] = block.previous ();
+				break;
+			case nano::block_type::receive:
+				result[0] = block.previous ();
+				result[1] = block.source_field ().value_or (0);
+				break;
+			case nano::block_type::open:
+				result[0] = block.source_field ().value_or (0);
+				break;
+			case nano::block_type::state:
+			{
+				result[0] = block.previous ();
+				auto const link = block.link_field ().value_or (0);
+				if (!link.is_zero () && !block.sideband ().details.is_send && !block.sideband ().details.is_epoch)
+				{
+					result[1] = link.as_block_hash ();
+				}
+				break;
+			}
+			case nano::block_type::invalid:
+			case nano::block_type::not_a_block:
+				break;
+		}
+
+		return result;
+	}
+
+	std::vector<uint8_t> serialize_block_with_sideband (nano::block const & block)
+	{
+		std::vector<uint8_t> data;
+		nano::vectorstream stream{ data };
+		nano::serialize_block (stream, block);
+		block.sideband ().serialize (stream, block.type ());
+		return data;
+	}
+}
+
+void ledger_store::upgrade_v24_to_v25 ()
+{
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v24 to v25...");
+
+	backend.open (schema_v25, nano::store::open_mode::read_write);
+	{
+		release_assert (backend.get_version (backend.tx_begin_read ()) == 24, "unexpected version during upgrade", std::to_string (backend.get_version (backend.tx_begin_read ())));
+		topology.clear ();
+
+		std::vector<nano::block_hash> all_hashes;
+		{
+			auto read_tx = backend.tx_begin_read ();
+			all_hashes.reserve (block.count (read_tx));
+
+			for (auto i = backend.begin (read_tx, nano::store::table::blocks), n = backend.end (read_tx, nano::store::table::blocks); i != n; ++i)
+			{
+				nano::store::db_val key{ i->first };
+				all_hashes.push_back (static_cast<nano::block_hash> (key));
+			}
+		}
+
+		struct frame
+		{
+			nano::block_hash hash{ 0 };
+			std::array<nano::block_hash, 2> dependencies{ 0, 0 };
+			size_t next_dependency{ 0 };
+			std::shared_ptr<nano::block> block{};
+		};
+
+		auto transaction = backend.tx_begin_write ();
+		std::unordered_map<nano::block_hash, uint8_t> states;
+		states.reserve (all_hashes.size ());
+		std::unordered_map<nano::block_hash, uint64_t> topology_index;
+		topology_index.reserve (all_hashes.size ());
+
+		size_t processed = 0;
+		const size_t batch_size = nano::is_dev_run () ? 2 : 250000;
+
+		std::vector<frame> stack;
+		for (auto const & start_hash : all_hashes)
+		{
+			if (states[start_hash] == 2)
+			{
+				continue;
+			}
+
+			stack.clear ();
+			stack.push_back ({ start_hash });
+
+			while (!stack.empty ())
+			{
+				auto & current = stack.back ();
+				auto & state = states[current.hash];
+				if (state == 0)
+				{
+					current.block = block.get (transaction, current.hash);
+					release_assert (current.block != nullptr, "missing block while rebuilding topology index", current.hash.to_string ());
+					current.dependencies = topology_dependencies (*current.block);
+					state = 1;
+				}
+
+				bool pushed = false;
+				while (current.next_dependency < current.dependencies.size ())
+				{
+					auto const dependency = current.dependencies[current.next_dependency++];
+					if (dependency.is_zero () || pruned.exists (transaction, dependency) || !block.exists (transaction, dependency))
+					{
+						continue; // Dependency is either satisfied externally or not tracked in the blocks table
+					}
+
+					auto dependency_state = states[dependency];
+					if (dependency_state == 0)
+					{
+						stack.push_back ({ dependency });
+						pushed = true;
+						break;
+					}
+					if (dependency_state == 1)
+					{
+						release_assert (false, "cycle detected while rebuilding topology index", dependency.to_string ());
+					}
+				}
+
+				if (pushed)
+				{
+					continue;
+				}
+
+				uint64_t current_index{ 0 };
+				for (auto const & dependency : current.dependencies)
+				{
+					if (dependency.is_zero () || pruned.exists (transaction, dependency) || !block.exists (transaction, dependency))
+					{
+						continue; // Dependency is either satisfied externally or not tracked in the blocks table
+					}
+
+					auto existing = topology_index.find (dependency);
+					release_assert (existing != topology_index.end (), "missing dependency topology index during migration", dependency.to_string ());
+					current_index = std::max (current_index, existing->second + 1);
+				}
+
+				auto sideband = current.block->sideband ();
+				sideband.topology = current_index;
+				current.block->sideband_set (sideband);
+				block.raw_put (transaction, serialize_block_with_sideband (*current.block), current.hash);
+				topology.put (transaction, sideband.topology, current.hash);
+				topology_index.emplace (current.hash, sideband.topology);
+
+				state = 2;
+				stack.pop_back ();
+
+				processed++;
+				if (processed % batch_size == 0)
+				{
+					logger.info (nano::log::type::ledger_upgrade, "Processed {} blocks", processed);
+					transaction.refresh ();
+				}
+			}
+		}
+
+		release_assert (topology_index.size () == all_hashes.size (), "topology index rebuild count mismatch", std::to_string (topology_index.size ()) + " != " + std::to_string (all_hashes.size ()));
+		release_assert (topology.count (transaction) == all_hashes.size (), "topology table count mismatch", std::to_string (topology.count (transaction)) + " != " + std::to_string (all_hashes.size ()));
+
+		logger.info (nano::log::type::ledger_upgrade, "Done processing {} blocks", processed);
+		version.put (transaction, 25);
+	}
+	backend.close ();
+
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v24 to v25 completed");
 }
 
 std::string ledger_store::vendor_get () const

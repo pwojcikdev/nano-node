@@ -54,6 +54,23 @@ enum class no_value
 	dummy
 };
 
+class topology_key final
+{
+public:
+	topology_key () = default;
+	topology_key (uint64_t index_a, nano::block_hash const & hash_a) :
+		index{ index_a },
+		hash{ hash_a }
+	{
+	}
+
+	auto operator<=> (topology_key const &) const = default;
+
+public:
+	uint64_t index{ 0 };
+	nano::block_hash hash{ 0 };
+};
+
 class unchecked_key final
 {
 public:

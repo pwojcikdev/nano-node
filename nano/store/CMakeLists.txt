@@ -22,6 +22,8 @@ add_library(
   ledger/pruned.cpp
   ledger/rep_weight.hpp
   ledger/rep_weight.cpp
+  ledger/topology.hpp
+  ledger/topology.cpp
   ledger/version.hpp
   ledger/version.cpp
   block_w_sideband.hpp

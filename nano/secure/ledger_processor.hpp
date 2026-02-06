@@ -26,6 +26,8 @@ public:
 	nano::block_status result{ nano::block_status::invalid };
 
 private:
+	uint64_t compute_topology_index (nano::block const &) const;
+	void put_block (nano::block &);
 	bool validate_epoch_block (nano::state_block const & block);
 };
 }
