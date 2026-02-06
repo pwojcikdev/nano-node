@@ -1,3 +1,4 @@
+#include <nano/lib/blocks.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
@@ -6,8 +7,10 @@
 #include <nano/secure/common.hpp>
 #include <nano/store/backend.hpp>
 #include <nano/store/ledger/account.hpp>
+#include <nano/store/ledger/block.hpp>
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 #include <nano/store/tables.hpp>
@@ -18,6 +21,9 @@
 
 #include <gtest/gtest.h>
 
+#include <boost/endian/conversion.hpp>
+
+#include <algorithm>
 #include <filesystem>
 
 using namespace std::chrono_literals;
@@ -65,6 +71,33 @@ nano::store::column_schema const schema_v23{
 	{ nano::store::table::confirmation_height, "confirmation_height" },
 	{ nano::store::table::final_votes, "final_votes" },
 	{ nano::store::table::frontiers, "frontiers" },
+	{ nano::store::table::meta, "meta" }
+};
+
+nano::store::column_schema const schema_v24{
+	{ nano::store::table::blocks, "blocks" },
+	{ nano::store::table::accounts, "accounts" },
+	{ nano::store::table::pending, "pending" },
+	{ nano::store::table::rep_weights, "rep_weights" },
+	{ nano::store::table::online_weight, "online_weight" },
+	{ nano::store::table::pruned, "pruned" },
+	{ nano::store::table::peers, "peers" },
+	{ nano::store::table::confirmation_height, "confirmation_height" },
+	{ nano::store::table::final_votes, "final_votes" },
+	{ nano::store::table::meta, "meta" }
+};
+
+nano::store::column_schema const schema_v25{
+	{ nano::store::table::blocks, "blocks" },
+	{ nano::store::table::accounts, "accounts" },
+	{ nano::store::table::pending, "pending" },
+	{ nano::store::table::rep_weights, "rep_weights" },
+	{ nano::store::table::online_weight, "online_weight" },
+	{ nano::store::table::pruned, "pruned" },
+	{ nano::store::table::peers, "peers" },
+	{ nano::store::table::confirmation_height, "confirmation_height" },
+	{ nano::store::table::final_votes, "final_votes" },
+	{ nano::store::table::topology, "topology" },
 	{ nano::store::table::meta, "meta" }
 };
 }
@@ -574,11 +607,165 @@ TEST (ledger_upgrades, upgrade_v23_to_v24)
 	// Verify version is now 24 and frontiers table no longer exists
 	{
 		auto backend = nano::test::make_backend (path);
-		backend->open (nano::store::ledger_store::schema_current, nano::store::open_mode::read_only);
+		backend->open (schema_v24, nano::store::open_mode::read_only);
 		auto tx = backend->tx_begin_read ();
 		ASSERT_EQ (backend->get_version (tx), 24);
 		ASSERT_FALSE (backend->table_exists ("frontiers"));
 	}
+}
+
+namespace
+{
+class legacy_database_v24
+{
+public:
+	legacy_database_v24 (std::filesystem::path const & path_a) :
+		path{ path_a },
+		backend{ nano::test::make_backend (path_a) }
+	{
+		backend->create (schema_v24, 24);
+		backend->open (schema_v24, nano::store::open_mode::read_write);
+	}
+
+	void add_block (std::shared_ptr<nano::block> const & block)
+	{
+		auto tx = backend->tx_begin_write ();
+
+		std::vector<uint8_t> serialized;
+		{
+			nano::vectorstream stream{ serialized };
+			nano::serialize_block (stream, *block);
+
+			auto const & sideband = block->sideband ();
+			nano::write (stream, sideband.successor.bytes);
+			if (block->type () != nano::block_type::state && block->type () != nano::block_type::open)
+			{
+				nano::write (stream, sideband.account.bytes);
+			}
+			if (block->type () != nano::block_type::open)
+			{
+				nano::write (stream, boost::endian::native_to_big (sideband.height));
+			}
+			if (block->type () == nano::block_type::receive || block->type () == nano::block_type::change || block->type () == nano::block_type::open)
+			{
+				nano::write (stream, sideband.balance.bytes);
+			}
+			nano::write (stream, boost::endian::native_to_big (sideband.timestamp));
+			if (block->type () == nano::block_type::state)
+			{
+				sideband.details.serialize (stream);
+				nano::write (stream, static_cast<uint8_t> (sideband.source_epoch));
+			}
+		}
+
+		nano::store::db_val value{ serialized.size (), serialized.data () };
+		auto status = backend->put (tx, nano::store::table::blocks, block->hash (), value);
+		backend->release_assert_success (status);
+	}
+
+	std::filesystem::path path;
+	std::unique_ptr<nano::store::backend> backend;
+};
+}
+
+TEST (ledger_upgrades, upgrade_v24_to_v25_topology_index)
+{
+	auto const path = nano::unique_path ();
+
+	nano::keypair key1;
+	nano::keypair key2;
+	nano::keypair key3;
+
+	auto open_a = nano::block_builder ()
+				  .open ()
+				  .source (nano::block_hash{ 42 })
+				  .representative (key1.pub)
+				  .account (key1.pub)
+				  .sign (key1.prv, key1.pub)
+				  .work (0)
+				  .build ();
+	open_a->sideband_set (nano::block_sideband{ key1.pub, 0, 100, 1, nano::seconds_since_epoch (), nano::epoch::epoch_0, false, false, false, nano::epoch::epoch_0, 0 });
+
+	auto change_a = nano::block_builder ()
+					.change ()
+					.previous (open_a->hash ())
+					.representative (key1.pub)
+					.sign (key1.prv, key1.pub)
+					.work (0)
+					.build ();
+	change_a->sideband_set (nano::block_sideband{ key1.pub, 0, 100, 2, nano::seconds_since_epoch (), nano::epoch::epoch_0, false, false, false, nano::epoch::epoch_0, 0 });
+
+	auto open_b = nano::block_builder ()
+				  .open ()
+				  .source (change_a->hash ())
+				  .representative (key2.pub)
+				  .account (key2.pub)
+				  .sign (key2.prv, key2.pub)
+				  .work (0)
+				  .build ();
+	open_b->sideband_set (nano::block_sideband{ key2.pub, 0, 50, 1, nano::seconds_since_epoch (), nano::epoch::epoch_0, false, false, false, nano::epoch::epoch_0, 0 });
+
+	auto open_c = nano::block_builder ()
+				  .open ()
+				  .source (nano::block_hash{ 1337 })
+				  .representative (key3.pub)
+				  .account (key3.pub)
+				  .sign (key3.prv, key3.pub)
+				  .work (0)
+				  .build ();
+	open_c->sideband_set (nano::block_sideband{ key3.pub, 0, 10, 1, nano::seconds_since_epoch (), nano::epoch::epoch_0, false, false, false, nano::epoch::epoch_0, 0 });
+
+	{
+		legacy_database_v24 legacy_db{ path };
+		legacy_db.add_block (open_a);
+		legacy_db.add_block (change_a);
+		legacy_db.add_block (open_b);
+		legacy_db.add_block (open_c);
+	}
+
+	nano::store::ledger_store store (
+	nano::test::make_backend (path),
+	nano::store::open_mode::read_write,
+	nano::test::default_stats (),
+	nano::test::default_logger ());
+
+	auto tx = store.tx_begin_read ();
+	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
+	ASSERT_EQ (store.version.get (tx), 25);
+	ASSERT_EQ (store.block.count (tx), 4);
+	ASSERT_EQ (store.topology.count (tx), 4);
+
+	auto upgraded_open_a = store.block.get (tx, open_a->hash ());
+	auto upgraded_change_a = store.block.get (tx, change_a->hash ());
+	auto upgraded_open_b = store.block.get (tx, open_b->hash ());
+	auto upgraded_open_c = store.block.get (tx, open_c->hash ());
+
+	ASSERT_NE (upgraded_open_a, nullptr);
+	ASSERT_NE (upgraded_change_a, nullptr);
+	ASSERT_NE (upgraded_open_b, nullptr);
+	ASSERT_NE (upgraded_open_c, nullptr);
+
+	auto order_open_a = upgraded_open_a->sideband ().topo_index;
+	auto order_change_a = upgraded_change_a->sideband ().topo_index;
+	auto order_open_b = upgraded_open_b->sideband ().topo_index;
+	auto order_open_c = upgraded_open_c->sideband ().topo_index;
+
+	// change_a depends on open_a through previous
+	ASSERT_LT (order_open_a, order_change_a);
+	// open_b depends on change_a through source
+	ASSERT_LT (order_change_a, order_open_b);
+	// open_c is independent so it can share the same topological index with open_a
+	ASSERT_EQ (order_open_a, order_open_c);
+
+	ASSERT_TRUE (store.topology.exists (tx, order_open_a, open_a->hash ()));
+	ASSERT_TRUE (store.topology.exists (tx, order_open_c, open_c->hash ()));
+	ASSERT_TRUE (store.topology.exists (tx, order_change_a, change_a->hash ()));
+	ASSERT_TRUE (store.topology.exists (tx, order_open_b, open_b->hash ()));
+
+	auto i = store.topology.begin (tx);
+	ASSERT_NE (i, store.topology.end (tx));
+	ASSERT_EQ (i->first.topo_index, order_open_a);
+	ASSERT_EQ (i->first.hash, std::min (open_a->hash (), open_c->hash ()));
 }
 
 /*

@@ -24,6 +24,7 @@
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 
@@ -702,6 +703,7 @@ uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a
 		if (block_l != nullptr)
 		{
 			release_assert (confirmed.block_exists (transaction_a, hash));
+			store.topology.del (transaction_a, block_l->sideband ().topo_index, hash);
 			store.block.del (transaction_a, hash);
 			store.pruned.put (transaction_a, hash);
 			hash = block_l->previous ();
@@ -742,6 +744,26 @@ auto nano::ledger::block_priority (nano::secure::transaction const & transaction
 	// Account info timestamp is not used here because it will get out of sync when rollbacks happen
 	auto const priority_timestamp = previous_block ? previous_block->sideband ().timestamp : block.sideband ().timestamp;
 	return { priority_balance, priority_timestamp };
+}
+
+uint64_t nano::ledger::topology_index (secure::transaction const & transaction, nano::block const & block) const
+{
+	uint64_t result{ 0 };
+
+	auto dependencies = block_dependencies (transaction, block);
+	for (auto const & dependency : dependencies)
+	{
+		if (dependency.is_zero ())
+		{
+			continue;
+		}
+
+		auto dependency_block = store.block.get (transaction, dependency);
+		release_assert (dependency_block, "topology dependency does not exist", dependency.to_string ());
+		result = std::max (result, dependency_block->sideband ().topo_index + 1);
+	}
+
+	return result;
 }
 
 nano::epoch nano::ledger::version (nano::block const & block)
