@@ -426,26 +426,28 @@ bool nano::wallet_store::import (nano::store::write_transaction const & transact
 	release_assert (valid_password (transaction_a), "wallet is locked or password is invalid");
 	release_assert (other_a.valid_password (transaction_a), "other wallet is locked or password is invalid");
 
-	auto result (false);
+	bool error = false;
 	for (auto i (other_a.begin (transaction_a)), n (other_a.end (transaction_a)); i != n; ++i)
 	{
 		auto prv_result = other_a.fetch (transaction_a, i->first);
-		if (!prv_result)
+		if (prv_result)
 		{
-			result = true;
-			break;
-		}
-		if (!prv_result.value ().is_zero ())
-		{
-			insert_adhoc (transaction_a, prv_result.value ());
+			if (!prv_result.value ().is_zero ())
+			{
+				insert_adhoc (transaction_a, prv_result.value ());
+			}
+			else
+			{
+				insert_watch (transaction_a, i->first);
+			}
+			other_a.erase (transaction_a, i->first);
 		}
 		else
 		{
-			insert_watch (transaction_a, i->first);
+			error = true;
 		}
-		other_a.erase (transaction_a, i->first);
 	}
-	return result;
+	return error;
 }
 
 std::optional<uint64_t> nano::wallet_store::work_get (nano::store::transaction const & transaction, nano::public_key const & pub) const
