@@ -232,7 +232,7 @@ nano::account nano::wallet_store::representative (nano::store::transaction const
 
 nano::public_key nano::wallet_store::insert_adhoc (nano::store::write_transaction const & transaction_a, nano::raw_key const & prv)
 {
-	debug_assert (valid_password (transaction_a));
+	release_assert (valid_password (transaction_a), "wallet is locked or password is invalid");
 	nano::public_key pub (nano::pub_key (prv));
 	nano::raw_key password_l;
 	wallet_key (password_l, transaction_a);
@@ -401,27 +401,31 @@ void nano::wallet_store::write_backup (nano::store::transaction const & transact
 
 bool nano::wallet_store::move (nano::store::write_transaction const & transaction_a, nano::wallet_store & other_a, std::vector<nano::public_key> const & keys)
 {
-	debug_assert (valid_password (transaction_a));
-	debug_assert (other_a.valid_password (transaction_a));
-	auto result (false);
+	release_assert (valid_password (transaction_a), "wallet is locked or password is invalid");
+	release_assert (other_a.valid_password (transaction_a), "other wallet is locked or password is invalid");
+
+	bool error = false;
 	for (auto i (keys.begin ()), n (keys.end ()); i != n; ++i)
 	{
 		auto prv_result = other_a.fetch (transaction_a, *i);
-		if (!prv_result)
+		if (prv_result)
 		{
-			result = true;
-			break;
+			insert_adhoc (transaction_a, prv_result.value ());
+			other_a.erase (transaction_a, *i);
 		}
-		insert_adhoc (transaction_a, prv_result.value ());
-		other_a.erase (transaction_a, *i);
+		else
+		{
+			error = true;
+		}
 	}
-	return result;
+	return error;
 }
 
 bool nano::wallet_store::import (nano::store::write_transaction const & transaction_a, nano::wallet_store & other_a)
 {
-	debug_assert (valid_password (transaction_a));
-	debug_assert (other_a.valid_password (transaction_a));
+	release_assert (valid_password (transaction_a), "wallet is locked or password is invalid");
+	release_assert (other_a.valid_password (transaction_a), "other wallet is locked or password is invalid");
+
 	auto result (false);
 	for (auto i (other_a.begin (transaction_a)), n (other_a.end (transaction_a)); i != n; ++i)
 	{
@@ -698,7 +702,6 @@ nano::mdb_wallets_store::mdb_wallets_store (std::filesystem::path const & path_a
 	environment (path_a, nano::store::lmdb::env::options::make ().set_config (lmdb_config_a).override_config_sync (nano::lmdb_config::sync_strategy::always).override_config_map_size (1ULL * 1024 * 1024 * 1024))
 {
 }
-
 
 /*
  * wallet
