@@ -5211,6 +5211,67 @@ TEST (ledger, pruning_source_rollback)
 	ASSERT_EQ (5, ledger.block_count ());
 }
 
+// Rollback a state block whose predecessor has been pruned
+TEST (ledger, pruning_rollback_pruned_predecessor)
+{
+	nano::logger logger;
+	nano::stats stats{ logger };
+	auto store = nano::make_store (logger, stats, nano::unique_path (), nano::dev::constants);
+	nano::ledger ledger (*store, nano::dev::network_params, stats, logger);
+	ledger.pruning = true;
+	auto transaction = ledger.tx_begin_write ();
+	nano::work_pool pool{ nano::dev::network_params.network, std::numeric_limits<unsigned>::max () };
+	nano::block_builder builder;
+	auto epoch1 = builder
+				  .state ()
+				  .account (nano::dev::genesis_key.pub)
+				  .previous (nano::dev::genesis->hash ())
+				  .representative (nano::dev::genesis_key.pub)
+				  .balance (nano::dev::constants.genesis_amount)
+				  .link (ledger.epoch_link (nano::epoch::epoch_1))
+				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				  .work (*pool.generate (nano::dev::genesis->hash ()))
+				  .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, epoch1));
+	auto send1 = builder
+				 .state ()
+				 .account (nano::dev::genesis_key.pub)
+				 .previous (epoch1->hash ())
+				 .representative (nano::dev::genesis_key.pub)
+				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
+				 .link (nano::dev::genesis_key.pub)
+				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				 .work (*pool.generate (epoch1->hash ()))
+				 .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send1));
+	auto send2 = builder
+				 .state ()
+				 .account (nano::dev::genesis_key.pub)
+				 .previous (send1->hash ())
+				 .representative (nano::dev::genesis_key.pub)
+				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio * 2)
+				 .link (nano::dev::genesis_key.pub)
+				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				 .work (*pool.generate (send1->hash ()))
+				 .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send2));
+	// Confirm send1 (confirms genesis, epoch1, send1)
+	ledger.confirm (transaction, send1->hash ());
+	// Prune send1 and epoch1
+	ASSERT_EQ (2, ledger.pruning_action (transaction, send1->hash (), 1));
+	ASSERT_TRUE (store->pruned.exists (transaction, send1->hash ()));
+	ASSERT_TRUE (store->pruned.exists (transaction, epoch1->hash ()));
+	ASSERT_FALSE (ledger.any.block_exists (transaction, send1->hash ()));
+	ASSERT_TRUE (ledger.any.block_exists (transaction, send2->hash ()));
+	// Rollback send2 whose predecessor (send1) is pruned
+	ASSERT_FALSE (ledger.rollback (transaction, send2->hash ()));
+	ASSERT_FALSE (ledger.any.block_exists (transaction, send2->hash ()));
+	// Account head should now point to the pruned predecessor
+	auto info = ledger.any.account_get (transaction, nano::dev::genesis_key.pub);
+	ASSERT_TRUE (info);
+	ASSERT_EQ (send1->hash (), info->head);
+}
+
 TEST (ledger, pruning_source_rollback_legacy)
 {
 	nano::logger logger;
