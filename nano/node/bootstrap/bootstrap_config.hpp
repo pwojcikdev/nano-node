@@ -50,6 +50,7 @@ public:
 	bool enable_database_scan{ false };
 	bool enable_dependency_walker{ true };
 	bool enable_frontier_scan{ true };
+	bool enable_topology{ false };
 
 	// Maximum number of un-responded requests per channel, should be lower or equal to bootstrap server max queue size
 	std::size_t channel_limit{ 16 };

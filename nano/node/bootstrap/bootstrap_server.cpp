@@ -11,6 +11,7 @@
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger_store.hpp>
 
 nano::bootstrap_server::bootstrap_server (bootstrap_server_config const & config_a, nano::store::ledger_store & store_a, nano::ledger & ledger_a, nano::network_constants const & network_constants_a, nano::stats & stats_a, nano::logger & logger_a) :
@@ -98,11 +99,35 @@ bool nano::bootstrap_server::verify (const nano::messages::asc_pull_req & messag
 		}
 		bool operator() (nano::messages::asc_pull_req::blocks_payload const & pld) const
 		{
-			return pld.count > 0 && pld.count <= max_blocks;
+			if (pld.count == 0 || pld.count > max_blocks)
+			{
+				return false;
+			}
+
+			switch (pld.start_type)
+			{
+				case nano::messages::asc_pull_req::hash_type::account:
+				case nano::messages::asc_pull_req::hash_type::block:
+				case nano::messages::asc_pull_req::hash_type::topology:
+					return true;
+			}
+			return false;
 		}
 		bool operator() (nano::messages::asc_pull_req::account_info_payload const & pld) const
 		{
-			return !pld.target.is_zero ();
+			if (pld.target.is_zero ())
+			{
+				return false;
+			}
+			switch (pld.target_type)
+			{
+				case nano::messages::asc_pull_req::hash_type::account:
+				case nano::messages::asc_pull_req::hash_type::block:
+					return true;
+				case nano::messages::asc_pull_req::hash_type::topology:
+					return false;
+			}
+			return false;
 		}
 		bool operator() (nano::messages::asc_pull_req::frontiers_payload const & pld) const
 		{
@@ -302,6 +327,11 @@ nano::messages::asc_pull_ack nano::bootstrap_server::process (secure::transactio
 			}
 		}
 		break;
+		case messages::asc_pull_req::hash_type::topology:
+		{
+			return prepare_topology_response (transaction, id, request.start.as_block_hash (), count);
+		}
+		break;
 	}
 
 	// Neither block nor account found, send empty response to indicate that
@@ -313,6 +343,25 @@ nano::messages::asc_pull_ack nano::bootstrap_server::prepare_response (secure::t
 	debug_assert (count <= max_blocks); // Should be filtered out earlier
 
 	auto blocks = prepare_blocks (transaction, start_block, count);
+	debug_assert (blocks.size () <= count);
+
+	nano::messages::asc_pull_ack response{ network_constants };
+	response.id = id;
+	response.type = nano::messages::asc_pull_type::blocks;
+
+	nano::messages::asc_pull_ack::blocks_payload response_payload{};
+	response_payload.blocks = blocks;
+	response.payload = response_payload;
+
+	response.update_header ();
+	return response;
+}
+
+nano::messages::asc_pull_ack nano::bootstrap_server::prepare_topology_response (secure::transaction const & transaction, nano::messages::asc_pull_req::id_t id, nano::block_hash start_block, std::size_t count) const
+{
+	debug_assert (count <= max_blocks); // Should be filtered out earlier
+
+	auto blocks = prepare_topology_blocks (transaction, start_block, count);
 	debug_assert (blocks.size () <= count);
 
 	nano::messages::asc_pull_ack response{ network_constants };
@@ -359,6 +408,44 @@ std::deque<std::shared_ptr<nano::block>> nano::bootstrap_server::prepare_blocks 
 	return result;
 }
 
+std::deque<std::shared_ptr<nano::block>> nano::bootstrap_server::prepare_topology_blocks (secure::transaction const & transaction, nano::block_hash start_block, std::size_t count) const
+{
+	debug_assert (count <= max_blocks); // Should be filtered out earlier
+
+	std::deque<std::shared_ptr<nano::block>> result;
+
+	auto begin = store.topology.begin (transaction);
+	auto end = store.topology.end (transaction);
+
+	if (!start_block.is_zero ())
+	{
+		auto block = ledger.any.block_get (transaction, start_block);
+		if (!block)
+		{
+			return result;
+		}
+
+		auto const start_key = nano::topo_key{ block->sideband ().topo_index, start_block };
+		begin = store.topology.begin (transaction, start_key);
+		if (begin == end || begin->first != start_key)
+		{
+			return result;
+		}
+	}
+
+	for (auto it = std::move (begin); it != end && result.size () < count; ++it)
+	{
+		auto const & hash = it->first.hash;
+		auto block = ledger.any.block_get (transaction, hash);
+		if (block)
+		{
+			result.push_back (block);
+		}
+	}
+
+	return result;
+}
+
 /*
  * Account info request
  */
@@ -381,6 +468,11 @@ nano::messages::asc_pull_ack nano::bootstrap_server::process (secure::transactio
 		{
 			// Try to lookup account assuming target is block hash
 			target = ledger.any.block_account (transaction, request.target.as_block_hash ()).value_or (0);
+		}
+		break;
+		case messages::asc_pull_req::hash_type::topology:
+		{
+			target = 0;
 		}
 		break;
 	}

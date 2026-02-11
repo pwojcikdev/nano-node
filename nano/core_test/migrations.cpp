@@ -137,7 +137,7 @@ migration_test_data populate_ledger_for_migration (nano::store::ledger_store & s
 			nano::dev::genesis_key.pub, 0,
 			nano::dev::constants.genesis_amount - (i + 1) * 1000,
 			i + 2, nano::seconds_since_epoch (), nano::epoch::epoch_0,
-			false, false, false, nano::epoch::epoch_0 });
+			false, false, false, nano::epoch::epoch_0, 0 });
 			store.block.put (tx, data.blocks[i]->hash (), *data.blocks[i]);
 		}
 

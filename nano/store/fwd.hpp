@@ -22,5 +22,6 @@ class peer_view;
 class pending_view;
 class pruned_view;
 class rep_weight_view;
+class topology_view;
 class version_view;
 }
