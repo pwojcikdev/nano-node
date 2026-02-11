@@ -9,6 +9,8 @@
 #include <nano/store/ledger_store.hpp>
 
 #include <array>
+#include <atomic>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -23,6 +25,13 @@ std::vector<uint8_t> serialize_block_with_sideband (nano::block const & block)
 	return data;
 }
 
+struct computed_block
+{
+	nano::block_hash hash{ 0 };
+	uint64_t topo_index{ 0 };
+	std::vector<uint8_t> serialized;
+};
+
 struct dfs_frame
 {
 	nano::block_hash hash{ 0 };
@@ -33,26 +42,27 @@ struct dfs_frame
 
 struct dfs_result
 {
-	uint64_t resolved_count{ 0 };
+	std::vector<computed_block> resolved;
 	bool overflowed{ false };
 };
 
 // Performs bounded iterative DFS to compute topo_index for a block and all its unresolved dependencies.
-// Returns the number of blocks resolved. If the stack depth exceeds max_depth, returns with overflowed=true.
+// Uses a read-only transaction; resolved blocks are collected in the result rather than written immediately.
+// If the stack depth exceeds max_depth, returns with overflowed=true and partial results.
 dfs_result compute_topo_bounded (
 nano::store::ledger_store & store,
-nano::store::write_transaction & write_tx,
+nano::store::transaction const & tx,
 nano::block_hash const & start_hash,
 size_t max_depth)
 {
+	dfs_result result;
+
 	std::unordered_map<nano::block_hash, uint64_t> local_cache;
 	local_cache.reserve (2048);
 
 	std::vector<dfs_frame> stack;
 	stack.reserve (2048);
 	stack.push_back ({ start_hash });
-
-	uint64_t resolved_count{ 0 };
 
 	while (!stack.empty ())
 	{
@@ -68,11 +78,11 @@ size_t max_depth)
 		// First visit: load the block and check if already in topology table
 		if (!current.block)
 		{
-			current.block = store.block.get (write_tx, current.hash);
+			current.block = store.block.get (tx, current.hash);
 			release_assert (current.block != nullptr, "missing block while rebuilding topology index", current.hash.to_string ());
 
 			auto const persisted_index = current.block->sideband ().topo_index;
-			if (store.topology.exists (write_tx, persisted_index, current.hash))
+			if (store.topology.exists (tx, persisted_index, current.hash))
 			{
 				// Already processed (from this or a previous run)
 				local_cache.emplace (current.hash, persisted_index);
@@ -100,7 +110,7 @@ size_t max_depth)
 			}
 
 			// Check if dependency exists and is already resolved
-			auto dependency_block = store.block.get (write_tx, dependency);
+			auto dependency_block = store.block.get (tx, dependency);
 			if (dependency_block == nullptr)
 			{
 				// Missing dependency (e.g. pruned source) treated as external
@@ -108,7 +118,7 @@ size_t max_depth)
 			}
 
 			auto const dependency_index = dependency_block->sideband ().topo_index;
-			if (store.topology.exists (write_tx, dependency_index, dependency))
+			if (store.topology.exists (tx, dependency_index, dependency))
 			{
 				local_cache.emplace (dependency, dependency_index);
 				continue;
@@ -117,7 +127,8 @@ size_t max_depth)
 			// Unresolved dependency: check stack depth before pushing
 			if (stack.size () >= max_depth)
 			{
-				return { resolved_count, true };
+				result.overflowed = true;
+				return result;
 			}
 
 			stack.push_back ({ dependency });
@@ -144,20 +155,18 @@ size_t max_depth)
 			}
 		}
 
-		// Write updated sideband and topology entry
+		// Collect the resolved block for later writing
 		auto sideband = current.block->sideband ();
 		sideband.topo_index = current_index;
 		current.block->sideband_set (sideband);
 
-		store.block.raw_put (write_tx, serialize_block_with_sideband (*current.block), current.hash);
-		store.topology.put (write_tx, current_index, current.hash);
+		result.resolved.push_back ({ current.hash, current_index, serialize_block_with_sideband (*current.block) });
 
 		local_cache.emplace (current.hash, current_index);
-		++resolved_count;
 		stack.pop_back ();
 	}
 
-	return { resolved_count, false };
+	return result;
 }
 }
 
@@ -194,103 +203,112 @@ void ledger_store::upgrade_v24_to_v25 ()
 
 		constexpr size_t max_stack_depth = 10'000'000;
 
-		auto const is_lmdb = backend.vendor_get ().starts_with ("LMDB");
-		auto const write_batch_size = is_lmdb ? static_cast<size_t> (5000) : static_cast<size_t> (250000);
+		auto const batch_size = nano::is_dev_run () ? 2 : 5000;
 
-		uint64_t const progress_step = std::max<uint64_t> (1, std::min<uint64_t> (total_blocks / 100, 250000));
-
-		auto log_progress = [this, total_blocks] (uint64_t resolved, uint64_t iterated) {
-			double const percentage = total_blocks == 0 ? 100.0 : (100.0 * static_cast<double> (resolved) / static_cast<double> (total_blocks));
-			logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: resolved {} / {} blocks ({:.2f}%), iterated {}", resolved, total_blocks, percentage, iterated);
-		};
+		auto const progress_step = std::max<uint64_t> (1, std::min<uint64_t> (total_blocks / 100, batch_size));
 
 		for (uint64_t pass = 1;; ++pass)
 		{
 			logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: starting pass {}", pass);
 
-			uint64_t resolved_this_pass{ 0 };
-			uint64_t iterated{ 0 };
-			uint64_t last_log_resolved{ already_processed };
+			// Phase 1: Parallel DFS computation using for_each_par
+			// Each thread iterates its range of blocks, performs bounded DFS with a read transaction,
+			// and collects computed blocks locally. Results are merged after all threads complete.
+			std::vector<computed_block> all_results;
+			std::mutex results_mutex;
+			std::atomic<uint64_t> iterated{ 0 };
+			std::atomic<uint64_t> computed{ 0 };
+			std::atomic<uint64_t> last_log_computed{ already_processed };
 
-			// Iterate all blocks in batches using cursor-based reads
-			nano::block_hash cursor{ 0 };
-			bool has_cursor{ false };
-			bool reached_end{ false };
+			block.for_each_par ([&] (nano::store::read_transaction const & read_tx, auto i, auto n) {
+				std::vector<computed_block> local_results;
 
-			auto write_tx = backend.tx_begin_write ();
-			uint64_t writes_since_refresh{ 0 };
-
-			while (!reached_end)
-			{
-				// Read a batch of block hashes using a short-lived read transaction
-				std::vector<nano::block_hash> batch;
-				batch.reserve (4096);
+				for (; i != n; ++i)
 				{
-					auto read_tx = backend.tx_begin_read ();
-					auto it = has_cursor ? block.begin (read_tx, cursor) : block.begin (read_tx);
-					auto const end = block.end (read_tx);
-					if (has_cursor && it != end && it->first == cursor)
-					{
-						++it; // Skip the cursor itself (already processed)
-					}
-					for (; it != end && batch.size () < 4096; ++it)
-					{
-						batch.push_back (it->first);
-					}
-					reached_end = (it == end);
-				}
+					iterated.fetch_add (1, std::memory_order_relaxed);
 
-				if (batch.empty ())
-				{
-					break;
-				}
-				cursor = batch.back ();
-				has_cursor = true;
+					auto const & hash = i->first;
+					auto const & bws = i->second;
+					auto const & blk = bws.block;
 
-				for (auto const & hash : batch)
-				{
-					++iterated;
-
-					// Check if already resolved
-					auto blk = block.get (write_tx, hash);
-					release_assert (blk != nullptr, "missing block during topology rebuild", hash.to_string ());
-
-					if (topology.exists (write_tx, blk->sideband ().topo_index, hash))
+					if (topology.exists (read_tx, blk->sideband ().topo_index, hash))
 					{
 						continue; // Already processed
 					}
 
-					auto result = compute_topo_bounded (*this, write_tx, hash, max_stack_depth);
-					resolved_this_pass += result.resolved_count;
-					writes_since_refresh += result.resolved_count;
-
-					// Log progress at regular intervals
-					auto const total_resolved = already_processed + resolved_this_pass;
-					if (total_resolved - last_log_resolved >= progress_step)
+					auto dfs = compute_topo_bounded (*this, read_tx, hash, max_stack_depth);
+					if (!dfs.resolved.empty ())
 					{
-						log_progress (total_resolved, iterated);
-						last_log_resolved = total_resolved;
+						auto const resolved_now = computed.fetch_add (dfs.resolved.size (), std::memory_order_relaxed) + dfs.resolved.size ();
+						auto const total_computed = already_processed + resolved_now;
+						auto const last_log = last_log_computed.load (std::memory_order_relaxed);
+						double const pct = total_blocks == 0 ? 100.0 : (100.0 * static_cast<double> (total_computed) / static_cast<double> (total_blocks));
+						if (total_computed - last_log >= progress_step)
+						{
+							last_log_computed.store (total_computed, std::memory_order_relaxed);
+							// double const pct = total_blocks == 0 ? 100.0 : (100.0 * static_cast<double> (total_computed) / static_cast<double> (total_blocks));
+							logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: computed {} / {} blocks ({:.2f}%), iterated {}", total_computed, total_blocks, pct, iterated.load (std::memory_order_relaxed));
+						}
+						logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: computed {} / {} blocks ({:.2f}%), iterated {}", total_computed, total_blocks, pct, iterated.load (std::memory_order_relaxed));
 					}
-
-					if (writes_since_refresh >= write_batch_size)
+					for (auto & item : dfs.resolved)
 					{
-						write_tx.refresh ();
-						writes_since_refresh = 0;
+						local_results.push_back (std::move (item));
 					}
+				}
+
+				if (!local_results.empty ())
+				{
+					std::lock_guard lock{ results_mutex };
+					all_results.insert (all_results.end (),
+					std::make_move_iterator (local_results.begin ()),
+					std::make_move_iterator (local_results.end ()));
+				}
+			});
+
+			// Phase 2: Sequential write of all computed blocks
+			auto write_tx = backend.tx_begin_write ();
+			uint64_t written{ 0 };
+			uint64_t last_log_written{ already_processed };
+
+			for (auto & item : all_results)
+			{
+				// Skip duplicates (same block resolved by multiple threads)
+				if (topology.exists (write_tx, item.topo_index, item.hash))
+				{
+					continue;
+				}
+
+				block.raw_put (write_tx, item.serialized, item.hash);
+				topology.put (write_tx, item.topo_index, item.hash);
+				++written;
+
+				// Log progress at regular intervals
+				auto const total_written = already_processed + written;
+				if (total_written - last_log_written >= progress_step)
+				{
+					double const percentage = total_blocks == 0 ? 100.0 : (100.0 * static_cast<double> (total_written) / static_cast<double> (total_blocks));
+					logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: wrote {} / {} blocks ({:.2f}%)", total_written, total_blocks, percentage);
+					last_log_written = total_written;
+				}
+
+				if (written % batch_size == 0)
+				{
+					write_tx.refresh ();
 				}
 			}
 
 			auto const total_done = topology.count (write_tx);
 			double const percentage = total_blocks == 0 ? 100.0 : (100.0 * static_cast<double> (total_done) / static_cast<double> (total_blocks));
 			logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: pass {} complete, resolved {} blocks this pass, total {} / {} ({:.2f}%)",
-			pass, resolved_this_pass, total_done, total_blocks, percentage);
+			pass, written, total_done, total_blocks, percentage);
 
 			if (total_done >= total_blocks)
 			{
 				break;
 			}
 
-			release_assert (resolved_this_pass > 0, "no progress made during topology rebuild pass", std::to_string (pass));
+			release_assert (written > 0, "no progress made during topology rebuild pass", std::to_string (pass));
 
 			already_processed = total_done;
 		}
