@@ -207,6 +207,10 @@ void ledger_store::upgrade_v24_to_v25 ()
 
 		auto const progress_step = std::max<uint64_t> (1, std::min<uint64_t> (total_blocks / 100, batch_size));
 
+		// Limit how many computed blocks we hold in memory between compute and write phases.
+		// Each computed_block is ~300 bytes, so 1M entries ≈ 300 MB.
+		constexpr size_t max_pending_results = 1'000'000;
+
 		for (uint64_t pass = 1;; ++pass)
 		{
 			logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: starting pass {}", pass);
@@ -214,16 +218,18 @@ void ledger_store::upgrade_v24_to_v25 ()
 			// Phase 1: Parallel DFS computation using for_each_par
 			// Each thread iterates its range of blocks, performs bounded DFS with a read transaction,
 			// and collects computed blocks locally. Results are merged after all threads complete.
+			// Threads stop early once the global result limit is reached.
 			std::vector<computed_block> all_results;
 			std::mutex results_mutex;
 			std::atomic<uint64_t> iterated{ 0 };
 			std::atomic<uint64_t> computed{ 0 };
 			std::atomic<uint64_t> last_log_computed{ already_processed };
+			std::atomic<bool> results_full{ false };
 
 			block.for_each_par ([&] (nano::store::read_transaction const & read_tx, auto i, auto n) {
 				std::vector<computed_block> local_results;
 
-				for (; i != n; ++i)
+				for (; i != n && !results_full.load (std::memory_order_relaxed); ++i)
 				{
 					iterated.fetch_add (1, std::memory_order_relaxed);
 
@@ -242,18 +248,23 @@ void ledger_store::upgrade_v24_to_v25 ()
 						auto const resolved_now = computed.fetch_add (dfs.resolved.size (), std::memory_order_relaxed) + dfs.resolved.size ();
 						auto const total_computed = already_processed + resolved_now;
 						auto const last_log = last_log_computed.load (std::memory_order_relaxed);
-						double const pct = total_blocks == 0 ? 100.0 : (100.0 * static_cast<double> (total_computed) / static_cast<double> (total_blocks));
 						if (total_computed - last_log >= progress_step)
 						{
 							last_log_computed.store (total_computed, std::memory_order_relaxed);
-							// double const pct = total_blocks == 0 ? 100.0 : (100.0 * static_cast<double> (total_computed) / static_cast<double> (total_blocks));
+							double const pct = total_blocks == 0 ? 100.0 : (100.0 * static_cast<double> (total_computed) / static_cast<double> (total_blocks));
 							logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: computed {} / {} blocks ({:.2f}%), iterated {}", total_computed, total_blocks, pct, iterated.load (std::memory_order_relaxed));
 						}
-						logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: computed {} / {} blocks ({:.2f}%), iterated {}", total_computed, total_blocks, pct, iterated.load (std::memory_order_relaxed));
-					}
-					for (auto & item : dfs.resolved)
-					{
-						local_results.push_back (std::move (item));
+
+						// Check if we've hit the memory limit
+						if (resolved_now >= max_pending_results)
+						{
+							results_full.store (true, std::memory_order_relaxed);
+						}
+
+						for (auto & item : dfs.resolved)
+						{
+							local_results.push_back (std::move (item));
+						}
 					}
 				}
 
@@ -265,6 +276,8 @@ void ledger_store::upgrade_v24_to_v25 ()
 					std::make_move_iterator (local_results.end ()));
 				}
 			});
+
+			logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: pass {} compute phase complete, {} blocks computed, writing to database...", pass, all_results.size ());
 
 			// Phase 2: Sequential write of all computed blocks
 			auto write_tx = backend.tx_begin_write ();
@@ -298,9 +311,13 @@ void ledger_store::upgrade_v24_to_v25 ()
 				}
 			}
 
+			// Free memory before counting
+			all_results.clear ();
+			all_results.shrink_to_fit ();
+
 			auto const total_done = topology.count (write_tx);
 			double const percentage = total_blocks == 0 ? 100.0 : (100.0 * static_cast<double> (total_done) / static_cast<double> (total_blocks));
-			logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: pass {} complete, resolved {} blocks this pass, total {} / {} ({:.2f}%)",
+			logger.info (nano::log::type::ledger_upgrade, "Rebuilding topology index: pass {} complete, wrote {} blocks, total {} / {} ({:.2f}%)",
 			pass, written, total_done, total_blocks, percentage);
 
 			if (total_done >= total_blocks)
