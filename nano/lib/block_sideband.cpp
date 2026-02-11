@@ -93,23 +93,25 @@ std::string nano::state_subtype (nano::block_details const details_a)
  * block_sideband
  */
 
-nano::block_sideband::block_sideband (nano::account const & account_a, nano::block_hash const & successor_a, nano::amount const & balance_a, uint64_t const height_a, nano::seconds_t const timestamp_a, nano::block_details const & details_a, nano::epoch const source_epoch_a) :
+nano::block_sideband::block_sideband (nano::account const & account_a, nano::block_hash const & successor_a, nano::amount const & balance_a, uint64_t const height_a, nano::seconds_t const timestamp_a, nano::block_details const & details_a, nano::epoch const source_epoch_a, uint64_t const topo_index_a) :
 	successor (successor_a),
 	account (account_a),
 	balance (balance_a),
 	height (height_a),
 	timestamp (timestamp_a),
+	topo_index (topo_index_a),
 	details (details_a),
 	source_epoch (source_epoch_a)
 {
 }
 
-nano::block_sideband::block_sideband (nano::account const & account_a, nano::block_hash const & successor_a, nano::amount const & balance_a, uint64_t const height_a, nano::seconds_t const timestamp_a, nano::epoch const epoch_a, bool const is_send, bool const is_receive, bool const is_epoch, nano::epoch const source_epoch_a) :
+nano::block_sideband::block_sideband (nano::account const & account_a, nano::block_hash const & successor_a, nano::amount const & balance_a, uint64_t const height_a, nano::seconds_t const timestamp_a, nano::epoch const epoch_a, bool const is_send, bool const is_receive, bool const is_epoch, nano::epoch const source_epoch_a, uint64_t const topo_index_a) :
 	successor (successor_a),
 	account (account_a),
 	balance (balance_a),
 	height (height_a),
 	timestamp (timestamp_a),
+	topo_index (topo_index_a),
 	details (epoch_a, is_send, is_receive, is_epoch),
 	source_epoch (source_epoch_a)
 {
@@ -157,6 +159,7 @@ size_t nano::block_sideband::size (nano::block_type type)
 		static_assert (sizeof (nano::epoch) == nano::block_details::size (), "block_details is larger than the epoch enum");
 		result += nano::block_details::size () + sizeof (nano::epoch);
 	}
+	result += sizeof (topo_index);
 	return result;
 }
 
@@ -181,6 +184,7 @@ void nano::block_sideband::serialize (nano::stream & stream_a, nano::block_type 
 		details.serialize (stream_a);
 		nano::write (stream_a, static_cast<uint8_t> (source_epoch));
 	}
+	nano::write (stream_a, boost::endian::native_to_big (topo_index));
 }
 
 bool nano::block_sideband::deserialize (nano::stream & stream_a, nano::block_type type)
@@ -228,6 +232,14 @@ bool nano::block_sideband::deserialize (nano::stream & stream_a, nano::block_typ
 			details = {};
 			source_epoch = nano::epoch::epoch_0;
 		}
+
+		// Optional for backward compatibility
+		uint64_t topo_index_l{ 0 };
+		if (!nano::try_read (stream_a, topo_index_l))
+		{
+			boost::endian::big_to_native_inplace (topo_index_l);
+		}
+		topo_index = topo_index_l;
 	}
 	catch (std::runtime_error &)
 	{
@@ -244,6 +256,7 @@ void nano::block_sideband::operator() (nano::object_stream & obs) const
 	obs.write ("balance", balance);
 	obs.write ("height", height);
 	obs.write ("timestamp", timestamp);
+	obs.write ("topo_index", topo_index);
 	obs.write ("source_epoch", source_epoch);
 	obs.write ("details", details);
 }

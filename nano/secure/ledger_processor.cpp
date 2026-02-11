@@ -1,3 +1,4 @@
+#include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/numbers.hpp>
@@ -12,7 +13,12 @@
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
 #include <nano/store/ledger/pending.hpp>
+#include <nano/store/ledger/pruned.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger_store.hpp>
+
+#include <algorithm>
+#include <array>
 
 nano::ledger_processor::ledger_processor (nano::secure::write_transaction const & transaction_a, nano::ledger & ledger_a) :
 	transaction (transaction_a),
@@ -54,8 +60,10 @@ void nano::ledger_processor::send_block (nano::send_block & block_a)
 							{
 								auto amount (info->balance.number () - block_a.hashables.balance.number ());
 								ledger.rep_weights.sub (transaction, info->representative, amount);
-								block_a.sideband_set (nano::block_sideband (account, 0, block_a.hashables.balance /* unused */, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */));
+								auto const topo = topology_index (previous);
+								block_a.sideband_set (nano::block_sideband (account, 0, block_a.hashables.balance /* unused */, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */, topo));
 								ledger.store.block.put (transaction, hash, block_a);
+								ledger.store.topology.put (transaction, topo, hash);
 								nano::account_info new_info (hash, info->representative, info->open_block, block_a.hashables.balance, nano::seconds_since_epoch (), info->block_count + 1, nano::epoch::epoch_0);
 								ledger.update_account (transaction, account, *info, new_info);
 								ledger.store.pending.put (transaction, nano::pending_key (block_a.hashables.destination, hash), { account, amount, nano::epoch::epoch_0 });
@@ -93,7 +101,8 @@ void nano::ledger_processor::receive_block (nano::receive_block & block_a)
 					if (result == nano::block_status::progress)
 					{
 						debug_assert (!validate_message (account, hash, block_a.signature));
-						result = ledger.any.block_exists_or_pruned (transaction, block_a.hashables.source) ? nano::block_status::progress : nano::block_status::gap_source; // Have we seen the source block already? (Harmless)
+						auto source_block = ledger.store.block.get (transaction, block_a.hashables.source);
+						result = (source_block || ledger.store.pruned.exists (transaction, block_a.hashables.source)) ? nano::block_status::progress : nano::block_status::gap_source; // Have we seen the source block already? (Harmless)
 						if (result == nano::block_status::progress)
 						{
 							result = info->head == block_a.hashables.previous ? nano::block_status::progress : nano::block_status::gap_previous; // Block doesn't immediately follow latest block (Harmless)
@@ -113,8 +122,10 @@ void nano::ledger_processor::receive_block (nano::receive_block & block_a)
 										{
 											auto new_balance (info->balance.number () + pending.value ().amount.number ());
 											ledger.store.pending.del (transaction, key);
-											block_a.sideband_set (nano::block_sideband (account, 0, new_balance, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */));
+											auto const topo = topology_index (previous, source_block);
+											block_a.sideband_set (nano::block_sideband (account, 0, new_balance, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */, topo));
 											ledger.store.block.put (transaction, hash, block_a);
+											ledger.store.topology.put (transaction, topo, hash);
 											nano::account_info new_info (hash, info->representative, info->open_block, new_balance, nano::seconds_since_epoch (), info->block_count + 1, nano::epoch::epoch_0);
 											ledger.update_account (transaction, account, *info, new_info);
 											ledger.rep_weights.add (transaction, info->representative, pending.value ().amount);
@@ -142,7 +153,8 @@ void nano::ledger_processor::open_block (nano::open_block & block_a)
 		if (result == nano::block_status::progress)
 		{
 			debug_assert (!validate_message (block_a.hashables.account, hash, block_a.signature));
-			result = ledger.any.block_exists_or_pruned (transaction, block_a.hashables.source) ? nano::block_status::progress : nano::block_status::gap_source; // Have we seen the source block? (Harmless)
+			auto source_block = ledger.store.block.get (transaction, block_a.hashables.source);
+			result = (source_block || ledger.store.pruned.exists (transaction, block_a.hashables.source)) ? nano::block_status::progress : nano::block_status::gap_source; // Have we seen the source block? (Harmless)
 			if (result == nano::block_status::progress)
 			{
 				nano::account_info info;
@@ -165,8 +177,10 @@ void nano::ledger_processor::open_block (nano::open_block & block_a)
 								if (result == nano::block_status::progress)
 								{
 									ledger.store.pending.del (transaction, key);
-									block_a.sideband_set (nano::block_sideband (block_a.hashables.account, 0, pending.value ().amount, 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */));
+									auto const topo = topology_index (nullptr, source_block);
+									block_a.sideband_set (nano::block_sideband (block_a.hashables.account, 0, pending.value ().amount, 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */, topo));
 									ledger.store.block.put (transaction, hash, block_a);
+									ledger.store.topology.put (transaction, topo, hash);
 									nano::account_info new_info (hash, block_a.representative_field ().value (), hash, pending.value ().amount.number (), nano::seconds_since_epoch (), 1, nano::epoch::epoch_0);
 									ledger.update_account (transaction, block_a.hashables.account, info, new_info);
 									ledger.rep_weights.add (transaction, block_a.representative_field ().value (), pending.value ().amount);
@@ -210,8 +224,10 @@ void nano::ledger_processor::change_block (nano::change_block & block_a)
 						if (result == nano::block_status::progress)
 						{
 							debug_assert (!validate_message (account, hash, block_a.signature));
-							block_a.sideband_set (nano::block_sideband (account, 0, info->balance, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */));
+							auto const topo = topology_index (previous);
+							block_a.sideband_set (nano::block_sideband (account, 0, info->balance, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */, topo));
 							ledger.store.block.put (transaction, hash, block_a);
+							ledger.store.topology.put (transaction, topo, hash);
 							auto balance = previous->balance ();
 							ledger.rep_weights.move (transaction, info->representative, block_a.hashables.representative, balance);
 							nano::account_info new_info (hash, block_a.hashables.representative, info->open_block, info->balance, nano::seconds_since_epoch (), info->block_count + 1, nano::epoch::epoch_0);
@@ -268,6 +284,8 @@ void nano::ledger_processor::state_block_impl (nano::state_block & block_a)
 				nano::amount amount (block_a.hashables.balance);
 				auto is_send (false);
 				auto is_receive (false);
+				std::shared_ptr<nano::block> prev_block;
+				std::shared_ptr<nano::block> source_block;
 				auto account_error (ledger.store.account.get (transaction, block_a.hashables.account, info));
 				if (!account_error)
 				{
@@ -276,7 +294,8 @@ void nano::ledger_processor::state_block_impl (nano::state_block & block_a)
 					result = block_a.hashables.previous.is_zero () ? nano::block_status::fork : nano::block_status::progress; // Has this account already been opened? (Ambigious)
 					if (result == nano::block_status::progress)
 					{
-						result = ledger.store.block.exists (transaction, block_a.hashables.previous) ? nano::block_status::progress : nano::block_status::gap_previous; // Does the previous block exist in the ledger? (Unambigious)
+						prev_block = ledger.store.block.get (transaction, block_a.hashables.previous);
+						result = prev_block ? nano::block_status::progress : nano::block_status::gap_previous; // Does the previous block exist in the ledger? (Unambigious)
 						if (result == nano::block_status::progress)
 						{
 							is_send = block_a.hashables.balance < info.balance;
@@ -302,7 +321,8 @@ void nano::ledger_processor::state_block_impl (nano::state_block & block_a)
 					{
 						if (!block_a.hashables.link.is_zero ())
 						{
-							result = ledger.any.block_exists_or_pruned (transaction, block_a.hashables.link.as_block_hash ()) ? nano::block_status::progress : nano::block_status::gap_source; // Have we seen the source block already? (Harmless)
+							source_block = ledger.store.block.get (transaction, block_a.hashables.link.as_block_hash ());
+							result = (source_block || ledger.store.pruned.exists (transaction, block_a.hashables.link.as_block_hash ())) ? nano::block_status::progress : nano::block_status::gap_source; // Have we seen the source block already? (Harmless)
 							if (result == nano::block_status::progress)
 							{
 								nano::pending_key key (block_a.hashables.account, block_a.hashables.link.as_block_hash ());
@@ -330,8 +350,12 @@ void nano::ledger_processor::state_block_impl (nano::state_block & block_a)
 					if (result == nano::block_status::progress)
 					{
 						ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::state_block);
-						block_a.sideband_set (nano::block_sideband (block_a.hashables.account /* unused */, 0, 0 /* unused */, info.block_count + 1, nano::seconds_since_epoch (), block_details, source_epoch));
+
+						auto const topo = topology_index (prev_block, source_block);
+
+						block_a.sideband_set (nano::block_sideband (block_a.hashables.account /* unused */, 0, 0 /* unused */, info.block_count + 1, nano::seconds_since_epoch (), block_details, source_epoch, topo));
 						ledger.store.block.put (transaction, hash, block_a);
+						ledger.store.topology.put (transaction, topo, hash);
 
 						if (!info.head.is_zero ())
 						{
@@ -414,8 +438,11 @@ void nano::ledger_processor::epoch_block_impl (nano::state_block & block_a)
 							if (result == nano::block_status::progress)
 							{
 								ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::epoch_block);
-								block_a.sideband_set (nano::block_sideband (block_a.hashables.account /* unused */, 0, 0 /* unused */, info.block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */));
+								auto prev_block = block_a.hashables.previous.is_zero () ? nullptr : ledger.store.block.get (transaction, block_a.hashables.previous);
+								auto const topo = topology_index (prev_block);
+								block_a.sideband_set (nano::block_sideband (block_a.hashables.account /* unused */, 0, 0 /* unused */, info.block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */, topo));
 								ledger.store.block.put (transaction, hash, block_a);
+								ledger.store.topology.put (transaction, topo, hash);
 								nano::account_info new_info (hash, block_a.hashables.representative, info.open_block.is_zero () ? hash : info.open_block, info.balance, nano::seconds_since_epoch (), info.block_count + 1, epoch);
 								ledger.update_account (transaction, block_a.hashables.account, info, new_info);
 							}
@@ -452,4 +479,28 @@ bool nano::ledger_processor::validate_epoch_block (nano::state_block const & blo
 		}
 	}
 	return (block_a.hashables.balance == prev_balance);
+}
+
+uint64_t nano::ledger_processor::topology_index (std::shared_ptr<nano::block> const & dep1, std::shared_ptr<nano::block> const & dep2) const
+{
+	uint64_t result{ 0 };
+	if (dep1)
+	{
+		auto topo = dep1->sideband ().topo_index;
+		if (topo == 0)
+		{
+			return 0;
+		}
+		result = std::max (result, topo + 1);
+	}
+	if (dep2)
+	{
+		auto topo = dep2->sideband ().topo_index;
+		if (topo == 0)
+		{
+			return 0;
+		}
+		result = std::max (result, topo + 1);
+	}
+	return result;
 }

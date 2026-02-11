@@ -21,6 +21,7 @@ enum class table
 	rep_weights,
 	unchecked, // dropped in v22
 	frontiers, // dropped in v24
+	topology, // (topology index, block_hash) -> no_value
 };
 }
 

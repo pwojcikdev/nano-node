@@ -96,6 +96,7 @@ public: // Tag
 		database,
 		dependencies,
 		frontiers,
+		topology,
 	};
 
 	struct async_tag
@@ -125,6 +126,8 @@ private:
 	void run_one_dependency ();
 	void run_frontiers ();
 	void run_one_frontier ();
+	void run_topology ();
+	void run_one_topology ();
 	void run_timeouts ();
 	void cleanup_and_sync ();
 
@@ -147,8 +150,11 @@ private:
 	nano::block_hash wait_blocking ();
 	/* Waits for next available frontier scan range */
 	nano::account wait_frontier ();
+	/* Waits for the next topology cursor */
+	nano::block_hash wait_topology ();
 
 	bool request (nano::account, size_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
+	bool request_topology (nano::block_hash, size_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool request_info (nano::block_hash, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool request_frontiers (nano::account, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool send (std::shared_ptr<nano::transport::channel> const &, async_tag tag);
@@ -178,6 +184,7 @@ private:
 
 	size_t count_tags (nano::account const & account, query_source source) const;
 	size_t count_tags (nano::block_hash const & hash, query_source source) const;
+	size_t count_tags (query_source source) const;
 
 	// Calculates a lookback size based on the size of the ledger where larger ledgers have a larger sample count
 	std::size_t compute_throttle_size () const;
@@ -225,7 +232,11 @@ private:
 	std::thread database_thread;
 	std::thread dependencies_thread;
 	std::thread frontiers_thread;
+	std::thread topology_thread;
 	std::thread cleanup_thread;
+
+	nano::block_hash topology_start{ 0 };
+	std::chrono::steady_clock::time_point topology_retry{};
 
 	nano::thread_pool workers;
 	nano::random_generator_mt rng;

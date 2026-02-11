@@ -66,8 +66,10 @@ private:
 	 */
 	nano::messages::asc_pull_ack process (secure::transaction const &, nano::messages::asc_pull_req::id_t id, nano::messages::asc_pull_req::blocks_payload const & request) const;
 	nano::messages::asc_pull_ack prepare_response (secure::transaction const &, nano::messages::asc_pull_req::id_t id, nano::block_hash start_block, std::size_t count) const;
+	nano::messages::asc_pull_ack prepare_topology_response (secure::transaction const &, nano::messages::asc_pull_req::id_t id, nano::block_hash start_block, std::size_t count) const;
 	nano::messages::asc_pull_ack prepare_empty_blocks_response (nano::messages::asc_pull_req::id_t id) const;
 	std::deque<std::shared_ptr<nano::block>> prepare_blocks (secure::transaction const &, nano::block_hash start_block, std::size_t count) const;
+	std::deque<std::shared_ptr<nano::block>> prepare_topology_blocks (secure::transaction const &, nano::block_hash start_block, std::size_t count) const;
 
 	/*
 	 * Account info request

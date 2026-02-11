@@ -49,8 +49,8 @@ class block_sideband final
 {
 public:
 	block_sideband () = default;
-	block_sideband (nano::account const & account, nano::block_hash const & successor, nano::amount const & balance, uint64_t height, nano::seconds_t timestamp, nano::block_details const & details, nano::epoch source_epoch);
-	block_sideband (nano::account const & account, nano::block_hash const & successor, nano::amount const & balance, uint64_t height, nano::seconds_t timestamp, nano::epoch epoch, bool is_send, bool is_receive, bool is_epoch, nano::epoch source_epoch);
+	block_sideband (nano::account const & account, nano::block_hash const & successor, nano::amount const & balance, uint64_t height, nano::seconds_t timestamp, nano::block_details const & details, nano::epoch source_epoch, uint64_t topo_index);
+	block_sideband (nano::account const & account, nano::block_hash const & successor, nano::amount const & balance, uint64_t height, nano::seconds_t timestamp, nano::epoch epoch, bool is_send, bool is_receive, bool is_epoch, nano::epoch source_epoch, uint64_t topo_index);
 
 	void serialize (nano::stream &, nano::block_type) const;
 	bool deserialize (nano::stream &, nano::block_type);
@@ -70,6 +70,7 @@ public:
 	uint64_t timestamp{ 0 };
 	nano::block_details details; // Serialized only for state blocks
 	nano::epoch source_epoch{ nano::epoch::epoch_0 }; // Serialized only for state blocks
+	uint64_t topo_index{ 0 };
 
 public: // Logging
 	void operator() (nano::object_stream &) const;

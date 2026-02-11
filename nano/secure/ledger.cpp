@@ -25,6 +25,7 @@
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 
@@ -708,6 +709,7 @@ uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a
 		if (block_l != nullptr)
 		{
 			release_assert (cemented.block_exists (transaction_a, hash));
+			store.topology.del (transaction_a, block_l->sideband ().topo_index, hash);
 			store.block.del (transaction_a, hash);
 			store.pruned.put (transaction_a, hash);
 			hash = block_l->previous ();

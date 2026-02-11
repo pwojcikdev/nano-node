@@ -59,6 +59,7 @@ public: // Payload definitions
 	{
 		account = 0,
 		block = 1,
+		topology = 2,
 	};
 
 	struct blocks_payload

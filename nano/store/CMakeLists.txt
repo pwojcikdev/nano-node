@@ -1,7 +1,5 @@
 add_library(
   nano_store
-  ledger_store.hpp
-  ledger_store.cpp
   backend.hpp
   backend.cpp
   ledger/account.hpp
@@ -22,6 +20,8 @@ add_library(
   ledger/pruned.cpp
   ledger/rep_weight.hpp
   ledger/rep_weight.cpp
+  ledger/topology.hpp
+  ledger/topology.cpp
   ledger/version.hpp
   ledger/version.cpp
   block_w_sideband.hpp
@@ -31,6 +31,9 @@ add_library(
   db_val.hpp
   db_val_templ.hpp
   iterator.hpp
+  ledger_store.hpp
+  ledger_store.cpp
+  ledger_upgrades.cpp
   meta.hpp
   meta.cpp
   fwd.hpp
