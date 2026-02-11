@@ -136,7 +136,7 @@ public:
 public: // Predefined defaults
 	static log_config cli_default (nano::log::level default_level = nano::log::level::critical);
 	static log_config daemon_default ();
-	static log_config tests_default ();
+	static log_config tests_default (nano::log::level default_level = nano::log::level::off);
 	static log_config dummy_default (); // For empty logger
 	static log_config sample_config (); // For auto-generated sample config files
 

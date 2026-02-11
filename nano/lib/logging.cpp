@@ -329,10 +329,10 @@ nano::log_config nano::log_config::daemon_default ()
 	return config;
 }
 
-nano::log_config nano::log_config::tests_default ()
+nano::log_config nano::log_config::tests_default (nano::log::level default_level)
 {
 	log_config config{};
-	config.default_level = nano::log::level::off;
+	config.default_level = default_level;
 	config.file.enable = false;
 	return config;
 }

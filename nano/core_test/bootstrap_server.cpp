@@ -1,5 +1,9 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/node/transport/fake.hpp>
+#include <nano/secure/ledger.hpp>
+#include <nano/store/ledger/block.hpp>
+#include <nano/store/ledger/topology.hpp>
+#include <nano/store/ledger_store.hpp>
 #include <nano/test_common/chains.hpp>
 #include <nano/test_common/random.hpp>
 #include <nano/test_common/system.hpp>
@@ -67,6 +71,38 @@ bool compare_blocks (auto const & blocks_a, auto const & blocks_b, int skip = 0)
 		}
 	}
 	return true;
+}
+
+std::deque<std::shared_ptr<nano::block>> expected_topology_blocks (nano::node & node, nano::block_hash start, std::size_t count)
+{
+	auto txn = node.ledger.tx_begin_read ();
+	auto begin = node.store.topology.begin (txn);
+	auto end = node.store.topology.end (txn);
+
+	if (!start.is_zero ())
+	{
+		begin = node.store.topology.begin (txn);
+		while (begin != end && begin->first.hash != start)
+		{
+			++begin;
+		}
+		if (begin == end)
+		{
+			return {};
+		}
+	}
+
+	std::deque<std::shared_ptr<nano::block>> result;
+	for (auto it = std::move (begin); it != end && result.size () < count; ++it)
+	{
+		auto block = node.store.block.get (txn, it->first.hash);
+		if (block)
+		{
+			result.push_back (block);
+		}
+	}
+
+	return result;
 }
 }
 
@@ -275,6 +311,79 @@ TEST (bootstrap_server, serve_missing)
 	ASSERT_NO_THROW (response_payload = std::get<nano::messages::asc_pull_ack::blocks_payload> (response.payload));
 	// There should be nothing sent
 	ASSERT_EQ (response_payload.blocks.size (), 0);
+}
+
+TEST (bootstrap_server, serve_topology)
+{
+	nano::test::system system{};
+	auto & node = *system.add_node ();
+
+	responses_helper responses;
+	responses.connect (node.bootstrap_server);
+
+	// Create multiple independent account chains to produce non-trivial topology ordering
+	nano::test::setup_chains (system, node, 8, 16);
+
+	nano::messages::asc_pull_req request{ node.network_params.network };
+	request.id = 7;
+	request.type = nano::messages::asc_pull_type::blocks;
+
+	nano::messages::asc_pull_req::blocks_payload request_payload{};
+	request_payload.start = 0;
+	request_payload.count = nano::bootstrap_server::max_blocks;
+	request_payload.start_type = nano::messages::asc_pull_req::hash_type::topology;
+
+	request.payload = request_payload;
+	request.update_header ();
+
+	node.inbound (request, nano::test::fake_channel (node));
+
+	ASSERT_TIMELY_EQ (5s, responses.size (), 1);
+
+	auto response = responses.get ().front ();
+	ASSERT_EQ (response.id, 7);
+	ASSERT_EQ (response.type, nano::messages::asc_pull_type::blocks);
+
+	nano::messages::asc_pull_ack::blocks_payload response_payload;
+	ASSERT_NO_THROW (response_payload = std::get<nano::messages::asc_pull_ack::blocks_payload> (response.payload));
+
+	auto expected = expected_topology_blocks (node, 0, nano::bootstrap_server::max_blocks);
+	ASSERT_EQ (response_payload.blocks.size (), expected.size ());
+	ASSERT_TRUE (compare_blocks (response_payload.blocks, expected));
+
+	ASSERT_FALSE (response_payload.blocks.empty ());
+	auto continuation = response_payload.blocks.back ()->hash ();
+
+	nano::messages::asc_pull_req request2{ node.network_params.network };
+	request2.id = 8;
+	request2.type = nano::messages::asc_pull_type::blocks;
+
+	nano::messages::asc_pull_req::blocks_payload request2_payload{};
+	request2_payload.start = continuation;
+	request2_payload.count = nano::bootstrap_server::max_blocks;
+	request2_payload.start_type = nano::messages::asc_pull_req::hash_type::topology;
+
+	request2.payload = request2_payload;
+	request2.update_header ();
+
+	node.inbound (request2, nano::test::fake_channel (node));
+
+	ASSERT_TIMELY_EQ (5s, responses.size (), 2);
+
+	auto response2 = responses.get ().back ();
+	ASSERT_EQ (response2.id, 8);
+	ASSERT_EQ (response2.type, nano::messages::asc_pull_type::blocks);
+
+	nano::messages::asc_pull_ack::blocks_payload response2_payload;
+	ASSERT_NO_THROW (response2_payload = std::get<nano::messages::asc_pull_ack::blocks_payload> (response2.payload));
+
+	auto expected2 = expected_topology_blocks (node, continuation, nano::bootstrap_server::max_blocks);
+	ASSERT_EQ (response2_payload.blocks.size (), expected2.size ());
+	ASSERT_TRUE (compare_blocks (response2_payload.blocks, expected2));
+
+	// Response should be inclusive of the start block for continuation requests
+	ASSERT_FALSE (response2_payload.blocks.empty ());
+	ASSERT_EQ (response2_payload.blocks.front ()->hash (), continuation);
 }
 
 TEST (bootstrap_server, serve_multiple)
