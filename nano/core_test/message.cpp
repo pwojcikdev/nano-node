@@ -477,6 +477,7 @@ TEST (message, asc_pull_req_serialization_blocks)
 	nano::messages::asc_pull_req::blocks_payload original_payload{};
 	original_payload.start = nano::test::random_hash ();
 	original_payload.count = 111;
+	original_payload.start_type = nano::messages::asc_pull_req::hash_type::topology;
 
 	original.payload = original_payload;
 	original.update_header ();
@@ -505,6 +506,7 @@ TEST (message, asc_pull_req_serialization_blocks)
 	ASSERT_NO_THROW (message_payload = std::get<nano::messages::asc_pull_req::blocks_payload> (message.payload));
 	ASSERT_EQ (original_payload.start, message_payload.start);
 	ASSERT_EQ (original_payload.count, message_payload.count);
+	ASSERT_EQ (original_payload.start_type, message_payload.start_type);
 
 	ASSERT_TRUE (nano::at_end (stream));
 }

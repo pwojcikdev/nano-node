@@ -64,6 +64,7 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("enable_database_scan", enable_database_scan);
 	toml.get ("enable_dependency_walker", enable_dependency_walker);
 	toml.get ("enable_frontier_scan", enable_frontier_scan);
+	toml.get ("enable_topology", enable_topology);
 
 	toml.get ("channel_limit", channel_limit);
 	toml.get ("rate_limit", rate_limit);
@@ -100,6 +101,7 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("enable_database_scan", enable_database_scan, "Enable or disable the 'database scan` strategy for the ascending bootstrap.\ntype:bool");
 	toml.put ("enable_dependency_walker", enable_dependency_walker, "Enable or disable the 'dependency walker` strategy for the ascending bootstrap.\ntype:bool");
 	toml.put ("enable_frontier_scan", enable_frontier_scan, "Enable or disable the 'frontier scan` strategy for the ascending bootstrap.\ntype:bool");
+	toml.put ("enable_topology", enable_topology, "Enable or disable the 'topology` strategy for the ascending bootstrap. This strategy streams blocks in topology-index order.\ntype:bool");
 
 	toml.put ("channel_limit", channel_limit, "Maximum number of un-responded requests per channel.\nNote: changing to unlimited (0) is not recommended.\ntype:uint64");
 	toml.put ("rate_limit", rate_limit, "Rate limit on requests.\nNote: changing to unlimited (0) is not recommended as this operation competes for resources with realtime traffic.\ntype:uint64");

@@ -16,6 +16,8 @@
 #include <nano/store/ledger/confirmation_height.hpp>
 #include <nano/store/ledger/pending.hpp>
 
+#include <unordered_set>
+
 using namespace std::chrono_literals;
 
 nano::bootstrap_service::bootstrap_service (nano::node_config const & node_config_a, nano::ledger & ledger_a, nano::ledger_notifications & ledger_notifications_a,
@@ -64,6 +66,7 @@ nano::block_processor & block_processor_a, nano::network & network_a, nano::stat
 	});
 
 	accounts.priority_set (node_config_a.network_params.ledger.genesis->account_field ().value ());
+	topology_start = node_config_a.network_params.ledger.genesis->hash ();
 }
 
 nano::bootstrap_service::~bootstrap_service ()
@@ -73,6 +76,7 @@ nano::bootstrap_service::~bootstrap_service ()
 	debug_assert (!database_thread.joinable ());
 	debug_assert (!dependencies_thread.joinable ());
 	debug_assert (!frontiers_thread.joinable ());
+	debug_assert (!topology_thread.joinable ());
 	debug_assert (!cleanup_thread.joinable ());
 	debug_assert (!workers.alive ());
 }
@@ -83,6 +87,7 @@ void nano::bootstrap_service::start ()
 	debug_assert (!database_thread.joinable ());
 	debug_assert (!dependencies_thread.joinable ());
 	debug_assert (!frontiers_thread.joinable ());
+	debug_assert (!topology_thread.joinable ());
 	debug_assert (!cleanup_thread.joinable ());
 
 	if (!config.enable)
@@ -125,6 +130,14 @@ void nano::bootstrap_service::start ()
 		});
 	}
 
+	if (config.enable_topology)
+	{
+		topology_thread = std::thread ([this] () {
+			nano::thread_role::set (nano::thread_role::name::bootstrap);
+			run_topology ();
+		});
+	}
+
 	cleanup_thread = std::thread ([this] () {
 		nano::thread_role::set (nano::thread_role::name::bootstrap_cleanup);
 		run_timeouts ();
@@ -143,6 +156,7 @@ void nano::bootstrap_service::stop ()
 	nano::join_or_pass (database_thread);
 	nano::join_or_pass (dependencies_thread);
 	nano::join_or_pass (frontiers_thread);
+	nano::join_or_pass (topology_thread);
 	nano::join_or_pass (cleanup_thread);
 
 	workers.stop ();
@@ -160,6 +174,8 @@ void nano::bootstrap_service::reset ()
 	frontiers.reset ();
 	scoring.reset ();
 	throttle.reset ();
+	topology_start = ledger.constants.genesis->hash ();
+	topology_retry = {};
 }
 
 void nano::bootstrap_service::prioritize (nano::account const & account)
@@ -194,7 +210,14 @@ bool nano::bootstrap_service::send (std::shared_ptr<nano::transport::channel> co
 			nano::messages::asc_pull_req::blocks_payload pld;
 			pld.start = tag.start;
 			pld.count = tag.count;
-			pld.start_type = tag.type == query_type::blocks_by_hash ? nano::messages::asc_pull_req::hash_type::block : nano::messages::asc_pull_req::hash_type::account;
+			if (tag.source == query_source::topology)
+			{
+				pld.start_type = nano::messages::asc_pull_req::hash_type::topology;
+			}
+			else
+			{
+				pld.start_type = tag.type == query_type::blocks_by_hash ? nano::messages::asc_pull_req::hash_type::block : nano::messages::asc_pull_req::hash_type::account;
+			}
 			request.payload = pld;
 		}
 		break;
@@ -416,6 +439,14 @@ size_t nano::bootstrap_service::count_tags (nano::block_hash const & hash, query
 	return std::count_if (begin, end, [source] (auto const & tag) { return tag.source == source; });
 }
 
+size_t nano::bootstrap_service::count_tags (query_source source) const
+{
+	debug_assert (!mutex.try_lock ());
+	return std::count_if (tags.get<tag_sequenced> ().begin (), tags.get<tag_sequenced> ().end (), [source] (auto const & tag) {
+		return tag.source == source;
+	});
+}
+
 nano::bootstrap::account_sets::priority_result nano::bootstrap_service::next_priority ()
 {
 	debug_assert (!mutex.try_lock ());
@@ -528,6 +559,25 @@ nano::account nano::bootstrap_service::wait_frontier ()
 	return result;
 }
 
+nano::block_hash nano::bootstrap_service::wait_topology ()
+{
+	nano::block_hash result{ 0 };
+	wait ([this, &result] () {
+		debug_assert (!mutex.try_lock ());
+		if (count_tags (query_source::topology) > 0)
+		{
+			return false;
+		}
+		if (std::chrono::steady_clock::now () < topology_retry)
+		{
+			return false;
+		}
+		result = topology_start;
+		return true;
+	});
+	return result;
+}
+
 bool nano::bootstrap_service::request (nano::account account, size_t count, std::shared_ptr<nano::transport::channel> const & channel, query_source source)
 {
 	debug_assert (count > 0);
@@ -604,6 +654,26 @@ bool nano::bootstrap_service::request (nano::account account, size_t count, std:
 			logger.debug (nano::log::type::bootstrap, "Requesting blocks for {} from: {}", account, channel->to_string ());
 		}
 	}
+
+	return send (channel, tag);
+}
+
+bool nano::bootstrap_service::request_topology (nano::block_hash start, size_t count, std::shared_ptr<nano::transport::channel> const & channel, query_source source)
+{
+	debug_assert (source == query_source::topology);
+	debug_assert (count > 0);
+	debug_assert (count <= nano::bootstrap_server::max_blocks);
+
+	count = std::min (count, config.max_pull_count);
+
+	async_tag tag{};
+	tag.type = query_type::blocks_by_hash;
+	tag.source = source;
+	tag.start = start;
+	tag.hash = start;
+	tag.count = count;
+
+	logger.debug (nano::log::type::bootstrap, "Requesting topology blocks from: {} start: {}", channel->to_string (), start);
 
 	return send (channel, tag);
 }
@@ -770,6 +840,31 @@ void nano::bootstrap_service::run_frontiers ()
 	}
 }
 
+void nano::bootstrap_service::run_one_topology ()
+{
+	wait_block_processor ();
+	auto channel = wait_channel ();
+	if (!channel)
+	{
+		return;
+	}
+	auto start = wait_topology ();
+	auto count = std::max (size_t{ 1 }, std::min (config.max_pull_count, nano::bootstrap_server::max_blocks));
+	request_topology (start, count, channel, query_source::topology);
+}
+
+void nano::bootstrap_service::run_topology ()
+{
+	nano::unique_lock<nano::mutex> lock{ mutex };
+	while (!stopped)
+	{
+		lock.unlock ();
+		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop);
+		run_one_topology ();
+		lock.lock ();
+	}
+}
+
 void nano::bootstrap_service::cleanup_and_sync ()
 {
 	debug_assert (!mutex.try_lock ());
@@ -900,16 +995,16 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 
 			auto blocks = response.blocks;
 
-			// Avoid re-processing the block we already have
+			// Avoid re-processing the block we already have for hash-based queries
 			release_assert (blocks.size () >= 1);
-			if (blocks.front ()->hash () == tag.start.as_block_hash ())
+			if (!tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
 			{
 				blocks.pop_front ();
 			}
 
 			for (auto const & block : blocks)
 			{
-				if (block == blocks.back ())
+				if (tag.source != query_source::topology && block == blocks.back ())
 				{
 					// It's the last block submitted for this account chain, reset timestamp to allow more requests
 					block_processor.add (block, nano::block_source::bootstrap, nullptr, [this, account = tag.account] (auto result) {
@@ -927,7 +1022,13 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 				}
 			}
 
-			if (tag.source == query_source::database)
+			if (tag.source == query_source::topology)
+			{
+				nano::lock_guard<nano::mutex> lock{ mutex };
+				topology_start = response.blocks.back ()->hash ();
+				topology_retry = {};
+			}
+			else if (tag.source == query_source::database)
 			{
 				nano::lock_guard<nano::mutex> lock{ mutex };
 				throttle.add (true);
@@ -937,6 +1038,13 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 		case verify_result::nothing_new:
 		{
 			stats.inc (nano::stat::type::bootstrap_verify_blocks, nano::stat::detail::nothing_new);
+
+			if (tag.source == query_source::topology)
+			{
+				nano::lock_guard<nano::mutex> lock{ mutex };
+				topology_retry = std::chrono::steady_clock::now () + config.throttle_wait;
+			}
+			else
 			{
 				nano::lock_guard<nano::mutex> lock{ mutex };
 
@@ -1136,13 +1244,32 @@ auto nano::bootstrap_service::verify (const nano::messages::asc_pull_ack::blocks
 	{
 		return verify_result::nothing_new;
 	}
-	if (blocks.size () == 1 && blocks.front ()->hash () == tag.start.as_block_hash ())
+	if (blocks.size () == 1 && !tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
 	{
 		return verify_result::nothing_new;
 	}
 	if (blocks.size () > tag.count)
 	{
 		return verify_result::invalid;
+	}
+
+	if (tag.source == query_source::topology)
+	{
+		if (!tag.start.is_zero () && blocks.front ()->hash () != tag.start.as_block_hash ())
+		{
+			return verify_result::invalid;
+		}
+
+		std::unordered_set<nano::block_hash> seen;
+		for (auto const & block : blocks)
+		{
+			if (!block || !seen.emplace (block->hash ()).second)
+			{
+				return verify_result::invalid;
+			}
+		}
+
+		return verify_result::ok;
 	}
 
 	auto const & first = blocks.front ();
