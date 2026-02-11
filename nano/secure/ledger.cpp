@@ -750,7 +750,7 @@ uint64_t nano::ledger::topology_index (secure::transaction const & transaction, 
 {
 	uint64_t result{ 0 };
 
-	auto dependencies = block_dependencies (transaction, block);
+	auto dependencies = block.block_dependencies ();
 	for (auto const & dependency : dependencies)
 	{
 		if (dependency.is_zero ())
