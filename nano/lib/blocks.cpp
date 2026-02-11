@@ -178,6 +178,27 @@ bool nano::block::is_epoch () const noexcept
 	}
 }
 
+std::array<nano::block_hash, 2> nano::block::block_dependencies () const
+{
+	release_assert (has_sideband ());
+	std::array<nano::block_hash, 2> result{ 0, 0 };
+	result[0] = previous ();
+	if (is_receive ())
+	{
+		// For genesis open block, the source field is the genesis account public key (not a real block hash)
+		// We detect this by checking if the source matches the block's own account
+		if (type () == nano::block_type::open && source_field ().value () == sideband ().account.as_union ())
+		{
+			// Genesis block has no source dependency
+		}
+		else
+		{
+			result[1] = source ();
+		}
+	}
+	return result;
+}
+
 nano::block_hash const & nano::block::hash () const
 {
 	if (!cached_hash.is_zero ())
