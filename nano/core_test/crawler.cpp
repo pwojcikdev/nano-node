@@ -738,3 +738,63 @@ TEST (crawler, boundary_max_is_end)
 	ASSERT_FALSE (crawler.next ());
 	ASSERT_FALSE (crawler);
 }
+
+/*
+ * Refresh - Transaction refresh with iterator re-establishment
+ */
+
+TEST (crawler, refresh)
+{
+	auto store = nano::test::make_store ();
+
+	auto txn = store->tx_begin_write ();
+	for (nano::uint256_t i = 1; i <= 10; ++i)
+	{
+		store->account.put (txn, nano::account{ i }, nano::account_info{});
+	}
+
+	auto crawler = store->account.crawl (txn);
+	ASSERT_EQ (crawler.key (), nano::account{ 1 });
+
+	// Refresh maintains position
+	crawler.refresh ();
+	ASSERT_TRUE (crawler);
+	ASSERT_EQ (crawler.key (), nano::account{ 1 });
+
+	// Iterate with periodic refresh (simulates batch processing)
+	std::vector<nano::uint256_t> visited;
+	size_t count = 0;
+	while (crawler)
+	{
+		visited.push_back (crawler.key ().number ());
+		++crawler;
+		++count;
+		if (count % 3 == 0)
+		{
+			crawler.refresh ();
+		}
+	}
+	ASSERT_EQ (visited, (std::vector<nano::uint256_t>{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }));
+
+	// Refresh at end stays at end
+	ASSERT_FALSE (crawler);
+	crawler.refresh ();
+	ASSERT_FALSE (crawler);
+
+	// Refresh when current entry was deleted lands on next valid entry
+	crawler.reset ();
+	++crawler; // at 2
+	++crawler; // at 3
+	ASSERT_EQ (crawler.key (), nano::account{ 3 });
+	store->account.del (txn, nano::account{ 3 });
+	crawler.refresh ();
+	ASSERT_TRUE (crawler);
+	ASSERT_EQ (crawler.key (), nano::account{ 4 });
+
+	// Refresh when current entry was the last one and deleted → end
+	crawler.seek (nano::account{ 10 });
+	ASSERT_EQ (crawler.key (), nano::account{ 10 });
+	store->account.del (txn, nano::account{ 10 });
+	crawler.refresh ();
+	ASSERT_FALSE (crawler);
+}

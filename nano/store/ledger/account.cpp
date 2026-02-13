@@ -83,7 +83,7 @@ auto account_view::end (nano::store::transaction const & txn) const -> iterator
 	return iterator{ backend.end (txn, nano::store::table::accounts) };
 }
 
-auto account_view::crawl (nano::store::transaction const & txn, nano::account const & start) const -> crawler
+auto account_view::crawl (nano::store::transaction & txn, nano::account const & start) const -> crawler
 {
 	return crawler{ *this, txn, start };
 }
