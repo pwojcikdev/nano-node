@@ -63,7 +63,7 @@ auto pending_view::end (nano::store::transaction const & txn) const -> iterator
 	return iterator{ backend.end (txn, nano::store::table::pending) };
 }
 
-auto pending_view::crawl (nano::store::transaction const & txn, nano::account const & start) const -> crawler
+auto pending_view::crawl (nano::store::transaction & txn, nano::account const & start) const -> crawler
 {
 	return crawler{ *this, txn, start };
 }

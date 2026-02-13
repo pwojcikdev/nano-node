@@ -34,7 +34,7 @@ public:
 	reverse_iterator rbegin (nano::store::transaction const &) const;
 	reverse_iterator rend (nano::store::transaction const &) const;
 	iterator end (nano::store::transaction const &) const;
-	crawler crawl (nano::store::transaction const &, nano::account const & start = { 0 }) const;
+	crawler crawl (nano::store::transaction &, nano::account const & start = { 0 }) const;
 	void for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const;
 
 private:

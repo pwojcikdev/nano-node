@@ -26,8 +26,9 @@ public:
 	// Pure virtual function to get a const reference to the base store transaction
 	virtual const nano::store::transaction & base_txn () const = 0;
 
-	// Conversion operator to const nano::store::transaction&
+	// Conversion operators to nano::store::transaction
 	virtual operator const nano::store::transaction & () const = 0;
+	virtual operator nano::store::transaction & () = 0;
 
 	// Certain transactions may need to be refreshed if they are held for a long time
 	virtual bool refresh_if_needed (std::chrono::milliseconds max_age = std::chrono::milliseconds{ 500 }) = 0;
@@ -116,8 +117,13 @@ public:
 		return future; // Give a copy of the shared future
 	}
 
-	// Conversion operator to const nano::store::transaction&
+	// Conversion operators to nano::store::transaction
 	operator const nano::store::transaction & () const override
+	{
+		return txn;
+	}
+
+	operator nano::store::transaction & () override
 	{
 		return txn;
 	}
@@ -160,8 +166,13 @@ public:
 		return txn.timestamp ();
 	}
 
-	// Conversion operator to const nano::store::transaction&
+	// Conversion operators to nano::store::transaction
 	operator const nano::store::transaction & () const override
+	{
+		return txn;
+	}
+
+	operator nano::store::transaction & () override
 	{
 		return txn;
 	}

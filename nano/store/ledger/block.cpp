@@ -176,6 +176,11 @@ auto block_view::end (nano::store::transaction const & txn) const -> iterator
 	return iterator{ backend.end (txn, nano::store::table::blocks) };
 }
 
+auto block_view::crawl (nano::store::transaction & txn, nano::block_hash const & start) const -> crawler
+{
+	return crawler{ *this, txn, start };
+}
+
 void block_view::for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const
 {
 	parallel_traversal<nano::uint256_t> (

@@ -4,6 +4,9 @@
 #include <nano/lib/utility.hpp>
 #include <nano/store/transaction.hpp>
 
+#include <chrono>
+#include <optional>
+
 namespace nano::store
 {
 /**
@@ -71,7 +74,7 @@ public:
 	/**
 	 * Construct a crawler starting at the given seek key.
 	 */
-	crawler (View const & view, nano::store::transaction const & transaction, seek_key_type const & start) :
+	crawler (View const & view, nano::store::transaction & transaction, seek_key_type const & start) :
 		view_{ view },
 		transaction_{ transaction },
 		it_{ view_.end (transaction_) },
@@ -204,10 +207,62 @@ public:
 		seek (seek_key_type{ 0 });
 	}
 
+	/**
+	 * Refresh the stored transaction and re-establish the iterator position.
+	 * After refresh, the crawler points to the same entry it was at before,
+	 * or the next valid entry if the original was deleted.
+	 */
+	void refresh ()
+	{
+		// Save the full iterator key for precise position restoration
+		std::optional<key_type> saved;
+		if (it_ != end_)
+		{
+			saved = it_->first;
+		}
+
+		// Move iterators to temporaries — moved-from iterators have txn=nullptr
+		// so their destructors skip the epoch check. Temporaries are destroyed
+		// here BEFORE transaction refresh, so their epoch check passes.
+		{
+			auto old_it = std::move (it_);
+			auto old_end = std::move (end_);
+		}
+
+		// Refresh the transaction (epoch changes)
+		transaction_.refresh ();
+
+		// Recreate iterators with new epoch
+		end_ = view_.end (transaction_);
+		if (saved)
+		{
+			it_ = view_.begin (transaction_, *saved);
+		}
+		else
+		{
+			it_ = view_.end (transaction_);
+		}
+	}
+
+	/**
+	 * Refresh the transaction if it has been held longer than max_age.
+	 * @return true if refresh occurred
+	 */
+	bool refresh_if_needed (std::chrono::milliseconds max_age = std::chrono::milliseconds{ 500 })
+	{
+		auto now = std::chrono::steady_clock::now ();
+		if (now - transaction_.timestamp () > max_age)
+		{
+			refresh ();
+			return true;
+		}
+		return false;
+	}
+
 private:
 	View const & view_;
-	nano::store::transaction const & transaction_;
+	nano::store::transaction & transaction_;
 	iterator it_;
-	iterator const end_;
+	iterator end_;
 };
 }

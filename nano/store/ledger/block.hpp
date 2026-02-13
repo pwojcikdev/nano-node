@@ -3,6 +3,7 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/store/backend.hpp>
 #include <nano/store/block_w_sideband.hpp>
+#include <nano/store/crawler.hpp>
 #include <nano/store/typed_iterator.hpp>
 #include <nano/store/typed_iterator_templ.hpp>
 
@@ -15,6 +16,7 @@ class block_view
 {
 public:
 	using iterator = store::typed_iterator<nano::block_hash, block_w_sideband>;
+	using crawler = store::crawler<block_view>;
 
 public:
 	explicit block_view (nano::store::backend &);
@@ -30,6 +32,7 @@ public:
 	iterator begin (nano::store::transaction const &, nano::block_hash const &) const;
 	iterator begin (nano::store::transaction const &) const;
 	iterator end (nano::store::transaction const &) const;
+	crawler crawl (nano::store::transaction &, nano::block_hash const & start = { 0 }) const;
 	void for_each_par (std::function<void (nano::store::read_transaction const &, iterator, iterator)> const & action) const;
 
 private:
