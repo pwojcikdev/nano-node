@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <type_traits>
 
 namespace nano
@@ -28,7 +29,9 @@ struct bounded_dfs_result
  * Callbacks:
  *   is_resolved(Node const &) -> bool
  *   get_dependencies(Node const &) -> iterable of Node
- *   resolve(Node const &) -> bool (return true to continue, false to stop early)
+ *   resolve(Node const &) -> bool
+ *     -- OR --
+ *   resolve(Node const &, deps_type const &) -> bool  (receives cached deps from get_dependencies)
  */
 template <typename Node, typename IsResolved, typename GetDeps, typename Resolve>
 bounded_dfs_result bounded_dfs (
@@ -84,7 +87,15 @@ Resolve && resolve)
 			// All dependencies resolved, process the current node
 			if (!is_resolved (current.node))
 			{
-				bool keep_going = resolve (current.node);
+				bool keep_going;
+				if constexpr (std::is_invocable_r_v<bool, Resolve, Node const &, deps_type const &>)
+				{
+					keep_going = resolve (current.node, current.deps);
+				}
+				else
+				{
+					keep_going = resolve (current.node);
+				}
 				++result.resolved;
 				if (!keep_going)
 				{
