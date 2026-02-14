@@ -31,19 +31,15 @@ void ledger_store::upgrade_v24_to_v25 ()
 		auto const total_blocks = block.count (backend.tx_begin_read ());
 		logger.info (nano::log::type::ledger_upgrade, "Building topology index for {} blocks...", total_blocks);
 
-		size_t const batch_size = nano::is_dev_run () ? 2 : 25000;
+		size_t const batch_size = nano::is_dev_run () ? 2 : 16 * 1024 * 1024;
 		size_t const max_depth = nano::is_dev_run () ? 16 : 16 * 1024 * 1024;
 		size_t processed = 0;
+		auto last_log = std::chrono::steady_clock::now ();
 
 		auto transaction = backend.tx_begin_write ();
 		auto crawler = block.crawl (transaction);
 
-		auto is_resolved = [&] (nano::block_hash const & hash) -> bool {
-			if (hash.is_zero ())
-			{
-				return true;
-			}
-			auto blk = block.get (transaction, hash);
+		auto is_resolved = [&] (std::shared_ptr<nano::block> const & blk) -> bool {
 			if (!blk)
 			{
 				return true; // Pruned or external dependency
@@ -51,47 +47,66 @@ void ledger_store::upgrade_v24_to_v25 ()
 			return blk->sideband ().topo_index != 0;
 		};
 
-		auto get_dependencies = [&] (nano::block_hash const & hash) -> std::array<nano::block_hash, 2> {
-			auto blk = block.get (transaction, hash);
-			release_assert (blk, "block must exist for dependency lookup", hash.to_string ());
-			return blk->dependencies ();
+		auto get_dependencies = [&] (std::shared_ptr<nano::block> const & blk) -> std::array<std::shared_ptr<nano::block>, 2> {
+			auto dep_hashes = blk->dependencies ();
+			std::array<std::shared_ptr<nano::block>, 2> deps{};
+			for (size_t i = 0; i < dep_hashes.size (); ++i)
+			{
+				auto const & dep_hash = dep_hashes[i];
+				if (!dep_hash.is_zero ())
+				{
+					deps[i] = block.get (transaction, dep_hash);
+					// nullptr means pruned or external, will be filtered by is_resolved
+				}
+			}
+			return deps;
 		};
 
-		auto resolve = [&] (nano::block_hash const & hash) -> bool {
-			auto blk = block.get (transaction, hash);
-			release_assert (blk, "block must exist for resolve", hash.to_string ());
-
+		auto resolve = [&] (std::shared_ptr<nano::block> const & blk) -> bool {
 			// Compute topo_index: 1 + max of all dependency topo indices (minimum 1)
 			uint64_t topo = 1;
-			auto deps = blk->dependencies ();
-			for (auto const & dep : deps)
+			auto dep_hashes = blk->dependencies ();
+			for (auto const & dep_hash : dep_hashes)
 			{
-				if (dep.is_zero ())
+				if (dep_hash.is_zero ())
 				{
 					continue;
 				}
-				auto dep_block = block.get (transaction, dep);
+				auto dep_block = block.get (transaction, dep_hash);
 				if (!dep_block)
 				{
 					continue; // Pruned or external
 				}
-				release_assert (dep_block->sideband ().topo_index != 0, "dependency must be resolved before dependent", dep.to_string ());
+				release_assert (dep_block->sideband ().topo_index != 0, "dependency must be resolved before dependent", dep_hash.to_string ());
 				topo = std::max (topo, dep_block->sideband ().topo_index + 1);
 			}
 
 			// Update block sideband with computed topo_index
+			auto const hash = blk->hash ();
 			auto sideband = blk->sideband ();
 			sideband.topo_index = topo;
 			blk->sideband_set (sideband);
 			block.put (transaction, hash, *blk);
-			topology.put (transaction, topo, hash);
+			// topology.put (transaction, topo, hash); // TODO: Phase 2: Add separate topology table for reverse lookup
 
 			++processed;
-			if (processed % batch_size == 0)
+
+			// Periodic progress logging
+			auto now = std::chrono::steady_clock::now ();
+			if (now - last_log >= std::chrono::seconds (5))
 			{
 				auto percentage = total_blocks > 0 ? (processed * 100) / total_blocks : 0;
 				logger.info (nano::log::type::ledger_upgrade, "Topology upgrade progress: {} / {} blocks ({}%)", processed, total_blocks, percentage);
+				last_log = now;
+			}
+
+			if (processed % batch_size == 0)
+			{
+				logger.debug (nano::log::type::ledger_upgrade, "Committing batch of {} blocks...", batch_size);
+				auto const refresh_start = std::chrono::steady_clock::now ();
 				crawler.refresh ();
+				auto const refresh_ms = std::chrono::duration_cast<std::chrono::milliseconds> (std::chrono::steady_clock::now () - refresh_start).count ();
+				logger.debug (nano::log::type::ledger_upgrade, "Transaction refresh took {}ms", refresh_ms);
 			}
 
 			return true;
@@ -107,7 +122,7 @@ void ledger_store::upgrade_v24_to_v25 ()
 				continue;
 			}
 
-			nano::bounded_dfs (hash, max_depth, is_resolved, get_dependencies, resolve);
+			nano::bounded_dfs (bws.block, max_depth, is_resolved, get_dependencies, resolve);
 
 			logger.debug (nano::log::type::ledger_upgrade, "Processed block {} with hash {}", processed, hash.to_string ());
 
