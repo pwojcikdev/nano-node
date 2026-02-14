@@ -32,7 +32,7 @@ void ledger_store::upgrade_v24_to_v25 ()
 		logger.info (nano::log::type::ledger_upgrade, "Building topology index for {} blocks...", total_blocks);
 
 		size_t const batch_size = nano::is_dev_run () ? 2 : 25000;
-		size_t const max_depth = nano::is_dev_run () ? 16 : 128 * 1024;
+		size_t const max_depth = nano::is_dev_run () ? 16 : 16 * 1024 * 1024;
 		size_t processed = 0;
 
 		auto transaction = backend.tx_begin_write ();
@@ -91,7 +91,7 @@ void ledger_store::upgrade_v24_to_v25 ()
 			{
 				auto percentage = total_blocks > 0 ? (processed * 100) / total_blocks : 0;
 				logger.info (nano::log::type::ledger_upgrade, "Topology upgrade progress: {} / {} blocks ({}%)", processed, total_blocks, percentage);
-				crawler.refresh (transaction);
+				crawler.refresh ();
 			}
 
 			return true;
@@ -108,6 +108,9 @@ void ledger_store::upgrade_v24_to_v25 ()
 			}
 
 			nano::bounded_dfs (hash, max_depth, is_resolved, get_dependencies, resolve);
+
+			logger.debug (nano::log::type::ledger_upgrade, "Processed block {} with hash {}", processed, hash.to_string ());
+
 			++crawler;
 		}
 
