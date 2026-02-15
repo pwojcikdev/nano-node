@@ -5,6 +5,8 @@
 #include <nano/secure/common.hpp>
 #include <nano/secure/fwd.hpp>
 
+#include <array>
+
 namespace nano
 {
 class ledger_processor final : public nano::mutable_block_visitor
@@ -27,5 +29,6 @@ public:
 
 private:
 	bool validate_epoch_block (nano::state_block const & block);
+	uint64_t topology_index (std::array<nano::block_hash, 2> const & dependencies) const;
 };
 }

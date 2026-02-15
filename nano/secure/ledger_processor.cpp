@@ -60,7 +60,7 @@ void nano::ledger_processor::send_block (nano::send_block & block_a)
 							{
 								auto amount (info->balance.number () - block_a.hashables.balance.number ());
 								ledger.rep_weights.sub (transaction, info->representative, amount);
-								auto const topo = ledger.topology_index (transaction, block_a);
+								auto const topo = topology_index ({ block_a.hashables.previous, nano::block_hash{ 0 } });
 								block_a.sideband_set (nano::block_sideband (account, 0, block_a.hashables.balance /* unused */, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */, topo));
 								ledger.store.block.put (transaction, hash, block_a);
 								ledger.store.topology.put (transaction, topo, hash);
@@ -121,7 +121,7 @@ void nano::ledger_processor::receive_block (nano::receive_block & block_a)
 										{
 											auto new_balance (info->balance.number () + pending.value ().amount.number ());
 											ledger.store.pending.del (transaction, key);
-											auto const topo = ledger.topology_index (transaction, block_a);
+											auto const topo = topology_index ({ block_a.hashables.previous, block_a.hashables.source });
 											block_a.sideband_set (nano::block_sideband (account, 0, new_balance, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */, topo));
 											ledger.store.block.put (transaction, hash, block_a);
 											ledger.store.topology.put (transaction, topo, hash);
@@ -175,7 +175,8 @@ void nano::ledger_processor::open_block (nano::open_block & block_a)
 								if (result == nano::block_status::progress)
 								{
 									ledger.store.pending.del (transaction, key);
-									auto const topo = ledger.topology_index (transaction, block_a);
+									nano::block_hash const source_dep = (block_a.hashables.source == block_a.hashables.account.as_union ()) ? nano::block_hash{ 0 } : block_a.hashables.source;
+									auto const topo = topology_index ({ nano::block_hash{ 0 }, source_dep });
 									block_a.sideband_set (nano::block_sideband (block_a.hashables.account, 0, pending.value ().amount, 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */, topo));
 									ledger.store.block.put (transaction, hash, block_a);
 									ledger.store.topology.put (transaction, topo, hash);
@@ -222,7 +223,7 @@ void nano::ledger_processor::change_block (nano::change_block & block_a)
 						if (result == nano::block_status::progress)
 						{
 							debug_assert (!validate_message (account, hash, block_a.signature));
-							auto const topo = ledger.topology_index (transaction, block_a);
+							auto const topo = topology_index ({ block_a.hashables.previous, nano::block_hash{ 0 } });
 							block_a.sideband_set (nano::block_sideband (account, 0, info->balance, info->block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */, topo));
 							ledger.store.block.put (transaction, hash, block_a);
 							ledger.store.topology.put (transaction, topo, hash);
@@ -345,7 +346,7 @@ void nano::ledger_processor::state_block_impl (nano::state_block & block_a)
 					{
 						ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::state_block);
 
-						auto const topo = ledger.topology_index (transaction, block_a);
+						auto const topo = topology_index ({ block_a.hashables.previous, is_receive ? block_a.hashables.link.as_block_hash () : nano::block_hash{ 0 } });
 
 						block_a.sideband_set (nano::block_sideband (block_a.hashables.account /* unused */, 0, 0 /* unused */, info.block_count + 1, nano::seconds_since_epoch (), block_details, source_epoch, topo));
 						ledger.store.block.put (transaction, hash, block_a);
@@ -438,7 +439,7 @@ void nano::ledger_processor::epoch_block_impl (nano::state_block & block_a)
 							if (result == nano::block_status::progress)
 							{
 								ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::epoch_block);
-								auto const topo = ledger.topology_index (transaction, block_a);
+								auto const topo = topology_index ({ block_a.hashables.previous, nano::block_hash{ 0 } });
 								block_a.sideband_set (nano::block_sideband (block_a.hashables.account /* unused */, 0, 0 /* unused */, info.block_count + 1, nano::seconds_since_epoch (), block_details, nano::epoch::epoch_0 /* unused */, topo));
 								ledger.store.block.put (transaction, hash, block_a);
 								ledger.store.topology.put (transaction, topo, hash);
@@ -478,4 +479,30 @@ bool nano::ledger_processor::validate_epoch_block (nano::state_block const & blo
 		}
 	}
 	return (block_a.hashables.balance == prev_balance);
+}
+
+uint64_t nano::ledger_processor::topology_index (std::array<nano::block_hash, 2> const & dependencies) const
+{
+	uint64_t result{ 0 };
+	for (auto const & dependency : dependencies)
+	{
+		if (dependency.is_zero ())
+		{
+			continue;
+		}
+
+		auto dependency_block = ledger.store.block.get (transaction, dependency);
+		release_assert (dependency_block, "topology dependency does not exist", dependency.to_string ());
+
+		// Short circuit if any dependency doesn't have a topo index, which means the topo index still needs to be calculated for that dependency
+		// This enables iterative upgrade of topo index
+		auto dependency_topo_index = dependency_block->sideband ().topo_index;
+		if (dependency_topo_index == 0)
+		{
+			return 0;
+		}
+
+		result = std::max (result, dependency_topo_index + 1);
+	}
+	return result;
 }

@@ -747,35 +747,6 @@ auto nano::ledger::block_priority (nano::secure::transaction const & transaction
 	return { priority_balance, priority_timestamp };
 }
 
-uint64_t nano::ledger::topology_index (secure::transaction const & transaction, nano::block const & block) const
-{
-	uint64_t result{ 0 };
-
-	auto dependencies = block.dependencies ();
-	for (auto const & dependency : dependencies)
-	{
-		if (dependency.is_zero ())
-		{
-			continue;
-		}
-
-		auto dependency_block = store.block.get (transaction, dependency);
-		release_assert (dependency_block, "topology dependency does not exist", dependency.to_string ());
-
-		// Short circuit if any dependency doesn't have a topo index, which means the topo index still neds to be calculated for that dependency
-		// This enables iterative upgrade of topo index
-		auto dependency_topo_index = dependency_block->sideband ().topo_index;
-		if (dependency_topo_index == 0)
-		{
-			return 0;
-		}
-
-		result = std::max (result, dependency_topo_index + 1);
-	}
-
-	return result;
-}
-
 nano::epoch nano::ledger::version (nano::block const & block)
 {
 	if (block.type () == nano::block_type::state)

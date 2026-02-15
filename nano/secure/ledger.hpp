@@ -93,12 +93,6 @@ public:
 	using block_priority_result = std::pair<nano::amount, nano::priority_timestamp>;
 	block_priority_result block_priority (secure::transaction const &, nano::block const &) const;
 
-	/**
-	 * Computes the topological ordering index for a block based on its dependencies
-	 * Returns the maximum topology index of all dependency blocks + 1
-	 */
-	uint64_t topology_index (secure::transaction const &, nano::block const &) const;
-
 	uint64_t cemented_count () const;
 	uint64_t block_count () const;
 	uint64_t account_count () const;
