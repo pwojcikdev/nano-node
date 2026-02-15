@@ -80,6 +80,7 @@ TEST (bootstrap, profile)
 	flags_server.disable_wallet_bootstrap = true;
 	flags_server.disable_add_initial_peers = true;
 	flags_server.disable_ongoing_bootstrap = true;
+	flags_server.disable_non_loopback_peers = true;
 	auto data_path_server = nano::working_path (network);
 	auto server = std::make_shared<nano::node> (system.io_ctx, data_path_server, config_server, system.work, flags_server);
 	system.nodes.push_back (server);
@@ -93,6 +94,7 @@ TEST (bootstrap, profile)
 	flags_client.disable_wallet_bootstrap = true;
 	flags_client.disable_add_initial_peers = true;
 	flags_client.disable_ongoing_bootstrap = true;
+	flags_client.disable_non_loopback_peers = true;
 	config_client.ipc_config.transport_tcp.enabled = true;
 	// Disable database integrity safety for higher throughput
 	config_client.lmdb_config.sync = nano::lmdb_config::sync_strategy::nosync_unsafe;
@@ -155,6 +157,7 @@ TEST (bootstrap, profile_topology)
 	flags_server.disable_wallet_bootstrap = true;
 	flags_server.disable_add_initial_peers = true;
 	flags_server.disable_ongoing_bootstrap = true;
+	flags_server.disable_non_loopback_peers = true;
 	auto data_path_server = nano::working_path (network);
 	auto server = std::make_shared<nano::node> (system.io_ctx, data_path_server, config_server, system.work, flags_server);
 	system.nodes.push_back (server);
@@ -175,6 +178,7 @@ TEST (bootstrap, profile_topology)
 	flags_client.disable_wallet_bootstrap = true;
 	flags_client.disable_add_initial_peers = true;
 	flags_client.disable_ongoing_bootstrap = true;
+	flags_client.disable_non_loopback_peers = true;
 	config_client.ipc_config.transport_tcp.enabled = true;
 	// Disable database integrity safety for higher throughput
 	config_client.lmdb_config.sync = nano::lmdb_config::sync_strategy::nosync_unsafe;
