@@ -49,7 +49,6 @@ public:
 	virtual nano::block_type type () const = 0;
 	virtual nano::signature const & block_signature () const = 0;
 	virtual void signature_set (nano::signature const &) = 0;
-	virtual bool valid_predecessor (nano::block const &) const = 0;
 	virtual nano::work_version work_version () const;
 	virtual std::shared_ptr<nano::block> clone () const = 0;
 
@@ -148,7 +147,6 @@ public:
 	void signature_set (nano::signature const &) override;
 	bool operator== (nano::block const &) const override;
 	bool operator== (nano::send_block const &) const;
-	bool valid_predecessor (nano::block const &) const override;
 	std::shared_ptr<nano::block> clone () const override;
 	send_hashables hashables;
 	nano::signature signature;
@@ -203,7 +201,6 @@ public:
 	void signature_set (nano::signature const &) override;
 	bool operator== (nano::block const &) const override;
 	bool operator== (nano::receive_block const &) const;
-	bool valid_predecessor (nano::block const &) const override;
 	std::shared_ptr<nano::block> clone () const override;
 	receive_hashables hashables;
 	nano::signature signature;
@@ -259,7 +256,6 @@ public:
 	void signature_set (nano::signature const &) override;
 	bool operator== (nano::block const &) const override;
 	bool operator== (nano::open_block const &) const;
-	bool valid_predecessor (nano::block const &) const override;
 	std::shared_ptr<nano::block> clone () const override;
 	nano::open_hashables hashables;
 	nano::signature signature;
@@ -315,7 +311,6 @@ public:
 	void signature_set (nano::signature const &) override;
 	bool operator== (nano::block const &) const override;
 	bool operator== (nano::change_block const &) const;
-	bool valid_predecessor (nano::block const &) const override;
 	std::shared_ptr<nano::block> clone () const override;
 	nano::change_hashables hashables;
 	nano::signature signature;
@@ -389,7 +384,6 @@ public:
 	void signature_set (nano::signature const &) override;
 	bool operator== (nano::block const &) const override;
 	bool operator== (nano::state_block const &) const;
-	bool valid_predecessor (nano::block const &) const override;
 	std::shared_ptr<nano::block> clone () const override;
 	nano::state_hashables hashables;
 	nano::signature signature;

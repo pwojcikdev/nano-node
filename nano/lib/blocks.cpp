@@ -593,24 +593,6 @@ bool nano::send_block::operator== (nano::block const & other_a) const
 	return blocks_equal (*this, other_a);
 }
 
-bool nano::send_block::valid_predecessor (nano::block const & block_a) const
-{
-	bool result;
-	switch (block_a.type ())
-	{
-		case nano::block_type::send:
-		case nano::block_type::receive:
-		case nano::block_type::open:
-		case nano::block_type::change:
-			result = true;
-			break;
-		default:
-			result = false;
-			break;
-	}
-	return result;
-}
-
 nano::block_type nano::send_block::type () const
 {
 	return nano::block_type::send;
@@ -915,11 +897,6 @@ bool nano::open_block::operator== (nano::open_block const & other_a) const
 	return hashables.source == other_a.hashables.source && hashables.representative == other_a.hashables.representative && hashables.account == other_a.hashables.account && work == other_a.work && signature == other_a.signature;
 }
 
-bool nano::open_block::valid_predecessor (nano::block const & block_a) const
-{
-	return false;
-}
-
 std::optional<nano::block_hash> nano::open_block::source_field () const
 {
 	return hashables.source;
@@ -1174,24 +1151,6 @@ bool nano::change_block::operator== (nano::block const & other_a) const
 bool nano::change_block::operator== (nano::change_block const & other_a) const
 {
 	return hashables.previous == other_a.hashables.previous && hashables.representative == other_a.hashables.representative && work == other_a.work && signature == other_a.signature;
-}
-
-bool nano::change_block::valid_predecessor (nano::block const & block_a) const
-{
-	bool result;
-	switch (block_a.type ())
-	{
-		case nano::block_type::send:
-		case nano::block_type::receive:
-		case nano::block_type::open:
-		case nano::block_type::change:
-			result = true;
-			break;
-		default:
-			result = false;
-			break;
-	}
-	return result;
 }
 
 nano::root nano::change_block::root () const
@@ -1507,11 +1466,6 @@ bool nano::state_block::operator== (nano::block const & other_a) const
 bool nano::state_block::operator== (nano::state_block const & other_a) const
 {
 	return hashables.account == other_a.hashables.account && hashables.previous == other_a.hashables.previous && hashables.representative == other_a.hashables.representative && hashables.balance == other_a.hashables.balance && hashables.link == other_a.hashables.link && signature == other_a.signature && work == other_a.work;
-}
-
-bool nano::state_block::valid_predecessor (nano::block const & block_a) const
-{
-	return true;
 }
 
 nano::root nano::state_block::root () const
@@ -1837,24 +1791,6 @@ void nano::receive_block::block_work_set (uint64_t work_a)
 bool nano::receive_block::operator== (nano::block const & other_a) const
 {
 	return blocks_equal (*this, other_a);
-}
-
-bool nano::receive_block::valid_predecessor (nano::block const & block_a) const
-{
-	bool result;
-	switch (block_a.type ())
-	{
-		case nano::block_type::send:
-		case nano::block_type::receive:
-		case nano::block_type::open:
-		case nano::block_type::change:
-			result = true;
-			break;
-		default:
-			result = false;
-			break;
-	}
-	return result;
 }
 
 std::optional<nano::block_hash> nano::receive_block::previous_field () const

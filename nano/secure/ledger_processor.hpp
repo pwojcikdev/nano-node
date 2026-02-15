@@ -26,6 +26,6 @@ private:
 	void state_block_impl (nano::state_block &);
 	void epoch_block_impl (nano::state_block &);
 	bool validate_epoch_block (nano::state_block const & block);
-	bool valid_predecessor (nano::block const & block, nano::block const & previous);
+	bool valid_predecessor (nano::block const & block, nano::block const & previous) const;
 };
 }

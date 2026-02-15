@@ -1,3 +1,4 @@
+#include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/numbers.hpp>
@@ -44,7 +45,7 @@ void nano::ledger_processor::send_block (nano::send_block & block)
 	}
 
 	// Block type must be valid successor of previous block type
-	if (!block.valid_predecessor (*previous))
+	if (!valid_predecessor (block, *previous))
 	{
 		result = nano::block_status::block_position;
 		return;
@@ -123,7 +124,7 @@ void nano::ledger_processor::receive_block (nano::receive_block & block)
 	}
 
 	// Block type must be valid successor of previous block type
-	if (!block.valid_predecessor (*previous))
+	if (!valid_predecessor (block, *previous))
 	{
 		result = nano::block_status::block_position;
 		return;
@@ -304,7 +305,7 @@ void nano::ledger_processor::change_block (nano::change_block & block)
 	}
 
 	// Block type must be valid successor of previous block type
-	if (!block.valid_predecessor (*previous))
+	if (!valid_predecessor (block, *previous))
 	{
 		result = nano::block_status::block_position;
 		return;
@@ -700,6 +701,7 @@ bool nano::ledger_processor::validate_epoch_block (nano::state_block const & blo
 		{
 			// Previous block not found — could be a gap, or this might not be an epoch block at all
 			result = nano::block_status::gap_previous;
+
 			// Check if this is actually a regular state block with a link that coincidentally
 			// matches an epoch link (possible for send sub-type where link = destination account)
 			if (validate_message (block.hashables.account, block.hash (), block.signature))
@@ -717,4 +719,45 @@ bool nano::ledger_processor::validate_epoch_block (nano::state_block const & blo
 	}
 	// An epoch block must not change balance — if balance differs from previous, it's not an epoch block
 	return (block.hashables.balance == prev_balance);
+}
+
+/*
+ * Check that the block type is a valid successor of the previous block type.
+ * Rules:
+ * - open_block: no valid predecessor (open blocks have no previous)
+ * - state_block: any predecessor type is valid
+ * - send/receive/change: predecessor must be a legacy type (send, receive, open, change)
+ */
+bool nano::ledger_processor::valid_predecessor (nano::block const & block, nano::block const & previous) const
+{
+	bool valid = false;
+	switch (block.type ())
+	{
+		case nano::block_type::state:
+			valid = true;
+			break;
+		case nano::block_type::open:
+			valid = false;
+			break;
+		case nano::block_type::send:
+		case nano::block_type::receive:
+		case nano::block_type::change:
+			switch (previous.type ())
+			{
+				case nano::block_type::send:
+				case nano::block_type::receive:
+				case nano::block_type::open:
+				case nano::block_type::change:
+					valid = true;
+					break;
+				default:
+					valid = false;
+					break;
+			}
+			break;
+		default:
+			valid = false;
+			break;
+	}
+	return valid;
 }
