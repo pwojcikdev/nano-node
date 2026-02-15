@@ -189,6 +189,7 @@ public:
 	bool allow_bootstrap_peers_duplicates{ false };
 	bool disable_max_peers_per_ip{ false }; // For testing only
 	bool disable_max_peers_per_subnetwork{ false }; // For testing only
+	bool disable_non_loopback_peers{ false }; // For testing only. Reject all non-loopback peer addresses
 	bool disable_search_pending{ false }; // For testing only
 	bool enable_pruning{ false };
 	bool enable_voting{ false };
