@@ -18,14 +18,14 @@ public:
 	void change_block (nano::change_block &) override;
 	void state_block (nano::state_block &) override;
 
-	void state_block_impl (nano::state_block &);
-	void epoch_block_impl (nano::state_block &);
-
 	nano::secure::write_transaction const & transaction;
 	nano::ledger & ledger;
 	nano::block_status result{ nano::block_status::invalid };
 
 private:
+	void state_block_impl (nano::state_block &);
+	void epoch_block_impl (nano::state_block &);
 	bool validate_epoch_block (nano::state_block const & block);
+	bool valid_predecessor (nano::block const & block, nano::block const & previous);
 };
 }
