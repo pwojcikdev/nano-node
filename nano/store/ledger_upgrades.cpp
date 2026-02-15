@@ -136,4 +136,65 @@ void ledger_store::upgrade_v24_to_v25 ()
 
 	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v24 to v25 completed");
 }
+
+// Populates the topology table from sideband topo_index values computed in v24->v25
+void ledger_store::upgrade_v25_to_v26 ()
+{
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v25 to v26...");
+
+	backend.open (schema_v26, nano::store::open_mode::read_write);
+	{
+		release_assert (backend.get_version (backend.tx_begin_read ()) == 25, "unexpected version during upgrade", std::to_string (backend.get_version (backend.tx_begin_read ())));
+
+		// Clear topology table in case a previous upgrade attempt failed halfway
+		topology.clear ();
+
+		auto const total_blocks = block.count (backend.tx_begin_read ());
+		logger.info (nano::log::type::ledger_upgrade, "Populating topology table for {} blocks...", total_blocks);
+
+		size_t const batch_size = nano::is_dev_run () ? 2 : 16 * 1024 * 1024;
+		size_t processed = 0;
+		auto last_log = std::chrono::steady_clock::now ();
+
+		auto transaction = backend.tx_begin_write ();
+		auto crawler = block.crawl (transaction);
+
+		while (crawler)
+		{
+			auto const & [hash, bws] = *crawler;
+			auto const topo = bws.sideband.topo_index;
+			release_assert (topo != 0, "block missing topo_index during v25->v26 upgrade", hash.to_string ());
+
+			topology.put (transaction, topo, hash);
+
+			++processed;
+
+			// Periodic progress logging
+			auto now = std::chrono::steady_clock::now ();
+			if (now - last_log >= std::chrono::seconds (5))
+			{
+				auto percentage = total_blocks > 0 ? (processed * 100) / total_blocks : 0;
+				logger.info (nano::log::type::ledger_upgrade, "Topology table progress: {} / {} blocks ({}%)", processed, total_blocks, percentage);
+				last_log = now;
+			}
+
+			if (processed % batch_size == 0)
+			{
+				logger.debug (nano::log::type::ledger_upgrade, "Committing batch of {} blocks...", batch_size);
+				auto const refresh_start = std::chrono::steady_clock::now ();
+				crawler.refresh ();
+				auto const refresh_ms = std::chrono::duration_cast<std::chrono::milliseconds> (std::chrono::steady_clock::now () - refresh_start).count ();
+				logger.debug (nano::log::type::ledger_upgrade, "Transaction refresh took {}ms", refresh_ms);
+			}
+
+			++crawler;
+		}
+
+		logger.info (nano::log::type::ledger_upgrade, "Done populating topology table for {} blocks", processed);
+		version.put (transaction, 26);
+	}
+	backend.close ();
+
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v25 to v26 completed");
+}
 }

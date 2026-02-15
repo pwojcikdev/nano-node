@@ -731,7 +731,7 @@ TEST (ledger_upgrades, upgrade_v24_to_v25_topology_index)
 
 	auto tx = store.tx_begin_read ();
 	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
-	ASSERT_EQ (store.version.get (tx), 25);
+	ASSERT_EQ (store.version.get (tx), 26);
 	ASSERT_EQ (store.block.count (tx), 4);
 	ASSERT_EQ (store.topology.count (tx), 4);
 

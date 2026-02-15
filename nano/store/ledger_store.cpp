@@ -207,6 +207,9 @@ void ledger_store::perform_upgrades (nano::store::backend_meta meta)
 			upgrade_v24_to_v25 ();
 			[[fallthrough]];
 		case 25:
+			upgrade_v25_to_v26 ();
+			[[fallthrough]];
+		case 26:
 			break;
 		default:
 			release_assert (false, "invalid ledger database version for upgrade", std::to_string (meta.version));
@@ -272,6 +275,20 @@ nano::store::column_schema const ledger_store::schema_v24{
 };
 
 nano::store::column_schema const ledger_store::schema_v25{
+	{ nano::store::table::blocks, "blocks" },
+	{ nano::store::table::accounts, "accounts" },
+	{ nano::store::table::pending, "pending" },
+	{ nano::store::table::rep_weights, "rep_weights" },
+	{ nano::store::table::online_weight, "online_weight" },
+	{ nano::store::table::pruned, "pruned" },
+	{ nano::store::table::peers, "peers" },
+	{ nano::store::table::confirmation_height, "confirmation_height" },
+	{ nano::store::table::final_votes, "final_votes" },
+	{ nano::store::table::topology, "topology" },
+	{ nano::store::table::meta, "meta" }
+};
+
+nano::store::column_schema const ledger_store::schema_v26{
 	{ nano::store::table::blocks, "blocks" },
 	{ nano::store::table::accounts, "accounts" },
 	{ nano::store::table::pending, "pending" },
