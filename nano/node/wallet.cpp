@@ -29,228 +29,6 @@
 
 template class nano::store::typed_iterator<nano::account, nano::wallet_value>;
 
-nano::uint256_union nano::wallet_store::check (nano::store::transaction const & transaction_a) const
-{
-	nano::wallet_value value (entry_get_raw (transaction_a, nano::wallet_store::check_special));
-	return value.key;
-}
-
-nano::uint256_union nano::wallet_store::salt (nano::store::transaction const & transaction_a) const
-{
-	nano::wallet_value value (entry_get_raw (transaction_a, nano::wallet_store::salt_special));
-	return value.key;
-}
-
-void nano::wallet_store::wallet_key (nano::raw_key & prv_a, nano::store::transaction const & transaction_a) const
-{
-	nano::lock_guard<std::recursive_mutex> lock{ mutex };
-	nano::raw_key wallet_l;
-	wallet_key_mem.value (wallet_l);
-	nano::raw_key password_l;
-	password.value (password_l);
-	prv_a.decrypt (wallet_l, password_l, salt (transaction_a).owords[0]);
-}
-
-void nano::wallet_store::seed (nano::raw_key & prv_a, nano::store::transaction const & transaction_a) const
-{
-	nano::wallet_value value (entry_get_raw (transaction_a, nano::wallet_store::seed_special));
-	nano::raw_key password_l;
-	wallet_key (password_l, transaction_a);
-	prv_a.decrypt (value.key, password_l, salt (transaction_a).owords[seed_iv_index]);
-}
-
-void nano::wallet_store::seed_set (nano::store::write_transaction const & transaction_a, nano::raw_key const & prv_a)
-{
-	nano::raw_key password_l;
-	wallet_key (password_l, transaction_a);
-	nano::raw_key ciphertext;
-	ciphertext.encrypt (prv_a, password_l, salt (transaction_a).owords[seed_iv_index]);
-	entry_put_raw (transaction_a, nano::wallet_store::seed_special, nano::wallet_value (ciphertext, 0));
-	deterministic_clear (transaction_a);
-}
-
-nano::public_key nano::wallet_store::deterministic_insert (nano::store::write_transaction const & transaction_a)
-{
-	auto index (deterministic_index_get (transaction_a));
-	auto prv = deterministic_key (transaction_a, index);
-	nano::public_key result (nano::pub_key (prv));
-	while (exists (transaction_a, result))
-	{
-		++index;
-		prv = deterministic_key (transaction_a, index);
-		result = nano::pub_key (prv);
-	}
-	uint64_t marker (1);
-	marker <<= 32;
-	marker |= index;
-	entry_put_raw (transaction_a, result, nano::wallet_value (marker, 0));
-	++index;
-	deterministic_index_set (transaction_a, index);
-	return result;
-}
-
-nano::public_key nano::wallet_store::deterministic_insert (nano::store::write_transaction const & transaction_a, uint32_t const index)
-{
-	auto prv = deterministic_key (transaction_a, index);
-	nano::public_key result (nano::pub_key (prv));
-	uint64_t marker (1);
-	marker <<= 32;
-	marker |= index;
-	entry_put_raw (transaction_a, result, nano::wallet_value (marker, 0));
-	return result;
-}
-
-nano::raw_key nano::wallet_store::deterministic_key (nano::store::transaction const & transaction_a, uint32_t index_a) const
-{
-	debug_assert (valid_password (transaction_a));
-	nano::raw_key seed_l;
-	seed (seed_l, transaction_a);
-	return nano::deterministic_key (seed_l, index_a);
-}
-
-uint32_t nano::wallet_store::deterministic_index_get (nano::store::transaction const & transaction_a) const
-{
-	nano::wallet_value value (entry_get_raw (transaction_a, nano::wallet_store::deterministic_index_special));
-	return static_cast<uint32_t> (value.key.number () & static_cast<uint32_t> (-1));
-}
-
-void nano::wallet_store::deterministic_index_set (nano::store::write_transaction const & transaction_a, uint32_t index_a)
-{
-	nano::raw_key index_l (index_a);
-	nano::wallet_value value (index_l, 0);
-	entry_put_raw (transaction_a, nano::wallet_store::deterministic_index_special, value);
-}
-
-void nano::wallet_store::deterministic_clear (nano::store::write_transaction const & transaction_a)
-{
-	nano::uint256_union key (0);
-	for (auto i (begin (transaction_a)), n (end (transaction_a)); i != n;)
-	{
-		switch (key_type (nano::wallet_value (i->second)))
-		{
-			case nano::key_type::deterministic:
-			{
-				auto const & key (i->first);
-				erase (transaction_a, key);
-				i = begin (transaction_a, key);
-				break;
-			}
-			default:
-			{
-				++i;
-				break;
-			}
-		}
-	}
-	deterministic_index_set (transaction_a, 0);
-}
-
-bool nano::wallet_store::valid_password (nano::store::transaction const & transaction_a) const
-{
-	nano::raw_key zero;
-	zero.clear ();
-	nano::raw_key wallet_key_l;
-	wallet_key (wallet_key_l, transaction_a);
-	nano::uint256_union check_l;
-	check_l.encrypt (zero, wallet_key_l, salt (transaction_a).owords[check_iv_index]);
-	bool ok = check (transaction_a) == check_l;
-	return ok;
-}
-
-bool nano::wallet_store::attempt_password (nano::store::transaction const & transaction_a, std::string const & password_a)
-{
-	bool result = false;
-	{
-		nano::lock_guard<std::recursive_mutex> lock{ mutex };
-		nano::raw_key password_l;
-		derive_key (password_l, transaction_a, password_a);
-		password.value_set (password_l);
-		result = !valid_password (transaction_a);
-	}
-	if (!result)
-	{
-		switch (version (transaction_a))
-		{
-			case version_4:
-				break;
-			default:
-				debug_assert (false);
-		}
-	}
-	return result;
-}
-
-bool nano::wallet_store::rekey (nano::store::write_transaction const & transaction_a, std::string const & password_a)
-{
-	nano::lock_guard<std::recursive_mutex> lock{ mutex };
-	bool result (false);
-	if (valid_password (transaction_a))
-	{
-		nano::raw_key password_new;
-		derive_key (password_new, transaction_a, password_a);
-		nano::raw_key wallet_key_l;
-		wallet_key (wallet_key_l, transaction_a);
-		nano::raw_key password_l;
-		password.value (password_l);
-		password.value_set (password_new);
-		nano::raw_key encrypted;
-		encrypted.encrypt (wallet_key_l, password_new, salt (transaction_a).owords[0]);
-		nano::raw_key wallet_enc;
-		wallet_enc = encrypted;
-		wallet_key_mem.value_set (wallet_enc);
-		entry_put_raw (transaction_a, nano::wallet_store::wallet_key_special, nano::wallet_value (encrypted, 0));
-	}
-	else
-	{
-		result = true;
-	}
-	return result;
-}
-
-void nano::wallet_store::derive_key (nano::raw_key & prv_a, nano::store::transaction const & transaction_a, std::string const & password_a) const
-{
-	auto salt_l (salt (transaction_a));
-	kdf.phs (prv_a, password_a, salt_l);
-}
-
-nano::fan::fan (nano::raw_key const & key, std::size_t count_a)
-{
-	auto first (std::make_unique<nano::raw_key> (key));
-	for (auto i (1); i < count_a; ++i)
-	{
-		auto entry (std::make_unique<nano::raw_key> ());
-		nano::random_pool::generate_block (entry->bytes.data (), entry->bytes.size ());
-		*first ^= *entry;
-		values.push_back (std::move (entry));
-	}
-	values.push_back (std::move (first));
-}
-
-void nano::fan::value (nano::raw_key & prv_a) const
-{
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	value_get (prv_a);
-}
-
-void nano::fan::value_get (nano::raw_key & prv_a) const
-{
-	debug_assert (!mutex.try_lock ());
-	prv_a.clear ();
-	for (auto & i : values)
-	{
-		prv_a ^= *i;
-	}
-}
-
-void nano::fan::value_set (nano::raw_key const & value_a)
-{
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	nano::raw_key value_l;
-	value_get (value_l);
-	*(values[0]) ^= value_l;
-	*(values[0]) ^= value_a;
-}
-
 /*
  * wallet_store
  */
@@ -413,6 +191,13 @@ void nano::wallet_store::initialize (nano::store::write_transaction const & tran
 	error |= mdb_dbi_open (env.tx (transaction_a), path_a.c_str (), MDB_CREATE, &handle_l);
 	handle = handle_l;
 	init_a = error != 0;
+}
+
+void nano::wallet_store::destroy (nano::store::write_transaction const & transaction_a)
+{
+	auto status (mdb_drop (env.tx (transaction_a), handle, 1));
+	release_assert (nano::store::lmdb::success (status), nano::store::lmdb::error_string (status));
+	handle = 0;
 }
 
 bool nano::wallet_store::is_representative (nano::store::transaction const & transaction_a) const
@@ -691,12 +476,225 @@ void nano::wallet_store::version_put (nano::store::write_transaction const & tra
 	entry_put_raw (transaction_a, nano::wallet_store::version_special, nano::wallet_value (entry, 0));
 }
 
-void nano::kdf::phs (nano::raw_key & result_a, std::string const & password_a, nano::uint256_union const & salt_a)
+nano::uint256_union nano::wallet_store::check (nano::store::transaction const & transaction_a) const
 {
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	auto success (argon2_hash (1, kdf_work, 1, password_a.data (), password_a.size (), salt_a.bytes.data (), salt_a.bytes.size (), result_a.bytes.data (), result_a.bytes.size (), NULL, 0, Argon2_d, 0x10));
-	release_assert (success == 0);
-	(void)success;
+	nano::wallet_value value (entry_get_raw (transaction_a, nano::wallet_store::check_special));
+	return value.key;
+}
+
+nano::uint256_union nano::wallet_store::salt (nano::store::transaction const & transaction_a) const
+{
+	nano::wallet_value value (entry_get_raw (transaction_a, nano::wallet_store::salt_special));
+	return value.key;
+}
+
+void nano::wallet_store::wallet_key (nano::raw_key & prv_a, nano::store::transaction const & transaction_a) const
+{
+	nano::lock_guard<std::recursive_mutex> lock{ mutex };
+	nano::raw_key wallet_l;
+	wallet_key_mem.value (wallet_l);
+	nano::raw_key password_l;
+	password.value (password_l);
+	prv_a.decrypt (wallet_l, password_l, salt (transaction_a).owords[0]);
+}
+
+void nano::wallet_store::seed (nano::raw_key & prv_a, nano::store::transaction const & transaction_a) const
+{
+	nano::wallet_value value (entry_get_raw (transaction_a, nano::wallet_store::seed_special));
+	nano::raw_key password_l;
+	wallet_key (password_l, transaction_a);
+	prv_a.decrypt (value.key, password_l, salt (transaction_a).owords[seed_iv_index]);
+}
+
+void nano::wallet_store::seed_set (nano::store::write_transaction const & transaction_a, nano::raw_key const & prv_a)
+{
+	nano::raw_key password_l;
+	wallet_key (password_l, transaction_a);
+	nano::raw_key ciphertext;
+	ciphertext.encrypt (prv_a, password_l, salt (transaction_a).owords[seed_iv_index]);
+	entry_put_raw (transaction_a, nano::wallet_store::seed_special, nano::wallet_value (ciphertext, 0));
+	deterministic_clear (transaction_a);
+}
+
+nano::public_key nano::wallet_store::deterministic_insert (nano::store::write_transaction const & transaction_a)
+{
+	auto index (deterministic_index_get (transaction_a));
+	auto prv = deterministic_key (transaction_a, index);
+	nano::public_key result (nano::pub_key (prv));
+	while (exists (transaction_a, result))
+	{
+		++index;
+		prv = deterministic_key (transaction_a, index);
+		result = nano::pub_key (prv);
+	}
+	uint64_t marker (1);
+	marker <<= 32;
+	marker |= index;
+	entry_put_raw (transaction_a, result, nano::wallet_value (marker, 0));
+	++index;
+	deterministic_index_set (transaction_a, index);
+	return result;
+}
+
+nano::public_key nano::wallet_store::deterministic_insert (nano::store::write_transaction const & transaction_a, uint32_t const index)
+{
+	auto prv = deterministic_key (transaction_a, index);
+	nano::public_key result (nano::pub_key (prv));
+	uint64_t marker (1);
+	marker <<= 32;
+	marker |= index;
+	entry_put_raw (transaction_a, result, nano::wallet_value (marker, 0));
+	return result;
+}
+
+nano::raw_key nano::wallet_store::deterministic_key (nano::store::transaction const & transaction_a, uint32_t index_a) const
+{
+	debug_assert (valid_password (transaction_a));
+	nano::raw_key seed_l;
+	seed (seed_l, transaction_a);
+	return nano::deterministic_key (seed_l, index_a);
+}
+
+uint32_t nano::wallet_store::deterministic_index_get (nano::store::transaction const & transaction_a) const
+{
+	nano::wallet_value value (entry_get_raw (transaction_a, nano::wallet_store::deterministic_index_special));
+	return static_cast<uint32_t> (value.key.number () & static_cast<uint32_t> (-1));
+}
+
+void nano::wallet_store::deterministic_index_set (nano::store::write_transaction const & transaction_a, uint32_t index_a)
+{
+	nano::raw_key index_l (index_a);
+	nano::wallet_value value (index_l, 0);
+	entry_put_raw (transaction_a, nano::wallet_store::deterministic_index_special, value);
+}
+
+void nano::wallet_store::deterministic_clear (nano::store::write_transaction const & transaction_a)
+{
+	nano::uint256_union key (0);
+	for (auto i (begin (transaction_a)), n (end (transaction_a)); i != n;)
+	{
+		switch (key_type (nano::wallet_value (i->second)))
+		{
+			case nano::key_type::deterministic:
+			{
+				auto const & key (i->first);
+				erase (transaction_a, key);
+				i = begin (transaction_a, key);
+				break;
+			}
+			default:
+			{
+				++i;
+				break;
+			}
+		}
+	}
+	deterministic_index_set (transaction_a, 0);
+}
+
+bool nano::wallet_store::valid_password (nano::store::transaction const & transaction_a) const
+{
+	nano::raw_key zero;
+	zero.clear ();
+	nano::raw_key wallet_key_l;
+	wallet_key (wallet_key_l, transaction_a);
+	nano::uint256_union check_l;
+	check_l.encrypt (zero, wallet_key_l, salt (transaction_a).owords[check_iv_index]);
+	bool ok = check (transaction_a) == check_l;
+	return ok;
+}
+
+bool nano::wallet_store::attempt_password (nano::store::transaction const & transaction_a, std::string const & password_a)
+{
+	bool result = false;
+	{
+		nano::lock_guard<std::recursive_mutex> lock{ mutex };
+		nano::raw_key password_l;
+		derive_key (password_l, transaction_a, password_a);
+		password.value_set (password_l);
+		result = !valid_password (transaction_a);
+	}
+	if (!result)
+	{
+		switch (version (transaction_a))
+		{
+			case version_4:
+				break;
+			default:
+				debug_assert (false);
+		}
+	}
+	return result;
+}
+
+bool nano::wallet_store::rekey (nano::store::write_transaction const & transaction_a, std::string const & password_a)
+{
+	nano::lock_guard<std::recursive_mutex> lock{ mutex };
+	bool result (false);
+	if (valid_password (transaction_a))
+	{
+		nano::raw_key password_new;
+		derive_key (password_new, transaction_a, password_a);
+		nano::raw_key wallet_key_l;
+		wallet_key (wallet_key_l, transaction_a);
+		nano::raw_key password_l;
+		password.value (password_l);
+		password.value_set (password_new);
+		nano::raw_key encrypted;
+		encrypted.encrypt (wallet_key_l, password_new, salt (transaction_a).owords[0]);
+		nano::raw_key wallet_enc;
+		wallet_enc = encrypted;
+		wallet_key_mem.value_set (wallet_enc);
+		entry_put_raw (transaction_a, nano::wallet_store::wallet_key_special, nano::wallet_value (encrypted, 0));
+	}
+	else
+	{
+		result = true;
+	}
+	return result;
+}
+
+void nano::wallet_store::derive_key (nano::raw_key & prv_a, nano::store::transaction const & transaction_a, std::string const & password_a) const
+{
+	auto salt_l (salt (transaction_a));
+	kdf.phs (prv_a, password_a, salt_l);
+}
+
+auto nano::wallet_store::begin (nano::store::transaction const & txn) const -> iterator
+{
+	nano::account account{ special_count };
+	return iterator{ nano::store::iterator{ txn, nano::store::lmdb::iterator::lower_bound (env.tx (txn), handle, nano::store::lmdb::to_mdb_val (account)) } };
+}
+
+auto nano::wallet_store::begin (nano::store::transaction const & txn, nano::account const & key) const -> iterator
+{
+	nano::account account (key);
+	return iterator{ nano::store::iterator{ txn, nano::store::lmdb::iterator::lower_bound (env.tx (txn), handle, nano::store::lmdb::to_mdb_val (account)) } };
+}
+
+auto nano::wallet_store::end (nano::store::transaction const & txn) const -> iterator
+{
+	return iterator{ nano::store::iterator{ txn, nano::store::lmdb::iterator::end (env.tx (txn), handle) } };
+}
+
+auto nano::wallet_store::find (nano::store::transaction const & txn, nano::account const & key) const -> iterator
+{
+	auto it = begin (txn, key);
+	auto end_it = end (txn);
+	if (it == end_it)
+	{
+		return end_it;
+	}
+	if (it->first == key)
+	{
+		return it;
+	}
+	return end_it;
+}
+
+nano::mdb_wallets_store::mdb_wallets_store (std::filesystem::path const & path_a, nano::lmdb_config const & lmdb_config_a) :
+	environment (path_a, nano::store::lmdb::env::options::make ().set_config (lmdb_config_a).override_config_sync (nano::lmdb_config::sync_strategy::always).override_config_map_size (1ULL * 1024 * 1024 * 1024))
+{
 }
 
 /*
@@ -896,13 +894,6 @@ void nano::wallet::write_backup (std::filesystem::path const & path_a)
 {
 	auto transaction (wallets.tx_begin_read ());
 	store.write_backup (transaction, path_a);
-}
-
-void nano::wallet_store::destroy (nano::store::write_transaction const & transaction_a)
-{
-	auto status (mdb_drop (env.tx (transaction_a), handle, 1));
-	release_assert (nano::store::lmdb::success (status), nano::store::lmdb::error_string (status));
-	handle = 0;
 }
 
 std::shared_ptr<nano::block> nano::wallet::receive_action (nano::block_hash const & send_hash_a, nano::account const & representative_a, nano::uint128_union const & amount_a, nano::account const & account_a, uint64_t work_a, bool generate_work_a)
@@ -1574,6 +1565,9 @@ void nano::wallet::work_cache_blocking (nano::account const & account_a, nano::r
  * wallets
  */
 
+nano::uint128_t const nano::wallets::generate_priority = std::numeric_limits<nano::uint128_t>::max ();
+nano::uint128_t const nano::wallets::high_priority = std::numeric_limits<nano::uint128_t>::max () - 1;
+
 nano::wallets::wallets (
 nano::node & node_a,
 nano::wallets_store & wallets_store_a,
@@ -2127,50 +2121,6 @@ void nano::wallets::do_wallet_actions ()
 	}
 }
 
-/*
- *
- */
-
-nano::uint128_t const nano::wallets::generate_priority = std::numeric_limits<nano::uint128_t>::max ();
-nano::uint128_t const nano::wallets::high_priority = std::numeric_limits<nano::uint128_t>::max () - 1;
-
-auto nano::wallet_store::begin (nano::store::transaction const & txn) const -> iterator
-{
-	nano::account account{ special_count };
-	return iterator{ nano::store::iterator{ txn, nano::store::lmdb::iterator::lower_bound (env.tx (txn), handle, nano::store::lmdb::to_mdb_val (account)) } };
-}
-
-auto nano::wallet_store::begin (nano::store::transaction const & txn, nano::account const & key) const -> iterator
-{
-	nano::account account (key);
-	return iterator{ nano::store::iterator{ txn, nano::store::lmdb::iterator::lower_bound (env.tx (txn), handle, nano::store::lmdb::to_mdb_val (account)) } };
-}
-
-auto nano::wallet_store::end (nano::store::transaction const & txn) const -> iterator
-{
-	return iterator{ nano::store::iterator{ txn, nano::store::lmdb::iterator::end (env.tx (txn), handle) } };
-}
-
-auto nano::wallet_store::find (nano::store::transaction const & txn, nano::account const & key) const -> iterator
-{
-	auto it = begin (txn, key);
-	auto end_it = end (txn);
-	if (it == end_it)
-	{
-		return end_it;
-	}
-	if (it->first == key)
-	{
-		return it;
-	}
-	return end_it;
-}
-
-nano::mdb_wallets_store::mdb_wallets_store (std::filesystem::path const & path_a, nano::lmdb_config const & lmdb_config_a) :
-	environment (path_a, nano::store::lmdb::env::options::make ().set_config (lmdb_config_a).override_config_sync (nano::lmdb_config::sync_strategy::always).override_config_map_size (1ULL * 1024 * 1024 * 1024))
-{
-}
-
 nano::container_info nano::wallets::container_info () const
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
@@ -2179,4 +2129,58 @@ nano::container_info nano::wallets::container_info () const
 	info.put ("items", items.size ());
 	info.put ("actions", actions.size ());
 	return info;
+}
+
+/*
+ * fan
+ */
+
+nano::fan::fan (nano::raw_key const & key, std::size_t count_a)
+{
+	auto first (std::make_unique<nano::raw_key> (key));
+	for (auto i (1); i < count_a; ++i)
+	{
+		auto entry (std::make_unique<nano::raw_key> ());
+		nano::random_pool::generate_block (entry->bytes.data (), entry->bytes.size ());
+		*first ^= *entry;
+		values.push_back (std::move (entry));
+	}
+	values.push_back (std::move (first));
+}
+
+void nano::fan::value (nano::raw_key & prv_a) const
+{
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	value_get (prv_a);
+}
+
+void nano::fan::value_get (nano::raw_key & prv_a) const
+{
+	debug_assert (!mutex.try_lock ());
+	prv_a.clear ();
+	for (auto & i : values)
+	{
+		prv_a ^= *i;
+	}
+}
+
+void nano::fan::value_set (nano::raw_key const & value_a)
+{
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	nano::raw_key value_l;
+	value_get (value_l);
+	*(values[0]) ^= value_l;
+	*(values[0]) ^= value_a;
+}
+
+/*
+ * kdf
+ */
+
+void nano::kdf::phs (nano::raw_key & result_a, std::string const & password_a, nano::uint256_union const & salt_a)
+{
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	auto success (argon2_hash (1, kdf_work, 1, password_a.data (), password_a.size (), salt_a.bytes.data (), salt_a.bytes.size (), result_a.bytes.data (), result_a.bytes.size (), NULL, 0, Argon2_d, 0x10));
+	release_assert (success == 0);
+	(void)success;
 }

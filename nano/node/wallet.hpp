@@ -1,6 +1,5 @@
 #pragma once
 
-#include <nano/lib/id_dispenser.hpp>
 #include <nano/lib/lmdbconfig.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
@@ -21,11 +20,11 @@
 
 namespace nano
 {
-class node;
-class node_config;
 class wallets;
 
-// The fan spreads a key out over the heap to decrease the likelihood of it being recovered by memory inspection
+/*
+ * The fan spreads a key out over the heap to decrease the likelihood of it being recovered by memory inspection
+ */
 class fan final
 {
 public:
@@ -39,6 +38,9 @@ private:
 	void value_get (nano::raw_key & result) const;
 };
 
+/*
+ * Key derivation function using password hashing scheme (PHS) to derive encryption keys from passwords
+ */
 class kdf final
 {
 public:
@@ -138,7 +140,9 @@ public:
 	static int const special_count;
 };
 
-// A wallet is a set of account keys encrypted by a common encryption key
+/**
+ * A wallet is a set of account keys encrypted by a common encryption key
+ */
 class wallet final : public std::enable_shared_from_this<nano::wallet>
 {
 public:
