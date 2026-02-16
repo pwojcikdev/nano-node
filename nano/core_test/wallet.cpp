@@ -1152,3 +1152,44 @@ TEST (wallet, receive_pruned)
 	ASSERT_EQ (amount, node2.ledger.any.block_balance (node2.ledger.tx_begin_read (), open1->hash ()));
 	ASSERT_TIMELY_EQ (5s, node2.ledger.cemented_count (), 4);
 }
+
+/*
+ * The wallet password can change between the valid_password() check and the fetch() call
+ * inside send_action(), causing a release_assert crash. This test triggers that race by
+ * rapidly locking and unlocking the wallet while sending.
+ */
+TEST (wallet, toctou_password_race)
+{
+	nano::test::system system (1);
+	nano::thread_runner runner (system.io_ctx, system.logger, system.nodes[0]->config.io_threads);
+	auto wallet = system.wallet (0);
+
+	ASSERT_FALSE (wallet->rekey ("test"));
+	wallet->insert_adhoc (nano::dev::genesis_key.prv);
+
+	nano::keypair dest;
+	std::atomic<bool> done{ false };
+
+	// Rapidly lock and unlock the wallet from another thread
+	std::thread locker ([&] () {
+		while (!done)
+		{
+			wallet->lock ();
+			wallet->enter_password ("test");
+		}
+	});
+
+	constexpr int iterations = 100;
+
+	// The race between valid_password() and fetch() inside could trigger a release_assert crash
+	for (int i = 0; i < iterations; ++i)
+	{
+		wallet->send_action (nano::dev::genesis_key.pub, dest.pub, 1);
+	}
+
+	done = true;
+	locker.join ();
+
+	system.stop ();
+	runner.join ();
+}
