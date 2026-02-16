@@ -49,6 +49,7 @@ nano::account const nano::wallet_store::seed_special (5);
 // Current key index for deterministic keys
 nano::account const nano::wallet_store::deterministic_index_special (6);
 int const nano::wallet_store::special_count (7);
+std::string const nano::wallet_store::default_password{ "" };
 std::size_t const nano::wallet_store::check_iv_index (0);
 std::size_t const nano::wallet_store::seed_iv_index (1);
 
@@ -111,6 +112,7 @@ nano::wallet_store::wallet_store (nano::kdf & kdf_a, nano::store::write_transact
 	password.value_set (key);
 	key = entry_get_raw (transaction_a, nano::wallet_store::wallet_key_special).key;
 	wallet_key_mem.value_set (key);
+	attempt_password (transaction_a, default_password);
 }
 
 nano::wallet_store::wallet_store (nano::kdf & kdf_a, nano::store::write_transaction & transaction_a, store::lmdb::env & env_a, nano::account representative_a, unsigned fanout_a, std::string const & wallet_a) :
@@ -135,17 +137,17 @@ nano::wallet_store::wallet_store (nano::kdf & kdf_a, nano::store::write_transact
 		nano::raw_key wallet_key;
 		random_pool::generate_block (wallet_key.bytes.data (), sizeof (wallet_key.bytes));
 		nano::raw_key password_l;
-		password_l.clear ();
+		derive_key (password_l, transaction_a, default_password);
 		password.value_set (password_l);
-		nano::raw_key zero;
-		zero.clear ();
 		// Wallet key is encrypted by the user's password
 		nano::raw_key encrypted;
-		encrypted.encrypt (wallet_key, zero, salt_l.owords[0]);
+		encrypted.encrypt (wallet_key, password_l, salt_l.owords[0]);
 		entry_put_raw (transaction_a, nano::wallet_store::wallet_key_special, nano::wallet_value (encrypted, 0));
 		nano::raw_key wallet_key_enc;
 		wallet_key_enc = encrypted;
 		wallet_key_mem.value_set (wallet_key_enc);
+		nano::raw_key zero;
+		zero.clear ();
 		nano::raw_key check;
 		check.encrypt (zero, wallet_key, salt_l.owords[check_iv_index]);
 		entry_put_raw (transaction_a, nano::wallet_store::check_special, nano::wallet_value (check, 0));
@@ -160,6 +162,7 @@ nano::wallet_store::wallet_store (nano::kdf & kdf_a, nano::store::write_transact
 	nano::raw_key key;
 	key = entry_get_raw (transaction_a, nano::wallet_store::wallet_key_special).key;
 	wallet_key_mem.value_set (key);
+	attempt_password (transaction_a, default_password);
 }
 
 std::vector<nano::account> nano::wallet_store::accounts (nano::store::transaction const & transaction_a) const
@@ -718,16 +721,8 @@ void nano::wallet::enter_initial_password ()
 	}
 	if (password_l.is_zero ())
 	{
-		auto transaction (wallets.tx_begin_write ());
-		if (store.valid_password (transaction))
-		{
-			// Newly created wallets have a zero key
-			store.rekey (transaction, "");
-		}
-		else
-		{
-			enter_password_impl (transaction, "");
-		}
+		auto transaction (wallets.tx_begin_read ());
+		enter_password_impl (transaction, wallet_store::default_password);
 	}
 }
 

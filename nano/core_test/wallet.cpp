@@ -271,7 +271,9 @@ TEST (wallet, rekey)
 	nano::wallet_store wallet (kdf, transaction, env, nano::dev::genesis_key.pub, 1, "0");
 	nano::raw_key password;
 	wallet.password.value (password);
-	ASSERT_TRUE (password.is_zero ());
+	nano::raw_key default_password_key;
+	wallet.derive_key (default_password_key, transaction, nano::wallet_store::default_password);
+	ASSERT_EQ (default_password_key, password);
 	nano::keypair key1;
 	wallet.insert_adhoc (transaction, key1.prv);
 	nano::raw_key prv1;
@@ -349,16 +351,18 @@ TEST (wallet, reopen_default_password)
 		ASSERT_TRUE (wallet.valid_password (transaction));
 	}
 	{
+		// Rekey to a non-default password
 		nano::wallet_store wallet (kdf, transaction, env, nano::dev::genesis_key.pub, 1, "0");
-		wallet.rekey (transaction, "");
+		wallet.rekey (transaction, "secret");
 		ASSERT_TRUE (wallet.valid_password (transaction));
 	}
 	{
+		// Default password no longer works after rekey
 		nano::wallet_store wallet (kdf, transaction, env, nano::dev::genesis_key.pub, 1, "0");
 		ASSERT_FALSE (wallet.valid_password (transaction));
-		wallet.attempt_password (transaction, " ");
-		ASSERT_FALSE (wallet.valid_password (transaction));
 		wallet.attempt_password (transaction, "");
+		ASSERT_FALSE (wallet.valid_password (transaction));
+		wallet.attempt_password (transaction, "secret");
 		ASSERT_TRUE (wallet.valid_password (transaction));
 	}
 }
@@ -801,7 +805,6 @@ TEST (wallet, change_seed)
 {
 	nano::test::system system (1);
 	auto wallet (system.wallet (0));
-	wallet->enter_initial_password ();
 	nano::raw_key seed1;
 	seed1 = 1;
 	nano::public_key pub;
@@ -826,7 +829,6 @@ TEST (wallet, deterministic_restore)
 {
 	nano::test::system system (1);
 	auto wallet (system.wallet (0));
-	wallet->enter_initial_password ();
 	nano::raw_key seed1;
 	seed1 = 1;
 	nano::public_key pub;

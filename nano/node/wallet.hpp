@@ -138,6 +138,7 @@ public:
 	static std::size_t const check_iv_index;
 	static std::size_t const seed_iv_index;
 	static int const special_count;
+	static std::string const default_password;
 };
 
 /**
