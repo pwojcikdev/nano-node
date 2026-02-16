@@ -67,9 +67,9 @@ public:
 	using iterator = store::typed_iterator<nano::account, nano::wallet_value>;
 
 public:
-	wallet_store (bool & error, nano::kdf &, nano::store::write_transaction &, store::lmdb::env &, nano::account representative, unsigned fanout, std::string const & wallet_path);
-	wallet_store (bool & error, nano::kdf &, nano::store::write_transaction &, store::lmdb::env &, nano::account representative, unsigned fanout, std::string const & wallet_path, std::string const & json);
-	void initialize (nano::store::write_transaction const &, bool & error, std::string const & path);
+	wallet_store (nano::kdf &, nano::store::write_transaction &, store::lmdb::env &, nano::account representative, unsigned fanout, std::string const & wallet_path);
+	wallet_store (nano::kdf &, nano::store::write_transaction &, store::lmdb::env &, nano::account representative, unsigned fanout, std::string const & wallet_path, std::string const & json);
+	void initialize (nano::store::write_transaction const &, std::string const & path);
 	std::vector<nano::account> accounts (nano::store::transaction const &) const;
 	nano::uint256_union check (nano::store::transaction const &) const;
 	bool rekey (nano::store::write_transaction const &, std::string const & password);
@@ -146,8 +146,8 @@ public:
 class wallet final : public std::enable_shared_from_this<nano::wallet>
 {
 public:
-	wallet (bool & error, nano::store::write_transaction &, nano::wallets &, std::string const & wallet_path);
-	wallet (bool & error, nano::store::write_transaction &, nano::wallets &, std::string const & wallet_path, std::string const & json);
+	wallet (nano::store::write_transaction &, nano::wallets &, std::string const & wallet_path);
+	wallet (nano::store::write_transaction &, nano::wallets &, std::string const & wallet_path, std::string const & json);
 
 	// Password and lock management
 	void enter_initial_password ();
