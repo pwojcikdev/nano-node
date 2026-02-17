@@ -26,6 +26,7 @@ public:
 	bool exists (nano::store::transaction const &, nano::pending_key const &) const;
 	bool any (nano::store::transaction const &, nano::account const &) const;
 	iterator begin (nano::store::transaction const &, nano::pending_key const &) const;
+	iterator begin (nano::store::transaction const &, nano::account const &) const;
 	iterator begin (nano::store::transaction const &) const;
 	iterator end (nano::store::transaction const &) const;
 	crawler crawl (nano::store::transaction &, nano::account const & start = { 0 }) const;
