@@ -107,6 +107,7 @@ enum class type
 	frontier_req_client,
 	frontier_req_server,
 	bootstrap,
+	bootstrap_server,
 	bootstrap_lazy,
 	bootstrap_legacy,
 

@@ -1,4 +1,6 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/logging.hpp>
+#include <nano/lib/object_stream_adapters.hpp>
 #include <nano/lib/thread_roles.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/node/bootstrap/bootstrap_server.hpp>
@@ -11,12 +13,13 @@
 #include <nano/store/ledger/confirmation_height.hpp>
 #include <nano/store/ledger_store.hpp>
 
-nano::bootstrap_server::bootstrap_server (bootstrap_server_config const & config_a, nano::store::ledger_store & store_a, nano::ledger & ledger_a, nano::network_constants const & network_constants_a, nano::stats & stats_a) :
+nano::bootstrap_server::bootstrap_server (bootstrap_server_config const & config_a, nano::store::ledger_store & store_a, nano::ledger & ledger_a, nano::network_constants const & network_constants_a, nano::stats & stats_a, nano::logger & logger_a) :
 	config{ config_a },
 	store{ store_a },
 	ledger{ ledger_a },
 	network_constants{ network_constants_a },
 	stats{ stats_a },
+	logger{ logger_a },
 	limiter{ config.limiter, /* allow bursts */ 3.0 } // TODO: Limiter bucket capacity should be at least equal to the batch size, currently it's not configurable
 {
 	queue.max_size_query = [this] (auto const & origin) {
@@ -155,29 +158,34 @@ void nano::bootstrap_server::respond (nano::messages::asc_pull_ack & response, s
 	stats.inc (nano::stat::type::bootstrap_server, nano::stat::detail::response, nano::stat::dir::out);
 	stats.inc (nano::stat::type::bootstrap_server_response, to_stat_detail (response.type));
 
-	// Increase relevant stats depending on payload type
+	// Increase relevant stats and log depending on payload type
 	struct stat_visitor
 	{
 		nano::stats & stats;
+		nano::logger & logger;
 
 		void operator() (nano::messages::empty_payload const &)
 		{
 			debug_assert (false, "missing payload");
+			logger.debug (nano::log::type::bootstrap_server, "Sending response: empty (invalid)");
 		}
 		void operator() (nano::messages::asc_pull_ack::blocks_payload const & pld)
 		{
 			stats.add (nano::stat::type::bootstrap_server, nano::stat::detail::blocks, nano::stat::dir::out, pld.blocks.size ());
+			logger.debug (nano::log::type::bootstrap_server, "Sending response: blocks (count: {}), {}", pld.blocks.size (), nano::streamed (pld));
 		}
 		void operator() (nano::messages::asc_pull_ack::account_info_payload const & pld)
 		{
 			stats.inc (nano::stat::type::bootstrap_server, nano::stat::detail::account_info, nano::stat::dir::out);
+			logger.debug (nano::log::type::bootstrap_server, "Sending response: account_info, {}", nano::streamed (pld));
 		}
 		void operator() (nano::messages::asc_pull_ack::frontiers_payload const & pld)
 		{
 			stats.add (nano::stat::type::bootstrap_server, nano::stat::detail::frontiers, nano::stat::dir::out, pld.frontiers.size ());
+			logger.debug (nano::log::type::bootstrap_server, "Sending response: frontiers (count: {}), {}", pld.frontiers.size (), nano::streamed (pld));
 		}
 	};
-	std::visit (stat_visitor{ stats }, response.payload);
+	std::visit (stat_visitor{ stats, logger }, response.payload);
 
 	on_response.notify (response, channel);
 
