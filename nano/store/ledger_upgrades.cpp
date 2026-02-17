@@ -31,7 +31,7 @@ void ledger_store::upgrade_v24_to_v25 ()
 		auto const total_blocks = block.count (backend.tx_begin_read ());
 		logger.info (nano::log::type::ledger_upgrade, "Building topology index for {} blocks...", total_blocks);
 
-		size_t const batch_size = nano::is_dev_run () ? 2 : 16 * 1024 * 1024;
+		size_t const batch_size = nano::is_dev_run () ? 2 : 1024 * 1024;
 		size_t const max_depth = nano::is_dev_run () ? 16 : 16 * 1024 * 1024;
 		size_t processed = 0;
 		auto last_log = std::chrono::steady_clock::now ();
@@ -122,9 +122,17 @@ void ledger_store::upgrade_v24_to_v25 ()
 				continue;
 			}
 
-			nano::bounded_dfs (bws.block, max_depth, is_resolved, get_dependencies, resolve);
+			nano::bounded_dfs_result dfs_result;
+			do
+			{
+				dfs_result = nano::bounded_dfs (bws.block, max_depth, is_resolved, get_dependencies, resolve);
+				if (dfs_result.overflow)
+				{
+					logger.debug (nano::log::type::ledger_upgrade, "Partially resolved {} dependencies for block {}, continuing...", dfs_result.resolved, hash);
+				}
+			} while (dfs_result.overflow);
 
-			logger.debug (nano::log::type::ledger_upgrade, "Processed block {} with hash {}", processed, hash.to_string ());
+			logger.debug (nano::log::type::ledger_upgrade, "Processed block {} with hash {}", processed, hash);
 
 			++crawler;
 		}
