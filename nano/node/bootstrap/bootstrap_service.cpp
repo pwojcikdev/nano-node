@@ -961,17 +961,16 @@ void nano::bootstrap_service::process (nano::messages::asc_pull_ack const & mess
 	stats.inc (nano::stat::type::bootstrap_reply, to_stat_detail (tag.type));
 	stats.sample (nano::stat::sample::bootstrap_tag_duration, nano::log::milliseconds_delta (tag.timestamp), { 0, config.request_timeout.count () });
 
-	lock.unlock ();
-
-	// Process the response payload
+	// Process the response payload while holding the lock to ensure atomic tag erasure + state updates
 	bool ok = std::visit ([this, &tag] (auto && request) { return process (request, tag); }, message.payload);
 	if (ok)
 	{
-		lock.lock ();
 		scoring.received_message (channel);
-		lock.unlock ();
 	}
-	else
+
+	lock.unlock ();
+
+	if (!ok)
 	{
 		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::invalid_response);
 	}
@@ -981,6 +980,7 @@ void nano::bootstrap_service::process (nano::messages::asc_pull_ack const & mess
 
 bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::blocks_payload & response, const async_tag & tag)
 {
+	debug_assert (!mutex.try_lock ());
 	debug_assert (tag.type == query_type::blocks_by_hash || tag.type == query_type::blocks_by_account);
 
 	stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::blocks);
@@ -1024,13 +1024,11 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 
 			if (tag.source == query_source::topology)
 			{
-				nano::lock_guard<nano::mutex> lock{ mutex };
 				topology_start = response.blocks.back ()->hash ();
 				topology_retry = {};
 			}
 			else if (tag.source == query_source::database)
 			{
-				nano::lock_guard<nano::mutex> lock{ mutex };
 				throttle.add (true);
 			}
 		}
@@ -1041,13 +1039,10 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 
 			if (tag.source == query_source::topology)
 			{
-				nano::lock_guard<nano::mutex> lock{ mutex };
 				topology_retry = std::chrono::steady_clock::now () + config.throttle_wait;
 			}
 			else
 			{
-				nano::lock_guard<nano::mutex> lock{ mutex };
-
 				accounts.priority_down (tag.account);
 				accounts.timestamp_reset (tag.account);
 
@@ -1056,7 +1051,6 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 					throttle.add (false);
 				}
 			}
-			condition.notify_all ();
 		}
 		break;
 		case verify_result::invalid:
@@ -1071,6 +1065,7 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 
 bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::account_info_payload & response, const async_tag & tag)
 {
+	debug_assert (!mutex.try_lock ());
 	debug_assert (tag.type == query_type::account_info_by_hash);
 	debug_assert (!tag.hash.is_zero ());
 
@@ -1083,17 +1078,15 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::accou
 	stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::account_info);
 
 	// Prioritize account containing the dependency
-	{
-		nano::lock_guard<nano::mutex> lock{ mutex };
-		accounts.dependency_update (tag.hash, response.account);
-		accounts.priority_set (response.account, nano::bootstrap::account_sets::priority_cutoff); // Use the lowest possible priority here
-	}
+	accounts.dependency_update (tag.hash, response.account);
+	accounts.priority_set (response.account, nano::bootstrap::account_sets::priority_cutoff); // Use the lowest possible priority here
 
 	return true; // OK, no way to verify the response
 }
 
 bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::frontiers_payload & response, const async_tag & tag)
 {
+	debug_assert (!mutex.try_lock ());
 	debug_assert (tag.type == query_type::frontiers);
 	debug_assert (!tag.start.is_zero ());
 
@@ -1113,10 +1106,7 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::front
 			stats.inc (nano::stat::type::bootstrap_verify_frontiers, nano::stat::detail::ok);
 			stats.add (nano::stat::type::bootstrap, nano::stat::detail::frontiers, nano::stat::dir::in, response.frontiers.size ());
 
-			{
-				nano::lock_guard<nano::mutex> lock{ mutex };
-				frontiers.process (tag.start.as_account (), response.frontiers);
-			}
+			frontiers.process (tag.start.as_account (), response.frontiers);
 
 			// Allow some overfill to avoid unnecessarily dropping responses
 			if (workers.queued_tasks () < config.frontier_scan.max_pending * 4)
