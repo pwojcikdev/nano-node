@@ -66,7 +66,7 @@ nano::block_processor & block_processor_a, nano::network & network_a, nano::stat
 	});
 
 	accounts.priority_set (node_config_a.network_params.ledger.genesis->account_field ().value ());
-	topology_start = node_config_a.network_params.ledger.genesis->hash ();
+	topology_start = { 0 }; // Start from the beginning of the topology table to avoid skipping blocks with topo_index <= genesis
 }
 
 nano::bootstrap_service::~bootstrap_service ()
@@ -174,7 +174,7 @@ void nano::bootstrap_service::reset ()
 	frontiers.reset ();
 	scoring.reset ();
 	throttle.reset ();
-	topology_start = ledger.constants.genesis->hash ();
+	topology_start = { 0 };
 	topology_retry = {};
 }
 
