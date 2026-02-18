@@ -437,8 +437,24 @@ std::deque<std::shared_ptr<nano::block>> nano::bootstrap_server::prepare_topolog
 	{
 		auto const & hash = it->first.hash;
 		auto block = ledger.any.block_get (transaction, hash);
+		debug_assert (block, "topology entry has no corresponding block", hash.to_string ());
 		if (block)
 		{
+			// Verify topological ordering: all dependencies must have strictly lower topo_index
+			auto const topo = block->sideband ().topo_index;
+			for (auto const & dep_hash : block->dependencies ())
+			{
+				if (dep_hash.is_zero ())
+				{
+					continue;
+				}
+				auto dep_block = ledger.any.block_get (transaction, dep_hash);
+				debug_assert (dep_block, "topology dependency missing from ledger", dep_hash.to_string ());
+				if (dep_block)
+				{
+					debug_assert (dep_block->sideband ().topo_index < topo, "topology ordering violation");
+				}
+			}
 			result.push_back (block);
 		}
 	}
