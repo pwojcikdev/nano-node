@@ -174,6 +174,7 @@ TEST (bootstrap, profile_topology)
 	config_client.bootstrap.enable_dependency_walker = false;
 	config_client.bootstrap.enable_frontier_scan = false;
 	config_client.bootstrap.enable_topology = true;
+	config_client.max_unchecked_blocks = 0; // Disable unchecked replay to test topology ordering
 
 	nano::node_flags flags_client;
 	flags_client.disable_legacy_bootstrap = true;
@@ -201,14 +202,14 @@ TEST (bootstrap, profile_topology)
 	rate.observe ("count", [&] () { return client->ledger.block_count (); });
 	rate.observe ("unchecked", [&] () { return client->unchecked.count (); });
 	rate.observe ("block_processor", [&] () { return client->block_processor.size (); });
-	rate.observe (*client, nano::stat::type::bootstrap, nano::stat::detail::request, nano::stat::dir::out);
-	rate.observe (*client, nano::stat::type::bootstrap, nano::stat::detail::reply, nano::stat::dir::in);
+	rate.observe (*client, nano::stat::type::bootstrap, nano::stat::detail::request);
+	rate.observe (*client, nano::stat::type::bootstrap, nano::stat::detail::reply);
 	rate.observe (*client, nano::stat::type::bootstrap, nano::stat::detail::blocks, nano::stat::dir::in);
 	rate.observe (*server, nano::stat::type::bootstrap_server, nano::stat::detail::blocks, nano::stat::dir::out);
-	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::old, nano::stat::dir::in);
-	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::gap_epoch_open_pending, nano::stat::dir::in);
-	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::gap_source, nano::stat::dir::in);
-	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::gap_previous, nano::stat::dir::in);
+	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::old);
+	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::gap_epoch_open_pending);
+	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::gap_source);
+	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::gap_previous);
 	rate.background_print (3s);
 
 	while (true)
