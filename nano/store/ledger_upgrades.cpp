@@ -62,6 +62,21 @@ void ledger_store::upgrade_v24_to_v25 ()
 			return deps;
 		};
 
+		auto verify_topo = [&] (std::shared_ptr<nano::block> const & blk) {
+			auto topo = blk->sideband ().topo_index;
+			for (auto const & dep_hash : blk->dependencies ())
+			{
+				if (dep_hash.is_zero ())
+				{
+					continue;
+				}
+				auto dep_block = block.get (transaction, dep_hash);
+				debug_assert (!dep_block || dep_block->sideband ().topo_index < topo,
+				"topo ordering violation",
+				"block " + blk->hash ().to_string () + " topo=" + std::to_string (topo) + " dep " + dep_hash.to_string () + " dep_topo=" + std::to_string (dep_block ? dep_block->sideband ().topo_index : 0));
+			}
+		};
+
 		auto resolve = [&] (std::shared_ptr<nano::block> const & blk) -> bool {
 			// Compute topo_index: 1 + max of all dependency topo indices (minimum 1)
 			uint64_t topo = 1;
@@ -88,6 +103,8 @@ void ledger_store::upgrade_v24_to_v25 ()
 			blk->sideband_set (sideband);
 			block.put (transaction, hash, *blk);
 			// topology.put (transaction, topo, hash); // TODO: Phase 2: Add separate topology table for reverse lookup
+
+			verify_topo (blk);
 
 			++processed;
 
@@ -118,6 +135,7 @@ void ledger_store::upgrade_v24_to_v25 ()
 			if (bws.sideband.topo_index != 0)
 			{
 				// Already resolved by a previous bounded_dfs call
+				verify_topo (bws.block);
 				++crawler;
 				continue;
 			}
@@ -135,6 +153,20 @@ void ledger_store::upgrade_v24_to_v25 ()
 			logger.debug (nano::log::type::ledger_upgrade, "Processed block {} with hash {}", processed, hash);
 
 			++crawler;
+		}
+
+		// Commit
+		transaction.refresh ();
+
+		// Verify that all blocks have been assigned a topo_index and that the ordering is correct
+		{
+			for (auto it = block.begin (transaction), end = block.end (transaction); it != end; ++it)
+			{
+				auto const & [hash, bws] = *it;
+				auto const & blk = bws.block;
+				release_assert (blk->sideband ().topo_index != 0, "block missing topo_index after v24->v25 upgrade", hash.to_string ());
+				verify_topo (blk);
+			}
 		}
 
 		logger.info (nano::log::type::ledger_upgrade, "Done processing {} blocks", processed);

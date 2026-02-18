@@ -452,7 +452,10 @@ std::deque<std::shared_ptr<nano::block>> nano::bootstrap_server::prepare_topolog
 				debug_assert (dep_block, "topology dependency missing from ledger", dep_hash.to_string ());
 				if (dep_block)
 				{
-					debug_assert (dep_block->sideband ().topo_index < topo, "topology ordering violation");
+					auto dep_topo = dep_block->sideband ().topo_index;
+					debug_assert (dep_topo < topo, "topology ordering violation",
+					"block " + hash.to_string () + " topo=" + std::to_string (topo) +
+					" dep " + dep_hash.to_string () + " dep_topo=" + std::to_string (dep_topo));
 				}
 			}
 			result.push_back (block);
