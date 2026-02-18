@@ -488,12 +488,6 @@ void nano::ledger_processor::epoch_block_impl (nano::state_block & block_a)
 				else
 				{
 					result = block_a.hashables.representative.is_zero () ? nano::block_status::progress : nano::block_status::representative_mismatch;
-					// Non-exisitng account should have pending entries
-					if (result == nano::block_status::progress)
-					{
-						bool pending_exists = ledger.any.receivable_exists (transaction, block_a.hashables.account);
-						result = pending_exists ? nano::block_status::progress : nano::block_status::gap_epoch_open_pending;
-					}
 				}
 				if (result == nano::block_status::progress)
 				{
