@@ -210,6 +210,10 @@ TEST (bootstrap, profile_topology)
 	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::gap_epoch_open_pending);
 	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::gap_source);
 	rate.observe (*client, nano::stat::type::ledger, nano::stat::detail::gap_previous);
+	rate.observe (*client, nano::stat::type::block_processor_source, nano::stat::detail::bootstrap);
+	rate.observe (*client, nano::stat::type::block_processor_source, nano::stat::detail::live);
+	rate.observe (*client, nano::stat::type::block_processor_source, nano::stat::detail::live_originator);
+	rate.observe (*client, nano::stat::type::block_processor_source, nano::stat::detail::unchecked);
 	rate.background_print (3s);
 
 	while (true)
