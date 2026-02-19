@@ -5,6 +5,8 @@ add_library(
   account_iterator.cpp
   account_iterator.hpp
   account_iterator_impl.hpp
+  block_validator.hpp
+  block_validator.cpp
   common.hpp
   common.cpp
   fwd.hpp
