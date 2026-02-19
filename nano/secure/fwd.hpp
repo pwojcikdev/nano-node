@@ -6,6 +6,8 @@
 namespace nano
 {
 class account_info;
+struct block_insert_instructions;
+struct block_validation_context;
 class ledger;
 class ledger_cache;
 class ledger_constants;

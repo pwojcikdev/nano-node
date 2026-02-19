@@ -9,8 +9,8 @@
 #include <nano/lib/utility.hpp>
 #include <nano/lib/work.hpp>
 #include <nano/node/make_store.hpp>
-#include <nano/secure/common.hpp>
 #include <nano/secure/block_validator.hpp>
+#include <nano/secure/common.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_rollback.hpp>
 #include <nano/secure/ledger_set_any.hpp>
@@ -376,7 +376,7 @@ nano::block_status nano::ledger::process (secure::write_transaction const & tran
 {
 	debug_assert (!work.validate_entry (*block) || constants.genesis == nano::dev::genesis);
 
-	auto ctx = nano::create_validation_context (transaction, *this, *block);
+	auto ctx = prepare_context (transaction, *block);
 	auto result = nano::block_validator::validate (ctx);
 
 	if (auto * instructions = std::get_if<nano::block_insert_instructions> (&result))

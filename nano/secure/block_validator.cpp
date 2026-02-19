@@ -16,15 +16,14 @@
 // Context factory
 // ============================================================================
 
-nano::block_validation_context nano::create_validation_context (
+nano::block_validation_context nano::ledger::prepare_context (
 nano::secure::write_transaction const & transaction,
-nano::ledger & ledger,
-nano::block & block)
+nano::block & block) const
 {
 	auto hash = block.hash ();
 
 	// Determine block existence
-	bool block_exists = ledger.any.block_exists_or_pruned (transaction, hash);
+	bool block_exists = any.block_exists_or_pruned (transaction, hash);
 
 	// Determine the account
 	nano::account account;
@@ -35,11 +34,11 @@ nano::block & block)
 	if (previous_field && !previous_field->is_zero ())
 	{
 		// Non-open block: get previous and derive account from it
-		previous_block = ledger.store.block.get (transaction, previous_field.value ());
+		previous_block = store.block.get (transaction, previous_field.value ());
 		if (previous_block)
 		{
 			account = previous_block->account ();
-			auto bal = ledger.any.block_balance (transaction, previous_field.value ());
+			auto bal = any.block_balance (transaction, previous_field.value ());
 			if (bal)
 			{
 				prev_balance = bal.value ();
@@ -57,7 +56,7 @@ nano::block & block)
 	// Fetch current account info
 	std::optional<nano::account_info> old_account_info;
 	nano::account_info info;
-	if (!ledger.store.account.get (transaction, account, info))
+	if (!store.account.get (transaction, account, info))
 	{
 		old_account_info = info;
 	}
@@ -70,7 +69,7 @@ nano::block & block)
 	if (source_field)
 	{
 		nano::pending_key key (account, source_field.value ());
-		auto pending = ledger.store.pending.get (transaction, key);
+		auto pending = store.pending.get (transaction, key);
 		if (pending)
 		{
 			pending_receive_info = pending.value ();
@@ -82,7 +81,7 @@ nano::block & block)
 	if (link_field && !pending_receive_info)
 	{
 		nano::pending_key key (account, link_field->as_block_hash ());
-		auto pending = ledger.store.pending.get (transaction, key);
+		auto pending = store.pending.get (transaction, key);
 		if (pending)
 		{
 			pending_receive_info = pending.value ();
@@ -90,17 +89,17 @@ nano::block & block)
 	}
 
 	// Check if any pending exists (for epoch open blocks)
-	bool any_pending_exists = ledger.any.receivable_exists (transaction, account);
+	bool any_pending_exists = any.receivable_exists (transaction, account);
 
 	// Check source/link block existence
 	bool source_block_exists = false;
 	if (source_field)
 	{
-		source_block_exists = ledger.any.block_exists_or_pruned (transaction, source_field.value ());
+		source_block_exists = any.block_exists_or_pruned (transaction, source_field.value ());
 	}
 	else if (link_field && !link_field->is_zero ())
 	{
-		source_block_exists = ledger.any.block_exists_or_pruned (transaction, link_field->as_block_hash ());
+		source_block_exists = any.block_exists_or_pruned (transaction, link_field->as_block_hash ());
 	}
 
 	return nano::block_validation_context{
@@ -114,9 +113,9 @@ nano::block & block)
 		any_pending_exists,
 		source_block_exists,
 		prev_balance,
-		ledger.constants.epochs,
-		ledger.work,
-		ledger.constants.burn_account,
+		constants.epochs,
+		work,
+		constants.burn_account,
 	};
 }
 
@@ -465,9 +464,12 @@ nano::block_validator::result_type nano::block_validator::validate_send_block (n
 {
 	nano::block_status s;
 
-	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_account_exists_for_non_open (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_valid_predecessor (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_account_exists_for_non_open (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_valid_predecessor (ctx); s != nano::block_status::progress)
+		return s;
 
 	// Verify the previous block is the account head (fork check)
 	{
@@ -476,10 +478,12 @@ nano::block_validator::result_type nano::block_validator::validate_send_block (n
 			return nano::block_status::fork;
 	}
 
-	if (s = ensure_valid_signature (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_valid_signature (ctx); s != nano::block_status::progress)
+		return s;
 
 	nano::block_details details (nano::epoch::epoch_0, false, false, false);
-	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress) return s;
+	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress)
+		return s;
 
 	// Negative spend check
 	{
@@ -495,9 +499,12 @@ nano::block_validator::result_type nano::block_validator::validate_receive_block
 {
 	nano::block_status s;
 
-	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_account_exists_for_non_open (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_valid_predecessor (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_account_exists_for_non_open (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_valid_predecessor (ctx); s != nano::block_status::progress)
+		return s;
 
 	{
 		auto const & info = ctx.old_account_info.value ();
@@ -505,8 +512,10 @@ nano::block_validator::result_type nano::block_validator::validate_receive_block
 			return nano::block_status::fork;
 	}
 
-	if (s = ensure_valid_signature (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_source_exists (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_valid_signature (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_source_exists (ctx); s != nano::block_status::progress)
+		return s;
 
 	// Head check (same as fork check for receive)
 	{
@@ -515,11 +524,14 @@ nano::block_validator::result_type nano::block_validator::validate_receive_block
 			return nano::block_status::gap_previous;
 	}
 
-	if (s = ensure_pending_receivable (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_legacy_source_epoch_0 (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_pending_receivable (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_legacy_source_epoch_0 (ctx); s != nano::block_status::progress)
+		return s;
 
 	nano::block_details details (nano::epoch::epoch_0, false, false, false);
-	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress) return s;
+	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress)
+		return s;
 
 	return build_receive_instructions (ctx, block);
 }
@@ -528,21 +540,28 @@ nano::block_validator::result_type nano::block_validator::validate_open_block (n
 {
 	nano::block_status s;
 
-	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_valid_signature (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_source_exists (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_valid_signature (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_source_exists (ctx); s != nano::block_status::progress)
+		return s;
 
 	// For open_block, account_get returning error means account doesn't exist (good)
 	// account_get returning success means account already opened (fork)
 	if (ctx.old_account_info.has_value ())
 		return nano::block_status::fork;
 
-	if (s = ensure_pending_receivable (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_not_burn_account (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_legacy_source_epoch_0 (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_pending_receivable (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_not_burn_account (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_legacy_source_epoch_0 (ctx); s != nano::block_status::progress)
+		return s;
 
 	nano::block_details details (nano::epoch::epoch_0, false, false, false);
-	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress) return s;
+	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress)
+		return s;
 
 	return build_open_instructions (ctx, block);
 }
@@ -551,9 +570,12 @@ nano::block_validator::result_type nano::block_validator::validate_change_block 
 {
 	nano::block_status s;
 
-	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_account_exists_for_non_open (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_valid_predecessor (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_account_exists_for_non_open (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_valid_predecessor (ctx); s != nano::block_status::progress)
+		return s;
 
 	{
 		auto const & info = ctx.old_account_info.value ();
@@ -561,10 +583,12 @@ nano::block_validator::result_type nano::block_validator::validate_change_block 
 			return nano::block_status::fork;
 	}
 
-	if (s = ensure_valid_signature (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_valid_signature (ctx); s != nano::block_status::progress)
+		return s;
 
 	nano::block_details details (nano::epoch::epoch_0, false, false, false);
-	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress) return s;
+	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress)
+		return s;
 
 	return build_change_instructions (ctx, block);
 }
@@ -573,9 +597,12 @@ nano::block_validator::result_type nano::block_validator::validate_state_block (
 {
 	nano::block_status s;
 
-	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_valid_signature (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_not_burn_account (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_valid_signature (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_not_burn_account (ctx); s != nano::block_status::progress)
+		return s;
 
 	auto epoch = nano::epoch::epoch_0;
 	auto source_epoch = nano::epoch::epoch_0;
@@ -639,7 +666,8 @@ nano::block_validator::result_type nano::block_validator::validate_state_block (
 	}
 
 	nano::block_details details (epoch, is_send, is_receive, false);
-	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress) return s;
+	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress)
+		return s;
 
 	return build_state_instructions (ctx, block, is_send, is_receive, epoch, source_epoch, amount);
 }
@@ -648,14 +676,16 @@ nano::block_validator::result_type nano::block_validator::validate_epoch_block (
 {
 	nano::block_status s;
 
-	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_block_does_not_exist (ctx); s != nano::block_status::progress)
+		return s;
 
 	// Epoch blocks are signed by the epoch signer, not the account
 	auto epoch_signer = ctx.epochs.signer (ctx.epochs.epoch (block.hashables.link));
 	if (validate_message (epoch_signer, ctx.hash, block.signature))
 		return nano::block_status::bad_signature;
 
-	if (s = ensure_not_burn_account (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_not_burn_account (ctx); s != nano::block_status::progress)
+		return s;
 
 	if (ctx.old_account_info)
 	{
@@ -667,21 +697,27 @@ nano::block_validator::result_type nano::block_validator::validate_epoch_block (
 		if (block.hashables.previous != info.head)
 			return nano::block_status::fork;
 
-		if (s = ensure_epoch_representative_unchanged (ctx); s != nano::block_status::progress) return s;
+		if (s = ensure_epoch_representative_unchanged (ctx); s != nano::block_status::progress)
+			return s;
 	}
 	else
 	{
 		// Epoch open for non-existing account
-		if (s = ensure_epoch_open_has_zero_rep (ctx); s != nano::block_status::progress) return s;
-		if (s = ensure_epoch_open_has_pending (ctx); s != nano::block_status::progress) return s;
+		if (s = ensure_epoch_open_has_zero_rep (ctx); s != nano::block_status::progress)
+			return s;
+		if (s = ensure_epoch_open_has_pending (ctx); s != nano::block_status::progress)
+			return s;
 	}
 
-	if (s = ensure_epoch_valid_upgrade (ctx); s != nano::block_status::progress) return s;
-	if (s = ensure_epoch_balance_unchanged (ctx); s != nano::block_status::progress) return s;
+	if (s = ensure_epoch_valid_upgrade (ctx); s != nano::block_status::progress)
+		return s;
+	if (s = ensure_epoch_balance_unchanged (ctx); s != nano::block_status::progress)
+		return s;
 
 	auto epoch = ctx.epochs.epoch (block.hashables.link);
 	nano::block_details details (epoch, false, false, true);
-	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress) return s;
+	if (s = ensure_sufficient_work (ctx, details); s != nano::block_status::progress)
+		return s;
 
 	return build_epoch_instructions (ctx, block, epoch);
 }

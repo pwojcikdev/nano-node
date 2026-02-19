@@ -31,6 +31,7 @@ class block;
 class block_details;
 class block_visitor;
 class container_info;
+class epochs;
 class error;
 class jsonconfig;
 class keypair;
@@ -43,6 +44,7 @@ class thread_pool;
 class thread_runner;
 class tomlconfig;
 class vote;
+class work_thresholds;
 
 template <typename Key, typename Value>
 class uniquer;

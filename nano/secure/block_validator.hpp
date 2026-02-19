@@ -14,10 +14,6 @@
 
 namespace nano
 {
-class epochs;
-class ledger;
-class work_thresholds;
-
 /**
  * Pre-fetched data needed for block validation.
  * All database lookups happen during construction (via create_validation_context).
@@ -77,15 +73,6 @@ struct block_insert_instructions
 	// Stat to increment
 	nano::stat::detail stat_detail{ nano::stat::detail::send };
 };
-
-/**
- * Creates a block_validation_context by performing all necessary database lookups.
- * This is the only function that touches the ledger/store for validation purposes.
- */
-nano::block_validation_context create_validation_context (
-nano::secure::write_transaction const & transaction,
-nano::ledger & ledger,
-nano::block & block);
 
 /**
  * Pure validation logic for blocks. Operates entirely on a pre-fetched block_validation_context.
