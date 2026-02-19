@@ -158,14 +158,25 @@ void ledger_store::upgrade_v24_to_v25 ()
 		// Commit
 		transaction.refresh ();
 
+		logger.info (nano::log::type::ledger_upgrade, "Verifying topology index...");
+
 		// Verify that all blocks have been assigned a topo_index and that the ordering is correct
 		{
+			int verified = 0;
 			for (auto it = block.begin (transaction), end = block.end (transaction); it != end; ++it)
 			{
 				auto const & [hash, bws] = *it;
 				auto const & blk = bws.block;
 				release_assert (blk->sideband ().topo_index != 0, "block missing topo_index after v24->v25 upgrade", hash.to_string ());
 				verify_topo (blk);
+
+				++verified;
+
+				if (verified % batch_size == 0)
+				{
+					auto percentage = total_blocks > 0 ? (verified * 100) / total_blocks : 0;
+					logger.info (nano::log::type::ledger_upgrade, "Topology verification progress: {} / {} blocks ({}%)", verified, total_blocks, percentage);
+				}
 			}
 		}
 
