@@ -57,5 +57,6 @@ public:
 	auto operator* () const -> const_reference;
 	auto operator== (iterator const & other) const -> bool;
 	bool is_end () const;
+	void reset () noexcept;
 };
-} // namespace nano::store
+}

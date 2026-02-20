@@ -85,4 +85,11 @@ auto typed_iterator<Key, Value>::is_end () const -> bool
 {
 	return std::holds_alternative<std::monostate> (current);
 }
+
+template <typename Key, typename Value>
+void typed_iterator<Key, Value>::reset () noexcept
+{
+	iter.reset ();
+	current = std::monostate{};
+}
 }

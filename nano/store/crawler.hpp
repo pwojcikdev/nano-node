@@ -201,10 +201,13 @@ public:
 		return it_ != end_;
 	}
 
-	// Reset to beginning
-	void reset ()
+	/**
+	 * Release iterators, making the crawler invalid.
+	 */
+	void reset () noexcept
 	{
-		seek (seek_key_type{ 0 });
+		it_.reset ();
+		end_.reset ();
 	}
 
 	/**

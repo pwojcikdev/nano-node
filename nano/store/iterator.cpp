@@ -99,4 +99,10 @@ bool iterator::is_end () const
 {
 	return std::holds_alternative<std::monostate> (current);
 }
+
+void iterator::reset () noexcept
+{
+	txn = nullptr;
+	current = std::monostate{};
+}
 }
