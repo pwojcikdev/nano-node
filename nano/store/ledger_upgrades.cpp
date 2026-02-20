@@ -71,7 +71,7 @@ void ledger_store::upgrade_v24_to_v25 ()
 					continue;
 				}
 				auto dep_block = block.get (transaction, dep_hash);
-				debug_assert (!dep_block || dep_block->sideband ().topo_index < topo,
+				release_assert (!dep_block || dep_block->sideband ().topo_index < topo,
 				"topo ordering violation",
 				"block " + blk->hash ().to_string () + " topo=" + std::to_string (topo) + " dep " + dep_hash.to_string () + " dep_topo=" + std::to_string (dep_block ? dep_block->sideband ().topo_index : 0));
 			}
@@ -163,6 +163,7 @@ void ledger_store::upgrade_v24_to_v25 ()
 
 			logger.debug (nano::log::type::ledger_upgrade, "Processed block {} with hash {}", processed, hash);
 		}
+		crawler.reset (); // Release crawler iterators before refreshing transaction
 
 		// Commit
 		transaction.refresh ();
