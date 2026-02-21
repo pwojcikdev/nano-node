@@ -143,9 +143,8 @@ TEST (ledger, process_send)
 	ASSERT_EQ (2, info2->block_count);
 	auto latest6 = ledger.any.block_get (transaction, info2->head);
 	ASSERT_NE (nullptr, latest6);
-	auto latest7 = dynamic_cast<nano::send_block *> (latest6.get ());
-	ASSERT_NE (nullptr, latest7);
-	ASSERT_EQ (*send, *latest7);
+	ASSERT_EQ (nano::block_type::send, latest6->type ());
+	ASSERT_EQ (*send, *latest6);
 	// Create an open block opening an account accepting the send we just created
 	auto open = builder
 				.open ()
@@ -174,16 +173,14 @@ TEST (ledger, process_send)
 	ASSERT_TRUE (info3);
 	auto latest2 = ledger.any.block_get (transaction, info3->head);
 	ASSERT_NE (nullptr, latest2);
-	auto latest3 = dynamic_cast<nano::send_block *> (latest2.get ());
-	ASSERT_NE (nullptr, latest3);
-	ASSERT_EQ (*send, *latest3);
+	ASSERT_EQ (nano::block_type::send, latest2->type ());
+	ASSERT_EQ (*send, *latest2);
 	auto info4 = ledger.any.account_get (transaction, key2.pub);
 	ASSERT_TRUE (info4);
 	auto latest4 = ledger.any.block_get (transaction, info4->head);
 	ASSERT_NE (nullptr, latest4);
-	auto latest5 = dynamic_cast<nano::open_block *> (latest4.get ());
-	ASSERT_NE (nullptr, latest5);
-	ASSERT_EQ (*open, *latest5);
+	ASSERT_EQ (nano::block_type::open, latest4->type ());
+	ASSERT_EQ (*open, *latest4);
 	ASSERT_FALSE (ledger.rollback (transaction, hash2));
 	auto info5 = ledger.any.account_get (transaction, key2.pub);
 	ASSERT_FALSE (info5);

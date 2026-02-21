@@ -1222,10 +1222,10 @@ void nano::json_handler::block_confirm ()
 				bool is_state_epoch (false);
 				if (amount)
 				{
-					if (auto state = dynamic_cast<nano::state_block *> (block_l.get ()))
+					if (block_l->type () == nano::block_type::state)
 					{
-						is_state_send = state->is_send ();
-						is_state_epoch = amount.value () == 0 && node.ledger.is_epoch_link (state->link_field ().value ());
+						is_state_send = block_l->is_send ();
+						is_state_epoch = amount.value () == 0 && node.ledger.is_epoch_link (block_l->link_field ().value ());
 					}
 				}
 				node.observers.blocks.notify (status, {}, account, amount ? amount.value ().number () : 0, is_state_send, is_state_epoch);
@@ -2438,12 +2438,12 @@ public:
 	virtual ~history_visitor () = default;
 	void send_block (nano::send_block const & block_a)
 	{
-		if (should_ignore_account (block_a.hashables.destination))
+		if (should_ignore_account (block_a.destination_field ().value ()))
 		{
 			return;
 		}
 		tree.put ("type", "send");
-		auto account (block_a.hashables.destination.to_account ());
+		auto account (block_a.destination_field ().value ().to_account ());
 		tree.put ("account", account);
 		auto amount = handler.node.ledger.any.block_amount (transaction, hash);
 		if (amount)
@@ -2453,8 +2453,8 @@ public:
 		if (raw)
 		{
 			tree.put ("destination", account);
-			tree.put ("balance", block_a.hashables.balance.to_string_dec ());
-			tree.put ("previous", block_a.hashables.previous.to_string ());
+			tree.put ("balance", block_a.balance_field ().value ().to_string_dec ());
+			tree.put ("previous", block_a.previous ().to_string ());
 		}
 	}
 	void receive_block (nano::receive_block const & block_a)
@@ -2463,7 +2463,7 @@ public:
 		auto amount = handler.node.ledger.any.block_amount (transaction, hash);
 		if (amount)
 		{
-			auto source_account = handler.node.ledger.any.block_account (transaction, block_a.hashables.source);
+			auto source_account = handler.node.ledger.any.block_account (transaction, block_a.source_field ().value ());
 			if (source_account)
 			{
 				tree.put ("account", source_account.value ().to_account ());
@@ -2472,8 +2472,8 @@ public:
 		}
 		if (raw)
 		{
-			tree.put ("source", block_a.hashables.source.to_string ());
-			tree.put ("previous", block_a.hashables.previous.to_string ());
+			tree.put ("source", block_a.source_field ().value ().to_string ());
+			tree.put ("previous", block_a.previous ().to_string ());
 		}
 	}
 	void open_block (nano::open_block const & block_a)
@@ -2481,22 +2481,22 @@ public:
 		if (raw)
 		{
 			tree.put ("type", "open");
-			tree.put ("representative", block_a.hashables.representative.to_account ());
-			tree.put ("source", block_a.hashables.source.to_string ());
-			tree.put ("opened", block_a.hashables.account.to_account ());
+			tree.put ("representative", block_a.representative_field ().value ().to_account ());
+			tree.put ("source", block_a.source_field ().value ().to_string ());
+			tree.put ("opened", block_a.account_field ().value ().to_account ());
 		}
 		else
 		{
 			// Report opens as a receive
 			tree.put ("type", "receive");
 		}
-		if (block_a.hashables.source != handler.node.ledger.constants.genesis->account ().as_union ())
+		if (block_a.source_field ().value () != handler.node.ledger.constants.genesis->account ().as_union ())
 		{
 			bool error_or_pruned (false);
 			auto amount = handler.node.ledger.any.block_amount (transaction, hash);
 			if (amount)
 			{
-				auto source_account = handler.node.ledger.any.block_account (transaction, block_a.hashables.source);
+				auto source_account = handler.node.ledger.any.block_account (transaction, block_a.source_field ().value ());
 				if (source_account)
 				{
 					tree.put ("account", source_account.value ().to_account ());
@@ -2515,8 +2515,8 @@ public:
 		if (raw && accounts_filter.empty ())
 		{
 			tree.put ("type", "change");
-			tree.put ("representative", block_a.hashables.representative.to_account ());
-			tree.put ("previous", block_a.hashables.previous.to_string ());
+			tree.put ("representative", block_a.representative_field ().value ().to_account ());
+			tree.put ("previous", block_a.previous ().to_string ());
 		}
 	}
 	void state_block (nano::state_block const & block_a)
@@ -2524,15 +2524,15 @@ public:
 		if (raw)
 		{
 			tree.put ("type", "state");
-			tree.put ("representative", block_a.hashables.representative.to_account ());
-			tree.put ("link", block_a.hashables.link.to_string ());
-			tree.put ("balance", block_a.hashables.balance.to_string_dec ());
-			tree.put ("previous", block_a.hashables.previous.to_string ());
+			tree.put ("representative", block_a.representative_field ().value ().to_account ());
+			tree.put ("link", block_a.link_field ().value ().to_string ());
+			tree.put ("balance", block_a.balance_field ().value ().to_string_dec ());
+			tree.put ("previous", block_a.previous ().to_string ());
 		}
-		auto balance (block_a.hashables.balance.number ());
-		auto previous_balance_raw = handler.node.ledger.any.block_balance (transaction, block_a.hashables.previous);
+		auto balance (block_a.balance_field ().value ().number ());
+		auto previous_balance_raw = handler.node.ledger.any.block_balance (transaction, block_a.previous ());
 		auto previous_balance = previous_balance_raw.value_or (0);
-		if (!block_a.hashables.previous.is_zero () && !previous_balance_raw.has_value ())
+		if (!block_a.previous ().is_zero () && !previous_balance_raw.has_value ())
 		{
 			// If previous hash is non-zero and we can't query the balance, e.g. it's pruned, we can't determine the block type
 			if (raw)
@@ -2546,7 +2546,7 @@ public:
 		}
 		else if (balance < previous_balance.number ())
 		{
-			if (should_ignore_account (block_a.hashables.link.as_account ()))
+			if (should_ignore_account (block_a.link_field ().value ().as_account ()))
 			{
 				tree.clear ();
 				return;
@@ -2559,19 +2559,19 @@ public:
 			{
 				tree.put ("type", "send");
 			}
-			tree.put ("account", block_a.hashables.link.to_account ());
+			tree.put ("account", block_a.link_field ().value ().to_account ());
 			tree.put ("amount", (previous_balance.number () - balance).convert_to<std::string> ());
 		}
 		else
 		{
-			if (block_a.hashables.link.is_zero ())
+			if (block_a.link_field ().value ().is_zero ())
 			{
 				if (raw && accounts_filter.empty ())
 				{
 					tree.put ("subtype", "change");
 				}
 			}
-			else if (balance == previous_balance && handler.node.ledger.is_epoch_link (block_a.hashables.link))
+			else if (balance == previous_balance && handler.node.ledger.is_epoch_link (block_a.link_field ().value ()))
 			{
 				if (raw && accounts_filter.empty ())
 				{
@@ -2581,7 +2581,7 @@ public:
 			}
 			else
 			{
-				auto source_account = handler.node.ledger.any.block_account (transaction, block_a.hashables.link.as_block_hash ());
+				auto source_account = handler.node.ledger.any.block_account (transaction, block_a.link_field ().value ().as_block_hash ());
 				if (source_account && should_ignore_account (source_account.value ()))
 				{
 					tree.clear ();

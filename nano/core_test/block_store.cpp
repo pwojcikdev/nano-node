@@ -391,8 +391,7 @@ TEST (block_store, genesis)
 	ASSERT_EQ (nano::dev::genesis->hash (), info.head);
 	auto block1 (store->block.get (transaction, info.head));
 	ASSERT_NE (nullptr, block1);
-	auto receive1 (dynamic_cast<nano::open_block *> (block1.get ()));
-	ASSERT_NE (nullptr, receive1);
+	ASSERT_EQ (nano::block_type::open, block1->type ());
 	ASSERT_LE (info.modified, nano::seconds_since_epoch ());
 	ASSERT_EQ (info.block_count, 1);
 	// Genesis block should be confirmed by default
@@ -653,7 +652,7 @@ TEST (block_store, roots)
 					  .sign (nano::keypair ().prv, 4)
 					  .work (5)
 					  .build ();
-	ASSERT_EQ (send_block->hashables.previous, send_block->root ().as_block_hash ());
+	ASSERT_EQ (send_block->previous (), send_block->root ().as_block_hash ());
 	auto change_block = builder
 						.change ()
 						.previous (0)
@@ -661,7 +660,7 @@ TEST (block_store, roots)
 						.sign (nano::keypair ().prv, 3)
 						.work (4)
 						.build ();
-	ASSERT_EQ (change_block->hashables.previous, change_block->root ().as_block_hash ());
+	ASSERT_EQ (change_block->previous (), change_block->root ().as_block_hash ());
 	auto receive_block = builder
 						 .receive ()
 						 .previous (0)
@@ -669,7 +668,7 @@ TEST (block_store, roots)
 						 .sign (nano::keypair ().prv, 3)
 						 .work (4)
 						 .build ();
-	ASSERT_EQ (receive_block->hashables.previous, receive_block->root ().as_block_hash ());
+	ASSERT_EQ (receive_block->previous (), receive_block->root ().as_block_hash ());
 	auto open_block = builder
 					  .open ()
 					  .source (0)
@@ -678,7 +677,7 @@ TEST (block_store, roots)
 					  .sign (nano::keypair ().prv, 4)
 					  .work (5)
 					  .build ();
-	ASSERT_EQ (open_block->hashables.account, open_block->root ().as_account ());
+	ASSERT_EQ (open_block->account (), open_block->root ().as_account ());
 }
 
 TEST (block_store, pending_exists)

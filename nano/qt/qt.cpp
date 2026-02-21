@@ -522,7 +522,7 @@ public:
 	void send_block (nano::send_block const & block_a)
 	{
 		type = "Send";
-		account = block_a.hashables.destination;
+		account = block_a.destination_field ().value ();
 		auto amount_l = ledger.any.block_amount (transaction, block_a.hash ());
 		if (!amount_l)
 		{
@@ -537,7 +537,7 @@ public:
 	void receive_block (nano::receive_block const & block_a)
 	{
 		type = "Receive";
-		auto account_l = ledger.any.block_account (transaction, block_a.hashables.source);
+		auto account_l = ledger.any.block_account (transaction, block_a.source_field ().value ());
 		auto amount_l = ledger.any.block_amount (transaction, block_a.hash ());
 		if (!account_l)
 		{
@@ -560,9 +560,9 @@ public:
 	void open_block (nano::open_block const & block_a)
 	{
 		type = "Receive";
-		if (block_a.hashables.source != ledger.constants.genesis->account ().as_union ())
+		if (block_a.source_field ().value () != ledger.constants.genesis->account ().as_union ())
 		{
-			auto account_l = ledger.any.block_account (transaction, block_a.hashables.source);
+			auto account_l = ledger.any.block_account (transaction, block_a.source_field ().value ());
 			auto amount_l = ledger.any.block_amount (transaction, block_a.hash ());
 			if (!account_l)
 			{
@@ -585,17 +585,17 @@ public:
 	{
 		type = "Change";
 		amount = 0;
-		account = block_a.hashables.representative;
+		account = block_a.representative_field ().value ();
 	}
 	void state_block (nano::state_block const & block_a)
 	{
-		auto balance (block_a.hashables.balance.number ());
-		auto previous_balance = ledger.any.block_balance (transaction, block_a.hashables.previous);
+		auto balance (block_a.balance_field ().value ().number ());
+		auto previous_balance = ledger.any.block_balance (transaction, block_a.previous ());
 		// Error to receive previous block balance means that previous block was pruned from the ledger
 		if ((!previous_balance || balance < previous_balance.value ().number ()) && block_a.sideband ().details.is_send)
 		{
 			type = "Send";
-			account = block_a.hashables.link.as_account ();
+			account = block_a.link_field ().value ().as_account ();
 			if (!previous_balance)
 			{
 				type = "Send (pruned)";
@@ -606,11 +606,11 @@ public:
 				amount = previous_balance.value ().number () - balance;
 			}
 		}
-		else if (block_a.hashables.link.is_zero () && !block_a.sideband ().details.is_send)
+		else if (block_a.link_field ().value ().is_zero () && !block_a.sideband ().details.is_send)
 		{
 			debug_assert (!block_a.sideband ().details.is_receive && !block_a.sideband ().details.is_epoch);
 			type = "Change";
-			account = block_a.hashables.representative;
+			account = block_a.representative_field ().value ();
 			amount = 0;
 			if (!previous_balance)
 			{
@@ -621,23 +621,23 @@ public:
 				debug_assert (balance == previous_balance);
 			}
 		}
-		else if (ledger.is_epoch_link (block_a.hashables.link) && block_a.sideband ().details.is_epoch)
+		else if (ledger.is_epoch_link (block_a.link_field ().value ()) && block_a.sideband ().details.is_epoch)
 		{
 			debug_assert (!previous_balance || balance == previous_balance);
 			type = "Epoch";
 			amount = 0;
-			if (!previous_balance && !block_a.hashables.previous.is_zero ())
+			if (!previous_balance && !block_a.previous ().is_zero ())
 			{
 				// Epoch block with previous balance error is pruned only if it isn't open block for an account
 				type = "Epoch (pruned)";
 			}
-			account = ledger.epoch_signer (block_a.hashables.link);
+			account = ledger.epoch_signer (block_a.link_field ().value ());
 		}
 		else
 		{
 			debug_assert (block_a.sideband ().details.is_receive);
 			type = "Receive";
-			auto account_l = ledger.any.block_account (transaction, block_a.hashables.link.as_block_hash ());
+			auto account_l = ledger.any.block_account (transaction, block_a.link_field ().value ().as_block_hash ());
 			if (!account_l)
 			{
 				type = "Receive (pruned source)";
@@ -648,7 +648,7 @@ public:
 			}
 			if (!previous_balance)
 			{
-				if (!block_a.hashables.previous.is_zero ())
+				if (!block_a.previous ().is_zero ())
 				{
 					// Receive block with previous balance error is pruned only if it isn't open block for an account
 					type = "Receive (pruned)";

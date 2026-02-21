@@ -41,7 +41,7 @@ std::unique_ptr<nanoapi::BlockSendT> nano::ipc::flatbuffers_builder::from (nano:
 	auto block (std::make_unique<nanoapi::BlockSendT> ());
 	block->hash = block_a.hash ().to_string ();
 	block->balance = block_a.balance ().to_string_dec ();
-	block->destination = block_a.hashables.destination.to_account ();
+	block->destination = block_a.destination_field ().value ().to_account ();
 	block->previous = block_a.previous ().to_string ();
 	block->signature = block_a.signature.to_string ();
 	block->work = nano::to_string_hex (block_a.work);
