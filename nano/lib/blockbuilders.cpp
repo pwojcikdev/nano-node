@@ -1,5 +1,6 @@
 #include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/errors.hpp>
 #include <nano/lib/utility.hpp>
 
@@ -721,6 +722,24 @@ void nano::abstract_builder<BLOCKTYPE, BUILDER>::construct_block ()
 	block = std::make_unique<BLOCKTYPE> ();
 	ec.clear ();
 	build_state = 0;
+}
+
+template <typename BLOCKTYPE, typename BUILDER>
+nano::raw_block nano::abstract_builder<BLOCKTYPE, BUILDER>::build_raw ()
+{
+	auto block = build ();
+	return nano::to_raw (*block);
+}
+
+template <typename BLOCKTYPE, typename BUILDER>
+nano::raw_block nano::abstract_builder<BLOCKTYPE, BUILDER>::build_raw (std::error_code & ec)
+{
+	auto block = build (ec);
+	if (ec)
+	{
+		return nano::raw_block{};
+	}
+	return nano::to_raw (*block);
 }
 
 // Explicit instantiations

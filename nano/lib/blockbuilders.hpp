@@ -3,6 +3,7 @@
 #include <nano/lib/numbers.hpp>
 
 #include <memory>
+#include <system_error>
 
 namespace nano
 {
@@ -11,6 +12,7 @@ class send_block;
 class state_block;
 class open_block;
 class receive_block;
+class raw_block;
 }
 
 namespace nano
@@ -57,6 +59,10 @@ public:
 	std::shared_ptr<BLOCKTYPE> build ();
 	/** Returns the built block. Any errors are placed in \p ec */
 	std::shared_ptr<BLOCKTYPE> build (std::error_code & ec);
+	/** Returns the built block as a raw_block */
+	nano::raw_block build_raw ();
+	/** Returns the built block as a raw_block. Any errors are placed in \p ec */
+	nano::raw_block build_raw (std::error_code & ec);
 	/** Set work value */
 	abstract_builder & work (uint64_t work);
 	/** Sign the block using the \p private_key and \p public_key */
