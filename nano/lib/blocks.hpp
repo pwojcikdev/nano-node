@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/block_sideband.hpp>
+#include <nano/lib/blocks_hashables.hpp>
 #include <nano/lib/epoch.hpp>
 #include <nano/lib/errors.hpp>
 #include <nano/lib/fwd.hpp>
@@ -11,8 +12,6 @@
 
 #include <array>
 #include <optional>
-
-typedef struct blake2b_state__ blake2b_state;
 
 namespace nano
 {
@@ -111,20 +110,6 @@ public: // Logging
 	virtual void operator() (nano::object_stream &) const;
 };
 
-class send_hashables
-{
-public:
-	send_hashables () = default;
-	send_hashables (nano::block_hash const &, nano::account const &, nano::amount const &);
-	send_hashables (bool &, nano::stream &);
-	send_hashables (bool &, boost::property_tree::ptree const &);
-	void hash (blake2b_state &) const;
-	nano::block_hash previous;
-	nano::account destination;
-	nano::amount balance;
-	static std::size_t constexpr size = sizeof (previous) + sizeof (destination) + sizeof (balance);
-};
-
 class send_block : public nano::block
 {
 public:
@@ -167,19 +152,6 @@ protected:
 	void generate_hash (blake2b_state &) const override;
 };
 
-class receive_hashables
-{
-public:
-	receive_hashables () = default;
-	receive_hashables (nano::block_hash const &, nano::block_hash const &);
-	receive_hashables (bool &, nano::stream &);
-	receive_hashables (bool &, boost::property_tree::ptree const &);
-	void hash (blake2b_state &) const;
-	nano::block_hash previous;
-	nano::block_hash source;
-	static std::size_t constexpr size = sizeof (previous) + sizeof (source);
-};
-
 class receive_block : public nano::block
 {
 public:
@@ -219,20 +191,6 @@ public: // Logging
 
 protected:
 	void generate_hash (blake2b_state &) const override;
-};
-
-class open_hashables
-{
-public:
-	open_hashables () = default;
-	open_hashables (nano::block_hash const &, nano::account const &, nano::account const &);
-	open_hashables (bool &, nano::stream &);
-	open_hashables (bool &, boost::property_tree::ptree const &);
-	void hash (blake2b_state &) const;
-	nano::block_hash source;
-	nano::account representative;
-	nano::account account;
-	static std::size_t constexpr size = sizeof (source) + sizeof (representative) + sizeof (account);
 };
 
 class open_block : public nano::block
@@ -279,19 +237,6 @@ protected:
 	void generate_hash (blake2b_state &) const override;
 };
 
-class change_hashables
-{
-public:
-	change_hashables () = default;
-	change_hashables (nano::block_hash const &, nano::account const &);
-	change_hashables (bool &, nano::stream &);
-	change_hashables (bool &, boost::property_tree::ptree const &);
-	void hash (blake2b_state &) const;
-	nano::block_hash previous;
-	nano::account representative;
-	static std::size_t constexpr size = sizeof (previous) + sizeof (representative);
-};
-
 class change_block : public nano::block
 {
 public:
@@ -331,32 +276,6 @@ public: // Logging
 
 protected:
 	void generate_hash (blake2b_state &) const override;
-};
-
-class state_hashables
-{
-public:
-	state_hashables () = default;
-	state_hashables (nano::account const &, nano::block_hash const &, nano::account const &, nano::amount const &, nano::link const &);
-	state_hashables (bool &, nano::stream &);
-	state_hashables (bool &, boost::property_tree::ptree const &);
-	void hash (blake2b_state &) const;
-	// Account# / public key that operates this account
-	// Uses:
-	// Bulk signature validation in advance of further ledger processing
-	// Arranging uncomitted transactions by account
-	nano::account account;
-	// Previous transaction in this chain
-	nano::block_hash previous;
-	// Representative of this account
-	nano::account representative;
-	// Current balance of this account
-	// Allows lookup of account balance simply by looking at the head block
-	nano::amount balance;
-	// Link field contains source block_hash if receiving, destination account if sending
-	nano::link link;
-	// Serialized size
-	static std::size_t constexpr size = sizeof (account) + sizeof (previous) + sizeof (representative) + sizeof (balance) + sizeof (link);
 };
 
 class state_block : public nano::block

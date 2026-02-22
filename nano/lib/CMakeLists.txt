@@ -37,6 +37,8 @@ add_library(
   blockbuilders.cpp
   blocks.hpp
   blocks.cpp
+  blocks_hashables.hpp
+  blocks_hashables.cpp
   blocks_raw.hpp
   blocks_raw.cpp
   bounded_dfs.hpp

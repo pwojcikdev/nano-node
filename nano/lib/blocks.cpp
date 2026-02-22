@@ -398,60 +398,6 @@ void nano::send_block::block_work_set (uint64_t work_a)
 	work = work_a;
 }
 
-nano::send_hashables::send_hashables (nano::block_hash const & previous_a, nano::account const & destination_a, nano::amount const & balance_a) :
-	previous (previous_a),
-	destination (destination_a),
-	balance (balance_a)
-{
-}
-
-nano::send_hashables::send_hashables (bool & error_a, nano::stream & stream_a)
-{
-	try
-	{
-		nano::read (stream_a, previous.bytes);
-		nano::read (stream_a, destination.bytes);
-		nano::read (stream_a, balance.bytes);
-	}
-	catch (std::runtime_error const &)
-	{
-		error_a = true;
-	}
-}
-
-nano::send_hashables::send_hashables (bool & error_a, boost::property_tree::ptree const & tree_a)
-{
-	try
-	{
-		auto previous_l (tree_a.get<std::string> ("previous"));
-		auto destination_l (tree_a.get<std::string> ("destination"));
-		auto balance_l (tree_a.get<std::string> ("balance"));
-		error_a = previous.decode_hex (previous_l);
-		if (!error_a)
-		{
-			error_a = destination.decode_account (destination_l);
-			if (!error_a)
-			{
-				error_a = balance.decode_hex (balance_l);
-			}
-		}
-	}
-	catch (std::runtime_error const &)
-	{
-		error_a = true;
-	}
-}
-
-void nano::send_hashables::hash (blake2b_state & hash_a) const
-{
-	auto status (blake2b_update (&hash_a, previous.bytes.data (), sizeof (previous.bytes)));
-	debug_assert (status == 0);
-	status = blake2b_update (&hash_a, destination.bytes.data (), sizeof (destination.bytes));
-	debug_assert (status == 0);
-	status = blake2b_update (&hash_a, balance.bytes.data (), sizeof (balance.bytes));
-	debug_assert (status == 0);
-}
-
 void nano::send_block::serialize (nano::stream & stream_a) const
 {
 	write (stream_a, hashables.previous.bytes);
@@ -536,7 +482,7 @@ bool nano::send_block::deserialize_json (boost::property_tree::ptree const & tre
 }
 
 nano::send_block::send_block (nano::block_hash const & previous_a, nano::account const & destination_a, nano::amount const & balance_a, nano::raw_key const & prv_a, nano::public_key const & pub_a, uint64_t work_a) :
-	hashables (previous_a, destination_a, balance_a),
+	hashables{ .previous = previous_a, .destination = destination_a, .balance = balance_a },
 	signature (nano::sign_message (prv_a, pub_a, hash ())),
 	work (work_a)
 {
@@ -544,42 +490,52 @@ nano::send_block::send_block (nano::block_hash const & previous_a, nano::account
 	debug_assert (pub_a != nullptr);
 }
 
-nano::send_block::send_block (bool & error_a, nano::stream & stream_a) :
-	hashables (error_a, stream_a)
+nano::send_block::send_block (bool & error_a, nano::stream & stream_a)
 {
-	if (!error_a)
+	try
 	{
-		try
-		{
-			nano::read (stream_a, signature.bytes);
-			nano::read (stream_a, work);
-		}
-		catch (std::runtime_error const &)
-		{
-			error_a = true;
-		}
+		nano::read (stream_a, hashables.previous.bytes);
+		nano::read (stream_a, hashables.destination.bytes);
+		nano::read (stream_a, hashables.balance.bytes);
+		nano::read (stream_a, signature.bytes);
+		nano::read (stream_a, work);
+	}
+	catch (std::runtime_error const &)
+	{
+		error_a = true;
 	}
 }
 
-nano::send_block::send_block (bool & error_a, boost::property_tree::ptree const & tree_a) :
-	hashables (error_a, tree_a)
+nano::send_block::send_block (bool & error_a, boost::property_tree::ptree const & tree_a)
 {
-	if (!error_a)
+	try
 	{
-		try
+		auto previous_l (tree_a.get<std::string> ("previous"));
+		auto destination_l (tree_a.get<std::string> ("destination"));
+		auto balance_l (tree_a.get<std::string> ("balance"));
+		auto signature_l (tree_a.get<std::string> ("signature"));
+		auto work_l (tree_a.get<std::string> ("work"));
+		error_a = hashables.previous.decode_hex (previous_l);
+		if (!error_a)
 		{
-			auto signature_l (tree_a.get<std::string> ("signature"));
-			auto work_l (tree_a.get<std::string> ("work"));
-			error_a = signature.decode_hex (signature_l);
+			error_a = hashables.destination.decode_account (destination_l);
 			if (!error_a)
 			{
-				error_a = nano::from_string_hex (work_l, work);
+				error_a = hashables.balance.decode_hex (balance_l);
+				if (!error_a)
+				{
+					error_a = signature.decode_hex (signature_l);
+					if (!error_a)
+					{
+						error_a = nano::from_string_hex (work_l, work);
+					}
+				}
 			}
 		}
-		catch (std::runtime_error const &)
-		{
-			error_a = true;
-		}
+	}
+	catch (std::runtime_error const &)
+	{
+		error_a = true;
 	}
 }
 
@@ -667,59 +623,8 @@ void nano::send_block::operator() (nano::object_stream & obs) const
  * open_block
  */
 
-nano::open_hashables::open_hashables (nano::block_hash const & source_a, nano::account const & representative_a, nano::account const & account_a) :
-	source (source_a),
-	representative (representative_a),
-	account (account_a)
-{
-}
-
-nano::open_hashables::open_hashables (bool & error_a, nano::stream & stream_a)
-{
-	try
-	{
-		nano::read (stream_a, source.bytes);
-		nano::read (stream_a, representative.bytes);
-		nano::read (stream_a, account.bytes);
-	}
-	catch (std::runtime_error const &)
-	{
-		error_a = true;
-	}
-}
-
-nano::open_hashables::open_hashables (bool & error_a, boost::property_tree::ptree const & tree_a)
-{
-	try
-	{
-		auto source_l (tree_a.get<std::string> ("source"));
-		auto representative_l (tree_a.get<std::string> ("representative"));
-		auto account_l (tree_a.get<std::string> ("account"));
-		error_a = source.decode_hex (source_l);
-		if (!error_a)
-		{
-			error_a = representative.decode_account (representative_l);
-			if (!error_a)
-			{
-				error_a = account.decode_account (account_l);
-			}
-		}
-	}
-	catch (std::runtime_error const &)
-	{
-		error_a = true;
-	}
-}
-
-void nano::open_hashables::hash (blake2b_state & hash_a) const
-{
-	blake2b_update (&hash_a, source.bytes.data (), sizeof (source.bytes));
-	blake2b_update (&hash_a, representative.bytes.data (), sizeof (representative.bytes));
-	blake2b_update (&hash_a, account.bytes.data (), sizeof (account.bytes));
-}
-
 nano::open_block::open_block (nano::block_hash const & source_a, nano::account const & representative_a, nano::account const & account_a, nano::raw_key const & prv_a, nano::public_key const & pub_a, uint64_t work_a) :
-	hashables (source_a, representative_a, account_a),
+	hashables{ .source = source_a, .representative = representative_a, .account = account_a },
 	signature (nano::sign_message (prv_a, pub_a, hash ())),
 	work (work_a)
 {
@@ -729,7 +634,7 @@ nano::open_block::open_block (nano::block_hash const & source_a, nano::account c
 }
 
 nano::open_block::open_block (nano::block_hash const & source_a, nano::account const & representative_a, nano::account const & account_a, std::nullptr_t) :
-	hashables (source_a, representative_a, account_a),
+	hashables{ .source = source_a, .representative = representative_a, .account = account_a },
 	work (0)
 {
 	debug_assert (representative_a != nullptr);
@@ -738,42 +643,52 @@ nano::open_block::open_block (nano::block_hash const & source_a, nano::account c
 	signature.clear ();
 }
 
-nano::open_block::open_block (bool & error_a, nano::stream & stream_a) :
-	hashables (error_a, stream_a)
+nano::open_block::open_block (bool & error_a, nano::stream & stream_a)
 {
-	if (!error_a)
+	try
 	{
-		try
-		{
-			nano::read (stream_a, signature);
-			nano::read (stream_a, work);
-		}
-		catch (std::runtime_error const &)
-		{
-			error_a = true;
-		}
+		nano::read (stream_a, hashables.source.bytes);
+		nano::read (stream_a, hashables.representative.bytes);
+		nano::read (stream_a, hashables.account.bytes);
+		nano::read (stream_a, signature);
+		nano::read (stream_a, work);
+	}
+	catch (std::runtime_error const &)
+	{
+		error_a = true;
 	}
 }
 
-nano::open_block::open_block (bool & error_a, boost::property_tree::ptree const & tree_a) :
-	hashables (error_a, tree_a)
+nano::open_block::open_block (bool & error_a, boost::property_tree::ptree const & tree_a)
 {
-	if (!error_a)
+	try
 	{
-		try
+		auto source_l (tree_a.get<std::string> ("source"));
+		auto representative_l (tree_a.get<std::string> ("representative"));
+		auto account_l (tree_a.get<std::string> ("account"));
+		auto work_l (tree_a.get<std::string> ("work"));
+		auto signature_l (tree_a.get<std::string> ("signature"));
+		error_a = hashables.source.decode_hex (source_l);
+		if (!error_a)
 		{
-			auto work_l (tree_a.get<std::string> ("work"));
-			auto signature_l (tree_a.get<std::string> ("signature"));
-			error_a = nano::from_string_hex (work_l, work);
+			error_a = hashables.representative.decode_account (representative_l);
 			if (!error_a)
 			{
-				error_a = signature.decode_hex (signature_l);
+				error_a = hashables.account.decode_account (account_l);
+				if (!error_a)
+				{
+					error_a = nano::from_string_hex (work_l, work);
+					if (!error_a)
+					{
+						error_a = signature.decode_hex (signature_l);
+					}
+				}
 			}
 		}
-		catch (std::runtime_error const &)
-		{
-			error_a = true;
-		}
+	}
+	catch (std::runtime_error const &)
+	{
+		error_a = true;
 	}
 }
 
@@ -960,51 +875,8 @@ void nano::open_block::operator() (nano::object_stream & obs) const
  * change_block
  */
 
-nano::change_hashables::change_hashables (nano::block_hash const & previous_a, nano::account const & representative_a) :
-	previous (previous_a),
-	representative (representative_a)
-{
-}
-
-nano::change_hashables::change_hashables (bool & error_a, nano::stream & stream_a)
-{
-	try
-	{
-		nano::read (stream_a, previous);
-		nano::read (stream_a, representative);
-	}
-	catch (std::runtime_error const &)
-	{
-		error_a = true;
-	}
-}
-
-nano::change_hashables::change_hashables (bool & error_a, boost::property_tree::ptree const & tree_a)
-{
-	try
-	{
-		auto previous_l (tree_a.get<std::string> ("previous"));
-		auto representative_l (tree_a.get<std::string> ("representative"));
-		error_a = previous.decode_hex (previous_l);
-		if (!error_a)
-		{
-			error_a = representative.decode_account (representative_l);
-		}
-	}
-	catch (std::runtime_error const &)
-	{
-		error_a = true;
-	}
-}
-
-void nano::change_hashables::hash (blake2b_state & hash_a) const
-{
-	blake2b_update (&hash_a, previous.bytes.data (), sizeof (previous.bytes));
-	blake2b_update (&hash_a, representative.bytes.data (), sizeof (representative.bytes));
-}
-
 nano::change_block::change_block (nano::block_hash const & previous_a, nano::account const & representative_a, nano::raw_key const & prv_a, nano::public_key const & pub_a, uint64_t work_a) :
-	hashables (previous_a, representative_a),
+	hashables{ .previous = previous_a, .representative = representative_a },
 	signature (nano::sign_message (prv_a, pub_a, hash ())),
 	work (work_a)
 {
@@ -1012,42 +884,46 @@ nano::change_block::change_block (nano::block_hash const & previous_a, nano::acc
 	debug_assert (pub_a != nullptr);
 }
 
-nano::change_block::change_block (bool & error_a, nano::stream & stream_a) :
-	hashables (error_a, stream_a)
+nano::change_block::change_block (bool & error_a, nano::stream & stream_a)
 {
-	if (!error_a)
+	try
 	{
-		try
-		{
-			nano::read (stream_a, signature);
-			nano::read (stream_a, work);
-		}
-		catch (std::runtime_error const &)
-		{
-			error_a = true;
-		}
+		nano::read (stream_a, hashables.previous);
+		nano::read (stream_a, hashables.representative);
+		nano::read (stream_a, signature);
+		nano::read (stream_a, work);
+	}
+	catch (std::runtime_error const &)
+	{
+		error_a = true;
 	}
 }
 
-nano::change_block::change_block (bool & error_a, boost::property_tree::ptree const & tree_a) :
-	hashables (error_a, tree_a)
+nano::change_block::change_block (bool & error_a, boost::property_tree::ptree const & tree_a)
 {
-	if (!error_a)
+	try
 	{
-		try
+		auto previous_l (tree_a.get<std::string> ("previous"));
+		auto representative_l (tree_a.get<std::string> ("representative"));
+		auto work_l (tree_a.get<std::string> ("work"));
+		auto signature_l (tree_a.get<std::string> ("signature"));
+		error_a = hashables.previous.decode_hex (previous_l);
+		if (!error_a)
 		{
-			auto work_l (tree_a.get<std::string> ("work"));
-			auto signature_l (tree_a.get<std::string> ("signature"));
-			error_a = nano::from_string_hex (work_l, work);
+			error_a = hashables.representative.decode_account (representative_l);
 			if (!error_a)
 			{
-				error_a = signature.decode_hex (signature_l);
+				error_a = nano::from_string_hex (work_l, work);
+				if (!error_a)
+				{
+					error_a = signature.decode_hex (signature_l);
+				}
 			}
 		}
-		catch (std::runtime_error const &)
-		{
-			error_a = true;
-		}
+	}
+	catch (std::runtime_error const &)
+	{
+		error_a = true;
 	}
 }
 
@@ -1228,75 +1104,8 @@ void nano::change_block::operator() (nano::object_stream & obs) const
  * state_block
  */
 
-nano::state_hashables::state_hashables (nano::account const & account_a, nano::block_hash const & previous_a, nano::account const & representative_a, nano::amount const & balance_a, nano::link const & link_a) :
-	account (account_a),
-	previous (previous_a),
-	representative (representative_a),
-	balance (balance_a),
-	link (link_a)
-{
-}
-
-nano::state_hashables::state_hashables (bool & error_a, nano::stream & stream_a)
-{
-	try
-	{
-		nano::read (stream_a, account);
-		nano::read (stream_a, previous);
-		nano::read (stream_a, representative);
-		nano::read (stream_a, balance);
-		nano::read (stream_a, link);
-	}
-	catch (std::runtime_error const &)
-	{
-		error_a = true;
-	}
-}
-
-nano::state_hashables::state_hashables (bool & error_a, boost::property_tree::ptree const & tree_a)
-{
-	try
-	{
-		auto account_l (tree_a.get<std::string> ("account"));
-		auto previous_l (tree_a.get<std::string> ("previous"));
-		auto representative_l (tree_a.get<std::string> ("representative"));
-		auto balance_l (tree_a.get<std::string> ("balance"));
-		auto link_l (tree_a.get<std::string> ("link"));
-		error_a = account.decode_account (account_l);
-		if (!error_a)
-		{
-			error_a = previous.decode_hex (previous_l);
-			if (!error_a)
-			{
-				error_a = representative.decode_account (representative_l);
-				if (!error_a)
-				{
-					error_a = balance.decode_dec (balance_l);
-					if (!error_a)
-					{
-						error_a = link.decode_account (link_l) && link.decode_hex (link_l);
-					}
-				}
-			}
-		}
-	}
-	catch (std::runtime_error const &)
-	{
-		error_a = true;
-	}
-}
-
-void nano::state_hashables::hash (blake2b_state & hash_a) const
-{
-	blake2b_update (&hash_a, account.bytes.data (), sizeof (account.bytes));
-	blake2b_update (&hash_a, previous.bytes.data (), sizeof (previous.bytes));
-	blake2b_update (&hash_a, representative.bytes.data (), sizeof (representative.bytes));
-	blake2b_update (&hash_a, balance.bytes.data (), sizeof (balance.bytes));
-	blake2b_update (&hash_a, link.bytes.data (), sizeof (link.bytes));
-}
-
 nano::state_block::state_block (nano::account const & account_a, nano::block_hash const & previous_a, nano::account const & representative_a, nano::amount const & balance_a, nano::link const & link_a, nano::raw_key const & prv_a, nano::public_key const & pub_a, uint64_t work_a) :
-	hashables (account_a, previous_a, representative_a, balance_a, link_a),
+	hashables{ .account = account_a, .previous = previous_a, .representative = representative_a, .balance = balance_a, .link = link_a },
 	signature (nano::sign_message (prv_a, pub_a, hash ())),
 	work (work_a)
 {
@@ -1306,48 +1115,70 @@ nano::state_block::state_block (nano::account const & account_a, nano::block_has
 	debug_assert (pub_a != nullptr);
 }
 
-nano::state_block::state_block (bool & error_a, nano::stream & stream_a) :
-	hashables (error_a, stream_a)
+nano::state_block::state_block (bool & error_a, nano::stream & stream_a)
 {
-	if (!error_a)
+	try
 	{
-		try
-		{
-			nano::read (stream_a, signature);
-			nano::read (stream_a, work);
-			boost::endian::big_to_native_inplace (work);
-		}
-		catch (std::runtime_error const &)
-		{
-			error_a = true;
-		}
+		nano::read (stream_a, hashables.account);
+		nano::read (stream_a, hashables.previous);
+		nano::read (stream_a, hashables.representative);
+		nano::read (stream_a, hashables.balance);
+		nano::read (stream_a, hashables.link);
+		nano::read (stream_a, signature);
+		nano::read (stream_a, work);
+		boost::endian::big_to_native_inplace (work);
+	}
+	catch (std::runtime_error const &)
+	{
+		error_a = true;
 	}
 }
 
-nano::state_block::state_block (bool & error_a, boost::property_tree::ptree const & tree_a) :
-	hashables (error_a, tree_a)
+nano::state_block::state_block (bool & error_a, boost::property_tree::ptree const & tree_a)
 {
-	if (!error_a)
+	try
 	{
-		try
+		auto type_l (tree_a.get<std::string> ("type"));
+		auto account_l (tree_a.get<std::string> ("account"));
+		auto previous_l (tree_a.get<std::string> ("previous"));
+		auto representative_l (tree_a.get<std::string> ("representative"));
+		auto balance_l (tree_a.get<std::string> ("balance"));
+		auto link_l (tree_a.get<std::string> ("link"));
+		auto signature_l (tree_a.get<std::string> ("signature"));
+		auto work_l (tree_a.get<std::string> ("work"));
+		error_a = type_l != "state";
+		if (!error_a)
 		{
-			auto type_l (tree_a.get<std::string> ("type"));
-			auto signature_l (tree_a.get<std::string> ("signature"));
-			auto work_l (tree_a.get<std::string> ("work"));
-			error_a = type_l != "state";
+			error_a = hashables.account.decode_account (account_l);
 			if (!error_a)
 			{
-				error_a = nano::from_string_hex (work_l, work);
+				error_a = hashables.previous.decode_hex (previous_l);
 				if (!error_a)
 				{
-					error_a = signature.decode_hex (signature_l);
+					error_a = hashables.representative.decode_account (representative_l);
+					if (!error_a)
+					{
+						error_a = hashables.balance.decode_dec (balance_l);
+						if (!error_a)
+						{
+							error_a = hashables.link.decode_account (link_l) && hashables.link.decode_hex (link_l);
+							if (!error_a)
+							{
+								error_a = nano::from_string_hex (work_l, work);
+								if (!error_a)
+								{
+									error_a = signature.decode_hex (signature_l);
+								}
+							}
+						}
+					}
 				}
 			}
 		}
-		catch (std::runtime_error const &)
-		{
-			error_a = true;
-		}
+	}
+	catch (std::runtime_error const &)
+	{
+		error_a = true;
 	}
 }
 
@@ -1768,49 +1599,53 @@ bool nano::receive_block::deserialize_json (boost::property_tree::ptree const & 
 }
 
 nano::receive_block::receive_block (nano::block_hash const & previous_a, nano::block_hash const & source_a, nano::raw_key const & prv_a, nano::public_key const & pub_a, uint64_t work_a) :
-	hashables (previous_a, source_a),
+	hashables{ .previous = previous_a, .source = source_a },
 	signature (nano::sign_message (prv_a, pub_a, hash ())),
 	work (work_a)
 {
 	debug_assert (pub_a != nullptr);
 }
 
-nano::receive_block::receive_block (bool & error_a, nano::stream & stream_a) :
-	hashables (error_a, stream_a)
+nano::receive_block::receive_block (bool & error_a, nano::stream & stream_a)
 {
-	if (!error_a)
+	try
 	{
-		try
-		{
-			nano::read (stream_a, signature);
-			nano::read (stream_a, work);
-		}
-		catch (std::runtime_error const &)
-		{
-			error_a = true;
-		}
+		nano::read (stream_a, hashables.previous.bytes);
+		nano::read (stream_a, hashables.source.bytes);
+		nano::read (stream_a, signature);
+		nano::read (stream_a, work);
+	}
+	catch (std::runtime_error const &)
+	{
+		error_a = true;
 	}
 }
 
-nano::receive_block::receive_block (bool & error_a, boost::property_tree::ptree const & tree_a) :
-	hashables (error_a, tree_a)
+nano::receive_block::receive_block (bool & error_a, boost::property_tree::ptree const & tree_a)
 {
-	if (!error_a)
+	try
 	{
-		try
+		auto previous_l (tree_a.get<std::string> ("previous"));
+		auto source_l (tree_a.get<std::string> ("source"));
+		auto signature_l (tree_a.get<std::string> ("signature"));
+		auto work_l (tree_a.get<std::string> ("work"));
+		error_a = hashables.previous.decode_hex (previous_l);
+		if (!error_a)
 		{
-			auto signature_l (tree_a.get<std::string> ("signature"));
-			auto work_l (tree_a.get<std::string> ("work"));
-			error_a = signature.decode_hex (signature_l);
+			error_a = hashables.source.decode_hex (source_l);
 			if (!error_a)
 			{
-				error_a = nano::from_string_hex (work_l, work);
+				error_a = signature.decode_hex (signature_l);
+				if (!error_a)
+				{
+					error_a = nano::from_string_hex (work_l, work);
+				}
 			}
 		}
-		catch (std::runtime_error const &)
-		{
-			error_a = true;
-		}
+	}
+	catch (std::runtime_error const &)
+	{
+		error_a = true;
 	}
 }
 
@@ -1885,49 +1720,6 @@ void nano::receive_block::signature_set (nano::signature const & signature_a)
 nano::block_type nano::receive_block::type () const
 {
 	return nano::block_type::receive;
-}
-
-nano::receive_hashables::receive_hashables (nano::block_hash const & previous_a, nano::block_hash const & source_a) :
-	previous (previous_a),
-	source (source_a)
-{
-}
-
-nano::receive_hashables::receive_hashables (bool & error_a, nano::stream & stream_a)
-{
-	try
-	{
-		nano::read (stream_a, previous.bytes);
-		nano::read (stream_a, source.bytes);
-	}
-	catch (std::runtime_error const &)
-	{
-		error_a = true;
-	}
-}
-
-nano::receive_hashables::receive_hashables (bool & error_a, boost::property_tree::ptree const & tree_a)
-{
-	try
-	{
-		auto previous_l (tree_a.get<std::string> ("previous"));
-		auto source_l (tree_a.get<std::string> ("source"));
-		error_a = previous.decode_hex (previous_l);
-		if (!error_a)
-		{
-			error_a = source.decode_hex (source_l);
-		}
-	}
-	catch (std::runtime_error const &)
-	{
-		error_a = true;
-	}
-}
-
-void nano::receive_hashables::hash (blake2b_state & hash_a) const
-{
-	blake2b_update (&hash_a, previous.bytes.data (), sizeof (previous.bytes));
-	blake2b_update (&hash_a, source.bytes.data (), sizeof (source.bytes));
 }
 
 void nano::receive_block::operator() (nano::object_stream & obs) const

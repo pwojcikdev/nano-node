@@ -1,7 +1,8 @@
 #pragma once
 
 #include <nano/lib/block_type.hpp>
-#include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_hashables.hpp>
+#include <nano/lib/fwd.hpp>
 
 #include <variant>
 
