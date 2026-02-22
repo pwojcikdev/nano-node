@@ -2151,7 +2151,7 @@ TEST (rpc, work_peer_bad)
 	nano::block_hash hash1 (1);
 	std::atomic<uint64_t> work (0);
 	node2.work_generate (nano::work_version::work_1, hash1, node2.network_params.work.base, [&work] (std::optional<uint64_t> work_a) {
-		ASSERT_TRUE (work_a.has_value ());
+		ASSERT_TRUE (work_a);
 		work = work_a.value ();
 	});
 	ASSERT_TIMELY (5s, nano::dev::network_params.work.difficulty (nano::work_version::work_1, hash1, work) >= nano::dev::network_params.work.threshold_base (nano::work_version::work_1));
@@ -2170,7 +2170,7 @@ TEST (rpc, DISABLED_work_peer_one)
 	nano::keypair key1;
 	std::atomic<uint64_t> work (0);
 	node2.work_generate (nano::work_version::work_1, key1.pub, node1->network_params.work.base, [&work] (std::optional<uint64_t> work_a) {
-		ASSERT_TRUE (work_a.has_value ());
+		ASSERT_TRUE (work_a);
 		work = work_a.value ();
 	});
 	ASSERT_TIMELY (5s, nano::dev::network_params.work.difficulty (nano::work_version::work_1, key1.pub, work) >= nano::dev::network_params.work.threshold_base (nano::work_version::work_1));
@@ -2430,7 +2430,7 @@ TEST (rpc, account_representative_set)
 	ASSERT_FALSE (hash.decode_hex (block_text1));
 	ASSERT_FALSE (hash.is_zero ());
 	auto block = node->ledger.any.block_get (node->ledger.tx_begin_read (), hash);
-	ASSERT_NE (block, nullptr);
+	ASSERT_TRUE (block);
 	ASSERT_TIMELY (5s, node->ledger.cemented.block_exists_or_pruned (node->ledger.tx_begin_read (), hash));
 	ASSERT_EQ (key2.pub, block->representative_field ().value ());
 }
@@ -2896,7 +2896,7 @@ TEST (rpc, accounts_balances)
 	ASSERT_EQ (2, balances.size ());
 
 	auto errors = response.get_child_optional ("errors");
-	ASSERT_FALSE (errors.has_value ());
+	ASSERT_FALSE (errors);
 }
 
 /**
@@ -2922,7 +2922,7 @@ TEST (rpc, accounts_balances_with_errors)
 	auto response (wait_response (system, rpc_ctx, request));
 
 	auto balances = response.get_child_optional ("balances");
-	ASSERT_FALSE (balances.has_value ());
+	ASSERT_FALSE (balances);
 
 	auto get_error_message = [] (nano::error_common error_common) -> std::string {
 		std::error_code ec = error_common;

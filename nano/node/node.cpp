@@ -677,7 +677,8 @@ nano::uint128_t nano::node::balance (nano::account const & account_a)
 
 std::shared_ptr<nano::block> nano::node::block (nano::block_hash const & hash_a)
 {
-	return ledger.any.block_get (ledger.tx_begin_read (), hash_a);
+	auto result = ledger.any.block_get (ledger.tx_begin_read (), hash_a);
+	return result ? result->to_legacy () : nullptr;
 }
 
 bool nano::node::block_or_pruned_exists (nano::block_hash const & hash_a) const

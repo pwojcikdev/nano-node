@@ -126,7 +126,7 @@ bool nano::pruning::collect_ledger_pruning_targets (std::deque<nano::block_hash>
 		while (!hash.is_zero () && depth < max_depth_a)
 		{
 			auto block = ledger.any.block_get (transaction, hash);
-			if (block != nullptr)
+			if (block)
 			{
 				if (block->sideband ().timestamp > cutoff_time_a || depth == 0)
 				{

@@ -683,9 +683,9 @@ void nano_qt::history::refresh ()
 	{
 		QList<QStandardItem *> items;
 		auto block (ledger.any.block_get (transaction, hash));
-		if (block != nullptr)
+		if (block)
 		{
-			block->visit (visitor);
+			block->to_legacy ()->visit (visitor);
 			items.push_back (new QStandardItem (QString (visitor.type.c_str ())));
 			items.push_back (new QStandardItem (QString (visitor.account.to_account ().c_str ())));
 			auto balanceItem = new QStandardItem (QString (wallet.format_balance (visitor.amount).c_str ()));
@@ -732,7 +732,7 @@ nano_qt::block_viewer::block_viewer (nano_qt::wallet & wallet_a) :
 		{
 			auto transaction = this->wallet.node.ledger.tx_begin_read ();
 			auto block_l (this->wallet.node.ledger.any.block_get (transaction, hash_l));
-			if (block_l != nullptr)
+			if (block_l)
 			{
 				std::string contents;
 				block_l->serialize_json (contents);
@@ -2300,7 +2300,7 @@ void nano_qt::block_creation::create_receive ()
 	{
 		auto block_transaction = wallet.node.ledger.tx_begin_read ();
 		auto block_l (wallet.node.ledger.any.block_get (block_transaction, source_l));
-		if (block_l != nullptr)
+		if (block_l)
 		{
 			auto destination = block_l->destination ();
 			if (!destination.is_zero ())
@@ -2462,7 +2462,7 @@ void nano_qt::block_creation::create_open ()
 		{
 			auto block_transaction = wallet.node.ledger.tx_begin_read ();
 			auto block_l (wallet.node.ledger.any.block_get (block_transaction, source_l));
-			if (block_l != nullptr)
+			if (block_l)
 			{
 				auto destination = block_l->destination ();
 				if (!destination.is_zero ())

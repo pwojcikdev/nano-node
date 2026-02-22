@@ -1,5 +1,6 @@
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/thread_runner.hpp>
 #include <nano/lib/work_version.hpp>
 #include <nano/node/active_elections.hpp>
@@ -455,7 +456,7 @@ void nano::test::system::generate_rollback (nano::node & node_a, std::vector<nan
 
 void nano::test::system::generate_receive (nano::node & node_a)
 {
-	std::shared_ptr<nano::block> send_block;
+	std::optional<nano::stored_block> send_block;
 	{
 		auto transaction = node_a.ledger.tx_begin_read ();
 		nano::account random_account;
@@ -466,9 +467,9 @@ void nano::test::system::generate_receive (nano::node & node_a)
 			send_block = node_a.ledger.any.block_get (transaction, item->first.hash);
 		}
 	}
-	if (send_block != nullptr)
+	if (send_block)
 	{
-		auto receive_error (wallet (0)->receive_sync (send_block, nano::dev::genesis_key.pub, std::numeric_limits<nano::uint128_t>::max ()));
+		auto receive_error (wallet (0)->receive_sync (send_block->to_legacy (), nano::dev::genesis_key.pub, std::numeric_limits<nano::uint128_t>::max ()));
 		(void)receive_error;
 	}
 }

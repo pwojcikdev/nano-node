@@ -452,7 +452,7 @@ void nano::active_elections::notify_observers (nano::secure::transaction const &
 {
 	// Get block from ledger to ensure sideband is set (forked blocks may not have sideband)
 	auto const block = node.ledger.any.block_get (transaction, status.winner->hash ());
-	release_assert (block != nullptr); // Block must exist in the ledger since it was cemented
+	release_assert (block); // Block must exist in the ledger since it was cemented
 	auto const account = block->account ();
 
 	switch (status.type)
@@ -472,7 +472,7 @@ void nano::active_elections::notify_observers (nano::secure::transaction const &
 
 	if (!node.observers.blocks.empty ())
 	{
-		auto amount = node.ledger.any.block_amount (transaction, block).value_or (0).number ();
+		auto amount = node.ledger.any.block_amount (transaction, block->to_legacy ()).value_or (0).number ();
 		auto is_state_send = block->type () == block_type::state && block->is_send ();
 		auto is_state_epoch = block->type () == block_type::state && block->is_epoch ();
 		node.observers.blocks.notify (status, votes, account, amount, is_state_send, is_state_epoch);

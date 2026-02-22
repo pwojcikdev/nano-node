@@ -521,7 +521,7 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 					nano::inactive_node node (data_path, node_flags);
 					auto transaction (node.node->ledger.tx_begin_write ());
 					auto block = node.node->ledger.any.block_get (transaction, block_hash);
-					if (block != nullptr)
+					if (block)
 					{
 						if (!node.node->ledger.cemented.block_exists (transaction, block_hash))
 						{

@@ -156,7 +156,7 @@ void nano::bounded_backlog::activate (nano::secure::transaction & transaction, n
 			break;
 		}
 
-		bool inserted = insert (transaction, *block);
+		bool inserted = insert (transaction, *block->to_legacy ());
 
 		// If the block was not inserted, we already have it in the backlog
 		if (!inserted)

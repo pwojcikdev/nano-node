@@ -2059,7 +2059,7 @@ TEST (node, wallet_create_block_confirm_conflicts)
 		// Call block confirm on the top level send block which will confirm everything underneath on both accounts.
 		{
 			auto block = node->ledger.any.block_get (node->ledger.tx_begin_read (), latest);
-			node->scheduler.manual.push (block);
+			node->scheduler.manual.push (block->to_legacy ());
 			std::shared_ptr<nano::election> election;
 			ASSERT_TIMELY (10s, (election = node->active.election (block->qualified_root ())) != nullptr);
 			election->force_confirm ();

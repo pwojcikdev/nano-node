@@ -179,8 +179,8 @@ void nano::block_processor::rollback_competitor (secure::write_transaction & tra
 {
 	auto const hash = fork_block.hash ();
 	auto const successor_hash = ledger.any.block_successor (transaction, fork_block.qualified_root ());
-	auto const successor = successor_hash ? ledger.any.block_get (transaction, successor_hash.value ()) : nullptr;
-	if (successor != nullptr && successor->hash () != hash)
+	auto const successor = successor_hash ? ledger.any.block_get (transaction, successor_hash.value ()) : std::nullopt;
+	if (successor && successor->hash () != hash)
 	{
 		// Replace our block with the winner and roll back any dependent blocks
 		logger.debug (nano::log::type::block_processor, "Rolling back: {} and replacing with: {}", successor->hash ().to_string (), hash.to_string ());
