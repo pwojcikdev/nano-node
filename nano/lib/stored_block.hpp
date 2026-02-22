@@ -3,6 +3,8 @@
 #include <nano/lib/block_sideband.hpp>
 #include <nano/lib/blocks_raw.hpp>
 
+#include <boost/property_tree/ptree_fwd.hpp>
+
 #include <memory>
 #include <optional>
 
@@ -51,6 +53,8 @@ public:
 	// Canonical accessors (resolve via sideband when field not in block type)
 	nano::account account () const noexcept;
 	nano::amount balance () const noexcept;
+	nano::account destination () const noexcept;
+	nano::block_hash source () const noexcept;
 
 	// Sideband access
 	nano::block_sideband const & sideband () const;
@@ -66,6 +70,7 @@ public:
 
 	// Serialization (delegates to legacy for now)
 	void serialize_json (std::string &, bool single_line = false) const;
+	void serialize_json (boost::property_tree::ptree &) const;
 	std::string to_json () const;
 
 	// Comparison

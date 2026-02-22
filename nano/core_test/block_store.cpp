@@ -677,7 +677,7 @@ TEST (block_store, roots)
 					  .sign (nano::keypair ().prv, 4)
 					  .work (5)
 					  .build ();
-	ASSERT_EQ (open_block->account (), open_block->root ().as_account ());
+	ASSERT_EQ (open_block->account_field ().value (), open_block->root ().as_account ());
 }
 
 TEST (block_store, pending_exists)

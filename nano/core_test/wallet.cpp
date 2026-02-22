@@ -168,7 +168,7 @@ TEST (wallet, spend_all_one)
 	auto info2 = node1.ledger.any.account_get (transaction, nano::dev::genesis_key.pub);
 	ASSERT_NE (latest1, info2->head);
 	auto block = node1.ledger.any.block_get (transaction, info2->head);
-	ASSERT_NE (nullptr, block);
+	ASSERT_TRUE (block);
 	ASSERT_EQ (latest1, block->previous ());
 	ASSERT_TRUE (info2->balance.is_zero ());
 	ASSERT_EQ (0, node1.balance (nano::dev::genesis_key.pub));
@@ -203,7 +203,7 @@ TEST (wallet, spend)
 	ASSERT_TRUE (info2);
 	ASSERT_NE (latest1, info2->head);
 	auto block = node1.ledger.any.block_get (transaction, info2->head);
-	ASSERT_NE (nullptr, block);
+	ASSERT_TRUE (block);
 	ASSERT_EQ (latest1, block->previous ());
 	ASSERT_TRUE (info2->balance.is_zero ());
 	ASSERT_EQ (0, node1.balance (nano::dev::genesis_key.pub));

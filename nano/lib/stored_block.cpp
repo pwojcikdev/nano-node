@@ -1,6 +1,8 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/stored_block.hpp>
 
+#include <boost/property_tree/json_parser.hpp>
+
 nano::stored_block::stored_block (nano::raw_block raw, nano::block_sideband sideband) :
 	raw_m{ std::move (raw) },
 	sideband_m{ std::move (sideband) }
@@ -127,6 +129,35 @@ nano::amount nano::stored_block::balance () const noexcept
 	}
 }
 
+nano::account nano::stored_block::destination () const noexcept
+{
+	switch (type ())
+	{
+		case nano::block_type::send:
+			return destination_field ().value ();
+		case nano::block_type::state:
+			release_assert (sideband_m.details.is_send);
+			return link_field ().value ().as_account ();
+		default:
+			release_assert (false);
+	}
+}
+
+nano::block_hash nano::stored_block::source () const noexcept
+{
+	switch (type ())
+	{
+		case nano::block_type::open:
+		case nano::block_type::receive:
+			return source_field ().value ();
+		case nano::block_type::state:
+			release_assert (sideband_m.details.is_receive);
+			return link_field ().value ().as_block_hash ();
+		default:
+			release_assert (false);
+	}
+}
+
 nano::block_sideband const & nano::stored_block::sideband () const
 {
 	return sideband_m;
@@ -196,6 +227,12 @@ void nano::stored_block::serialize_json (std::string & string_a, bool single_lin
 {
 	auto legacy = to_legacy ();
 	legacy->serialize_json (string_a, single_line);
+}
+
+void nano::stored_block::serialize_json (boost::property_tree::ptree & tree) const
+{
+	auto legacy = to_legacy ();
+	legacy->serialize_json (tree);
 }
 
 std::string nano::stored_block::to_json () const

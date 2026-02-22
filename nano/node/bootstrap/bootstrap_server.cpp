@@ -340,13 +340,13 @@ std::deque<std::shared_ptr<nano::block>> nano::bootstrap_server::prepare_blocks 
 	std::deque<std::shared_ptr<nano::block>> result;
 	if (!start_block.is_zero ())
 	{
-		std::shared_ptr<nano::block> current = ledger.any.block_get (transaction, start_block);
+		auto current = ledger.any.block_get (transaction, start_block);
 		while (current && result.size () < count)
 		{
-			result.push_back (current);
+			result.push_back (current->to_legacy ());
 
 			auto successor_hash = ledger.store.successor.get (transaction, current->hash ());
-			current = successor_hash ? ledger.any.block_get (transaction, *successor_hash) : nullptr;
+			current = successor_hash ? ledger.any.block_get (transaction, *successor_hash) : std::nullopt;
 		}
 	}
 	return result;
