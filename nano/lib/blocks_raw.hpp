@@ -169,15 +169,22 @@ public:
 	// Comparison
 	bool operator== (raw_block const &) const = default;
 
+	// Deserialize helper that throws on failure
+	template <typename T>
+	static T deserialize (nano::stream & stream)
+	{
+		T block;
+		block.deserialize (stream);
+		return block;
+	}
+
 	// Deserialize helper that catches exceptions and returns nullopt on failure
 	template <typename T>
 	static std::optional<T> try_deserialize (nano::stream & stream)
 	{
 		try
 		{
-			T block;
-			block.deserialize (stream);
-			return block;
+			return deserialize<T> (stream);
 		}
 		catch (...)
 		{
