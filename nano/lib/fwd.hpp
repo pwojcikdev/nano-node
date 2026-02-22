@@ -30,6 +30,7 @@ using account = public_key;
 class block;
 class block_details;
 class raw_block;
+class stored_block;
 class block_visitor;
 class container_info;
 class error;

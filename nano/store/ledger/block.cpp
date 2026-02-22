@@ -1,3 +1,4 @@
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/secure/parallel_traversal.hpp>
 #include <nano/store/db_val_templ.hpp>
 #include <nano/store/ledger/block.hpp>
@@ -53,6 +54,25 @@ std::shared_ptr<nano::block> block_view::get (nano::store::transaction const & t
 		result->sideband_set (sideband);
 	}
 	return result;
+}
+
+std::optional<nano::stored_block> block_view::get_stored (nano::store::transaction const & txn, nano::block_hash const & hash) const
+{
+	nano::store::db_val value;
+	block_raw_get (txn, hash, value);
+	if (value.size () == 0)
+	{
+		return std::nullopt;
+	}
+	nano::bufferstream stream{ reinterpret_cast<uint8_t const *> (value.data ()), value.size () };
+	nano::block_type type;
+	bool error = try_read (stream, type);
+	release_assert (!error);
+	auto raw = nano::deserialize_raw_block (stream, type);
+	nano::block_sideband sideband;
+	error = sideband.deserialize (stream, type);
+	release_assert (!error);
+	return nano::stored_block{ std::move (raw), std::move (sideband) };
 }
 
 void block_view::del (nano::store::write_transaction const & txn, nano::block_hash const & hash)

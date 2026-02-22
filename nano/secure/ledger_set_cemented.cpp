@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_cemented.hpp>
 #include <nano/store/ledger/account.hpp>
@@ -57,7 +58,7 @@ std::optional<nano::amount> nano::ledger_set_cemented::block_balance (secure::tr
 
 bool nano::ledger_set_cemented::block_exists (secure::transaction const & transaction, nano::block_hash const & hash) const
 {
-	return block_get (transaction, hash) != nullptr;
+	return block_get (transaction, hash).has_value ();
 }
 
 bool nano::ledger_set_cemented::block_exists (secure::transaction const & transaction, nano::block const & block) const
@@ -83,23 +84,23 @@ bool nano::ledger_set_cemented::block_exists_or_pruned (secure::transaction cons
 	return block_exists (transaction, hash);
 }
 
-std::shared_ptr<nano::block> nano::ledger_set_cemented::block_get (secure::transaction const & transaction, nano::block_hash const & hash) const
+std::optional<nano::stored_block> nano::ledger_set_cemented::block_get (secure::transaction const & transaction, nano::block_hash const & hash) const
 {
 	if (hash.is_zero ())
 	{
-		return nullptr;
+		return std::nullopt;
 	}
-	auto block = ledger.store.block.get (transaction, hash);
+	auto block = ledger.store.block.get_stored (transaction, hash);
 	if (!block)
 	{
-		return nullptr;
+		return std::nullopt;
 	}
 	auto info = ledger.store.confirmation_height.get (transaction, block->account ());
 	if (!info)
 	{
-		return nullptr;
+		return std::nullopt;
 	}
-	return block->sideband ().height <= info.value ().height ? block : nullptr;
+	return block->sideband ().height <= info.value ().height ? block : std::nullopt;
 }
 auto nano::ledger_set_cemented::receivable_end () const -> receivable_iterator
 {

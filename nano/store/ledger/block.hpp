@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/store/backend.hpp>
 #include <nano/store/block_w_sideband.hpp>
 #include <nano/store/typed_iterator.hpp>
@@ -24,6 +25,7 @@ public:
 	void put (nano::store::write_transaction const &, nano::block_hash const &, nano::block const &);
 	void raw_put (nano::store::write_transaction const &, std::vector<uint8_t> const & data, nano::block_hash const &);
 	std::shared_ptr<nano::block> get (nano::store::transaction const &, nano::block_hash const &) const;
+	std::optional<nano::stored_block> get_stored (nano::store::transaction const &, nano::block_hash const &) const;
 	void del (nano::store::write_transaction const &, nano::block_hash const &);
 	bool exists (nano::store::transaction const &, nano::block_hash const &) const;
 	uint64_t count (nano::store::transaction const &) const;

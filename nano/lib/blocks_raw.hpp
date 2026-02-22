@@ -202,5 +202,7 @@ std::shared_ptr<nano::block> to_legacy (nano::raw_block const & raw);
 
 // Serialization with type prefix
 nano::raw_block deserialize_raw_block (nano::stream &);
+// Deserialization with pre-read type (for store layer where type is already parsed)
+nano::raw_block deserialize_raw_block (nano::stream &, nano::block_type type);
 void serialize_raw_block (nano::stream &, nano::raw_block const &);
 }

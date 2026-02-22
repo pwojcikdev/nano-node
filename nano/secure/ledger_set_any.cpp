@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/store/ledger/account.hpp>
@@ -97,7 +98,7 @@ std::optional<nano::amount> nano::ledger_set_any::block_amount (secure::transact
 	{
 		return std::nullopt;
 	}
-	return block_amount (transaction, block_l);
+	return block_amount (transaction, *block_l);
 }
 
 std::optional<nano::amount> nano::ledger_set_any::block_amount (secure::transaction const & transaction, std::shared_ptr<nano::block> const & block) const
@@ -151,13 +152,13 @@ bool nano::ledger_set_any::block_exists_or_pruned (secure::transaction const & t
 	return ledger.store.block.exists (transaction, hash);
 }
 
-std::shared_ptr<nano::block> nano::ledger_set_any::block_get (secure::transaction const & transaction, nano::block_hash const & hash) const
+std::optional<nano::stored_block> nano::ledger_set_any::block_get (secure::transaction const & transaction, nano::block_hash const & hash) const
 {
 	if (hash.is_zero ())
 	{
-		return nullptr;
+		return std::nullopt;
 	}
-	return ledger.store.block.get (transaction, hash);
+	return ledger.store.block.get_stored (transaction, hash);
 }
 
 bool nano::ledger_set_any::block_pruned (secure::transaction const & transaction, nano::block_hash const & hash) const

@@ -614,6 +614,35 @@ nano::raw_block nano::deserialize_raw_block (nano::stream & stream)
 	}
 }
 
+nano::raw_block nano::deserialize_raw_block (nano::stream & stream, nano::block_type type)
+{
+	auto make = [&stream] (auto tag) -> nano::raw_block {
+		using T = decltype (tag);
+		auto result = nano::raw_block::try_deserialize<T> (stream);
+		if (!result)
+		{
+			throw std::runtime_error ("Failed to deserialize block");
+		}
+		return nano::raw_block{ std::move (*result) };
+	};
+
+	switch (type)
+	{
+		case nano::block_type::send:
+			return make (raw_send_block{});
+		case nano::block_type::receive:
+			return make (raw_receive_block{});
+		case nano::block_type::open:
+			return make (raw_open_block{});
+		case nano::block_type::change:
+			return make (raw_change_block{});
+		case nano::block_type::state:
+			return make (raw_state_block{});
+		default:
+			throw std::runtime_error ("Unknown block type");
+	}
+}
+
 void nano::serialize_raw_block (nano::stream & stream, nano::raw_block const & block)
 {
 	nano::write (stream, block.type ());

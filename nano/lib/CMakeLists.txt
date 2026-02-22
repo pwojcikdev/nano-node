@@ -41,6 +41,8 @@ add_library(
   blocks_hashables.cpp
   blocks_raw.hpp
   blocks_raw.cpp
+  stored_block.hpp
+  stored_block.cpp
   bounded_dfs.hpp
   char_traits.hpp
   cli.hpp

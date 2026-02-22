@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/stored_block.hpp>
 #include <nano/secure/account_iterator.hpp>
 #include <nano/secure/fwd.hpp>
 #include <nano/secure/receivable_iterator.hpp>
@@ -39,7 +40,7 @@ public: // Operations on blocks
 	std::optional<nano::amount> block_balance (nano::secure::transaction const &, nano::block_hash const &) const;
 	bool block_exists (nano::secure::transaction const &, nano::block_hash const &) const;
 	bool block_exists_or_pruned (nano::secure::transaction const &, nano::block_hash const &) const;
-	std::shared_ptr<nano::block> block_get (nano::secure::transaction const &, nano::block_hash const &) const;
+	std::optional<nano::stored_block> block_get (nano::secure::transaction const &, nano::block_hash const &) const;
 	bool block_pruned (nano::secure::transaction const &, nano::block_hash const &) const;
 	uint64_t block_height (nano::secure::transaction const &, nano::block_hash const &) const;
 	std::optional<nano::block_hash> block_successor (nano::secure::transaction const &, nano::block_hash const &) const;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/stored_block.hpp>
 #include <nano/secure/fwd.hpp>
 #include <nano/secure/receivable_iterator.hpp>
 
@@ -24,7 +25,7 @@ public: // Operations on blocks
 	bool block_exists (nano::secure::transaction const &, nano::block_hash const &) const;
 	bool block_exists (nano::secure::transaction const &, nano::block const &) const;
 	bool block_exists_or_pruned (nano::secure::transaction const &, nano::block_hash const &) const;
-	std::shared_ptr<nano::block> block_get (nano::secure::transaction const &, nano::block_hash const &) const;
+	std::optional<nano::stored_block> block_get (nano::secure::transaction const &, nano::block_hash const &) const;
 
 public: // Operations on pending entries
 	receivable_iterator receivable_end () const;
