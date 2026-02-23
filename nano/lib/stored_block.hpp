@@ -64,6 +64,7 @@ public:
 	bool is_receive () const noexcept;
 	bool is_change () const noexcept;
 	bool is_epoch () const noexcept;
+	nano::epoch epoch () const noexcept;
 
 	// Raw access
 	nano::raw_block const & raw () const;

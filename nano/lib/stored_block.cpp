@@ -218,6 +218,15 @@ bool nano::stored_block::is_epoch () const noexcept
 	}
 }
 
+nano::epoch nano::stored_block::epoch () const noexcept
+{
+	if (type () == nano::block_type::state)
+	{
+		return sideband_m.details.epoch;
+	}
+	return nano::epoch::epoch_0;
+}
+
 nano::raw_block const & nano::stored_block::raw () const
 {
 	return raw_m;

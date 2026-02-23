@@ -766,12 +766,12 @@ nano::epoch nano::ledger::version (nano::block const & block)
 
 nano::epoch nano::ledger::version (secure::transaction const & transaction, nano::block_hash const & hash) const
 {
-	auto block_l = any.block_get (transaction, hash);
-	if (block_l == nullptr)
+	auto block = any.block_get (transaction, hash);
+	if (!block)
 	{
 		return nano::epoch::epoch_0;
 	}
-	return version (*block_l);
+	return block->epoch ();
 }
 
 uint64_t nano::ledger::cemented_count () const
