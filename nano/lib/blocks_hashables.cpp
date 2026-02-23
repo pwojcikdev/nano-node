@@ -4,12 +4,9 @@
 
 void nano::send_hashables::hash (blake2b_state & state) const
 {
-	auto status = blake2b_update (&state, previous.bytes.data (), sizeof (previous.bytes));
-	debug_assert (status == 0);
-	status = blake2b_update (&state, destination.bytes.data (), sizeof (destination.bytes));
-	debug_assert (status == 0);
-	status = blake2b_update (&state, balance.bytes.data (), sizeof (balance.bytes));
-	debug_assert (status == 0);
+	blake2b_update (&state, previous.bytes.data (), sizeof (previous.bytes));
+	blake2b_update (&state, destination.bytes.data (), sizeof (destination.bytes));
+	blake2b_update (&state, balance.bytes.data (), sizeof (balance.bytes));
 }
 
 void nano::receive_hashables::hash (blake2b_state & state) const
