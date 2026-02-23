@@ -230,7 +230,7 @@ auto nano::request_aggregator::aggregate (nano::secure::transaction const & tran
 			// Ledger by hash
 			if (auto block = ledger.any.block_get (transaction, hash))
 			{
-				return block;
+				return *block;
 			}
 
 			// Ledger by root
@@ -239,13 +239,15 @@ auto nano::request_aggregator::aggregate (nano::secure::transaction const & tran
 				// Search for successor of root
 				if (auto successor = ledger.any.block_successor (transaction, root.as_block_hash ()))
 				{
-					return ledger.any.block_get (transaction, successor.value ());
+					auto block = ledger.any.block_get (transaction, successor.value ());
+					return block ? block->to_legacy () : nullptr;
 				}
 
 				// If that fails treat root as account
 				if (auto info = ledger.any.account_get (transaction, root.as_account ()))
 				{
-					return ledger.any.block_get (transaction, info->open_block);
+					auto block = ledger.any.block_get (transaction, info->open_block);
+					return block ? block->to_legacy () : nullptr;
 				}
 			}
 

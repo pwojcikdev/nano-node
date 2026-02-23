@@ -1457,21 +1457,23 @@ int main (int argc, char * const * argv)
 
 				auto hash (info.open_block);
 				nano::block_hash calculated_hash (0);
-				auto block = node->ledger.any.block_get (transaction, hash); // Block data
+				auto block_opt = node->ledger.any.block_get (transaction, hash); // Block data
+				std::shared_ptr<nano::block> block = block_opt ? block_opt->to_legacy () : nullptr;
 				uint64_t height (0);
 				if (node->ledger.pruning && confirmation_height_info.height != 0)
 				{
 					hash = confirmation_height_info.frontier;
-					block = node->ledger.any.block_get (transaction, hash);
+					block_opt = node->ledger.any.block_get (transaction, hash);
+					block = block_opt ? block_opt->to_legacy () : nullptr;
 					// Iteration until pruned block
 					bool pruned_block (false);
 					while (!pruned_block && !block->previous ().is_zero ())
 					{
-						auto previous_block = node->ledger.any.block_get (transaction, block->previous ());
-						if (previous_block != nullptr)
+						auto previous_block_opt = node->ledger.any.block_get (transaction, block->previous ());
+						if (previous_block_opt)
 						{
-							hash = previous_block->hash ();
-							block = previous_block;
+							hash = previous_block_opt->hash ();
+							block = *previous_block_opt;
 						}
 						else
 						{
@@ -1636,11 +1638,12 @@ int main (int argc, char * const * argv)
 					// Retrieving block data
 					if (!hash.is_zero ())
 					{
-						block = node->ledger.any.block_get (transaction, hash);
+						block_opt = node->ledger.any.block_get (transaction, hash);
+						block = block_opt ? block_opt->to_legacy () : nullptr;
 					}
 				}
 				// Check if required block exists
-				if (!hash.is_zero () && block == nullptr)
+				if (!hash.is_zero () && !block)
 				{
 					print_error_message (boost::str (boost::format ("Required block in account %1% chain was not found in ledger: %2%\n") % account.to_account () % hash.to_string ()));
 				}
@@ -1723,7 +1726,7 @@ int main (int argc, char * const * argv)
 				// Check block existence
 				auto block = node->ledger.any.block_get (transaction, key.hash);
 				bool pruned (false);
-				if (block == nullptr)
+				if (!block)
 				{
 					pruned = node->ledger.pruning && node->store.pruned.exists (transaction, key.hash);
 					if (!pruned)
@@ -1846,18 +1849,19 @@ int main (int argc, char * const * argv)
 					{
 						// Retrieving block data
 						auto block = source_node->ledger.any.block_get (transaction, hash);
-						if (block != nullptr)
+						if (block)
 						{
 							++count;
 							if ((count % 500000) == 0)
 							{
 								std::cout << boost::str (boost::format ("%1% blocks retrieved") % count) << std::endl;
 							}
-							node.node->block_processor.add (block);
+							std::shared_ptr<nano::block> block_legacy = *block;
+							node.node->block_processor.add (block_legacy);
 							if (block->type () == nano::block_type::state && block->previous ().is_zero () && source_node->ledger.is_epoch_link (block->link_field ().value ()))
 							{
 								// Epoch open blocks can be rejected without processed pending blocks to account, push it later again
-								epoch_open_blocks.push_back (block);
+								epoch_open_blocks.push_back (block_legacy);
 							}
 							// Retrieving previous block hash
 							hash = block->previous ();

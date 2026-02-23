@@ -5424,7 +5424,7 @@ bool block_confirmed (nano::node & node, nano::secure::transaction & transaction
 	else if (!include_only_confirmed)
 	{
 		auto block = node.ledger.any.block_get (transaction, hash);
-		is_confirmed = (block != nullptr && !node.active.active (*block));
+		is_confirmed = (block && !node.active.active (*block->to_legacy ()));
 	}
 
 	return is_confirmed;

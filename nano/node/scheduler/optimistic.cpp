@@ -202,7 +202,8 @@ bool nano::scheduler::optimistic::run_one (secure::transaction const & transacti
 		if (!node.block_confirmed_or_being_confirmed (transaction, block->hash ()))
 		{
 			// Try to insert it into AEC
-			auto result = node.active.insert (block, nano::election_behavior::optimistic);
+			std::shared_ptr<nano::block> block_legacy = *block;
+			auto result = node.active.insert (block_legacy, nano::election_behavior::optimistic);
 			stats.inc (nano::stat::type::optimistic_scheduler, result.inserted ? nano::stat::detail::insert : nano::stat::detail::insert_failed);
 
 			return true; // Activation attempted

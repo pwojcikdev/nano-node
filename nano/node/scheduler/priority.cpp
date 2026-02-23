@@ -131,27 +131,28 @@ bool nano::scheduler::priority::activate (secure::transaction const & transactio
 	{
 		return false; // Not activated
 	}
+	auto const block_legacy = block->to_legacy ();
 
-	if (ledger.dependencies_cemented (transaction, *block))
+	if (ledger.dependencies_cemented (transaction, *block_legacy))
 	{
-		auto const [priority_balance, priority_timestamp] = ledger.block_priority (transaction, *block);
+		auto const [priority_balance, priority_timestamp] = ledger.block_priority (transaction, *block_legacy);
 		auto const bucket_index = bucketing.bucket_index (priority_balance);
 
 		bool added = false;
 		{
 			nano::lock_guard<nano::mutex> guard{ mutex };
-			added = pool.push (block, bucket_index, priority_timestamp);
+			added = pool.push (block_legacy, bucket_index, priority_timestamp);
 		}
 		if (added)
 		{
 			stats.inc (nano::stat::type::election_scheduler, nano::stat::detail::activated);
 
 			logger.debug (nano::log::type::election_scheduler, "Activated block: {} for account: {} (bucket: {}, priority timestamp: {})",
-			block->hash (), account, bucket_index, priority_timestamp);
+			block_legacy->hash (), account, bucket_index, priority_timestamp);
 
 			logger.trace (nano::log::type::election_scheduler, nano::log::detail::block_activated,
 			nano::log::arg{ "account", account },
-			nano::log::arg{ "block", block },
+			nano::log::arg{ "block", block_legacy },
 			nano::log::arg{ "time", account_info.modified },
 			nano::log::arg{ "priority_balance", priority_balance },
 			nano::log::arg{ "priority_timestamp", priority_timestamp });
