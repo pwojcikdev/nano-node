@@ -65,6 +65,7 @@ public:
 	bool is_change () const noexcept;
 	bool is_epoch () const noexcept;
 	nano::epoch epoch () const noexcept;
+	std::array<nano::block_hash, 2> dependencies () const noexcept;
 
 	// Raw access
 	nano::raw_block const & raw () const;

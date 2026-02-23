@@ -227,6 +227,25 @@ nano::epoch nano::stored_block::epoch () const noexcept
 	return nano::epoch::epoch_0;
 }
 
+std::array<nano::block_hash, 2> nano::stored_block::dependencies () const noexcept
+{
+	std::array<nano::block_hash, 2> result{ 0, 0 };
+	result[0] = previous ();
+	if (is_receive ())
+	{
+		// For genesis block, the source is the genesis account public key (not a real block hash)
+		if (type () == nano::block_type::open && source () == account ().as_union ())
+		{
+			// Genesis block has no source dependency
+		}
+		else
+		{
+			result[1] = source ();
+		}
+	}
+	return result;
+}
+
 nano::raw_block const & nano::stored_block::raw () const
 {
 	return raw_m;
