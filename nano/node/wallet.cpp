@@ -1033,7 +1033,7 @@ std::shared_ptr<nano::block> nano::wallet::send_action (nano::account const & so
 		auto ledger_txn = wallets.ledger.tx_begin_read ();
 		auto error (false);
 		auto cached_block (false);
-		std::shared_ptr<nano::block> block;
+		std::shared_ptr<nano::block> block_legacy;
 		nano::block_details details;
 		details.is_send = true;
 		if (id_mdb_val)
@@ -1046,15 +1046,16 @@ std::shared_ptr<nano::block> nano::wallet::send_action (nano::account const & so
 			{
 				result = nano::store::lmdb::from_mdb_val (mdb_result);
 				nano::block_hash hash (result);
-				block = wallets.ledger.any.block_get (ledger_txn, hash);
-				if (block != nullptr)
+				auto block = wallets.ledger.any.block_get (ledger_txn, hash);
+				if (block)
 				{
+					block_legacy = block->to_legacy ();
 					logger.warn (nano::log::type::wallet, "Block already exists for send action with id: {}, existing hash: {}",
 					id_a.value (),
 					hash.to_string ());
 
 					cached_block = true;
-					wallets.network.flood_block (block, nano::transport::traffic_type::block_broadcast_initial);
+					wallets.network.flood_block (block_legacy, nano::transport::traffic_type::block_broadcast_initial);
 				}
 				else
 				{
@@ -1068,7 +1069,7 @@ std::shared_ptr<nano::block> nano::wallet::send_action (nano::account const & so
 				error = true;
 			}
 		}
-		if (!error && block == nullptr)
+		if (!error && block_legacy == nullptr)
 		{
 			if (store.valid_password (transaction))
 			{
@@ -1092,17 +1093,17 @@ std::shared_ptr<nano::block> nano::wallet::send_action (nano::account const & so
 						{
 							store.work_get (transaction, source_a, work_a);
 						}
-						block = std::make_shared<nano::state_block> (source_a, info->head, info->representative, balance.value ().number () - amount_a, account_a, prv, source_a, work_a);
+						block_legacy = std::make_shared<nano::state_block> (source_a, info->head, info->representative, balance.value ().number () - amount_a, account_a, prv, source_a, work_a);
 						details.epoch = info->epoch ();
-						if (id_mdb_val && block != nullptr)
+						if (id_mdb_val && block_legacy != nullptr)
 						{
-							nano::store::lmdb::db_val hash_val (block->hash ());
+							nano::store::lmdb::db_val hash_val (block_legacy->hash ());
 							auto mdb_id_key = nano::store::lmdb::to_mdb_val (*id_mdb_val);
 							auto mdb_hash_val = nano::store::lmdb::to_mdb_val (hash_val);
 							auto status (mdb_put (wallets.env.tx (transaction), wallets.send_action_ids, &mdb_id_key, &mdb_hash_val, 0));
 							if (status != 0)
 							{
-								block = nullptr;
+								block_legacy = nullptr;
 								error = true;
 							}
 						}
@@ -1117,7 +1118,7 @@ std::shared_ptr<nano::block> nano::wallet::send_action (nano::account const & so
 				}
 			}
 		}
-		return std::make_tuple (block, error, cached_block, details);
+		return std::make_tuple (block_legacy, error, cached_block, details);
 	};
 
 	std::tuple<std::shared_ptr<nano::block>, bool, bool, nano::block_details> result;
@@ -1132,21 +1133,21 @@ std::shared_ptr<nano::block> nano::wallet::send_action (nano::account const & so
 		}
 	}
 
-	std::shared_ptr<nano::block> block;
+	std::shared_ptr<nano::block> block_legacy;
 	bool error;
 	bool cached_block;
 	nano::block_details details;
-	std::tie (block, error, cached_block, details) = result;
+	std::tie (block_legacy, error, cached_block, details) = result;
 
-	if (!error && block != nullptr && !cached_block)
+	if (!error && block_legacy != nullptr && !cached_block)
 	{
-		if (action_complete (block, source_a, generate_work_a, details))
+		if (action_complete (block_legacy, source_a, generate_work_a, details))
 		{
 			// Return null block after work generation or ledger process error
-			block = nullptr;
+			block_legacy = nullptr;
 		}
 	}
-	return block;
+	return block_legacy;
 }
 
 bool nano::wallet::action_complete (std::shared_ptr<nano::block> const & block_a, nano::account const & account_a, bool const generate_work_a, nano::block_details const & details_a)
@@ -1333,7 +1334,8 @@ bool nano::wallet::search_receivable_impl (nano::store::transaction const & wall
 							if (block)
 							{
 								// Request confirmation for block which is not being processed yet
-								wallets.node.start_election (block);
+								std::shared_ptr<nano::block> block_legacy = *block;
+								wallets.node.start_election (block_legacy);
 							}
 						}
 					}
