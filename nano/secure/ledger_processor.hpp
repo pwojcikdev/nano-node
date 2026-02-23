@@ -1,31 +1,35 @@
 #pragma once
 
-#include <nano/lib/blocks.hpp>
+#include <nano/lib/block_type.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/fwd.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/fwd.hpp>
 
 namespace nano
 {
-class ledger_processor final : public nano::mutable_block_visitor
+class ledger_processor
 {
 public:
 	ledger_processor (nano::secure::write_transaction const &, nano::ledger &);
 
-	void send_block (nano::send_block &) override;
-	void receive_block (nano::receive_block &) override;
-	void open_block (nano::open_block &) override;
-	void change_block (nano::change_block &) override;
-	void state_block (nano::state_block &) override;
+	void process (nano::raw_block const & block);
 
-	void state_block_impl (nano::state_block &);
-	void epoch_block_impl (nano::state_block &);
-
-	nano::secure::write_transaction const & transaction;
-	nano::ledger & ledger;
 	nano::block_status result{ nano::block_status::invalid };
 
 private:
-	bool validate_epoch_block (nano::state_block const & block);
+	void process_send (nano::raw_send_block const &);
+	void process_receive (nano::raw_receive_block const &);
+	void process_open (nano::raw_open_block const &);
+	void process_change (nano::raw_change_block const &);
+	void process_state (nano::raw_state_block const &);
+
+	void state_block_impl (nano::raw_state_block const &);
+	void epoch_block_impl (nano::raw_state_block const &);
+	bool validate_epoch_block (nano::raw_state_block const &);
+	bool valid_predecessor (nano::block_type current, nano::block_type predecessor) const;
+
+	nano::secure::write_transaction const & transaction;
+	nano::ledger & ledger;
 };
 }

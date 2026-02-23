@@ -1,6 +1,7 @@
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/bounded_dfs.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
@@ -374,12 +375,12 @@ void nano::ledger::cement_one (secure::write_transaction & transaction, nano::bl
 	stats.inc (nano::stat::type::confirmation_height, nano::stat::detail::blocks_cemented);
 }
 
-nano::block_status nano::ledger::process (secure::write_transaction const & transaction, std::shared_ptr<nano::block> block)
+nano::block_status nano::ledger::process (secure::write_transaction const & transaction, nano::raw_block const & block)
 {
-	debug_assert (!work.validate_entry (*block) || constants.genesis == nano::dev::genesis);
+	debug_assert (!work.validate_entry (block) || constants.genesis == nano::dev::genesis);
 
 	ledger_processor processor (transaction, *this);
-	block->visit (processor);
+	processor.process (block);
 	if (processor.result == nano::block_status::progress)
 	{
 		++cache.block_count;
@@ -387,64 +388,35 @@ nano::block_status nano::ledger::process (secure::write_transaction const & tran
 	return processor.result;
 }
 
-namespace
+nano::block_status nano::ledger::process (secure::write_transaction const & transaction, std::shared_ptr<nano::block> block)
 {
-class representative_block_visitor final : public nano::block_visitor
-{
-public:
-	representative_block_visitor (nano::secure::transaction const & transaction, nano::ledger & ledger) :
-		transaction{ transaction },
-		ledger{ ledger }
+	auto result = process (transaction, nano::to_raw (*block));
+	if (result == nano::block_status::progress)
 	{
+		auto stored = any.block_get (transaction, block->hash ());
+		debug_assert (stored);
+		block->sideband_set (stored->sideband ());
 	}
-
-	void compute (nano::block_hash const & hash)
-	{
-		current = hash;
-		while (result.is_zero ())
-		{
-			auto block = ledger.any.block_get (transaction, current);
-			release_assert (block);
-			block->to_legacy ()->visit (*this);
-		}
-	}
-
-	void send_block (nano::send_block const & block) override
-	{
-		current = block.previous ();
-	}
-	void receive_block (nano::receive_block const & block) override
-	{
-		current = block.previous ();
-	}
-	void open_block (nano::open_block const & block) override
-	{
-		result = block.hash ();
-	}
-	void change_block (nano::change_block const & block) override
-	{
-		result = block.hash ();
-	}
-	void state_block (nano::state_block const & block) override
-	{
-		result = block.hash ();
-	}
-
-	nano::secure::transaction const & transaction;
-	nano::ledger & ledger;
-
-	nano::block_hash current{ 0 };
-	nano::block_hash result{ 0 };
-};
+	return result;
 }
 
 nano::block_hash nano::ledger::representative_block (secure::transaction const & transaction, nano::block_hash const & hash)
 {
-	representative_block_visitor visitor{ transaction, *this };
-	visitor.compute (hash);
-	auto result = visitor.result;
-	debug_assert (result.is_zero () || any.block_exists (transaction, result));
-	return result;
+	auto current = hash;
+	while (true)
+	{
+		auto block = any.block_get (transaction, current);
+		release_assert (block);
+		if (block->type () == nano::block_type::send || block->type () == nano::block_type::receive)
+		{
+			current = block->previous ();
+		}
+		else
+		{
+			debug_assert (any.block_exists (transaction, block->hash ()));
+			return block->hash ();
+		}
+	}
 }
 
 std::string nano::ledger::block_text (char const * hash_a)
@@ -537,7 +509,7 @@ bool nano::ledger::rollback (secure::write_transaction const & transaction_a, na
 	debug_assert (any.block_exists (transaction_a, block_a));
 	auto account_l = any.block_account (transaction_a, block_a).value ();
 	auto block_account_height (any.block_height (transaction_a, block_a));
-	ledger_rollback rollback (transaction_a, *this, list_a, depth, max_depth);
+	ledger_rollback rollback_impl (transaction_a, *this, list_a, depth, max_depth);
 	auto error (false);
 	while (!error && any.block_exists (transaction_a, block_a))
 	{
@@ -549,12 +521,11 @@ bool nano::ledger::rollback (secure::write_transaction const & transaction_a, na
 			release_assert (info);
 			auto block_l = any.block_get (transaction_a, info->head);
 			release_assert (block_l);
-			auto legacy_l = block_l->to_legacy ();
-			legacy_l->visit (rollback);
-			error = rollback.error;
+			rollback_impl.rollback (*block_l);
+			error = rollback_impl.error;
 			if (!error)
 			{
-				list_a.push_back (legacy_l);
+				list_a.push_back (*block_l);
 				--cache.block_count;
 			}
 		}

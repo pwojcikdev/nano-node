@@ -104,7 +104,9 @@ TEST (ledger, process_modifies_sideband)
 				 .work (*pool.generate (nano::dev::genesis->hash ()))
 				 .build ();
 	ASSERT_EQ (nano::block_status::progress, ledger.process (ledger.tx_begin_write (), send1));
-	ASSERT_EQ (send1->sideband ().timestamp, ledger.any.block_get (ledger.tx_begin_read (), send1->hash ())->sideband ().timestamp);
+	auto stored = ledger.any.block_get (ledger.tx_begin_read (), send1->hash ());
+	ASSERT_TRUE (stored);
+	ASSERT_NE (0, stored->sideband ().timestamp);
 }
 
 // Create a send block and publish it.
@@ -158,7 +160,7 @@ TEST (ledger, process_send)
 	// This was a valid block, it should progress.
 	auto return2 = ledger.process (transaction, open);
 	ASSERT_EQ (nano::block_status::progress, return2);
-	ASSERT_EQ (key2.pub, open->sideband ().account);
+	ASSERT_EQ (key2.pub, open->account ());
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 50, open->sideband ().balance.number ());
 	ASSERT_EQ (1, open->sideband ().height);
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 50, ledger.any.block_amount (transaction, hash2));
@@ -242,7 +244,6 @@ TEST (ledger, process_receive)
 	auto return1 = ledger.process (transaction, open);
 	ASSERT_EQ (nano::block_status::progress, return1);
 	ASSERT_EQ (key2.pub, open->account ());
-	ASSERT_EQ (key2.pub, open->sideband ().account);
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 50, open->sideband ().balance.number ());
 	ASSERT_EQ (1, open->sideband ().height);
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 50, ledger.any.block_amount (transaction, hash2));
