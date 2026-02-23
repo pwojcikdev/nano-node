@@ -132,17 +132,17 @@ TEST (block_store, add_item)
 	auto hash1 (block->hash ());
 	auto transaction (store->tx_begin_write ());
 	auto latest1 (store->block.get (transaction, hash1));
-	ASSERT_EQ (nullptr, latest1);
+	ASSERT_FALSE (latest1);
 	ASSERT_FALSE (store->block.exists (transaction, hash1));
 	store->block.put (transaction, hash1, *block);
 	auto latest2 (store->block.get (transaction, hash1));
-	ASSERT_NE (nullptr, latest2);
+	ASSERT_TRUE (latest2);
 	ASSERT_EQ (*block, *latest2);
 	ASSERT_TRUE (store->block.exists (transaction, hash1));
 	ASSERT_FALSE (store->block.exists (transaction, hash1.number () - 1));
 	store->block.del (transaction, hash1);
 	auto latest3 (store->block.get (transaction, hash1));
-	ASSERT_EQ (nullptr, latest3);
+	ASSERT_FALSE (latest3);
 }
 
 TEST (block_store, clear_successor)
@@ -202,10 +202,10 @@ TEST (block_store, add_nonempty_block)
 	block->signature = nano::sign_message (key1.prv, key1.pub, hash1);
 	auto transaction (store->tx_begin_write ());
 	auto latest1 (store->block.get (transaction, hash1));
-	ASSERT_EQ (nullptr, latest1);
+	ASSERT_FALSE (latest1);
 	store->block.put (transaction, hash1, *block);
 	auto latest2 (store->block.get (transaction, hash1));
-	ASSERT_NE (nullptr, latest2);
+	ASSERT_TRUE (latest2);
 	ASSERT_EQ (*block, *latest2);
 }
 
@@ -230,7 +230,7 @@ TEST (block_store, add_two_items)
 	block->signature = nano::sign_message (key1.prv, key1.pub, hash1);
 	auto transaction (store->tx_begin_write ());
 	auto latest1 (store->block.get (transaction, hash1));
-	ASSERT_EQ (nullptr, latest1);
+	ASSERT_FALSE (latest1);
 	auto block2 = builder
 				  .open ()
 				  .source (0)
@@ -244,14 +244,14 @@ TEST (block_store, add_two_items)
 	auto hash2 (block2->hash ());
 	block2->signature = nano::sign_message (key1.prv, key1.pub, hash2);
 	auto latest2 (store->block.get (transaction, hash2));
-	ASSERT_EQ (nullptr, latest2);
+	ASSERT_FALSE (latest2);
 	store->block.put (transaction, hash1, *block);
 	store->block.put (transaction, hash2, *block2);
 	auto latest3 (store->block.get (transaction, hash1));
-	ASSERT_NE (nullptr, latest3);
+	ASSERT_TRUE (latest3);
 	ASSERT_EQ (*block, *latest3);
 	auto latest4 (store->block.get (transaction, hash2));
-	ASSERT_NE (nullptr, latest4);
+	ASSERT_TRUE (latest4);
 	ASSERT_EQ (*block2, *latest4);
 	ASSERT_FALSE (*latest3 == *latest4);
 }
@@ -286,10 +286,10 @@ TEST (block_store, add_receive)
 	block->sideband_set ({});
 	nano::block_hash hash1 (block->hash ());
 	auto latest1 (store->block.get (transaction, hash1));
-	ASSERT_EQ (nullptr, latest1);
+	ASSERT_FALSE (latest1);
 	store->block.put (transaction, hash1, *block);
 	auto latest2 (store->block.get (transaction, hash1));
-	ASSERT_NE (nullptr, latest2);
+	ASSERT_TRUE (latest2);
 	ASSERT_EQ (*block, *latest2);
 }
 
@@ -390,7 +390,7 @@ TEST (block_store, genesis)
 	ASSERT_FALSE (store->account.get (transaction, nano::dev::genesis_key.pub, info));
 	ASSERT_EQ (nano::dev::genesis->hash (), info.head);
 	auto block1 (store->block.get (transaction, info.head));
-	ASSERT_NE (nullptr, block1);
+	ASSERT_TRUE (block1);
 	ASSERT_EQ (nano::block_type::open, block1->type ());
 	ASSERT_LE (info.modified, nano::seconds_since_epoch ());
 	ASSERT_EQ (info.block_count, 1);
@@ -786,7 +786,7 @@ TEST (block_store, block_replace)
 	store->block.put (transaction, 0, *send1);
 	store->block.put (transaction, 0, *send2);
 	auto block3 (store->block.get (transaction, 0));
-	ASSERT_NE (nullptr, block3);
+	ASSERT_TRUE (block3);
 	ASSERT_EQ (2, block3->block_work ());
 }
 
@@ -893,7 +893,7 @@ TEST (block_store, state_block)
 		store->block.put (transaction, block1->hash (), *block1);
 		ASSERT_TRUE (store->block.exists (transaction, block1->hash ()));
 		auto block2 (store->block.get (transaction, block1->hash ()));
-		ASSERT_NE (nullptr, block2);
+		ASSERT_TRUE (block2);
 		ASSERT_EQ (*block1, *block2);
 	}
 	{
@@ -1368,7 +1368,7 @@ TEST (block_store, reset_renew_existing_transaction)
 
 	// Block shouldn't exist yet
 	auto block_non_existing (store->block.get (read_transaction, hash1));
-	ASSERT_EQ (nullptr, block_non_existing);
+	ASSERT_FALSE (block_non_existing);
 
 	// Release resources for the transaction
 	read_transaction.reset ();
@@ -1383,7 +1383,7 @@ TEST (block_store, reset_renew_existing_transaction)
 
 	// Block should exist now
 	auto block_existing (store->block.get (read_transaction, hash1));
-	ASSERT_NE (nullptr, block_existing);
+	ASSERT_TRUE (block_existing);
 }
 
 TEST (block_store, default_database_backend)

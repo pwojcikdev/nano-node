@@ -346,14 +346,11 @@ void nano::test::print_all_blocks (const nano::store::ledger_store & store)
 	std::cout << "Listing all blocks" << std::endl;
 	for (; i != end; ++i)
 	{
-		nano::block_hash hash = i->first;
-		nano::store::block_w_sideband sideband = i->second;
-		std::shared_ptr<nano::block> b = sideband.block;
+		auto const & [hash, block] = *i;
 		std::cout << "Hash: " << hash.to_string () << std::endl;
-		const auto acc = sideband.sideband.account;
-		std::cout << "Acc: " << acc.to_string () << "(" << acc.to_account () << ")" << std::endl;
-		std::cout << "Height: " << sideband.sideband.height << std::endl;
-		std::cout << b->to_json ();
+		std::cout << "Acc: " << block.account ().to_string () << "(" << block.account ().to_account () << ")" << std::endl;
+		std::cout << "Height: " << block.sideband ().height << std::endl;
+		std::cout << block.to_json ();
 	}
 }
 
@@ -363,7 +360,7 @@ std::vector<std::shared_ptr<nano::block>> nano::test::all_blocks (nano::node & n
 	std::vector<std::shared_ptr<nano::block>> result;
 	for (auto it = node.store.block.begin (transaction), end = node.store.block.end (transaction); it != end; ++it)
 	{
-		result.push_back (it->second.block);
+		result.push_back (it->second.to_legacy ());
 	}
 	return result;
 }

@@ -52,28 +52,7 @@ void block_view::raw_put (nano::store::write_transaction const & txn, std::vecto
 	backend.release_assert_success (status);
 }
 
-std::shared_ptr<nano::block> block_view::get (nano::store::transaction const & txn, nano::block_hash const & hash) const
-{
-	nano::store::db_val value;
-	block_raw_get (txn, hash, value);
-	std::shared_ptr<nano::block> result;
-	if (value.size () != 0)
-	{
-		nano::bufferstream stream{ reinterpret_cast<uint8_t const *> (value.data ()), value.size () };
-		nano::block_type type;
-		bool error = try_read (stream, type);
-		release_assert (!error);
-		result = nano::deserialize_block (stream, type);
-		release_assert (result != nullptr);
-		nano::block_sideband sideband;
-		error = sideband.deserialize (stream, type);
-		release_assert (!error);
-		result->sideband_set (sideband);
-	}
-	return result;
-}
-
-std::optional<nano::stored_block> block_view::get_stored (nano::store::transaction const & txn, nano::block_hash const & hash) const
+std::optional<nano::stored_block> block_view::get (nano::store::transaction const & txn, nano::block_hash const & hash) const
 {
 	nano::store::db_val value;
 	block_raw_get (txn, hash, value);

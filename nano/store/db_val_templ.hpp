@@ -1,7 +1,9 @@
 #pragma once
 
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/memory.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/secure/account_info.hpp>
@@ -228,15 +230,14 @@ inline db_val::operator std::array<char, 64> () const
 	return result;
 }
 
-inline db_val::operator nano::store::block_w_sideband () const
+inline db_val::operator nano::stored_block () const
 {
 	nano::bufferstream stream{ span_view.data (), span_view.size () };
-	nano::store::block_w_sideband block_w_sideband;
-	block_w_sideband.block = (nano::deserialize_block (stream));
-	auto error = block_w_sideband.sideband.deserialize (stream, block_w_sideband.block->type ());
+	auto raw = nano::deserialize_raw_block (stream);
+	nano::block_sideband sideband;
+	auto error = sideband.deserialize (stream, raw.type ());
 	release_assert (!error);
-	block_w_sideband.block->sideband_set (block_w_sideband.sideband);
-	return block_w_sideband;
+	return nano::stored_block{ std::move (raw), std::move (sideband) };
 }
 
 inline db_val::operator std::shared_ptr<nano::vote> () const

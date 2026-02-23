@@ -449,7 +449,7 @@ std::deque<std::shared_ptr<nano::block>> nano::ledger::random_blocks (secure::tr
 	{
 		if (it != end)
 		{
-			result.push_back (it->second.block);
+			result.push_back (it->second.to_legacy ());
 		}
 		++it; // Store iterators wrap around when reaching the end
 	}

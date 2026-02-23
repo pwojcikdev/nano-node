@@ -158,7 +158,7 @@ std::optional<nano::stored_block> nano::ledger_set_any::block_get (secure::trans
 	{
 		return std::nullopt;
 	}
-	return ledger.store.block.get_stored (transaction, hash);
+	return ledger.store.block.get (transaction, hash);
 }
 
 bool nano::ledger_set_any::block_pruned (secure::transaction const & transaction, nano::block_hash const & hash) const

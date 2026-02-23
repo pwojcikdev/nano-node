@@ -402,20 +402,20 @@ void ledger_store::upgrade_v24_to_v25 ()
 		// Iterate all blocks using a separate read transaction
 		auto iterate_blocks = [this] (auto && func) {
 			auto read_txn = backend.tx_begin_read ();
-			auto it = nano::store::typed_iterator<nano::block_hash, nano::store::block_w_sideband>{ backend.begin (read_txn, nano::store::table::blocks) };
-			auto const end = nano::store::typed_iterator<nano::block_hash, nano::store::block_w_sideband>{ backend.end (read_txn, nano::store::table::blocks) };
+			auto it = nano::store::typed_iterator<nano::block_hash, nano::stored_block>{ backend.begin (read_txn, nano::store::table::blocks) };
+			auto const end = nano::store::typed_iterator<nano::block_hash, nano::stored_block>{ backend.end (read_txn, nano::store::table::blocks) };
 			for (; it != end; ++it)
 			{
-				auto const & [hash, block_w_sideband] = *it;
-				func (hash, block_w_sideband);
+				auto const & [hash, block] = *it;
+				func (hash, block);
 			}
 		};
 
-		iterate_blocks ([this, &transaction, &processed, batch_size, total_blocks] (nano::block_hash const & hash, nano::store::block_w_sideband const & block_w_sideband) {
+		iterate_blocks ([this, &transaction, &processed, batch_size, total_blocks] (nano::block_hash const & hash, nano::stored_block const & block) {
 			// If successor is non-zero, write to successor table
-			if (!block_w_sideband.sideband.successor.is_zero ())
+			if (!block.sideband ().successor.is_zero ())
 			{
-				auto status = backend.put (transaction, nano::store::table::successor, hash, block_w_sideband.sideband.successor);
+				auto status = backend.put (transaction, nano::store::table::successor, hash, block.sideband ().successor);
 				backend.release_assert_success (status);
 			}
 

@@ -12,7 +12,6 @@
 #include <nano/lib/object_stream.hpp>
 #include <nano/lib/timer.hpp>
 #include <nano/lib/utility.hpp>
-#include <nano/store/block_w_sideband.hpp>
 
 #include <array>
 #include <unordered_map>

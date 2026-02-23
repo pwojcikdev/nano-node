@@ -224,7 +224,7 @@ TEST (migrations, lmdb_to_rocksdb)
 	for (auto const & block : expected.blocks)
 	{
 		auto retrieved = rocksdb_store.block.get (txn, block->hash ());
-		ASSERT_NE (retrieved, nullptr) << "Block missing: " << block->hash ().to_string ();
+		ASSERT_TRUE (retrieved) << "Block missing: " << block->hash ().to_string ();
 		ASSERT_EQ (*block, *retrieved);
 	}
 

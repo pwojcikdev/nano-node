@@ -5273,7 +5273,7 @@ TEST (ledger, pruning_action)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send1));
 	ASSERT_TRUE (ledger.any.block_exists (transaction, send1->hash ()));
 	auto send1_stored (store->block.get (transaction, send1->hash ()));
-	ASSERT_NE (nullptr, send1_stored);
+	ASSERT_TRUE (send1_stored);
 	ASSERT_EQ (*send1, *send1_stored);
 	ASSERT_TRUE (ledger.any.pending_get (transaction, nano::pending_key{ nano::dev::genesis_key.pub, send1->hash () }));
 	auto send2 = builder
@@ -5316,7 +5316,7 @@ TEST (ledger, pruning_action)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, receive1));
 	ASSERT_TRUE (ledger.any.block_exists (transaction, receive1->hash ()));
 	auto receive1_stored (store->block.get (transaction, receive1->hash ()));
-	ASSERT_NE (nullptr, receive1_stored);
+	ASSERT_TRUE (receive1_stored);
 	ASSERT_EQ (*receive1, *receive1_stored);
 	ASSERT_FALSE (ledger.any.pending_get (transaction, nano::pending_key{ nano::dev::genesis_key.pub, send1->hash () }));
 	ASSERT_EQ (4, receive1_stored->sideband ().height);
@@ -5911,7 +5911,7 @@ TEST (ledger, copy_to_rocksdb)
 		ASSERT_EQ (rocksdb_store->online_weight.count (rocksdb_transaction), 1);
 
 		auto block1 = rocksdb_store->block.get (rocksdb_transaction, send->hash ());
-		ASSERT_NE (block1, nullptr);
+		ASSERT_TRUE (block1);
 		ASSERT_EQ (*send, *block1);
 
 		ASSERT_TRUE (rocksdb_store->peer.exists (rocksdb_transaction, endpoint_key));

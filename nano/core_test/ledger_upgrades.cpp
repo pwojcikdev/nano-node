@@ -717,7 +717,7 @@ TEST (ledger_upgrades, upgrade_v24_to_v25)
 	ASSERT_FALSE (no_successor.has_value ());
 
 	auto stored_block2 = store.block.get (tx, block2->hash ());
-	ASSERT_NE (nullptr, stored_block2);
+	ASSERT_TRUE (stored_block2);
 	ASSERT_EQ (stored_block2->sideband ().height, 2);
 	ASSERT_EQ (stored_block2->sideband ().successor, nano::block_hash{ 0 });
 }

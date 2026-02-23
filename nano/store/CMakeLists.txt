@@ -26,7 +26,6 @@ add_library(
   ledger/rep_weight.cpp
   ledger/version.hpp
   ledger/version.cpp
-  block_w_sideband.hpp
   crawler.hpp
   common.hpp
   common.cpp

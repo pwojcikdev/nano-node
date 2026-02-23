@@ -100,7 +100,7 @@ std::optional<nano::stored_block> nano::ledger_set_cemented::block_get (secure::
 	{
 		return std::nullopt;
 	}
-	auto block = ledger.store.block.get_stored (transaction, hash);
+	auto block = ledger.store.block.get (transaction, hash);
 	if (!block)
 	{
 		return std::nullopt;

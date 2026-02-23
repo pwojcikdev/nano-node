@@ -14,6 +14,7 @@ class account_info_v22;
 class block;
 class pending_info;
 class pending_key;
+class stored_block;
 class vote;
 }
 
@@ -75,7 +76,7 @@ public:
 	explicit operator nano::block_hash () const;
 	explicit operator nano::public_key () const;
 	explicit operator std::array<char, 64> () const;
-	explicit operator block_w_sideband () const;
+	explicit operator nano::stored_block () const;
 	explicit operator std::shared_ptr<nano::vote> () const;
 	explicit operator std::nullptr_t () const;
 	explicit operator nano::no_value () const;
