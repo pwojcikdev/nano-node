@@ -606,7 +606,6 @@ bool nano::ledger::is_epoch_link (nano::link const & link_a) const
  */
 std::shared_ptr<nano::block> nano::ledger::find_receive_block_by_send_hash (secure::transaction const & transaction, nano::account const & destination, nano::block_hash const & send_block_hash)
 {
-	std::shared_ptr<nano::block> result;
 	debug_assert (send_block_hash != 0);
 
 	// get the cemented frontier
@@ -618,19 +617,18 @@ std::shared_ptr<nano::block> nano::ledger::find_receive_block_by_send_hash (secu
 	auto possible_receive_block = any.block_get (transaction, info.frontier);
 
 	// walk down the chain until the source field of a receive block matches the send block hash
-	while (possible_receive_block != nullptr)
+	while (possible_receive_block)
 	{
 		if (possible_receive_block->is_receive () && send_block_hash == possible_receive_block->source ())
 		{
 			// we have a match
-			result = possible_receive_block;
-			break;
+			return *possible_receive_block;
 		}
 
 		possible_receive_block = any.block_get (transaction, possible_receive_block->previous ());
 	}
 
-	return result;
+	return nullptr;
 }
 
 std::optional<nano::account> nano::ledger::linked_account (secure::transaction const & transaction, nano::block const & block)
@@ -685,20 +683,24 @@ std::shared_ptr<nano::block> nano::ledger::forked_block (secure::transaction con
 	debug_assert (!any.block_exists (transaction_a, block_a.hash ()));
 	auto root (block_a.root ());
 	debug_assert (any.block_exists (transaction_a, root.as_block_hash ()) || store.account.exists (transaction_a, root.as_account ()));
-	std::shared_ptr<nano::block> result;
-	auto successor_l = any.block_successor (transaction_a, root.as_block_hash ());
-	if (successor_l)
+
+	// Try to find the existing block that conflicts at the same previous hash
+	auto successor = any.block_successor (transaction_a, root.as_block_hash ());
+	if (successor)
 	{
-		result = any.block_get (transaction_a, successor_l.value ());
+		auto fork_block = any.block_get (transaction_a, successor.value ());
+		if (fork_block)
+		{
+			return *fork_block;
+		}
 	}
-	if (result == nullptr)
-	{
-		auto info = any.account_get (transaction_a, root.as_account ());
-		release_assert (info);
-		result = any.block_get (transaction_a, info->open_block);
-		release_assert (result != nullptr);
-	}
-	return result;
+
+	// Root must be an account, so the fork is at the open block
+	auto info = any.account_get (transaction_a, root.as_account ());
+	release_assert (info);
+	auto fork = any.block_get (transaction_a, info->open_block);
+	release_assert (fork);
+	return *fork;
 }
 
 uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a, nano::block_hash const & hash_a, uint64_t const batch_size_a)
@@ -708,9 +710,9 @@ uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a
 	while (!hash.is_zero () && hash != constants.genesis->hash ())
 	{
 		auto block_l = any.block_get (transaction_a, hash);
-		if (block_l != nullptr)
+		if (block_l)
 		{
-			release_assert (cemented.block_exists (transaction_a, hash));
+			release_assert (cemented.block_exists (transaction_a, *block_l));
 			store.block.del (transaction_a, hash);
 			store.pruned.put (transaction_a, hash);
 			hash = block_l->previous ();
@@ -741,7 +743,7 @@ uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a
 auto nano::ledger::block_priority (nano::secure::transaction const & transaction, nano::block const & block) const -> block_priority_result
 {
 	auto const balance = block.balance ();
-	auto const previous_block = !block.previous ().is_zero () ? any.block_get (transaction, block.previous ()) : nullptr;
+	auto const previous_block = !block.previous ().is_zero () ? any.block_get (transaction, block.previous ()) : std::nullopt;
 	auto const previous_balance = previous_block ? previous_block->balance () : 0;
 
 	// Handle full send case nicely where the balance would otherwise be 0
