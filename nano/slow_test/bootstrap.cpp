@@ -147,17 +147,26 @@ TEST (bootstrap, profile_topology)
 	auto network = bootstrap_profile_network;
 	nano::network_params network_params{ network };
 
-	// Set up server node
+	// Set up server node - only serve bootstrap traffic, disable everything else
 	nano::node_config config_server{ network_params };
 	config_server.preconfigured_peers.clear ();
 	config_server.bandwidth_limit = 0; // Unlimited server bandwidth
 	config_server.bootstrap.enable = false;
+	config_server.block_rebroadcaster.enable = false;
+	config_server.local_block_broadcaster.enable = false;
+	config_server.backlog_scan.enable = false;
+	config_server.priority_scheduler.enable = false;
+	config_server.hinted_scheduler.enable = false;
+	config_server.optimistic_scheduler.enable = false;
 	nano::node_flags flags_server;
 	flags_server.disable_legacy_bootstrap = true;
 	flags_server.disable_wallet_bootstrap = true;
 	flags_server.disable_add_initial_peers = true;
 	flags_server.disable_ongoing_bootstrap = true;
 	flags_server.disable_non_loopback_peers = true;
+	flags_server.disable_rep_crawler = true;
+	flags_server.disable_request_loop = true;
+	flags_server.disable_activate_successors = true;
 	auto data_path_server = nano::working_path (network);
 	auto server = std::make_shared<nano::node> (system.io_ctx, data_path_server, config_server, system.work, flags_server);
 	system.nodes.push_back (server);
