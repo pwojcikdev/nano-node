@@ -6,6 +6,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/stats.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/work.hpp>
 #include <nano/node/make_store.hpp>
@@ -295,8 +296,9 @@ std::deque<std::shared_ptr<nano::block>> nano::ledger::cement (secure::write_tra
 {
 	std::deque<std::shared_ptr<nano::block>> result;
 
-	auto start_block = any.block_get (transaction, target_hash);
-	release_assert (start_block, "attempting to cement a non-existent block", target_hash.to_string ());
+	auto start_block_opt = any.block_get (transaction, target_hash);
+	release_assert (start_block_opt, "attempting to cement a non-existent block", target_hash.to_string ());
+	auto start_block = start_block_opt->to_legacy ();
 
 	auto is_resolved = [&] (std::shared_ptr<nano::block> const & block) {
 		if (block)
@@ -317,7 +319,7 @@ std::deque<std::shared_ptr<nano::block>> nano::ledger::cement (secure::write_tra
 				auto dep_block = any.block_get (transaction, dep_hash);
 				if (dep_block)
 				{
-					deps[i] = dep_block;
+					deps[i] = *dep_block;
 				}
 				else
 				{
@@ -402,8 +404,8 @@ public:
 		while (result.is_zero ())
 		{
 			auto block = ledger.any.block_get (transaction, current);
-			release_assert (block != nullptr);
-			block->visit (*this);
+			release_assert (block);
+			block->to_legacy ()->visit (*this);
 		}
 	}
 
@@ -455,7 +457,7 @@ std::string nano::ledger::block_text (nano::block_hash const & hash_a)
 	std::string result;
 	auto transaction = tx_begin_read ();
 	auto block_l = any.block_get (transaction, hash_a);
-	if (block_l != nullptr)
+	if (block_l)
 	{
 		block_l->serialize_json (result);
 	}
@@ -546,12 +548,13 @@ bool nano::ledger::rollback (secure::write_transaction const & transaction_a, na
 			auto info = any.account_get (transaction_a, account_l);
 			release_assert (info);
 			auto block_l = any.block_get (transaction_a, info->head);
-			release_assert (block_l != nullptr);
-			block_l->visit (rollback);
+			release_assert (block_l);
+			auto legacy_l = block_l->to_legacy ();
+			legacy_l->visit (rollback);
 			error = rollback.error;
 			if (!error)
 			{
-				list_a.push_back (block_l);
+				list_a.push_back (legacy_l);
 				--cache.block_count;
 			}
 		}
