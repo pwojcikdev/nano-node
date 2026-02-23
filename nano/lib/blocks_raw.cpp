@@ -29,6 +29,28 @@ void nano::raw_send_block::deserialize (nano::stream & stream)
 	read (stream, work);
 }
 
+nano::block_hash nano::raw_send_block::hash () const
+{
+	nano::block_hash result;
+	blake2b_state hash_l;
+	auto status = blake2b_init (&hash_l, sizeof (result.bytes));
+	debug_assert (status == 0);
+	hashables.hash (hash_l);
+	status = blake2b_final (&hash_l, result.bytes.data (), sizeof (result.bytes));
+	debug_assert (status == 0);
+	return result;
+}
+
+nano::block_type nano::raw_send_block::type () const
+{
+	return block_type_v;
+}
+
+nano::work_version nano::raw_send_block::work_version () const
+{
+	return nano::work_version::work_1;
+}
+
 nano::root nano::raw_send_block::root () const
 {
 	return hashables.previous;
@@ -47,6 +69,11 @@ nano::account nano::raw_send_block::destination_field () const
 nano::block_hash nano::raw_send_block::previous_field () const
 {
 	return hashables.previous;
+}
+
+uint64_t nano::raw_send_block::work_field () const
+{
+	return work;
 }
 
 /*
@@ -69,6 +96,28 @@ void nano::raw_receive_block::deserialize (nano::stream & stream)
 	read (stream, work);
 }
 
+nano::block_hash nano::raw_receive_block::hash () const
+{
+	nano::block_hash result;
+	blake2b_state hash_l;
+	auto status = blake2b_init (&hash_l, sizeof (result.bytes));
+	debug_assert (status == 0);
+	hashables.hash (hash_l);
+	status = blake2b_final (&hash_l, result.bytes.data (), sizeof (result.bytes));
+	debug_assert (status == 0);
+	return result;
+}
+
+nano::block_type nano::raw_receive_block::type () const
+{
+	return block_type_v;
+}
+
+nano::work_version nano::raw_receive_block::work_version () const
+{
+	return nano::work_version::work_1;
+}
+
 nano::root nano::raw_receive_block::root () const
 {
 	return hashables.previous;
@@ -82,6 +131,11 @@ nano::block_hash nano::raw_receive_block::previous_field () const
 nano::block_hash nano::raw_receive_block::source_field () const
 {
 	return hashables.source;
+}
+
+uint64_t nano::raw_receive_block::work_field () const
+{
+	return work;
 }
 
 /*
@@ -106,6 +160,28 @@ void nano::raw_open_block::deserialize (nano::stream & stream)
 	read (stream, work);
 }
 
+nano::block_hash nano::raw_open_block::hash () const
+{
+	nano::block_hash result;
+	blake2b_state hash_l;
+	auto status = blake2b_init (&hash_l, sizeof (result.bytes));
+	debug_assert (status == 0);
+	hashables.hash (hash_l);
+	status = blake2b_final (&hash_l, result.bytes.data (), sizeof (result.bytes));
+	debug_assert (status == 0);
+	return result;
+}
+
+nano::block_type nano::raw_open_block::type () const
+{
+	return block_type_v;
+}
+
+nano::work_version nano::raw_open_block::work_version () const
+{
+	return nano::work_version::work_1;
+}
+
 nano::root nano::raw_open_block::root () const
 {
 	return hashables.account;
@@ -124,6 +200,11 @@ nano::account nano::raw_open_block::representative_field () const
 nano::block_hash nano::raw_open_block::source_field () const
 {
 	return hashables.source;
+}
+
+uint64_t nano::raw_open_block::work_field () const
+{
+	return work;
 }
 
 /*
@@ -146,6 +227,28 @@ void nano::raw_change_block::deserialize (nano::stream & stream)
 	read (stream, work);
 }
 
+nano::block_hash nano::raw_change_block::hash () const
+{
+	nano::block_hash result;
+	blake2b_state hash_l;
+	auto status = blake2b_init (&hash_l, sizeof (result.bytes));
+	debug_assert (status == 0);
+	hashables.hash (hash_l);
+	status = blake2b_final (&hash_l, result.bytes.data (), sizeof (result.bytes));
+	debug_assert (status == 0);
+	return result;
+}
+
+nano::block_type nano::raw_change_block::type () const
+{
+	return block_type_v;
+}
+
+nano::work_version nano::raw_change_block::work_version () const
+{
+	return nano::work_version::work_1;
+}
+
 nano::root nano::raw_change_block::root () const
 {
 	return hashables.previous;
@@ -159,6 +262,11 @@ nano::block_hash nano::raw_change_block::previous_field () const
 nano::account nano::raw_change_block::representative_field () const
 {
 	return hashables.representative;
+}
+
+uint64_t nano::raw_change_block::work_field () const
+{
+	return work;
 }
 
 /*
@@ -186,6 +294,30 @@ void nano::raw_state_block::deserialize (nano::stream & stream)
 	read (stream, signature);
 	read (stream, work);
 	boost::endian::big_to_native_inplace (work);
+}
+
+nano::block_hash nano::raw_state_block::hash () const
+{
+	nano::block_hash result;
+	blake2b_state hash_l;
+	auto status = blake2b_init (&hash_l, sizeof (result.bytes));
+	debug_assert (status == 0);
+	nano::uint256_union preamble (static_cast<uint64_t> (nano::block_type::state));
+	blake2b_update (&hash_l, preamble.bytes.data (), preamble.bytes.size ());
+	hashables.hash (hash_l);
+	status = blake2b_final (&hash_l, result.bytes.data (), sizeof (result.bytes));
+	debug_assert (status == 0);
+	return result;
+}
+
+nano::block_type nano::raw_state_block::type () const
+{
+	return block_type_v;
+}
+
+nano::work_version nano::raw_state_block::work_version () const
+{
+	return nano::work_version::work_1;
 }
 
 nano::root nano::raw_state_block::root () const
@@ -223,6 +355,11 @@ nano::block_hash nano::raw_state_block::previous_field () const
 nano::account nano::raw_state_block::representative_field () const
 {
 	return hashables.representative;
+}
+
+uint64_t nano::raw_state_block::work_field () const
+{
+	return work;
 }
 
 /*
@@ -278,6 +415,16 @@ nano::block_type nano::raw_block::type () const
 	data_m);
 }
 
+nano::work_version nano::raw_block::work_version () const
+{
+	return nano::work_version::work_1;
+}
+
+uint64_t nano::raw_block::work () const
+{
+	return block_work ();
+}
+
 nano::signature const & nano::raw_block::block_signature () const
 {
 	return std::visit ([] (auto const & block) -> nano::signature const & {
@@ -300,6 +447,11 @@ uint64_t nano::raw_block::block_work () const
 		return block.work;
 	},
 	data_m);
+}
+
+uint64_t nano::raw_block::work_field () const
+{
+	return block_work ();
 }
 
 nano::qualified_root nano::raw_block::qualified_root () const

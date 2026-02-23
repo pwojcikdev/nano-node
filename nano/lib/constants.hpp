@@ -50,6 +50,18 @@ public:
 	uint64_t difficulty (nano::block const & block) const;
 	bool validate_entry (nano::work_version, nano::root const & root, uint64_t work) const;
 	bool validate_entry (nano::block const & block) const;
+
+	// Template overloads for raw block types (raw_send_block, raw_receive_block, etc. and raw_block)
+	uint64_t difficulty (auto const & block) const
+		requires (requires { block.work_version (); block.root (); block.work_field (); })
+	{
+		return difficulty (block.work_version (), block.root (), block.work_field ());
+	}
+	bool validate_entry (auto const & block) const
+		requires (requires { block.work_version (); block.root (); block.work_field (); })
+	{
+		return difficulty (block) < threshold_entry (block.work_version (), block.type ());
+	}
 };
 
 class network_constants

@@ -3,6 +3,7 @@
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks_hashables.hpp>
 #include <nano/lib/fwd.hpp>
+#include <nano/lib/work_version.hpp>
 
 #include <variant>
 
@@ -21,12 +22,16 @@ struct raw_send_block
 
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &);
+	nano::block_hash hash () const;
+	nano::block_type type () const;
+	nano::work_version work_version () const;
 	nano::root root () const;
 	bool operator== (raw_send_block const &) const = default;
 
 	nano::amount balance_field () const;
 	nano::account destination_field () const;
 	nano::block_hash previous_field () const;
+	uint64_t work_field () const;
 };
 
 /*
@@ -42,11 +47,15 @@ struct raw_receive_block
 
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &);
+	nano::block_hash hash () const;
+	nano::block_type type () const;
+	nano::work_version work_version () const;
 	nano::root root () const;
 	bool operator== (raw_receive_block const &) const = default;
 
 	nano::block_hash previous_field () const;
 	nano::block_hash source_field () const;
+	uint64_t work_field () const;
 };
 
 /*
@@ -62,12 +71,16 @@ struct raw_open_block
 
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &);
+	nano::block_hash hash () const;
+	nano::block_type type () const;
+	nano::work_version work_version () const;
 	nano::root root () const;
 	bool operator== (raw_open_block const &) const = default;
 
 	nano::account account_field () const;
 	nano::account representative_field () const;
 	nano::block_hash source_field () const;
+	uint64_t work_field () const;
 };
 
 /*
@@ -83,11 +96,15 @@ struct raw_change_block
 
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &);
+	nano::block_hash hash () const;
+	nano::block_type type () const;
+	nano::work_version work_version () const;
 	nano::root root () const;
 	bool operator== (raw_change_block const &) const = default;
 
 	nano::block_hash previous_field () const;
 	nano::account representative_field () const;
+	uint64_t work_field () const;
 };
 
 /*
@@ -103,6 +120,9 @@ struct raw_state_block
 
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &);
+	nano::block_hash hash () const;
+	nano::block_type type () const;
+	nano::work_version work_version () const;
 	nano::root root () const;
 	bool operator== (raw_state_block const &) const = default;
 
@@ -111,6 +131,7 @@ struct raw_state_block
 	nano::link link_field () const;
 	nano::block_hash previous_field () const;
 	nano::account representative_field () const;
+	uint64_t work_field () const;
 };
 
 /*
@@ -128,19 +149,21 @@ class raw_block
 
 public:
 	raw_block () = default;
-	explicit raw_block (raw_block_variant data);
-	explicit raw_block (raw_send_block);
-	explicit raw_block (raw_receive_block);
-	explicit raw_block (raw_open_block);
-	explicit raw_block (raw_change_block);
-	explicit raw_block (raw_state_block);
+	raw_block (raw_block_variant);
+	raw_block (raw_send_block);
+	raw_block (raw_receive_block);
+	raw_block (raw_open_block);
+	raw_block (raw_change_block);
+	raw_block (raw_state_block);
 
 	// Core accessors
 	nano::block_hash const & hash () const;
 	nano::block_type type () const;
+	nano::work_version work_version () const;
 	nano::signature const & block_signature () const;
 	nano::root root () const;
 	uint64_t block_work () const;
+	uint64_t work () const;
 	nano::qualified_root qualified_root () const;
 	nano::block_hash previous () const;
 
@@ -152,6 +175,7 @@ public:
 	std::optional<nano::block_hash> previous_field () const;
 	std::optional<nano::account> representative_field () const;
 	std::optional<nano::block_hash> source_field () const;
+	uint64_t work_field () const;
 
 	// Serialization
 	void serialize (nano::stream &) const;
