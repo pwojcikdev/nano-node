@@ -53,17 +53,19 @@ bool nano::vote_generator::should_vote (transaction_variant_t const & transactio
 		debug_assert (std::holds_alternative<nano::secure::write_transaction> (transaction_variant));
 		auto const & transaction = std::get<nano::secure::write_transaction> (transaction_variant);
 
-		block = ledger.any.block_get (transaction, hash_a);
-		should_vote = block != nullptr && ledger.dependencies_cemented (transaction, *block) && ledger.store.final_vote.put (transaction, block->qualified_root (), hash_a);
-		debug_assert (block == nullptr || root_a == block->root ());
+		auto block_opt = ledger.any.block_get (transaction, hash_a);
+		block = block_opt ? block_opt->to_legacy () : nullptr;
+		should_vote = block && ledger.dependencies_cemented (transaction, *block) && ledger.store.final_vote.put (transaction, block->qualified_root (), hash_a);
+		debug_assert (!block || root_a == block->root ());
 	}
 	else
 	{
 		debug_assert (std::holds_alternative<nano::secure::read_transaction> (transaction_variant));
 		auto const & transaction = std::get<nano::secure::read_transaction> (transaction_variant);
 
-		block = ledger.any.block_get (transaction, hash_a);
-		should_vote = block != nullptr && ledger.dependencies_cemented (transaction, *block);
+		auto block_opt = ledger.any.block_get (transaction, hash_a);
+		block = block_opt ? block_opt->to_legacy () : nullptr;
+		should_vote = block && ledger.dependencies_cemented (transaction, *block);
 	}
 
 	logger.trace (log_type (), nano::log::detail::should_vote,
