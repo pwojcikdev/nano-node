@@ -162,9 +162,9 @@ std::filesystem::path nano::random_filename ()
 	return std::filesystem::path{ random_string };
 }
 
-std::filesystem::path nano::unique_path (nano::network_type network)
+std::filesystem::path nano::unique_path ()
 {
-	auto result = working_path (network) / random_filename ();
+	auto result = working_path (nano::network_type::nano_dev_network) / random_filename ();
 
 	std::filesystem::create_directories (result);
 
