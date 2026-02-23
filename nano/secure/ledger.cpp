@@ -375,7 +375,7 @@ void nano::ledger::cement_one (secure::write_transaction & transaction, nano::bl
 	stats.inc (nano::stat::type::confirmation_height, nano::stat::detail::blocks_cemented);
 }
 
-nano::block_status nano::ledger::process (secure::write_transaction const & transaction, nano::raw_block const & block)
+auto nano::ledger::process (secure::write_transaction const & transaction, nano::raw_block const & block) -> process_result
 {
 	debug_assert (!work.validate_entry (block) || constants.genesis == nano::dev::genesis);
 
@@ -383,21 +383,21 @@ nano::block_status nano::ledger::process (secure::write_transaction const & tran
 	processor.process (block);
 	if (processor.result == nano::block_status::progress)
 	{
+		release_assert (processor.stored);
 		++cache.block_count;
 	}
-	return processor.result;
+	return { processor.result, processor.stored };
 }
 
 nano::block_status nano::ledger::process (secure::write_transaction const & transaction, std::shared_ptr<nano::block> block)
 {
 	auto result = process (transaction, nano::to_raw (*block));
-	if (result == nano::block_status::progress)
+	if (result.code == nano::block_status::progress)
 	{
-		auto stored = any.block_get (transaction, block->hash ());
-		debug_assert (stored);
-		block->sideband_set (stored->sideband ());
+		release_assert (result.stored);
+		block->sideband_set (result.stored->sideband ());
 	}
-	return result;
+	return result.code;
 }
 
 nano::block_hash nano::ledger::representative_block (secure::transaction const & transaction, nano::block_hash const & hash)

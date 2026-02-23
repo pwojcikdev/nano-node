@@ -3,8 +3,11 @@
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/fwd.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/fwd.hpp>
+
+#include <optional>
 
 namespace nano
 {
@@ -16,6 +19,7 @@ public:
 	void process (nano::raw_block const & block);
 
 	nano::block_status result{ nano::block_status::invalid };
+	std::optional<nano::stored_block> stored; // Set when result == progress
 
 private:
 	void process_send (nano::raw_send_block const &);

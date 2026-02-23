@@ -102,6 +102,8 @@ void nano::ledger_processor::process_send (nano::raw_send_block const & block_a)
 								ledger.update_account (transaction, account, *info, new_info);
 								ledger.store.pending.put (transaction, nano::pending_key (block_a.destination_field (), hash), { account, amount, nano::epoch::epoch_0 });
 								ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::send);
+
+								stored = nano::stored_block{ nano::raw_block{ block_a }, sideband };
 							}
 						}
 					}
@@ -161,6 +163,8 @@ void nano::ledger_processor::process_receive (nano::raw_receive_block const & bl
 											ledger.update_account (transaction, account, *info, new_info);
 											ledger.rep_weights.add (transaction, info->representative, pending.value ().amount);
 											ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::receive);
+
+											stored = nano::stored_block{ nano::raw_block{ block_a }, sideband };
 										}
 									}
 								}
@@ -213,6 +217,8 @@ void nano::ledger_processor::process_open (nano::raw_open_block const & block_a)
 									ledger.update_account (transaction, block_a.account_field (), info, new_info);
 									ledger.rep_weights.add (transaction, block_a.representative_field (), pending.value ().amount);
 									ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::open);
+
+									stored = nano::stored_block{ nano::raw_block{ block_a }, sideband };
 								}
 							}
 						}
@@ -259,6 +265,8 @@ void nano::ledger_processor::process_change (nano::raw_change_block const & bloc
 							nano::account_info new_info (hash, block_a.representative_field (), info->open_block, info->balance, nano::seconds_since_epoch (), info->block_count + 1, nano::epoch::epoch_0);
 							ledger.update_account (transaction, account, *info, new_info);
 							ledger.stats.inc (nano::stat::type::ledger, nano::stat::detail::change);
+
+							stored = nano::stored_block{ nano::raw_block{ block_a }, sideband };
 						}
 					}
 				}
@@ -399,6 +407,8 @@ void nano::ledger_processor::state_block_impl (nano::raw_state_block const & blo
 
 						nano::account_info new_info (hash, block_a.representative_field (), info.open_block.is_zero () ? hash : info.open_block, block_a.balance_field (), nano::seconds_since_epoch (), info.block_count + 1, epoch);
 						ledger.update_account (transaction, block_a.account_field (), info, new_info);
+
+						stored = nano::stored_block{ nano::raw_block{ block_a }, sideband };
 					}
 				}
 			}
@@ -465,6 +475,8 @@ void nano::ledger_processor::epoch_block_impl (nano::raw_state_block const & blo
 								ledger.store.block.put (transaction, hash, block_a, sideband);
 								nano::account_info new_info (hash, block_a.representative_field (), info.open_block.is_zero () ? hash : info.open_block, info.balance, nano::seconds_since_epoch (), info.block_count + 1, epoch);
 								ledger.update_account (transaction, block_a.account_field (), info, new_info);
+
+								stored = nano::stored_block{ nano::raw_block{ block_a }, sideband };
 							}
 						}
 					}
