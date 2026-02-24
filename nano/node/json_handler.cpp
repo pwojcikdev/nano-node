@@ -4164,17 +4164,18 @@ void nano::json_handler::unchecked ()
 		boost::property_tree::ptree unchecked;
 		node.unchecked.for_each (
 		[&unchecked, &json_block_l] (nano::unchecked_key const & key, nano::unchecked_info const & info) {
+			auto block = nano::to_legacy (info.block);
 			if (json_block_l)
 			{
 				boost::property_tree::ptree block_node_l;
-				info.block->serialize_json (block_node_l);
-				unchecked.add_child (info.block->hash ().to_string (), block_node_l);
+				block->serialize_json (block_node_l);
+				unchecked.add_child (block->hash ().to_string (), block_node_l);
 			}
 			else
 			{
 				std::string contents;
-				info.block->serialize_json (contents);
-				unchecked.put (info.block->hash ().to_string (), contents);
+				block->serialize_json (contents);
+				unchecked.put (block->hash ().to_string (), contents);
 			} }, [iterations = 0, count = count] () mutable { return iterations++ < count; });
 		response_l.add_child ("blocks", unchecked);
 	}
@@ -4203,16 +4204,17 @@ void nano::json_handler::unchecked_get ()
 			{
 				response_l.put ("modified_timestamp", std::to_string (info.modified ()));
 
+				auto block = nano::to_legacy (info.block);
 				if (json_block_l)
 				{
 					boost::property_tree::ptree block_node_l;
-					info.block->serialize_json (block_node_l);
+					block->serialize_json (block_node_l);
 					response_l.add_child ("contents", block_node_l);
 				}
 				else
 				{
 					std::string contents;
-					info.block->serialize_json (contents);
+					block->serialize_json (contents);
 					response_l.put ("contents", contents);
 				}
 				done = true;
@@ -4244,20 +4246,21 @@ void nano::json_handler::unchecked_keys ()
 		node.unchecked.for_each (
 		key,
 		[&unchecked, json_block_l] (nano::unchecked_key const & key, nano::unchecked_info const & info) {
+			auto block = nano::to_legacy (info.block);
 			boost::property_tree::ptree entry;
 			entry.put ("key", key.key ().to_string ());
-			entry.put ("hash", info.block->hash ().to_string ());
+			entry.put ("hash", block->hash ().to_string ());
 			entry.put ("modified_timestamp", std::to_string (info.modified ()));
 			if (json_block_l)
 			{
 				boost::property_tree::ptree block_node_l;
-				info.block->serialize_json (block_node_l);
+				block->serialize_json (block_node_l);
 				entry.add_child ("contents", block_node_l);
 			}
 			else
 			{
 				std::string contents;
-				info.block->serialize_json (contents);
+				block->serialize_json (contents);
 				entry.put ("contents", contents);
 			}
 			unchecked.push_back (std::make_pair ("", entry)); }, [&unchecked, &count] () { return unchecked.size () < count; });

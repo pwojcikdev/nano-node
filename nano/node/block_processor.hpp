@@ -60,8 +60,11 @@ public:
 
 	std::size_t size () const;
 	std::size_t size (nano::block_source) const;
+	bool add (nano::raw_block const &, nano::block_source = nano::block_source::live, std::shared_ptr<nano::transport::channel> const & channel = nullptr, std::function<void (nano::block_status)> callback = {});
 	bool add (std::shared_ptr<nano::block> const &, nano::block_source = nano::block_source::live, std::shared_ptr<nano::transport::channel> const & channel = nullptr, std::function<void (nano::block_status)> callback = {});
+	std::optional<nano::block_status> add_blocking (nano::raw_block const & block, nano::block_source);
 	std::optional<nano::block_status> add_blocking (std::shared_ptr<nano::block> const & block, nano::block_source);
+	void force (nano::raw_block const &);
 	void force (std::shared_ptr<nano::block> const &);
 
 	nano::container_info container_info () const;
@@ -80,8 +83,8 @@ private:
 	void run ();
 
 	// Roll back block in the ledger that conflicts with 'block'
-	void rollback_competitor (secure::write_transaction &, nano::block const & block);
-	nano::block_status process_one (secure::write_transaction const &, nano::block_context const &, bool forced = false);
+	void rollback_competitor (secure::write_transaction &, nano::raw_block const & block);
+	nano::block_status process_one (secure::write_transaction const &, nano::block_context &, bool forced = false);
 	void process_batch (nano::unique_lock<nano::mutex> &);
 	std::deque<nano::block_context> next_batch (size_t max_count);
 	nano::block_context next ();

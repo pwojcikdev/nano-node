@@ -59,8 +59,8 @@ nano::bounded_backlog::bounded_backlog (nano::node_config const & config_a, nano
 		{
 			if (result == nano::block_status::progress)
 			{
-				auto const & block = context.block;
-				insert (transaction, *block);
+				release_assert (context.block);
+				insert (transaction, *context.block->to_legacy ());
 			}
 		}
 	});
@@ -79,7 +79,7 @@ nano::bounded_backlog::bounded_backlog (nano::node_config const & config_a, nano
 		nano::lock_guard<nano::mutex> guard{ mutex };
 		for (auto const & context : batch)
 		{
-			index.erase (context.block->hash ());
+			index.erase (context.block->hash ()); // cementing_set::context.block is shared_ptr<block>
 		}
 	});
 }

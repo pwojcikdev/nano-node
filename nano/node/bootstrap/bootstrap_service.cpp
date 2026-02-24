@@ -46,8 +46,7 @@ nano::block_processor & block_processor_a, nano::network & network_a, nano::stat
 			auto transaction = ledger.tx_begin_read ();
 			for (auto const & [result, context] : batch)
 			{
-				debug_assert (context.block != nullptr);
-				inspect (transaction, result, *context.block, context.source);
+				inspect (transaction, result, *nano::to_legacy (context.input), context.source);
 			}
 		}
 		condition.notify_all ();

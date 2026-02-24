@@ -129,7 +129,7 @@ block_processing_benchmark::block_processing_benchmark (std::shared_ptr<nano::no
 		{
 			if (status == nano::block_status::progress)
 			{
-				current_l->erase (context.block->hash ());
+				current_l->erase (context.input.hash ());
 				processed_blocks_count++;
 			}
 			else
@@ -149,7 +149,7 @@ block_processing_benchmark::block_processing_benchmark (std::shared_ptr<nano::no
 						gap_source_count++;
 						break;
 					default:
-						std::cout << fmt::format ("Block processing failed: {} for block {}\n", to_string (status), context.block->hash ().to_string ());
+						std::cout << fmt::format ("Block processing failed: {} for block {}\n", to_string (status), context.input.hash ().to_string ());
 						failed_blocks_count++;
 						break;
 				}

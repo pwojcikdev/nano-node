@@ -39,7 +39,7 @@ nano::scheduler::priority::priority (nano::node_config & node_config, nano::node
 		{
 			if (result == nano::block_status::progress)
 			{
-				release_assert (context.block != nullptr);
+				release_assert (context.block);
 				activate (transaction, context.block->account ());
 			}
 		}

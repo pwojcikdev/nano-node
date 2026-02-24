@@ -45,7 +45,7 @@ void nano::unchecked_map::stop ()
 void nano::unchecked_map::put (nano::hash_or_account const & dependency, nano::unchecked_info const & info)
 {
 	nano::lock_guard<std::recursive_mutex> lock{ entries_mutex };
-	nano::unchecked_key key{ dependency, info.block->hash () };
+	nano::unchecked_key key{ dependency, info.block.hash () };
 	entries.get<tag_root> ().insert ({ key, info });
 
 	if (entries.size () > max_unchecked_blocks)
@@ -54,6 +54,11 @@ void nano::unchecked_map::put (nano::hash_or_account const & dependency, nano::u
 	}
 
 	stats.inc (nano::stat::type::unchecked, nano::stat::detail::put);
+}
+
+void nano::unchecked_map::put (nano::hash_or_account const & dependency, nano::raw_block const & block)
+{
+	put (dependency, nano::unchecked_info{ block });
 }
 
 void nano::unchecked_map::for_each (std::function<void (nano::unchecked_key const &, nano::unchecked_info const &)> action, std::function<bool ()> predicate)

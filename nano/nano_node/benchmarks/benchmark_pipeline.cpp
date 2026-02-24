@@ -165,7 +165,7 @@ pipeline_benchmark::pipeline_benchmark (std::shared_ptr<nano::node> node_a, benc
 		{
 			if (status == nano::block_status::progress)
 			{
-				if (auto it = timings_l->find (context.block->hash ()); it != timings_l->end ())
+				if (auto it = timings_l->find (context.input.hash ()); it != timings_l->end ())
 				{
 					it->second.processed = now;
 				}

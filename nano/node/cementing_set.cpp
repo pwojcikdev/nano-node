@@ -32,7 +32,7 @@ nano::cementing_set::cementing_set (cementing_set_config const & config_a, nano:
 			std::lock_guard lock{ mutex };
 			for (auto const & [result, context] : batch)
 			{
-				if (auto it = deferred.get<tag_hash> ().find (context.block->hash ()); it != deferred.get<tag_hash> ().end ())
+				if (auto it = deferred.get<tag_hash> ().find (context.input.hash ()); it != deferred.get<tag_hash> ().end ())
 				{
 					stats.inc (nano::stat::type::cementing_set, nano::stat::detail::requeued);
 					set.push_back (*it);

@@ -2,6 +2,7 @@
 
 #include <nano/crypto/blake2/blake2.h>
 #include <nano/lib/blockbuilders.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/common.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/constants.hpp>
@@ -75,11 +76,12 @@ class unchecked_info final
 {
 public:
 	unchecked_info () = default;
-	unchecked_info (std::shared_ptr<nano::block> const &);
+	unchecked_info (nano::raw_block const & block);
+	unchecked_info (std::shared_ptr<nano::block> const &); // Legacy constructor
 	void serialize (nano::stream &) const;
 	bool deserialize (nano::stream &);
 	nano::seconds_t modified () const;
-	std::shared_ptr<nano::block> block;
+	nano::raw_block block;
 
 private:
 	/** Seconds since posix epoch */

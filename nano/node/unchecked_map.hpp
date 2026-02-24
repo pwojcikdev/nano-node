@@ -29,6 +29,7 @@ public:
 	void stop ();
 
 	void put (nano::hash_or_account const & dependency, nano::unchecked_info const & info);
+	void put (nano::hash_or_account const & dependency, nano::raw_block const & block);
 	void for_each (
 	std::function<void (nano::unchecked_key const &, nano::unchecked_info const &)> action, std::function<bool ()> predicate = [] () { return true; });
 	void for_each (

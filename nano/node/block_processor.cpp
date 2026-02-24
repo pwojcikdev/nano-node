@@ -58,7 +58,7 @@ nano::block_processor::block_processor (nano::node_config const & node_config_a,
 
 	// Requeue blocks that could not be immediately processed
 	unchecked.satisfied.add ([this] (nano::unchecked_info const & info) {
-		add (info.block, nano::block_source::unchecked);
+		add (info.block, nano::block_source::unchecked); // info.block is raw_block, matches raw_block overload
 	});
 }
 
@@ -107,9 +107,9 @@ std::size_t nano::block_processor::size (nano::block_source source) const
 	return queue.size ({ source });
 }
 
-bool nano::block_processor::add (std::shared_ptr<nano::block> const & block, block_source const source, std::shared_ptr<nano::transport::channel> const & channel, std::function<void (nano::block_status)> callback)
+bool nano::block_processor::add (nano::raw_block const & block, block_source const source, std::shared_ptr<nano::transport::channel> const & channel, std::function<void (nano::block_status)> callback)
 {
-	if (network_params.work.validate_entry (*block)) // true => error
+	if (network_params.work.validate_entry (block)) // true => error
 	{
 		stats.inc (nano::stat::type::block_processor, nano::stat::detail::insufficient_work);
 		return false; // Not added
@@ -117,17 +117,22 @@ bool nano::block_processor::add (std::shared_ptr<nano::block> const & block, blo
 
 	stats.inc (nano::stat::type::block_processor, nano::stat::detail::process);
 	logger.debug (nano::log::type::block_processor, "Processing block (async): {} (source: {} {})",
-	block->hash ().to_string (),
+	block.hash ().to_string (),
 	to_string (source),
 	channel ? channel->to_string () : "<unknown>"); // TODO: Lazy eval
 
 	return add_impl ({ block, source, std::move (callback) }, channel);
 }
 
-std::optional<nano::block_status> nano::block_processor::add_blocking (std::shared_ptr<nano::block> const & block, block_source const source)
+bool nano::block_processor::add (std::shared_ptr<nano::block> const & block, block_source const source, std::shared_ptr<nano::transport::channel> const & channel, std::function<void (nano::block_status)> callback)
+{
+	return add (nano::to_raw (*block), source, channel, std::move (callback));
+}
+
+std::optional<nano::block_status> nano::block_processor::add_blocking (nano::raw_block const & block, block_source const source)
 {
 	stats.inc (nano::stat::type::block_processor, nano::stat::detail::process_blocking);
-	logger.debug (nano::log::type::block_processor, "Processing block (blocking): {} (source: {})", block->hash ().to_string (), to_string (source));
+	logger.debug (nano::log::type::block_processor, "Processing block (blocking): {} (source: {})", block.hash ().to_string (), to_string (source));
 
 	nano::block_context ctx{ block, source };
 	auto future = ctx.get_future ();
@@ -141,18 +146,28 @@ std::optional<nano::block_status> nano::block_processor::add_blocking (std::shar
 	catch (std::future_error const &)
 	{
 		stats.inc (nano::stat::type::block_processor, nano::stat::detail::process_blocking_timeout);
-		logger.error (nano::log::type::block_processor, "Block dropped when processing: {}", block->hash ().to_string ());
+		logger.error (nano::log::type::block_processor, "Block dropped when processing: {}", block.hash ().to_string ());
 	}
 
 	return std::nullopt;
 }
 
-void nano::block_processor::force (std::shared_ptr<nano::block> const & block_a)
+std::optional<nano::block_status> nano::block_processor::add_blocking (std::shared_ptr<nano::block> const & block, block_source const source)
+{
+	return add_blocking (nano::to_raw (*block), source);
+}
+
+void nano::block_processor::force (nano::raw_block const & block)
 {
 	stats.inc (nano::stat::type::block_processor, nano::stat::detail::force);
-	logger.debug (nano::log::type::block_processor, "Forcing block: {}", block_a->hash ().to_string ());
+	logger.debug (nano::log::type::block_processor, "Forcing block: {}", block.hash ().to_string ());
 
-	add_impl ({ block_a, block_source::forced });
+	add_impl ({ block, block_source::forced });
+}
+
+void nano::block_processor::force (std::shared_ptr<nano::block> const & block)
+{
+	force (nano::to_raw (*block));
 }
 
 bool nano::block_processor::add_impl (nano::block_context ctx, std::shared_ptr<nano::transport::channel> const & channel)
@@ -175,7 +190,7 @@ bool nano::block_processor::add_impl (nano::block_context ctx, std::shared_ptr<n
 	return added;
 }
 
-void nano::block_processor::rollback_competitor (secure::write_transaction & transaction, nano::block const & fork_block)
+void nano::block_processor::rollback_competitor (secure::write_transaction & transaction, nano::raw_block const & fork_block)
 {
 	auto const hash = fork_block.hash ();
 	auto const successor_hash = ledger.any.block_successor (transaction, fork_block.qualified_root ());
@@ -354,7 +369,7 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 
 	for (auto & ctx : batch)
 	{
-		auto const hash = ctx.block->hash ();
+		auto const hash = ctx.input.hash ();
 		bool const force = ctx.source == nano::block_source::forced;
 
 		transaction.refresh_if_needed ();
@@ -362,7 +377,7 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 		if (force)
 		{
 			number_of_forced_processed++;
-			rollback_competitor (transaction, *ctx.block);
+			rollback_competitor (transaction, ctx.input);
 		}
 
 		number_of_blocks_processed++;
@@ -385,23 +400,26 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 	});
 }
 
-nano::block_status nano::block_processor::process_one (secure::write_transaction const & transaction_a, nano::block_context const & context, bool const forced_a)
+nano::block_status nano::block_processor::process_one (secure::write_transaction const & transaction_a, nano::block_context & context, bool const forced_a)
 {
-	auto block = context.block;
-	auto const hash = block->hash ();
-	nano::block_status result = ledger.process (transaction_a, block);
+	auto const hash = context.input.hash ();
+	auto result = ledger.process (transaction_a, context.input);
+	if (result.code == nano::block_status::progress)
+	{
+		context.block = std::move (result.stored);
+	}
 
-	stats.inc (nano::stat::type::block_processor_result, to_stat_detail (result));
+	stats.inc (nano::stat::type::block_processor_result, to_stat_detail (result.code));
 	stats.inc (nano::stat::type::block_processor_source, to_stat_detail (context.source));
 
 	logger.trace (nano::log::type::block_processor, nano::log::detail::block_processed,
-	nano::log::arg{ "result", result },
+	nano::log::arg{ "result", result.code },
 	nano::log::arg{ "source", context.source },
 	nano::log::arg{ "arrival", nano::log::microseconds (context.arrival) },
 	nano::log::arg{ "forced", forced_a },
-	nano::log::arg{ "block", block });
+	nano::log::arg{ "block", hash });
 
-	switch (result)
+	switch (result.code)
 	{
 		case nano::block_status::progress:
 		{
@@ -412,28 +430,29 @@ nano::block_status nano::block_processor::process_one (secure::write_transaction
 			 * For state blocks check only send subtype and only if block epoch is not last epoch.
 			 * If epoch is last, then pending entry shouldn't trigger same epoch open block for destination account.
 			 */
-			if (block->type () == nano::block_type::send || (block->type () == nano::block_type::state && block->is_send () && std::underlying_type_t<nano::epoch> (block->sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
+			auto const & stored = *context.block;
+			if (stored.type () == nano::block_type::send || (stored.type () == nano::block_type::state && stored.is_send () && std::underlying_type_t<nano::epoch> (stored.sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
 			{
-				unchecked.trigger (block->destination ());
+				unchecked.trigger (stored.destination ());
 			}
 			break;
 		}
 		case nano::block_status::gap_previous:
 		{
-			unchecked.put (block->previous (), block);
+			unchecked.put (context.input.previous (), context.input);
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_previous);
 			break;
 		}
 		case nano::block_status::gap_source:
 		{
-			release_assert (block->source_field () || block->link_field ());
-			unchecked.put (block->source_field ().value_or (block->link_field ().value_or (0).as_block_hash ()), block);
+			release_assert (context.input.source_field () || context.input.link_field ());
+			unchecked.put (context.input.source_field ().value_or (context.input.link_field ().value_or (0).as_block_hash ()), context.input);
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
 			break;
 		}
 		case nano::block_status::gap_epoch_open_pending:
 		{
-			unchecked.put (block->account_field ().value_or (0), block); // Specific unchecked key starting with epoch open block account public key
+			unchecked.put (context.input.account_field ().value_or (0), context.input); // Specific unchecked key starting with epoch open block account public key
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
 			break;
 		}
@@ -495,7 +514,7 @@ nano::block_status nano::block_processor::process_one (secure::write_transaction
 			break;
 		}
 	}
-	return result;
+	return result.code;
 }
 
 nano::container_info nano::block_processor::container_info () const

@@ -4215,7 +4215,7 @@ TEST (ledger, epoch_open_pending)
 	// Open block should be inserted into unchecked
 	auto blocks = node1.unchecked.get (nano::hash_or_account (epoch_open->account_field ().value ()).hash);
 	ASSERT_EQ (blocks.size (), 1);
-	ASSERT_EQ (blocks[0].block->full_hash (), epoch_open->full_hash ());
+	ASSERT_EQ (blocks[0].block.hash (), epoch_open->hash ());
 	// New block to process epoch open
 	auto send1 = builder.state ()
 				 .account (nano::dev::genesis_key.pub)

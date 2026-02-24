@@ -33,11 +33,11 @@ nano::local_block_broadcaster::local_block_broadcaster (local_block_broadcaster_
 			// Only rebroadcast local blocks that were successfully processed (no forks or gaps)
 			if (result == nano::block_status::progress && context.source == nano::block_source::local)
 			{
-				release_assert (context.block != nullptr);
+				release_assert (context.block);
 
 				nano::lock_guard<nano::mutex> guard{ mutex };
 
-				local_blocks.emplace_back (local_entry{ context.block, std::chrono::steady_clock::now () });
+				local_blocks.emplace_back (local_entry{ context.block->to_legacy (), std::chrono::steady_clock::now () });
 				stats.inc (nano::stat::type::local_block_broadcaster, nano::stat::detail::insert);
 
 				// Erase oldest blocks if the queue gets too big

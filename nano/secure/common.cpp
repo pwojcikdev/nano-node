@@ -1,6 +1,7 @@
 #include <nano/boost/asio/ip/tcp.hpp>
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/enum_util.hpp>
 #include <nano/lib/env.hpp>
@@ -293,35 +294,36 @@ nano::bootstrap_constants::bootstrap_constants (nano::network_constants const & 
  * unchecked_info
  */
 
-nano::unchecked_info::unchecked_info (std::shared_ptr<nano::block> const & block_a) :
+nano::unchecked_info::unchecked_info (nano::raw_block const & block_a) :
 	block (block_a),
+	modified_m (nano::seconds_since_epoch ())
+{
+}
+
+nano::unchecked_info::unchecked_info (std::shared_ptr<nano::block> const & block_a) :
+	block (nano::to_raw (*block_a)),
 	modified_m (nano::seconds_since_epoch ())
 {
 }
 
 void nano::unchecked_info::serialize (nano::stream & stream_a) const
 {
-	debug_assert (block != nullptr);
-	nano::serialize_block (stream_a, *block);
+	nano::serialize_raw_block (stream_a, block);
 	nano::write (stream_a, modified_m);
 }
 
 bool nano::unchecked_info::deserialize (nano::stream & stream_a)
 {
-	block = nano::deserialize_block (stream_a);
-	bool error (block == nullptr);
-	if (!error)
+	try
 	{
-		try
-		{
-			nano::read (stream_a, modified_m);
-		}
-		catch (std::runtime_error const &)
-		{
-			error = true;
-		}
+		block = nano::deserialize_raw_block (stream_a);
+		nano::read (stream_a, modified_m);
 	}
-	return error;
+	catch (std::runtime_error const &)
+	{
+		return true;
+	}
+	return false;
 }
 
 uint64_t nano::unchecked_info::modified () const

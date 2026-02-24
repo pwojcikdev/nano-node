@@ -243,7 +243,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 		{
 			if (result == nano::block_status::fork)
 			{
-				fork_cache.put (context.block);
+				fork_cache.put (nano::to_legacy (context.input));
 			}
 		}
 	});
@@ -257,7 +257,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 			{
 				if (websocket.server && websocket.server->any_subscriber (nano::websocket::topic::new_unconfirmed_block))
 				{
-					websocket.server->broadcast (nano::websocket::message_builder (ledger).new_block_arrived (*context.block));
+					websocket.server->broadcast (nano::websocket::message_builder (ledger).new_block_arrived (*context.block->to_legacy ()));
 				}
 			}
 		}

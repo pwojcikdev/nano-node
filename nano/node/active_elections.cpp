@@ -77,7 +77,7 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 		{
 			if (result == nano::block_status::fork)
 			{
-				publish (context.block);
+				publish (nano::to_legacy (context.input));
 			}
 		}
 	});
