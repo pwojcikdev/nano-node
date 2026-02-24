@@ -105,6 +105,19 @@ void nano::scheduler::manual::run ()
 
 			lock.unlock ();
 
+			// Ensure block has sideband
+			if (!block->has_sideband ())
+			{
+				auto ledger_block = node.block (block->hash ());
+				if (!ledger_block)
+				{
+					promise.set_value (nullptr);
+					lock.lock ();
+					continue;
+				}
+				block = ledger_block;
+			}
+
 			auto result = node.active.insert (block, nano::election_behavior::manual);
 			if (result.inserted)
 			{

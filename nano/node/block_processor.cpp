@@ -58,7 +58,7 @@ nano::block_processor::block_processor (nano::node_config const & node_config_a,
 
 	// Requeue blocks that could not be immediately processed
 	unchecked.satisfied.add ([this] (nano::unchecked_info const & info) {
-		add (info.block, nano::block_source::unchecked); // info.block is raw_block, matches raw_block overload
+		add (info.block, nano::block_source::unchecked);
 	});
 }
 
@@ -129,7 +129,7 @@ bool nano::block_processor::add (std::shared_ptr<nano::block> const & block, blo
 	return add (nano::to_raw (*block), source, channel, std::move (callback));
 }
 
-std::optional<nano::block_status> nano::block_processor::add_blocking (nano::raw_block const & block, block_source const source)
+std::optional<nano::block_result> nano::block_processor::add_blocking (nano::raw_block const & block, block_source const source)
 {
 	stats.inc (nano::stat::type::block_processor, nano::stat::detail::process_blocking);
 	logger.debug (nano::log::type::block_processor, "Processing block (blocking): {} (source: {})", block.hash ().to_string (), to_string (source));
@@ -152,7 +152,7 @@ std::optional<nano::block_status> nano::block_processor::add_blocking (nano::raw
 	return std::nullopt;
 }
 
-std::optional<nano::block_status> nano::block_processor::add_blocking (std::shared_ptr<nano::block> const & block, block_source const source)
+std::optional<nano::block_result> nano::block_processor::add_blocking (std::shared_ptr<nano::block> const & block, block_source const source)
 {
 	return add_blocking (nano::to_raw (*block), source);
 }

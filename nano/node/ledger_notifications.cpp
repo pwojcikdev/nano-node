@@ -65,7 +65,7 @@ void nano::ledger_notifications::notify_processed (nano::secure::write_transacti
 				{
 					context.callback (result);
 				}
-				context.set_result (result);
+				context.set_result ({ result, context.block });
 			}
 
 			blocks_processed.notify (processed);

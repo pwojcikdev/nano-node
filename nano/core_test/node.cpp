@@ -601,7 +601,7 @@ TEST (node, fork_publish_inactive)
 	std::shared_ptr<nano::election> election;
 	ASSERT_TIMELY (5s, election = node.active.election (send1->qualified_root ()));
 
-	ASSERT_EQ (nano::block_status::fork, node.process_local (send2).value ());
+	ASSERT_EQ (nano::block_status::fork, node.process_local (send2).value ().status);
 
 	ASSERT_TIMELY_EQ (5s, election->blocks ().size (), 2);
 

@@ -512,7 +512,7 @@ nano::block_status nano::node::process (std::shared_ptr<nano::block> block)
 	return process (transaction, block);
 }
 
-std::optional<nano::block_status> nano::node::process_local (std::shared_ptr<nano::block> const & block_a)
+std::optional<nano::block_result> nano::node::process_local (std::shared_ptr<nano::block> const & block_a)
 {
 	return block_processor.add_blocking (block_a, nano::block_source::local);
 }

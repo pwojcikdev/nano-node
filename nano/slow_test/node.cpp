@@ -1979,7 +1979,7 @@ TEST (node, aggressive_flooding)
 				.build ();
 	}
 	// Processing locally goes through the aggressive block flooding path
-	ASSERT_EQ (nano::block_status::progress, node1.process_local (block).value ());
+	ASSERT_EQ (nano::block_status::progress, node1.process_local (block).value ().status);
 
 	auto all_have_block = [&nodes_wallets] (nano::block_hash const & hash_a) {
 		return std::all_of (nodes_wallets.begin (), nodes_wallets.end (), [hash = hash_a] (auto const & node_wallet) {

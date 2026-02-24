@@ -10,11 +10,16 @@
 
 namespace nano
 {
+struct block_result
+{
+	nano::block_status status{ nano::block_status::invalid };
+	std::optional<nano::stored_block> block; // Set when status == progress
+};
+
 class block_context
 {
 public:
-	using result_t = nano::block_status;
-	using callback_t = std::function<void (result_t)>;
+	using callback_t = std::function<void (nano::block_status)>;
 
 public: // Keep fields public for simplicity
 	nano::raw_block input;
@@ -41,17 +46,17 @@ public:
 		debug_assert (source != nano::block_source::unknown);
 	}
 
-	std::future<result_t> get_future ()
+	std::future<nano::block_result> get_future ()
 	{
 		return promise.get_future ();
 	}
 
-	void set_result (result_t result)
+	void set_result (nano::block_result result)
 	{
-		promise.set_value (result);
+		promise.set_value (std::move (result));
 	}
 
 private:
-	std::promise<result_t> promise;
+	std::promise<nano::block_result> promise;
 };
 }

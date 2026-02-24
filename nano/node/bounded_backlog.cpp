@@ -79,7 +79,7 @@ nano::bounded_backlog::bounded_backlog (nano::node_config const & config_a, nano
 		nano::lock_guard<nano::mutex> guard{ mutex };
 		for (auto const & context : batch)
 		{
-			index.erase (context.block->hash ()); // cementing_set::context.block is shared_ptr<block>
+			index.erase (context.block->hash ());
 		}
 	});
 }

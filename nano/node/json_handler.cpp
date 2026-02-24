@@ -3298,7 +3298,7 @@ void nano::json_handler::process ()
 					}
 					else
 					{
-						auto const & result = result_maybe.value ();
+						auto const & result = result_maybe.value ().status;
 						switch (result)
 						{
 							case nano::block_status::progress:

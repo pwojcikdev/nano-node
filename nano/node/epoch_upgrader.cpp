@@ -55,7 +55,7 @@ void nano::epoch_upgrader::upgrade_impl (nano::raw_key const & prv_a, nano::epoc
 		nano::block_status result (nano::block_status::old);
 		if (valid_signature && valid_work)
 		{
-			result = node.process_local (epoch).value ();
+			result = node.process_local (epoch).value ().status;
 		}
 		if (result == nano::block_status::progress)
 		{

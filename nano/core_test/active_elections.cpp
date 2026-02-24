@@ -1171,14 +1171,14 @@ TEST (active_elections, conflicting_block_vote_existing_election)
 				.build ();
 	auto vote_fork = nano::test::make_final_vote (nano::dev::genesis_key, { fork });
 
-	ASSERT_EQ (nano::block_status::progress, node.process_local (send).value ());
+	ASSERT_EQ (nano::block_status::progress, node.process_local (send).value ().status);
 	ASSERT_TIMELY_EQ (5s, 1, node.active.size ());
 
 	// Vote for conflicting block, but the block does not yet exist in the ledger
 	node.vote_router.vote (vote_fork);
 
 	// Block now gets processed
-	ASSERT_EQ (nano::block_status::fork, node.process_local (fork).value ());
+	ASSERT_EQ (nano::block_status::fork, node.process_local (fork).value ().status);
 
 	// Election must be confirmed
 	auto election (node.active.election (fork->qualified_root ()));
