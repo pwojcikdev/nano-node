@@ -46,7 +46,7 @@ nano::block_processor & block_processor_a, nano::network & network_a, nano::stat
 			auto transaction = ledger.tx_begin_read ();
 			for (auto const & [result, context] : batch)
 			{
-				inspect (transaction, result, *nano::to_legacy (context.input), context.source);
+				inspect (transaction, result, context);
 			}
 		}
 		condition.notify_all ();
@@ -291,19 +291,22 @@ bool nano::bootstrap_service::blocked (nano::account const & account) const
 - Marks an account as blocked if the result code is gap source as there is no reason request additional blocks for this account until the dependency is resolved
 - Marks an account as forwarded if it has been recently referenced by a block that has been inserted.
  */
-void nano::bootstrap_service::inspect (secure::transaction const & tx, nano::block_status const & result, nano::block const & block, nano::block_source source)
+void nano::bootstrap_service::inspect (secure::transaction const & tx, nano::block_status const & result, nano::block_context const & context)
 {
 	debug_assert (!mutex.try_lock ());
 
-	auto const hash = block.hash ();
+	auto const & input = context.input;
 
 	switch (result)
 	{
 		case nano::block_status::progress:
 		{
 			// Progress blocks from live traffic don't need further bootstrapping
-			if (source != nano::block_source::live)
+			if (context.source != nano::block_source::live)
 			{
+				release_assert (context.block);
+				auto const & block = *context.block; // stored_block has sideband
+
 				const auto account = block.account ();
 
 				// If we've inserted any block in to an account, unmark it as blocked
@@ -313,7 +316,7 @@ void nano::bootstrap_service::inspect (secure::transaction const & tx, nano::blo
 				if (block.is_send ())
 				{
 					auto destination = block.destination ();
-					accounts.unblock (destination, hash); // Unblocking automatically inserts account into priority set
+					accounts.unblock (destination, block.hash ()); // Unblocking automatically inserts account into priority set
 					accounts.priority_set (destination);
 				}
 			}
@@ -322,10 +325,10 @@ void nano::bootstrap_service::inspect (secure::transaction const & tx, nano::blo
 		case nano::block_status::gap_source:
 		{
 			// Prevent malicious live traffic from filling up the blocked set
-			if (source == nano::block_source::bootstrap)
+			if (context.source == nano::block_source::bootstrap)
 			{
-				const auto account = block.previous ().is_zero () ? block.account_field ().value () : ledger.any.block_account (tx, block.previous ()).value_or (0);
-				const auto source_hash = block.source_field ().value_or (block.link_field ().value_or (0).as_block_hash ());
+				const auto account = input.previous ().is_zero () ? input.account_field ().value () : ledger.any.block_account (tx, input.previous ()).value_or (0);
+				const auto source_hash = input.source_field ().value_or (input.link_field ().value_or (0).as_block_hash ());
 
 				if (!account.is_zero () && !source_hash.is_zero ())
 				{
@@ -338,11 +341,11 @@ void nano::bootstrap_service::inspect (secure::transaction const & tx, nano::blo
 		case nano::block_status::gap_previous:
 		{
 			// Prevent live traffic from evicting accounts from the priority list
-			if (source == nano::block_source::live && !accounts.priority_half_full () && !accounts.blocked_half_full ())
+			if (context.source == nano::block_source::live && !accounts.priority_half_full () && !accounts.blocked_half_full ())
 			{
-				if (block.type () == block_type::state)
+				if (input.type () == block_type::state)
 				{
-					const auto account = block.account_field ().value ();
+					const auto account = input.account_field ().value ();
 					accounts.priority_set (account);
 				}
 			}
@@ -351,8 +354,8 @@ void nano::bootstrap_service::inspect (secure::transaction const & tx, nano::blo
 		case nano::block_status::gap_epoch_open_pending:
 		{
 			// Epoch open blocks for accounts that don't have any pending blocks yet
-			debug_assert (block.type () == block_type::state); // Only state blocks can have epoch open pending status
-			const auto account = block.account_field ().value_or (0);
+			debug_assert (input.type () == block_type::state); // Only state blocks can have epoch open pending status
+			const auto account = input.account_field ().value_or (0);
 			accounts.priority_erase (account);
 		}
 		break;

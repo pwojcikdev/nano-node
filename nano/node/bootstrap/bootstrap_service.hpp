@@ -115,7 +115,7 @@ public: // Tag
 
 private:
 	/* Inspects a block that has been processed by the block processor */
-	void inspect (secure::transaction const &, nano::block_status const & result, nano::block const & block, nano::block_source);
+	void inspect (secure::transaction const &, nano::block_status const & result, nano::block_context const & context);
 
 	void run_priorities ();
 	void run_one_priority ();
