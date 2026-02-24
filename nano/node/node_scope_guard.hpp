@@ -61,6 +61,11 @@ public:
 		return node.get ();
 	}
 
+	std::shared_ptr<nano::node> const & shared () const
+	{
+		return node;
+	}
+
 private:
 	std::shared_ptr<nano::node> node;
 };

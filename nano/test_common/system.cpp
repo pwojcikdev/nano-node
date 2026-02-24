@@ -4,6 +4,7 @@
 #include <nano/lib/work_version.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/endpoint.hpp>
+#include <nano/node/node_scope_guard.hpp>
 #include <nano/node/transport/tcp_listener.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
@@ -122,7 +123,9 @@ std::shared_ptr<nano::node> nano::test::system::add_node (nano::node_flags node_
 /** Returns the node added. */
 std::shared_ptr<nano::node> nano::test::system::add_node (nano::node_config const & node_config_a, nano::node_flags node_flags_a, nano::transport::transport_type type_a, std::optional<nano::keypair> const & rep)
 {
-	auto node (std::make_shared<nano::node> (io_ctx, nano::unique_path (), node_config_a, work, node_flags_a, node_sequence++));
+	// Scope guard ensures node->stop() is called while shared_ptr ref count is still > 0,
+	// preventing bad_weak_ptr if start() throws and async tasks call shared_from_this() during destruction
+	nano::node_scope_guard node{ std::make_shared<nano::node> (io_ctx, nano::unique_path (), node_config_a, work, node_flags_a, node_sequence++) };
 	setup_node (*node);
 	auto wallet = node->wallets.create (nano::random_wallet_id ());
 	if (rep)
@@ -158,22 +161,22 @@ std::shared_ptr<nano::node> nano::test::system::add_node (nano::node_config cons
 
 	logger.debug (nano::log::type::system, "Node started: {}", node->get_node_id ().to_node_id ());
 
-	nodes.push_back (node);
-	return node;
+	nodes.push_back (node.shared ());
+	return node.shared ();
 }
 
 // TODO: Merge with add_node
 std::shared_ptr<nano::node> nano::test::system::make_disconnected_node (std::optional<nano::node_config> opt_node_config, nano::node_flags flags)
 {
 	nano::node_config node_config = opt_node_config.has_value () ? *opt_node_config : default_config ();
-	auto node = std::make_shared<nano::node> (io_ctx, nano::unique_path (), node_config, work, flags);
+	nano::node_scope_guard node{ std::make_shared<nano::node> (io_ctx, nano::unique_path (), node_config, work, flags) };
 	setup_node (*node);
 	node->start ();
 
 	logger.debug (nano::log::type::system, "Node started (disconnected): {}", node->get_node_id ().to_node_id ());
 
-	disconnected_nodes.push_back (node);
-	return node;
+	disconnected_nodes.push_back (node.shared ());
+	return node.shared ();
 }
 
 void nano::test::system::setup_node (nano::node & node)
