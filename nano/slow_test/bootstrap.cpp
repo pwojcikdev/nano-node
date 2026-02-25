@@ -161,6 +161,7 @@ TEST (bootstrap, profile_topology)
 	nano::node_flags flags_server;
 	flags_server.disable_legacy_bootstrap = true;
 	flags_server.disable_wallet_bootstrap = true;
+	flags_server.disable_reachout = true;
 	flags_server.disable_add_initial_peers = true;
 	flags_server.disable_ongoing_bootstrap = true;
 	flags_server.disable_non_loopback_peers = true;
@@ -188,6 +189,7 @@ TEST (bootstrap, profile_topology)
 	nano::node_flags flags_client;
 	flags_client.disable_legacy_bootstrap = true;
 	flags_client.disable_wallet_bootstrap = true;
+	flags_client.disable_reachout = true;
 	flags_client.disable_add_initial_peers = true;
 	flags_client.disable_ongoing_bootstrap = true;
 	flags_client.disable_non_loopback_peers = true;
