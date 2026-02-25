@@ -9,9 +9,9 @@ priority_pool::priority_pool (size_t max_size_a, size_t bucket_reserved_a) :
 {
 }
 
-bool priority_pool::push (std::shared_ptr<nano::block> const & block, nano::bucket_index bucket, nano::priority_timestamp priority)
+bool priority_pool::push (nano::stored_block const & block, nano::bucket_index bucket, nano::priority_timestamp priority)
 {
-	auto const hash = block->hash ();
+	auto const hash = block.hash ();
 
 	entry new_entry{ bucket, priority, hash, block };
 	auto [it, inserted] = pool.insert (new_entry);

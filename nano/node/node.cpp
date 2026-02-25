@@ -243,7 +243,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 		{
 			if (result == nano::block_status::fork)
 			{
-				fork_cache.put (nano::to_legacy (context.input));
+				fork_cache.put (context.input);
 			}
 		}
 	});

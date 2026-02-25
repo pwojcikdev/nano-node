@@ -1,8 +1,10 @@
 #pragma once
 
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/interval.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/observer_set.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/thread_pool.hpp>
 #include <nano/node/active_elections_index.hpp>
 #include <nano/node/election_behavior.hpp>
@@ -70,14 +72,14 @@ public:
 
 	/// Starts new election
 	insert_result insert (
-	std::shared_ptr<nano::block> const &,
+	nano::stored_block const &,
 	nano::election_behavior = nano::election_behavior::priority,
 	nano::bucket_index bucket = 0,
 	nano::priority_timestamp priority = 0,
 	erased_callback_t = nullptr);
 
 	// Notify this container about a new block (potential fork)
-	bool publish (std::shared_ptr<nano::block> const &);
+	bool publish (nano::raw_block const &);
 
 	// Trigger an immediate election update (e.g. after it is confirmed)
 	bool trigger (nano::qualified_root const &);

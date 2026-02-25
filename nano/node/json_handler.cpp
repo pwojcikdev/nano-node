@@ -1,5 +1,6 @@
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/json_error_response.hpp>
 #include <nano/lib/jsonconfig.hpp>
@@ -2121,16 +2122,17 @@ void nano::json_handler::confirmation_info ()
 				total += tally;
 				if (contents)
 				{
+					auto block_legacy = nano::to_legacy (block);
 					if (json_block_l)
 					{
 						boost::property_tree::ptree block_node_l;
-						block->serialize_json (block_node_l);
+						block_legacy->serialize_json (block_node_l);
 						entry.add_child ("contents", block_node_l);
 					}
 					else
 					{
 						std::string contents;
-						block->serialize_json (contents);
+						block_legacy->serialize_json (contents);
 						entry.put ("contents", contents);
 					}
 				}
@@ -2140,7 +2142,7 @@ void nano::json_handler::confirmation_info ()
 					std::multimap<nano::uint128_t, nano::account, std::greater<nano::uint128_t>> representatives_final;
 					for (auto const & [representative, vote] : info.votes)
 					{
-						if (block->hash () == vote.hash)
+						if (block.hash () == vote.hash)
 						{
 							auto amount (node.ledger.weight (representative));
 							representatives.emplace (amount, representative);
@@ -2165,7 +2167,7 @@ void nano::json_handler::confirmation_info ()
 					entry.add_child ("representatives", representatives_ptree);
 					entry.add_child ("representatives_final", representatives_ptree_final);
 				}
-				blocks.add_child ((block->hash ()).to_string (), entry);
+				blocks.add_child ((block.hash ()).to_string (), entry);
 			}
 			response_l.put ("total_tally", total.convert_to<std::string> ());
 			response_l.put ("final_tally", info.status.final_tally.to_string_dec ());

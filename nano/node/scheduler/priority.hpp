@@ -2,6 +2,7 @@
 
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/observer_set.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/scheduler/bucket.hpp>
 #include <nano/node/scheduler/priority_pool.hpp>
@@ -64,7 +65,7 @@ public:
 	nano::container_info container_info () const;
 
 public: // Testing
-	bool push (std::shared_ptr<nano::block> const & block, nano::bucket_index, nano::priority_timestamp);
+	bool push (nano::stored_block const & block, nano::bucket_index, nano::priority_timestamp);
 
 public: // Events
 	// Triggered when blocks are activated (elections started) in the scheduler run loop

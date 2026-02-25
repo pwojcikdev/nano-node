@@ -1,5 +1,7 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/enum_util.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/confirmation_solicitor.hpp>
@@ -23,20 +25,20 @@ std::chrono::milliseconds nano::election::base_latency () const
  * election
  */
 
-nano::election::election (nano::node & node_a, std::shared_ptr<nano::block> const & block_a, nano::election_behavior election_behavior_a, std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action_a, std::function<void (nano::account const &)> vote_action_a, std::function<void (nano::qualified_root const &)> update_action_a) :
+nano::election::election (nano::node & node_a, nano::stored_block const & block_a, nano::election_behavior election_behavior_a, std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action_a, std::function<void (nano::account const &)> vote_action_a, std::function<void (nano::qualified_root const &)> update_action_a) :
 	confirmation_action (std::move (confirmation_action_a)),
 	vote_action (std::move (vote_action_a)),
 	update_action (std::move (update_action_a)),
 	node (node_a),
 	behavior_m (election_behavior_a),
-	status (block_a),
-	height (block_a->sideband ().height),
-	root (block_a->root ()),
-	qualified_root (block_a->qualified_root ()),
-	account (block_a->account ())
+	status (block_a.to_legacy ()),
+	height (block_a.sideband ().height),
+	root (block_a.root ()),
+	qualified_root (block_a.qualified_root ()),
+	account (block_a.account ())
 {
-	last_votes.emplace (nano::account::null (), nano::vote_info{ std::chrono::steady_clock::now (), 0, block_a->hash () });
-	last_blocks.emplace (block_a->hash (), block_a);
+	last_votes.emplace (nano::account::null (), nano::vote_info{ std::chrono::steady_clock::now (), 0, block_a.hash () });
+	last_blocks.emplace (block_a.hash (), block_a.raw ());
 }
 
 void nano::election::confirm_once (nano::unique_lock<nano::mutex> & lock)
@@ -455,7 +457,7 @@ nano::tally_t nano::election::tally_impl () const
 	// Calculate final votes sum for winner
 	if (!final_weights_l.empty () && !result.empty ())
 	{
-		auto winner_hash (result.begin ()->second->hash ());
+		auto winner_hash (result.begin ()->second.hash ());
 		auto find_final (final_weights_l.find (winner_hash));
 		if (find_final != final_weights_l.end ())
 		{
@@ -471,8 +473,8 @@ void nano::election::confirm_if_quorum (nano::unique_lock<nano::mutex> & lock_a)
 	auto tally_l (tally_impl ());
 	release_assert (!tally_l.empty ());
 	auto winner (tally_l.begin ());
-	auto block_l (winner->second);
-	auto const & winner_hash_l (block_l->hash ());
+	auto const & block_l (winner->second);
+	auto const & winner_hash_l (block_l.hash ());
 	status.tally = winner->first;
 	status.final_tally = final_weight;
 	auto const & status_winner_hash_l (status.winner->hash ());
@@ -483,7 +485,7 @@ void nano::election::confirm_if_quorum (nano::unique_lock<nano::mutex> & lock_a)
 	}
 	if (sum >= node.online_reps.delta () && winner_hash_l != status_winner_hash_l)
 	{
-		status.winner = block_l;
+		status.winner = nano::to_legacy (block_l);
 		remove_votes (status_winner_hash_l);
 
 		node.logger.debug (nano::log::type::election, "Winning fork changed from {} to {} for root: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
@@ -617,35 +619,35 @@ nano::vote_code nano::election::vote (nano::account const & rep, uint64_t timest
 	return vote_code::vote;
 }
 
-bool nano::election::publish (std::shared_ptr<nano::block> const & block_a)
+bool nano::election::publish (nano::raw_block const & block_a)
 {
 	nano::unique_lock<nano::mutex> lock{ mutex };
 
 	// Do not insert new blocks if already confirmed
 	auto result (confirmed_locked ());
-	if (!result && last_blocks.size () >= max_blocks && last_blocks.find (block_a->hash ()) == last_blocks.end ())
+	if (!result && last_blocks.size () >= max_blocks && last_blocks.find (block_a.hash ()) == last_blocks.end ())
 	{
-		if (!replace_by_weight (lock, block_a->hash ()))
+		if (!replace_by_weight (lock, block_a.hash ()))
 		{
 			result = true;
-			node.network.filter.clear (block_a);
+			node.network.filter.clear (nano::to_legacy (block_a));
 		}
 		debug_assert (lock.owns_lock ());
 	}
 	if (!result)
 	{
-		auto existing = last_blocks.find (block_a->hash ());
+		auto existing = last_blocks.find (block_a.hash ());
 		if (existing == last_blocks.end ())
 		{
-			last_blocks.emplace (std::make_pair (block_a->hash (), block_a));
+			last_blocks.emplace (block_a.hash (), block_a);
 		}
 		else
 		{
 			result = true;
 			existing->second = block_a;
-			if (status.winner->hash () == block_a->hash ())
+			if (status.winner->hash () == block_a.hash ())
 			{
-				status.winner = block_a;
+				status.winner = nano::to_legacy (block_a);
 			}
 		}
 	}
@@ -754,7 +756,7 @@ void nano::election::remove_block (nano::block_hash const & hash_a)
 				return entry.second.hash == hash_a;
 			});
 
-			node.network.filter.clear (existing->second);
+			node.network.filter.clear (nano::to_legacy (existing->second));
 			last_blocks.erase (hash_a);
 		}
 	}
@@ -844,7 +846,7 @@ std::unordered_set<nano::block_hash> nano::election::blocks_hashes () const
 	return hashes;
 }
 
-std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> nano::election::blocks () const
+std::unordered_map<nano::block_hash, nano::raw_block> nano::election::blocks () const
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
 	return last_blocks;
@@ -935,13 +937,13 @@ void nano::election_extended_status::operator() (nano::object_stream & obs) cons
 	});
 
 	obs.write_range ("blocks", blocks, [] (auto const & entry) {
-		auto [hash, block] = entry;
-		return block;
+		auto const & [hash, block] = entry;
+		return nano::to_legacy (block);
 	});
 
 	obs.write_range ("tally", tally, [] (auto const & entry, nano::object_stream & obs) {
 		auto & [amount, block] = entry;
-		obs.write ("hash", block->hash ());
+		obs.write ("hash", block.hash ());
 		obs.write ("amount", amount);
 	});
 }

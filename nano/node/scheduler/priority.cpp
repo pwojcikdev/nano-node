@@ -131,28 +131,26 @@ bool nano::scheduler::priority::activate (secure::transaction const & transactio
 	{
 		return false; // Not activated
 	}
-	auto const block_legacy = block->to_legacy ();
-
-	if (ledger.dependencies_cemented (transaction, *block_legacy))
+	if (ledger.dependencies_cemented (transaction, *block->to_legacy ()))
 	{
-		auto const [priority_balance, priority_timestamp] = ledger.block_priority (transaction, *block_legacy);
+		auto const [priority_balance, priority_timestamp] = ledger.block_priority (transaction, *block->to_legacy ());
 		auto const bucket_index = bucketing.bucket_index (priority_balance);
 
 		bool added = false;
 		{
 			nano::lock_guard<nano::mutex> guard{ mutex };
-			added = pool.push (block_legacy, bucket_index, priority_timestamp);
+			added = pool.push (*block, bucket_index, priority_timestamp);
 		}
 		if (added)
 		{
 			stats.inc (nano::stat::type::election_scheduler, nano::stat::detail::activated);
 
 			logger.debug (nano::log::type::election_scheduler, "Activated block: {} for account: {} (bucket: {}, priority timestamp: {})",
-			block_legacy->hash (), account, bucket_index, priority_timestamp);
+			block->hash (), account, bucket_index, priority_timestamp);
 
 			logger.trace (nano::log::type::election_scheduler, nano::log::detail::block_activated,
 			nano::log::arg{ "account", account },
-			nano::log::arg{ "block", block_legacy },
+			nano::log::arg{ "block", block->to_legacy () },
 			nano::log::arg{ "time", account_info.modified },
 			nano::log::arg{ "priority_balance", priority_balance },
 			nano::log::arg{ "priority_timestamp", priority_timestamp });
@@ -171,7 +169,7 @@ bool nano::scheduler::priority::activate (secure::transaction const & transactio
 	return false; // Not activated
 }
 
-bool nano::scheduler::priority::push (std::shared_ptr<nano::block> const & block, nano::bucket_index bucket, nano::priority_timestamp priority)
+bool nano::scheduler::priority::push (nano::stored_block const & block, nano::bucket_index bucket, nano::priority_timestamp priority)
 {
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
@@ -237,8 +235,14 @@ bool nano::scheduler::priority::predicate () const
 {
 	debug_assert (!mutex.try_lock ());
 	auto tops = pool.top_all ();
-	return std::any_of (buckets.begin (), buckets.end (), [&tops] (auto const & bucket) {
-		return bucket.second->available (find_or_default (tops, bucket.first));
+	return std::any_of (buckets.begin (), buckets.end (), [&tops] (auto const & entry) {
+		// Check if priority pool has an available block for this bucket
+		auto const & [index, bucket] = entry;
+		if (auto it = tops.find (index); it != tops.end ())
+		{
+			return bucket->available (it->second);
+		}
+		return false;
 	});
 }
 
@@ -274,7 +278,7 @@ void nano::scheduler::priority::run ()
 			if (bucket->available (top))
 			{
 				bucket->activate (top);
-				activated.push_back (top.block->hash ());
+				activated.push_back (top.block.hash ());
 			}
 		}
 

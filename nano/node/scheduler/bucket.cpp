@@ -21,15 +21,7 @@ nano::scheduler::bucket::~bucket ()
 bool nano::scheduler::bucket::available (priority_entry top) const
 {
 	nano::lock_guard<nano::mutex> lock{ mutex };
-
-	if (!top.block)
-	{
-		return false; // No block available
-	}
-	else
-	{
-		return activate_predicate (top.priority);
-	}
+	return activate_predicate (top.priority);
 }
 
 bool nano::scheduler::bucket::activate_predicate (nano::priority_timestamp candidate) const
@@ -85,7 +77,6 @@ bool nano::scheduler::bucket::overfill_predicate () const
 
 bool nano::scheduler::bucket::activate (priority_entry top)
 {
-	debug_assert (top.block);
 	debug_assert (top.bucket == index);
 
 	nano::lock_guard<nano::mutex> lock{ mutex };
@@ -105,9 +96,9 @@ bool nano::scheduler::bucket::activate (priority_entry top)
 
 		logger.debug (nano::log::type::election_scheduler,
 		"Inserted election for block: {}, root: {} (account: {}, bucket: {}, priority timestamp: {})",
-		top.block->hash (),
-		top.block->qualified_root (),
-		top.block->account (),
+		top.block.hash (),
+		top.block.qualified_root (),
+		top.block.account (),
 		index,
 		top.priority);
 	}

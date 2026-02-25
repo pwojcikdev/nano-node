@@ -10,20 +10,18 @@ nano::fork_cache::fork_cache (nano::fork_cache_config const & config_a, nano::st
 {
 }
 
-void nano::fork_cache::put (std::shared_ptr<nano::block> block)
+void nano::fork_cache::put (nano::raw_block const & block)
 {
-	release_assert (block != nullptr);
-
 	std::lock_guard guard{ mutex };
 
 	// Add the new block to the cache, duplicates are prevented by the multi_index container
-	auto [it, added] = roots.push_back ({ block->qualified_root () });
+	auto [it, added] = roots.push_back ({ block.qualified_root () });
 	release_assert (it != roots.end ());
 	stats.inc (nano::stat::type::fork_cache, added ? nano::stat::detail::insert : nano::stat::detail::duplicate);
 
 	// Check if we already have this hash
 	bool exists = std::find_if (it->forks.begin (), it->forks.end (), [&block] (auto const & fork) {
-		return fork->hash () == block->hash ();
+		return fork.hash () == block.hash ();
 	})
 	!= it->forks.end ();
 
@@ -50,7 +48,7 @@ void nano::fork_cache::put (std::shared_ptr<nano::block> block)
 	}
 }
 
-std::deque<std::shared_ptr<nano::block>> nano::fork_cache::get (nano::qualified_root const & root) const
+std::deque<nano::raw_block> nano::fork_cache::get (nano::qualified_root const & root) const
 {
 	std::lock_guard guard{ mutex };
 

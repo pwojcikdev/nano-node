@@ -77,7 +77,7 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 		{
 			if (result == nano::block_status::fork)
 			{
-				publish (nano::to_legacy (context.input));
+				publish (context.input);
 			}
 		}
 	});
@@ -136,11 +136,8 @@ void nano::active_elections::stop ()
 	clear ();
 }
 
-auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block, nano::election_behavior behavior, nano::bucket_index bucket, nano::priority_timestamp priority, erased_callback_t erased_callback) -> insert_result
+auto nano::active_elections::insert (nano::stored_block const & block, nano::election_behavior behavior, nano::bucket_index bucket, nano::priority_timestamp priority, erased_callback_t erased_callback) -> insert_result
 {
-	release_assert (block);
-	release_assert (block->has_sideband ());
-
 	nano::unique_lock<nano::mutex> lock{ mutex };
 
 	insert_result result{ nullptr, false };
@@ -150,8 +147,8 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 		return result;
 	}
 
-	auto const root = block->qualified_root ();
-	auto const hash = block->hash ();
+	auto const root = block.qualified_root ();
+	auto const hash = block.hash ();
 
 	if (!index.exists (root))
 	{
@@ -278,24 +275,24 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 	return result;
 }
 
-bool nano::active_elections::publish (std::shared_ptr<nano::block> const & block)
+bool nano::active_elections::publish (nano::raw_block const & block)
 {
 	nano::unique_lock<nano::mutex> lock{ mutex };
 
-	if (auto election = index.election (block->qualified_root ()))
+	if (auto election = index.election (block.qualified_root ()))
 	{
 		lock.unlock ();
 
 		bool result = election->publish (block); // false => new block was added
 		if (!result)
 		{
-			node.vote_router.connect (block->hash (), election);
-			node.vote_cache_processor.trigger (block->hash ());
+			node.vote_router.connect (block.hash (), election);
+			node.vote_cache_processor.trigger (block.hash ());
 
 			node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::fork);
 
 			node.logger.debug (nano::log::type::active_elections, "Block was added to an existing election: {} with root: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
-			block->hash (),
+			block.hash (),
 			election->qualified_root,
 			to_string (election->behavior ()),
 			to_string (election->state ()),
@@ -375,7 +372,7 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 		if (!election->confirmed ())
 		{
 			// Clear from publish filter
-			node.network.filter.clear (block);
+			node.network.filter.clear (nano::to_legacy (block));
 		}
 	}
 }

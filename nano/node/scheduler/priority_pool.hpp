@@ -1,9 +1,9 @@
 #pragma once
 
-#include <nano/lib/blocks.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/secure/common.hpp>
 
@@ -16,7 +16,6 @@
 
 #include <cstddef>
 #include <map>
-#include <memory>
 #include <optional>
 #include <unordered_map>
 
@@ -26,7 +25,7 @@ namespace nano::scheduler
 {
 struct priority_entry
 {
-	std::shared_ptr<nano::block> block;
+	nano::stored_block block;
 	nano::bucket_index bucket;
 	nano::priority_timestamp priority;
 };
@@ -43,7 +42,7 @@ public:
 	explicit priority_pool (size_t max_size, size_t bucket_reserved);
 
 	/// Add a block to the pool with given bucket and priority
-	bool push (std::shared_ptr<nano::block> const & block, nano::bucket_index bucket, nano::priority_timestamp priority);
+	bool push (nano::stored_block const & block, nano::bucket_index bucket, nano::priority_timestamp priority);
 
 	/// Peek or pop the next priority block (lower priority value goes first) for a given bucket
 	std::optional<priority_entry> top (nano::bucket_index bucket) const;
@@ -79,7 +78,7 @@ private:
 		nano::bucket_index bucket;
 		nano::priority_timestamp priority;
 		nano::block_hash hash;
-		std::shared_ptr<nano::block> block;
+		nano::stored_block block;
 	};
 
 	// clang-format off

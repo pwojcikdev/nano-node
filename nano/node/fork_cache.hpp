@@ -1,6 +1,6 @@
 #pragma once
 
-#include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/node/fwd.hpp>
@@ -11,7 +11,6 @@
 #include <boost/multi_index_container.hpp>
 
 #include <deque>
-#include <memory>
 #include <mutex>
 
 namespace mi = boost::multi_index;
@@ -34,8 +33,8 @@ class fork_cache final
 public:
 	fork_cache (fork_cache_config const &, nano::stats &);
 
-	void put (std::shared_ptr<nano::block> fork);
-	std::deque<std::shared_ptr<nano::block>> get (nano::qualified_root const & root) const;
+	void put (nano::raw_block const & fork);
+	std::deque<nano::raw_block> get (nano::qualified_root const & root) const;
 
 	size_t size () const;
 	bool contains (nano::qualified_root const & root) const;
@@ -49,7 +48,7 @@ private:
 	struct entry
 	{
 		nano::qualified_root root;
-		mutable std::deque<std::shared_ptr<nano::block>> forks;
+		mutable std::deque<nano::raw_block> forks;
 	};
 
 	// clang-format off

@@ -1,9 +1,11 @@
 #pragma once
 
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/id_dispenser.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/stats_enums.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/node/election_status.hpp>
 #include <nano/node/vote_with_weight_info.hpp>
 #include <nano/secure/common.hpp>
@@ -34,13 +36,13 @@ public:
 };
 
 // map of vote weight per block, ordered greater first
-using tally_t = std::map<nano::uint128_t, std::shared_ptr<nano::block>, std::greater<nano::uint128_t>>;
+using tally_t = std::map<nano::uint128_t, nano::raw_block, std::greater<nano::uint128_t>>;
 
 struct election_extended_status final
 {
 	nano::election_status status;
 	std::unordered_map<nano::account, nano::vote_info> votes;
-	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> blocks;
+	std::unordered_map<nano::block_hash, nano::raw_block> blocks;
 	nano::tally_t tally;
 
 	void operator() (nano::object_stream &) const;
@@ -116,7 +118,7 @@ public: // Status
 public: // Interface
 	election (
 	nano::node &,
-	std::shared_ptr<nano::block> const & block,
+	nano::stored_block const & block,
 	nano::election_behavior behavior,
 	std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action = nullptr,
 	std::function<void (nano::account const &)> vote_action = nullptr,
@@ -128,7 +130,7 @@ public: // Interface
 	 * If the election reaches consensus, it will be confirmed
 	 */
 	nano::vote_code vote (nano::account const & representative, uint64_t timestamp, nano::block_hash const & block_hash, nano::vote_source);
-	bool publish (std::shared_ptr<nano::block> const & block_a);
+	bool publish (nano::raw_block const & block_a);
 	// Confirm this block if quorum is met
 	void confirm_if_quorum (nano::unique_lock<nano::mutex> &);
 	void try_confirm (nano::block_hash const & hash);
@@ -166,7 +168,7 @@ public: // Information
 	nano::election_state state () const;
 
 	std::unordered_map<nano::account, nano::vote_info> votes () const;
-	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> blocks () const;
+	std::unordered_map<nano::block_hash, nano::raw_block> blocks () const;
 	std::unordered_set<nano::block_hash> blocks_hashes () const;
 	bool contains (nano::block_hash const &) const;
 
@@ -201,7 +203,7 @@ private:
 	std::chrono::milliseconds confirm_req_time () const;
 
 private:
-	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> last_blocks;
+	std::unordered_map<nano::block_hash, nano::raw_block> last_blocks;
 	std::unordered_map<nano::account, nano::vote_info> last_votes;
 	std::atomic<bool> is_quorum{ false };
 	mutable nano::uint128_t final_weight{ 0 };
