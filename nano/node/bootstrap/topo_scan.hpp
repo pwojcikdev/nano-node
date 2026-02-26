@@ -75,6 +75,11 @@ public:
 	// Returns true if there are blocks waiting to be fetched or in-flight
 	bool has_blocks_pending () const;
 
+	// Counts of blocks by status
+	std::size_t count_pending () const;
+	std::size_t count_in_flight () const;
+	std::size_t count_outstanding () const; // pending + in_flight
+
 	void reset ();
 
 	nano::container_info container_info () const;

@@ -317,6 +317,80 @@ TEST (bootstrap_topo_scan, block_retry)
 	ASSERT_EQ (blocks4[1], nano::block_hash{ 300 });
 }
 
+TEST (bootstrap_topo_scan, backpressure_index)
+{
+	nano::topo_scan_config config;
+	config.index_batch_size = 3;
+	config.max_blocks_queued = 5; // Index pauses when 5 blocks outstanding
+	test_context ctx{ config };
+	auto & scan = ctx.topo_scan;
+
+	// First index batch: 3 entries
+	auto q1 = scan.next ();
+	ASSERT_TRUE (q1.has_value ());
+	std::deque<nano::bootstrap::topo_scan::index_entry> entries1;
+	entries1.push_back ({ 1, nano::block_hash{ 100 } });
+	entries1.push_back ({ 2, nano::block_hash{ 200 } });
+	entries1.push_back ({ 3, nano::block_hash{ 300 } });
+	scan.process (q1.value (), entries1);
+	ASSERT_EQ (scan.count_outstanding (), 3);
+
+	// Second index batch: 3 more entries (total would be 6, over limit of 5)
+	auto q2 = scan.next ();
+	ASSERT_TRUE (q2.has_value ());
+	std::deque<nano::bootstrap::topo_scan::index_entry> entries2;
+	entries2.push_back ({ 4, nano::block_hash{ 400 } });
+	entries2.push_back ({ 5, nano::block_hash{ 500 } });
+	entries2.push_back ({ 6, nano::block_hash{ 600 } });
+	scan.process (q2.value (), entries2);
+	ASSERT_EQ (scan.count_outstanding (), 6);
+
+	// Index should now pause (6 >= 5)
+	auto q3 = scan.next ();
+	ASSERT_FALSE (q3.has_value ());
+
+	// Complete some blocks to get under limit
+	scan.next_blocks (3);
+	scan.received (nano::block_hash{ 100 });
+	scan.received (nano::block_hash{ 200 });
+	ASSERT_EQ (scan.count_outstanding (), 4);
+
+	// Index can resume
+	auto q4 = scan.next ();
+	ASSERT_TRUE (q4.has_value ());
+}
+
+TEST (bootstrap_topo_scan, backpressure_blocks)
+{
+	nano::topo_scan_config config;
+	config.max_blocks_outstanding = 2; // Block fetching pauses when 2 in-flight
+	test_context ctx{ config };
+	auto & scan = ctx.topo_scan;
+
+	// Feed 5 entries
+	auto query = scan.next ();
+	std::deque<nano::bootstrap::topo_scan::index_entry> entries;
+	entries.push_back ({ 1, nano::block_hash{ 100 } });
+	entries.push_back ({ 2, nano::block_hash{ 200 } });
+	entries.push_back ({ 3, nano::block_hash{ 300 } });
+	entries.push_back ({ 4, nano::block_hash{ 400 } });
+	entries.push_back ({ 5, nano::block_hash{ 500 } });
+	scan.process (query.value (), entries);
+
+	// First batch: only 2 (capped by max_blocks_outstanding)
+	auto blocks1 = scan.next_blocks (10);
+	ASSERT_EQ (blocks1.size (), 2);
+
+	// Already at limit, no more
+	auto blocks2 = scan.next_blocks (10);
+	ASSERT_TRUE (blocks2.empty ());
+
+	// Complete one, freeing capacity for one more
+	scan.received (nano::block_hash{ 100 });
+	auto blocks3 = scan.next_blocks (10);
+	ASSERT_EQ (blocks3.size (), 1);
+}
+
 TEST (bootstrap_topo_scan, container_info)
 {
 	test_context ctx{};

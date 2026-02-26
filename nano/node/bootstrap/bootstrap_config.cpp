@@ -65,6 +65,8 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get_duration ("block_retry", block_retry);
 	toml.get ("index_batch_size", index_batch_size);
 	toml.get ("block_batch_size", block_batch_size);
+	toml.get ("max_blocks_outstanding", max_blocks_outstanding);
+	toml.get ("max_blocks_queued", max_blocks_queued);
 
 	return toml.get_error ();
 }
@@ -77,6 +79,8 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("block_retry", block_retry.count (), "Retry period for in-flight block requests.\ntype:milliseconds");
 	toml.put ("index_batch_size", index_batch_size, "Number of entries per index request.\ntype:uint64");
 	toml.put ("block_batch_size", block_batch_size, "Number of blocks per block fetch request.\ntype:uint64");
+	toml.put ("max_blocks_outstanding", max_blocks_outstanding, "Maximum number of blocks in-flight before pausing block fetching.\ntype:uint64");
+	toml.put ("max_blocks_queued", max_blocks_queued, "Maximum total blocks queued (pending + in-flight) before pausing index scanning.\ntype:uint64");
 
 	return toml.get_error ();
 }

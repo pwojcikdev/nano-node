@@ -20,6 +20,13 @@ auto nano::bootstrap::topo_scan::next () -> std::optional<index_query>
 		return std::nullopt;
 	}
 
+	// Pause indexing when too many blocks are queued (lookahead limit)
+	if (count_outstanding () >= config.max_blocks_queued)
+	{
+		stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::next_none);
+		return std::nullopt;
+	}
+
 	auto const cutoff = std::chrono::steady_clock::now () - config.cooldown;
 
 	// Check if the head has pending requests or is in cooldown
@@ -90,6 +97,19 @@ std::deque<nano::block_hash> nano::bootstrap::topo_scan::next_blocks (std::size_
 {
 	std::deque<nano::block_hash> result;
 
+	auto in_flight = count_in_flight ();
+
+	// Don't send more requests when too many are already in-flight
+	if (in_flight >= config.max_blocks_outstanding)
+	{
+		stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::next_none);
+		return result;
+	}
+
+	// Cap how many new requests we can add
+	auto const capacity = config.max_blocks_outstanding - in_flight;
+	max_count = std::min (max_count, capacity);
+
 	auto const now = std::chrono::steady_clock::now ();
 	auto const retry_cutoff = now - config.block_retry;
 
@@ -141,15 +161,46 @@ bool nano::bootstrap::topo_scan::indexing () const
 
 bool nano::bootstrap::topo_scan::has_blocks_pending () const
 {
-	auto & blocks_by_order = blocks.get<tag_sequenced> ();
-	for (auto const & entry : blocks_by_order)
+	return count_outstanding () > 0;
+}
+
+std::size_t nano::bootstrap::topo_scan::count_pending () const
+{
+	std::size_t count = 0;
+	for (auto const & entry : blocks)
+	{
+		if (entry.status == block_status::pending)
+		{
+			++count;
+		}
+	}
+	return count;
+}
+
+std::size_t nano::bootstrap::topo_scan::count_in_flight () const
+{
+	std::size_t count = 0;
+	for (auto const & entry : blocks)
+	{
+		if (entry.status == block_status::in_flight)
+		{
+			++count;
+		}
+	}
+	return count;
+}
+
+std::size_t nano::bootstrap::topo_scan::count_outstanding () const
+{
+	std::size_t count = 0;
+	for (auto const & entry : blocks)
 	{
 		if (entry.status != block_status::completed)
 		{
-			return true;
+			++count;
 		}
 	}
-	return false;
+	return count;
 }
 
 nano::container_info nano::bootstrap::topo_scan::container_info () const

@@ -51,6 +51,8 @@ public:
 	std::chrono::milliseconds block_retry{ 1000 * 5 };
 	uint16_t index_batch_size{ 500 };
 	std::size_t block_batch_size{ 128 };
+	std::size_t max_blocks_outstanding{ 4096 };
+	std::size_t max_blocks_queued{ 4096 * 4 }; // Index lookahead: total blocks in queue before pausing indexing
 };
 
 class bootstrap_config final
