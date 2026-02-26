@@ -124,7 +124,7 @@ public: // Interface
 	std::function<void (nano::account const &)> vote_action = nullptr,
 	std::function<void (nano::qualified_root const &)> update_action = nullptr);
 
-	std::shared_ptr<nano::block> find (nano::block_hash const &) const;
+	std::optional<nano::raw_block> find (nano::block_hash const &) const;
 	/*
 	 * Process vote. Internally uses cooldown to throttle non-final votes
 	 * If the election reaches consensus, it will be confirmed

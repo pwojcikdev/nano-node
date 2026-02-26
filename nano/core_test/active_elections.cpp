@@ -1,5 +1,7 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/jsonconfig.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/cementing_set.hpp>
@@ -240,7 +242,7 @@ TEST (active_elections, confirm_fork_cache)
 				 .build ();
 
 	// Inject fork1 into the fork cache, this block is without sideband
-	node.fork_cache.put (fork1->clone ());
+	node.fork_cache.put (nano::to_raw (*fork1));
 
 	// Inject both forks live; they’ll merge into a single election
 	node.process_active (fork1->clone ());
@@ -1067,7 +1069,7 @@ TEST (active_elections, fork_replacement_tally)
 	ASSERT_TIMELY (3s, node1.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in) > 0);
 
 	// Correct block without votes is ignored
-	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> blocks1;
+	std::unordered_map<nano::block_hash, nano::raw_block> blocks1;
 	ASSERT_TIMELY_EQ (5s, max_blocks, (blocks1 = election->blocks (), blocks1.size ()));
 	ASSERT_FALSE (blocks1.find (send_last->hash ()) != blocks1.end ());
 
@@ -1692,7 +1694,7 @@ TEST (active_elections, transition_optimistic_to_priority)
 	ASSERT_TRUE (nano::test::process (node, { block }));
 
 	// Start optimistic election
-	auto result = node.active.insert (block, nano::election_behavior::optimistic);
+	auto result = node.active.insert (*block, nano::election_behavior::optimistic);
 	ASSERT_TRUE (result.inserted);
 	auto election = result.election;
 	ASSERT_EQ (nano::election_behavior::optimistic, election->behavior ());
@@ -1702,7 +1704,7 @@ TEST (active_elections, transition_optimistic_to_priority)
 	ASSERT_EQ (0, node.active.size (nano::election_behavior::priority));
 
 	// Transition to priority
-	auto transition_result = node.active.insert (block, nano::election_behavior::priority);
+	auto transition_result = node.active.insert (*block, nano::election_behavior::priority);
 	ASSERT_FALSE (transition_result.inserted);
 	ASSERT_EQ (election, transition_result.election);
 
@@ -1733,7 +1735,7 @@ TEST (active_elections, transition_hinted_to_priority)
 	ASSERT_TRUE (nano::test::process (node, { block }));
 
 	// Start hinted election
-	auto result = node.active.insert (block, nano::election_behavior::hinted);
+	auto result = node.active.insert (*block, nano::election_behavior::hinted);
 	ASSERT_TRUE (result.inserted);
 	auto election = result.election;
 	ASSERT_EQ (nano::election_behavior::hinted, election->behavior ());
@@ -1743,7 +1745,7 @@ TEST (active_elections, transition_hinted_to_priority)
 	ASSERT_EQ (0, node.active.size (nano::election_behavior::priority));
 
 	// Transition to priority
-	auto transition_result = node.active.insert (block, nano::election_behavior::priority);
+	auto transition_result = node.active.insert (*block, nano::election_behavior::priority);
 	ASSERT_FALSE (transition_result.inserted);
 	ASSERT_EQ (election, transition_result.election);
 
@@ -1805,7 +1807,7 @@ TEST (active_elections, cancel_cemented_races)
 		while (!stop_tasks)
 		{
 			auto block = all_blocks[dis (gen)];
-			node.active.insert (block, nano::election_behavior::priority);
+			node.active.insert (*block, nano::election_behavior::priority);
 			std::this_thread::yield ();
 		}
 	});
@@ -1865,7 +1867,7 @@ TEST (active_elections, cancel_already_cemented)
 	ASSERT_TRUE (node.ledger.cemented.block_exists (node.ledger.tx_begin_read (), last_block->hash ()));
 
 	// Now start an election for the already cemented block
-	auto election = node.active.insert (last_block, nano::election_behavior::priority);
+	auto election = node.active.insert (*last_block, nano::election_behavior::priority);
 	ASSERT_NE (nullptr, election.election);
 
 	// Wait for the cleanup thread to detect and cancel the election

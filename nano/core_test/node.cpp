@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/vote.hpp>
@@ -545,7 +546,7 @@ TEST (node, fork_publish)
 	ASSERT_NE (votes1.end (), existing1);
 	ASSERT_EQ (send1->hash (), existing1->second.hash);
 	auto winner (*election->tally ().begin ());
-	ASSERT_EQ (*send1, *winner.second);
+	ASSERT_EQ (nano::to_raw (*send1), winner.second);
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 100, winner.first);
 }
 
@@ -672,7 +673,7 @@ TEST (node, fork_keep)
 	auto transaction1 (node2.ledger.tx_begin_read ());
 	// The vote should be in agreement with what we already have.
 	auto winner (*election1->tally ().begin ());
-	ASSERT_EQ (*send1, *winner.second);
+	ASSERT_EQ (nano::to_raw (*send1), winner.second);
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 100, winner.first);
 	ASSERT_TRUE (node1.ledger.any.block_exists (transaction0, send1->hash ()));
 	ASSERT_TRUE (node2.ledger.any.block_exists (transaction1, send1->hash ()));
@@ -732,7 +733,7 @@ TEST (node, fork_flip)
 	ASSERT_NE (nullptr, node2.block (publish2.block->hash ()));
 	ASSERT_TIMELY (10s, node2.block_or_pruned_exists (publish1.block->hash ()));
 	auto winner (*election1->tally ().begin ());
-	ASSERT_EQ (*publish1.block, *winner.second);
+	ASSERT_EQ (nano::to_raw (*publish1.block), winner.second);
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 100, winner.first);
 	ASSERT_TRUE (node1.block_or_pruned_exists (publish1.block->hash ()));
 	ASSERT_TRUE (node2.block_or_pruned_exists (publish1.block->hash ()));
@@ -799,7 +800,7 @@ TEST (node, fork_multi_flip)
 	ASSERT_TIMELY (10s, node2.block_or_pruned_exists (send1->hash ()));
 	ASSERT_TRUE (nano::test::block_or_pruned_none_exists (node2, { send2, send3 }));
 	auto winner = *election->tally ().begin ();
-	ASSERT_EQ (*send1, *winner.second);
+	ASSERT_EQ (nano::to_raw (*send1), winner.second);
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 100, winner.first);
 }
 
@@ -1027,7 +1028,7 @@ TEST (node, fork_open_flip)
 	ASSERT_TIMELY (10s, node2.block (open1->hash ()));
 	ASSERT_TIMELY (5s, node1.block_confirmed (open1->hash ()));
 	auto winner = *election->tally ().begin ();
-	ASSERT_EQ (*open1, *winner.second);
+	ASSERT_EQ (nano::to_raw (*open1), winner.second);
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 1, winner.first);
 
 	// check the correct blocks are in the ledgers
@@ -2205,7 +2206,7 @@ TEST (node, DISABLED_vote_by_hash_epoch_block_republish)
 				  .build ();
 	node1.process_active (send1);
 	ASSERT_TIMELY (5s, node2.active.active (*send1));
-	node1.active.publish (epoch1);
+	node1.active.publish (nano::to_raw (*epoch1));
 	std::vector<nano::block_hash> vote_blocks;
 	vote_blocks.push_back (epoch1->hash ());
 	auto vote = nano::test::make_vote (nano::dev::genesis_key, { vote_blocks }, 0, 0);
@@ -2403,7 +2404,7 @@ TEST (node, fork_election_invalid_block_signature)
 	node1.inbound (nano::messages::publish{ nano::dev::network_params.network, send3 }, channel1);
 	node1.inbound (nano::messages::publish{ nano::dev::network_params.network, send2 }, channel1);
 	ASSERT_TIMELY (3s, election->blocks ().size () > 1);
-	ASSERT_EQ (election->blocks ()[send2->hash ()]->block_signature (), send2->block_signature ());
+	ASSERT_EQ (election->blocks ()[send2->hash ()].block_signature (), send2->block_signature ());
 }
 
 TEST (node, block_processor_signatures)

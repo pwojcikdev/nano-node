@@ -1,3 +1,4 @@
+#include <nano/lib/stored_block.hpp>
 #include <nano/node/active_elections_index.hpp>
 #include <nano/node/election.hpp>
 #include <nano/test_common/chains.hpp>
@@ -40,7 +41,7 @@ public:
 
 	std::shared_ptr<nano::election> random_election (nano::election_behavior behavior = nano::election_behavior::priority)
 	{
-		return std::make_shared<nano::election> (node, next_block (), behavior);
+		return std::make_shared<nano::election> (node, *next_block (), behavior);
 	}
 };
 }

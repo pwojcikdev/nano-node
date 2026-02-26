@@ -1,3 +1,4 @@
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/node/fork_cache.hpp>
 #include <nano/test_common/random.hpp>
 #include <nano/test_common/system.hpp>
@@ -28,13 +29,13 @@ TEST (fork_cache, one)
 	auto block = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::dev::genesis->hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
 	nano::qualified_root root = block->qualified_root ();
 
-	fork_cache.put (block);
+	fork_cache.put (nano::to_raw (*block));
 	ASSERT_EQ (1, fork_cache.size ());
 	ASSERT_TRUE (fork_cache.contains (root));
 
 	auto blocks = fork_cache.get (root);
 	ASSERT_EQ (1, blocks.size ());
-	ASSERT_EQ (block, blocks.front ());
+	ASSERT_EQ (nano::to_raw (*block), blocks.front ());
 }
 
 /*
@@ -55,9 +56,9 @@ TEST (fork_cache, multiple_forks)
 	ASSERT_EQ (root, block2->qualified_root ());
 	ASSERT_EQ (root, block3->qualified_root ());
 
-	fork_cache.put (block1);
-	fork_cache.put (block2);
-	fork_cache.put (block3);
+	fork_cache.put (nano::to_raw (*block1));
+	fork_cache.put (nano::to_raw (*block2));
+	fork_cache.put (nano::to_raw (*block3));
 
 	ASSERT_EQ (1, fork_cache.size ()); // Only one root in the cache
 	ASSERT_TRUE (fork_cache.contains (root));
@@ -66,9 +67,9 @@ TEST (fork_cache, multiple_forks)
 	ASSERT_EQ (3, blocks.size ());
 
 	// Check if all blocks are present
-	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), block1) != blocks.end ());
-	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), block2) != blocks.end ());
-	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), block3) != blocks.end ());
+	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block1)) != blocks.end ());
+	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block2)) != blocks.end ());
+	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block3)) != blocks.end ());
 }
 
 /*
@@ -98,9 +99,9 @@ TEST (fork_cache, multiple_roots)
 	ASSERT_NE (root1, root3);
 	ASSERT_NE (root2, root3);
 
-	fork_cache.put (block1);
-	fork_cache.put (block2);
-	fork_cache.put (block3);
+	fork_cache.put (nano::to_raw (*block1));
+	fork_cache.put (nano::to_raw (*block2));
+	fork_cache.put (nano::to_raw (*block3));
 
 	ASSERT_EQ (3, fork_cache.size ());
 	ASSERT_TRUE (fork_cache.contains (root1));
@@ -109,15 +110,15 @@ TEST (fork_cache, multiple_roots)
 
 	auto blocks1 = fork_cache.get (root1);
 	ASSERT_EQ (1, blocks1.size ());
-	ASSERT_EQ (block1, blocks1.front ());
+	ASSERT_EQ (nano::to_raw (*block1), blocks1.front ());
 
 	auto blocks2 = fork_cache.get (root2);
 	ASSERT_EQ (1, blocks2.size ());
-	ASSERT_EQ (block2, blocks2.front ());
+	ASSERT_EQ (nano::to_raw (*block2), blocks2.front ());
 
 	auto blocks3 = fork_cache.get (root3);
 	ASSERT_EQ (1, blocks3.size ());
-	ASSERT_EQ (block3, blocks3.front ());
+	ASSERT_EQ (nano::to_raw (*block3), blocks3.front ());
 }
 
 /*
@@ -133,20 +134,20 @@ TEST (fork_cache, duplicate_block)
 	nano::qualified_root root = block->qualified_root ();
 
 	// Insert the same block twice
-	fork_cache.put (block);
+	fork_cache.put (nano::to_raw (*block));
 	ASSERT_EQ (1, fork_cache.size ());
 	ASSERT_EQ (1, fork_cache.get (root).size ());
 
 	// Check the stats for insert count
 	ASSERT_EQ (1, system.stats.count (nano::stat::type::fork_cache, nano::stat::detail::insert));
 
-	fork_cache.put (block);
+	fork_cache.put (nano::to_raw (*block));
 	ASSERT_EQ (1, fork_cache.size ());
 
 	// Block should only be added once to the deque
 	auto blocks = fork_cache.get (root);
 	ASSERT_EQ (1, blocks.size ());
-	ASSERT_EQ (block, blocks.front ());
+	ASSERT_EQ (nano::to_raw (*block), blocks.front ());
 }
 
 /*
@@ -167,18 +168,18 @@ TEST (fork_cache, overfill_per_root)
 	nano::qualified_root root = block1->qualified_root ();
 
 	// Insert all three blocks
-	fork_cache.put (block1);
-	fork_cache.put (block2);
-	fork_cache.put (block3);
+	fork_cache.put (nano::to_raw (*block1));
+	fork_cache.put (nano::to_raw (*block2));
+	fork_cache.put (nano::to_raw (*block3));
 
 	ASSERT_EQ (1, fork_cache.size ());
 	auto blocks = fork_cache.get (root);
 	ASSERT_EQ (2, blocks.size ()); // Only 2 blocks should be kept
 
 	// The oldest block (block1) should have been removed
-	ASSERT_FALSE (std::find (blocks.begin (), blocks.end (), block1) != blocks.end ());
-	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), block2) != blocks.end ());
-	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), block3) != blocks.end ());
+	ASSERT_FALSE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block1)) != blocks.end ());
+	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block2)) != blocks.end ());
+	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block3)) != blocks.end ());
 }
 
 /*
@@ -210,9 +211,9 @@ TEST (fork_cache, overfill_total)
 	ASSERT_NE (root2, root3);
 
 	// Insert all three blocks
-	fork_cache.put (block1);
-	fork_cache.put (block2);
-	fork_cache.put (block3);
+	fork_cache.put (nano::to_raw (*block1));
+	fork_cache.put (nano::to_raw (*block2));
+	fork_cache.put (nano::to_raw (*block3));
 
 	ASSERT_EQ (2, fork_cache.size ()); // Only 2 roots should be kept
 
@@ -262,21 +263,21 @@ TEST (fork_cache, complex_scenario)
 	ASSERT_NE (root2, root3);
 
 	// Insert blocks for first root
-	fork_cache.put (block1a);
-	fork_cache.put (block1b);
-	fork_cache.put (block1c);
+	fork_cache.put (nano::to_raw (*block1a));
+	fork_cache.put (nano::to_raw (*block1b));
+	fork_cache.put (nano::to_raw (*block1c));
 
 	// First root should have max_forks_per_root=2 blocks, with the oldest dropped
 	ASSERT_EQ (1, fork_cache.size ());
 	auto blocks1 = fork_cache.get (root1);
 	ASSERT_EQ (2, blocks1.size ());
-	ASSERT_FALSE (std::find (blocks1.begin (), blocks1.end (), block1a) != blocks1.end ()); // Oldest should be dropped
-	ASSERT_TRUE (std::find (blocks1.begin (), blocks1.end (), block1b) != blocks1.end ());
-	ASSERT_TRUE (std::find (blocks1.begin (), blocks1.end (), block1c) != blocks1.end ());
+	ASSERT_FALSE (std::find (blocks1.begin (), blocks1.end (), nano::to_raw (*block1a)) != blocks1.end ()); // Oldest should be dropped
+	ASSERT_TRUE (std::find (blocks1.begin (), blocks1.end (), nano::to_raw (*block1b)) != blocks1.end ());
+	ASSERT_TRUE (std::find (blocks1.begin (), blocks1.end (), nano::to_raw (*block1c)) != blocks1.end ());
 
 	// Insert blocks for second root
-	fork_cache.put (block2a);
-	fork_cache.put (block2b);
+	fork_cache.put (nano::to_raw (*block2a));
+	fork_cache.put (nano::to_raw (*block2b));
 
 	// Still within max_size=2, so both roots should be present
 	ASSERT_EQ (2, fork_cache.size ());
@@ -287,7 +288,7 @@ TEST (fork_cache, complex_scenario)
 	ASSERT_EQ (2, blocks2.size ());
 
 	// Insert block for third root
-	fork_cache.put (block3);
+	fork_cache.put (nano::to_raw (*block3));
 
 	// Should exceed max_size, oldest root (root1) should be dropped
 	ASSERT_EQ (2, fork_cache.size ());

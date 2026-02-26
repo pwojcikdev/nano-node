@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/online_reps.hpp>
@@ -19,7 +20,7 @@ TEST (election, construction)
 	nano::test::system system (1);
 	auto & node = *system.nodes[0];
 	auto election = std::make_shared<nano::election> (
-	node, nano::dev::genesis, nano::election_behavior::priority, [] (auto const &) {}, [] (auto const &) {}, [] (auto const &) {});
+	node, *nano::dev::genesis, nano::election_behavior::priority, [] (auto const &) {}, [] (auto const &) {}, [] (auto const &) {});
 }
 
 TEST (election, behavior)

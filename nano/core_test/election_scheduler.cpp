@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/scheduler/component.hpp>
@@ -183,7 +184,7 @@ TEST (election_scheduler, transition_optimistic_to_priority)
 	nano::test::confirm (node.ledger, blocks.at (howmany_blocks - 1));
 
 	// Attempt to start priority election for second block
-	node.active.insert (block, nano::election_behavior::priority);
+	node.active.insert (*block, nano::election_behavior::priority);
 
 	// Verify priority transition
 	ASSERT_EQ (election->behavior (), nano::election_behavior::priority);

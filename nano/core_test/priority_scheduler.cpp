@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/thread_pool.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/election.hpp>
@@ -458,13 +459,13 @@ TEST (priority_scheduler, cancel_worst_election)
 	nano::priority_timestamp better_priority = 0;
 
 	// Push worse first, should start immediately
-	ASSERT_TRUE (node.scheduler.priority.push (worse_priority_block, bucket, worse_priority));
+	ASSERT_TRUE (node.scheduler.priority.push (*worse_priority_block, bucket, worse_priority));
 
 	// Wait for first activation to insert one election in that bucket
 	ASSERT_TIMELY (5s, node.active.election (worse_priority_block->qualified_root ()) != nullptr);
 
 	// Now push a better-priority block from the same bucket; bucket may temporarily overfill
-	ASSERT_TRUE (node.scheduler.priority.push (better_priority_block, bucket, better_priority));
+	ASSERT_TRUE (node.scheduler.priority.push (*better_priority_block, bucket, better_priority));
 
 	// Eventually the better-priority election should remain active and the worse one should be evicted
 	ASSERT_TIMELY (5s, node.active.election (better_priority_block->qualified_root ()) != nullptr);

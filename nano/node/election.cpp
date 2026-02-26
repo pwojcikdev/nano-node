@@ -531,15 +531,14 @@ void nano::election::try_confirm (nano::block_hash const & hash)
 	}
 }
 
-std::shared_ptr<nano::block> nano::election::find (nano::block_hash const & hash_a) const
+std::optional<nano::raw_block> nano::election::find (nano::block_hash const & hash_a) const
 {
-	std::shared_ptr<nano::block> result;
 	nano::lock_guard<nano::mutex> guard{ mutex };
 	if (auto existing = last_blocks.find (hash_a); existing != last_blocks.end ())
 	{
-		result = existing->second;
+		return existing->second;
 	}
-	return result;
+	return std::nullopt;
 }
 
 nano::vote_code nano::election::vote (nano::account const & rep, uint64_t timestamp_a, nano::block_hash const & block_hash_a, nano::vote_source vote_source_a)
