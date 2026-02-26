@@ -20,6 +20,7 @@ enum class asc_pull_type : uint8_t
 	blocks = 0x1,
 	account_info = 0x2,
 	frontiers = 0x3,
+	topo_index = 0x4,
 };
 
 /**
@@ -102,12 +103,26 @@ public: // Payload definitions
 		void operator() (nano::object_stream &) const;
 	};
 
+	struct topo_index_payload
+	{
+		void serialize (nano::stream &) const;
+		void deserialize (nano::stream &);
+
+	public: // Payload
+		uint64_t start_index{ 0 };
+		nano::block_hash start_hash{ 0 };
+		uint16_t count{ 0 };
+
+	public: // Logging
+		void operator() (nano::object_stream &) const;
+	};
+
 public: // Payload
 	asc_pull_type type{ asc_pull_type::invalid };
 	id_t id{ 0 };
 
 	/** Payload depends on `asc_pull_type` */
-	std::variant<empty_payload, blocks_payload, account_info_payload, frontiers_payload> payload;
+	std::variant<empty_payload, blocks_payload, account_info_payload, frontiers_payload, topo_index_payload> payload;
 
 public:
 	/** Size of message without payload */
@@ -202,12 +217,32 @@ public: // Payload definitions
 		void operator() (nano::object_stream &) const;
 	};
 
+	struct topo_index_payload
+	{
+		/* Header allows for 16 bit extensions; 65536 bytes / 40 bytes (topo_index + hash) ~ 1638, cap at 1000 */
+		constexpr static std::size_t max_entries = 1000;
+
+		using entry = std::pair<uint64_t, nano::block_hash>; // (topo_index, hash)
+
+		void serialize (nano::stream &) const;
+		void deserialize (nano::stream &);
+
+		static void serialize_entry (nano::stream &, entry const &);
+		static entry deserialize_entry (nano::stream &);
+
+	public: // Payload
+		std::deque<entry> entries;
+
+	public: // Logging
+		void operator() (nano::object_stream &) const;
+	};
+
 public: // Payload
 	asc_pull_type type{ asc_pull_type::invalid };
 	id_t id{ 0 };
 
 	/** Payload depends on `asc_pull_type` */
-	std::variant<empty_payload, blocks_payload, account_info_payload, frontiers_payload> payload;
+	std::variant<empty_payload, blocks_payload, account_info_payload, frontiers_payload, topo_index_payload> payload;
 
 public:
 	/** Size of message without payload */

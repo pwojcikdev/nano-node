@@ -48,6 +48,8 @@ add_library(
   bootstrap/database_scan.cpp
   bootstrap/frontier_scan.hpp
   bootstrap/frontier_scan.cpp
+  bootstrap/topo_scan.hpp
+  bootstrap/topo_scan.cpp
   bootstrap/peer_scoring.hpp
   bootstrap/peer_scoring.cpp
   cli.hpp

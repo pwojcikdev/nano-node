@@ -79,6 +79,7 @@ bool nano::bootstrap_server::verify_request_type (nano::messages::asc_pull_type 
 		case nano::messages::asc_pull_type::blocks:
 		case nano::messages::asc_pull_type::account_info:
 		case nano::messages::asc_pull_type::frontiers:
+		case nano::messages::asc_pull_type::topo_index:
 			return true;
 	}
 	return false;
@@ -132,6 +133,10 @@ bool nano::bootstrap_server::verify (const nano::messages::asc_pull_req & messag
 		bool operator() (nano::messages::asc_pull_req::frontiers_payload const & pld) const
 		{
 			return pld.count > 0 && pld.count <= max_frontiers;
+		}
+		bool operator() (nano::messages::asc_pull_req::topo_index_payload const & pld) const
+		{
+			return pld.count > 0 && pld.count <= nano::messages::asc_pull_ack::topo_index_payload::max_entries;
 		}
 	};
 
@@ -208,6 +213,11 @@ void nano::bootstrap_server::respond (nano::messages::asc_pull_ack & response, s
 		{
 			stats.add (nano::stat::type::bootstrap_server, nano::stat::detail::frontiers, nano::stat::dir::out, pld.frontiers.size ());
 			logger.debug (nano::log::type::bootstrap_server, "Sending response: frontiers (count: {}), {}", pld.frontiers.size (), nano::streamed (pld));
+		}
+		void operator() (nano::messages::asc_pull_ack::topo_index_payload const & pld)
+		{
+			stats.add (nano::stat::type::bootstrap_server, nano::stat::detail::topo_index, nano::stat::dir::out, pld.entries.size ());
+			logger.debug (nano::log::type::bootstrap_server, "Sending response: topo_index (count: {}), {}", pld.entries.size (), nano::streamed (pld));
 		}
 	};
 	std::visit (stat_visitor{ stats, logger }, response.payload);
@@ -546,6 +556,35 @@ nano::messages::asc_pull_ack nano::bootstrap_server::process (secure::transactio
 }
 
 /*
+ * Topo index request
+ */
+
+nano::messages::asc_pull_ack nano::bootstrap_server::process (secure::transaction const & transaction, nano::messages::asc_pull_req::id_t id, nano::messages::asc_pull_req::topo_index_payload const & request) const
+{
+	nano::messages::asc_pull_ack response{ network_constants };
+	response.id = id;
+	response.type = nano::messages::asc_pull_type::topo_index;
+
+	nano::messages::asc_pull_ack::topo_index_payload response_payload{};
+
+	auto begin = (request.start_index == 0 && request.start_hash.is_zero ())
+	? store.topology.begin (transaction)
+	: store.topology.begin (transaction, nano::topo_key{ request.start_index, request.start_hash });
+
+	auto end = store.topology.end (transaction);
+
+	for (auto it = std::move (begin); it != end && response_payload.entries.size () < request.count; ++it)
+	{
+		auto const & key = it->first;
+		response_payload.entries.emplace_back (key.topo_index, key.hash);
+	}
+
+	response.payload = response_payload;
+	response.update_header ();
+	return response;
+}
+
+/*
  *
  */
 
@@ -559,6 +598,8 @@ nano::stat::detail nano::to_stat_detail (nano::messages::asc_pull_type type)
 			return nano::stat::detail::account_info;
 		case messages::asc_pull_type::frontiers:
 			return nano::stat::detail::frontiers;
+		case messages::asc_pull_type::topo_index:
+			return nano::stat::detail::topo_index;
 		default:
 			return nano::stat::detail::invalid;
 	}

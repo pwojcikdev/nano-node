@@ -13,6 +13,7 @@
 #include <nano/node/bootstrap/database_scan.hpp>
 #include <nano/node/bootstrap/frontier_scan.hpp>
 #include <nano/node/bootstrap/peer_scoring.hpp>
+#include <nano/node/bootstrap/topo_scan.hpp>
 #include <nano/node/bootstrap/throttle.hpp>
 #include <nano/node/fwd.hpp>
 
@@ -87,6 +88,7 @@ public: // Tag
 		blocks_by_account,
 		account_info_by_hash,
 		frontiers,
+		topo_index,
 	};
 
 	enum class query_source
@@ -97,6 +99,8 @@ public: // Tag
 		dependencies,
 		frontiers,
 		topology,
+		topo_index,
+		topo_blocks,
 	};
 
 	struct async_tag
@@ -126,8 +130,10 @@ private:
 	void run_one_dependency ();
 	void run_frontiers ();
 	void run_one_frontier ();
-	void run_topology ();
-	void run_one_topology ();
+	void run_topo_index ();
+	void run_one_topo_index ();
+	void run_topo_blocks ();
+	void run_one_topo_blocks ();
 	void run_timeouts ();
 	void cleanup_and_sync ();
 
@@ -150,11 +156,14 @@ private:
 	nano::block_hash wait_blocking ();
 	/* Waits for next available frontier scan range */
 	nano::account wait_frontier ();
-	/* Waits for the next topology cursor */
-	nano::block_hash wait_topology ();
+	/* Waits for the next topo index query */
+	nano::bootstrap::topo_scan::index_query wait_topo_index ();
+	/* Waits for blocks to be available for fetching */
+	std::deque<nano::block_hash> wait_topo_blocks ();
 
 	bool request (nano::account, size_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool request_topology (nano::block_hash, size_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
+	bool request_topo_index (nano::bootstrap::topo_scan::index_query, uint16_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool request_info (nano::block_hash, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool request_frontiers (nano::account, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool send (std::shared_ptr<nano::transport::channel> const &, async_tag tag);
@@ -162,6 +171,7 @@ private:
 	bool process (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag);
 	bool process (nano::messages::asc_pull_ack::account_info_payload const & response, async_tag const & tag);
 	bool process (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag);
+	bool process (nano::messages::asc_pull_ack::topo_index_payload const & response, async_tag const & tag);
 	bool process (nano::messages::empty_payload const & response, async_tag const & tag);
 
 	void process_frontiers (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
@@ -195,6 +205,7 @@ private:
 	nano::bootstrap::throttle throttle;
 	nano::bootstrap::peer_scoring scoring;
 	nano::bootstrap::frontier_scan frontiers;
+	nano::bootstrap::topo_scan topo_scan;
 
 	// clang-format off
 	class tag_sequenced {};
@@ -232,11 +243,9 @@ private:
 	std::thread database_thread;
 	std::thread dependencies_thread;
 	std::thread frontiers_thread;
-	std::thread topology_thread;
+	std::thread topo_index_thread;
+	std::thread topo_blocks_thread;
 	std::thread cleanup_thread;
-
-	nano::block_hash topology_start{ 0 };
-	std::chrono::steady_clock::time_point topology_retry{};
 
 	nano::thread_pool workers;
 	nano::random_generator_mt rng;

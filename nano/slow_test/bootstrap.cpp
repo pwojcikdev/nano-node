@@ -140,7 +140,7 @@ TEST (bootstrap, profile)
 	client->stop ();
 }
 
-TEST (bootstrap, profile_topology)
+TEST (bootstrap, profile_topo)
 {
 	nano::test::system system;
 	nano::thread_runner runner{ system.io_ctx, system.logger, 2 };

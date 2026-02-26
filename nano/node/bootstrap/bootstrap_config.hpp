@@ -38,6 +38,20 @@ public:
 	std::size_t max_pending{ 16 };
 };
 
+class topo_scan_config final
+{
+public:
+	nano::error deserialize (nano::tomlconfig & toml);
+	nano::error serialize (nano::tomlconfig & toml) const;
+
+public:
+	unsigned head_parallelism{ 32 };
+	unsigned consideration_count{ 4 };
+	std::chrono::milliseconds cooldown{ 1000 * 3 };
+	uint16_t index_batch_size{ 500 };
+	std::size_t block_batch_size{ 128 };
+};
+
 class bootstrap_config final
 {
 public:
@@ -68,5 +82,6 @@ public:
 
 	account_sets_config account_sets;
 	frontier_scan_config frontier_scan;
+	topo_scan_config topo_scan;
 };
 }

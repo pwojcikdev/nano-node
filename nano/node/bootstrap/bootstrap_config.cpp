@@ -54,6 +54,32 @@ nano::error nano::frontier_scan_config::serialize (nano::tomlconfig & toml) cons
 }
 
 /*
+ * topo_scan_config
+ */
+
+nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
+{
+	toml.get ("head_parallelism", head_parallelism);
+	toml.get ("consideration_count", consideration_count);
+	toml.get_duration ("cooldown", cooldown);
+	toml.get ("index_batch_size", index_batch_size);
+	toml.get ("block_batch_size", block_batch_size);
+
+	return toml.get_error ();
+}
+
+nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
+{
+	toml.put ("head_parallelism", head_parallelism, "Number of parallel index scan ranges.\ntype:uint64");
+	toml.put ("consideration_count", consideration_count, "Number of peers to query per range for convergence.\ntype:uint64");
+	toml.put ("cooldown", cooldown.count (), "Cooldown period between index scan queries.\ntype:milliseconds");
+	toml.put ("index_batch_size", index_batch_size, "Number of entries per index request.\ntype:uint64");
+	toml.put ("block_batch_size", block_batch_size, "Number of blocks per block fetch request.\ntype:uint64");
+
+	return toml.get_error ();
+}
+
+/*
  * bootstrap_config
  */
 
@@ -91,6 +117,12 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 		frontier_scan.deserialize (config_l);
 	}
 
+	if (toml.has_key ("topo_scan"))
+	{
+		auto config_l = toml.get_required_child ("topo_scan");
+		topo_scan.deserialize (config_l);
+	}
+
 	return toml.get_error ();
 }
 
@@ -123,6 +155,10 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	nano::tomlconfig frontier_scan_l;
 	frontier_scan.serialize (frontier_scan_l);
 	toml.put_child ("frontier_scan", frontier_scan_l);
+
+	nano::tomlconfig topo_scan_l;
+	topo_scan.serialize (topo_scan_l);
+	toml.put_child ("topo_scan", topo_scan_l);
 
 	return toml.get_error ();
 }

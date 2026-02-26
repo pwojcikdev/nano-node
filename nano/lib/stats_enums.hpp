@@ -97,6 +97,7 @@ enum class type
 	bootstrap_frontiers,
 	bootstrap_account_sets,
 	bootstrap_frontier_scan,
+	bootstrap_topo_scan,
 	bootstrap_timeout,
 	bootstrap_server,
 	bootstrap_server_request,
@@ -151,6 +152,8 @@ enum class detail
 	test,
 	total,
 	loop,
+	loop_topo_index,
+	loop_topo_blocks,
 	loop_cleanup,
 	loop_checkup,
 	loop_reps,
@@ -512,6 +515,7 @@ enum class detail
 	channel_full,
 	frontiers,
 	account_info,
+	topo_index,
 
 	// backlog
 	activated,
@@ -595,6 +599,9 @@ enum class detail
 	next_blocking,
 	next_dependency,
 	next_frontier,
+	next_topo_index,
+	next_topo_block,
+	received,
 
 	blocking_insert,
 	blocking_overflow,

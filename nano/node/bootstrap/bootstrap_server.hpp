@@ -82,6 +82,11 @@ private:
 	nano::messages::asc_pull_ack process (secure::transaction const &, nano::messages::asc_pull_req::id_t id, nano::messages::asc_pull_req::frontiers_payload const & request) const;
 
 	/*
+	 * Topo index request
+	 */
+	nano::messages::asc_pull_ack process (secure::transaction const &, nano::messages::asc_pull_req::id_t id, nano::messages::asc_pull_req::topo_index_payload const & request) const;
+
+	/*
 	 * Checks if the request should be dropped early on
 	 */
 	bool verify (nano::messages::asc_pull_req const & message) const;

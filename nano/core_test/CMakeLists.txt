@@ -15,6 +15,7 @@ add_executable(
   block_rebroadcaster.cpp
   bootstrap.cpp
   bootstrap_frontier_scan.cpp
+  bootstrap_topo_scan.cpp
   bootstrap_server.cpp
   bounded_dfs.cpp
   bucketing.cpp
