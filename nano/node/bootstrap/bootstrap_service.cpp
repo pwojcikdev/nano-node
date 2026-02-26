@@ -1079,8 +1079,10 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 			auto blocks = response.blocks;
 
 			// Avoid re-processing the block we already have for hash-based queries
+			// For topo sources, the first block IS the block we want to fetch
 			release_assert (blocks.size () >= 1);
-			if (!tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
+			if (tag.source != query_source::topology && tag.source != query_source::topo_blocks
+				&& !tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
 			{
 				blocks.pop_front ();
 			}
@@ -1346,7 +1348,8 @@ auto nano::bootstrap_service::verify (const nano::messages::asc_pull_ack::blocks
 	{
 		return verify_result::nothing_new;
 	}
-	if (blocks.size () == 1 && !tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
+	if (tag.source != query_source::topology && tag.source != query_source::topo_blocks
+		&& blocks.size () == 1 && !tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
 	{
 		return verify_result::nothing_new;
 	}
