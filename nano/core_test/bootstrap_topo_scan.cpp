@@ -277,6 +277,46 @@ TEST (bootstrap_topo_scan, duplicate_entries_ignored)
 	ASSERT_EQ (blocks.size (), 2);
 }
 
+TEST (bootstrap_topo_scan, block_retry)
+{
+	nano::topo_scan_config config;
+	config.block_retry = 250ms;
+	test_context ctx{ config };
+	auto & scan = ctx.topo_scan;
+
+	// Feed entries
+	auto query = scan.next ();
+	std::deque<nano::bootstrap::topo_scan::index_entry> entries;
+	entries.push_back ({ 1, nano::block_hash{ 100 } });
+	entries.push_back ({ 2, nano::block_hash{ 200 } });
+	entries.push_back ({ 3, nano::block_hash{ 300 } });
+	scan.process (query.value (), entries);
+
+	// Get all blocks (marks them in-flight)
+	auto blocks1 = scan.next_blocks (10);
+	ASSERT_EQ (blocks1.size (), 3);
+
+	// Immediately requesting again should return empty (all in-flight, not timed out)
+	auto blocks2 = scan.next_blocks (10);
+	ASSERT_TRUE (blocks2.empty ());
+
+	// Mark one as received
+	scan.received (nano::block_hash{ 200 });
+
+	// Still empty (remaining 2 in-flight but not timed out)
+	auto blocks3 = scan.next_blocks (10);
+	ASSERT_TRUE (blocks3.empty ());
+
+	// Wait for retry period to expire
+	std::this_thread::sleep_for (500ms);
+
+	// Now the 2 non-received in-flight blocks should be retried
+	auto blocks4 = scan.next_blocks (10);
+	ASSERT_EQ (blocks4.size (), 2);
+	ASSERT_EQ (blocks4[0], nano::block_hash{ 100 });
+	ASSERT_EQ (blocks4[1], nano::block_hash{ 300 });
+}
+
 TEST (bootstrap_topo_scan, container_info)
 {
 	test_context ctx{};

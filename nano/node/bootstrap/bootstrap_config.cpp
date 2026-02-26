@@ -62,6 +62,7 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("head_parallelism", head_parallelism);
 	toml.get ("consideration_count", consideration_count);
 	toml.get_duration ("cooldown", cooldown);
+	toml.get_duration ("block_retry", block_retry);
 	toml.get ("index_batch_size", index_batch_size);
 	toml.get ("block_batch_size", block_batch_size);
 
@@ -73,6 +74,7 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("head_parallelism", head_parallelism, "Number of parallel index scan ranges.\ntype:uint64");
 	toml.put ("consideration_count", consideration_count, "Number of peers to query per range for convergence.\ntype:uint64");
 	toml.put ("cooldown", cooldown.count (), "Cooldown period between index scan queries.\ntype:milliseconds");
+	toml.put ("block_retry", block_retry.count (), "Retry period for in-flight block requests.\ntype:milliseconds");
 	toml.put ("index_batch_size", index_batch_size, "Number of entries per index request.\ntype:uint64");
 	toml.put ("block_batch_size", block_batch_size, "Number of blocks per block fetch request.\ntype:uint64");
 

@@ -48,6 +48,7 @@ public:
 	unsigned head_parallelism{ 32 };
 	unsigned consideration_count{ 4 };
 	std::chrono::milliseconds cooldown{ 1000 * 3 };
+	std::chrono::milliseconds block_retry{ 1000 * 5 };
 	uint16_t index_batch_size{ 500 };
 	std::size_t block_batch_size{ 128 };
 };

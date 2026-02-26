@@ -90,14 +90,21 @@ std::deque<nano::block_hash> nano::bootstrap::topo_scan::next_blocks (std::size_
 {
 	std::deque<nano::block_hash> result;
 
+	auto const now = std::chrono::steady_clock::now ();
+	auto const retry_cutoff = now - config.block_retry;
+
 	auto & blocks_by_order = blocks.get<tag_sequenced> ();
 	for (auto it = blocks_by_order.begin (); it != blocks_by_order.end () && result.size () < max_count; ++it)
 	{
-		if (it->status == block_status::pending)
+		bool eligible = it->status == block_status::pending
+						|| (it->status == block_status::in_flight && it->timestamp < retry_cutoff);
+
+		if (eligible)
 		{
 			result.push_back (it->hash);
-			blocks_by_order.modify (it, [] (block_entry & entry) {
+			blocks_by_order.modify (it, [now] (block_entry & entry) {
 				entry.status = block_status::in_flight;
+				entry.timestamp = now;
 			});
 		}
 	}

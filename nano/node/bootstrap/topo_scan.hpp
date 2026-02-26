@@ -123,6 +123,7 @@ private:
 		nano::block_hash hash{ 0 };
 		uint64_t topo_index{ 0 };
 		block_status status{ block_status::pending };
+		std::chrono::steady_clock::time_point timestamp{}; // When request was sent (for retry)
 	};
 
 	// clang-format off
