@@ -1,7 +1,11 @@
+#include <nano/lib/blocks_raw.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/node.hpp>
 #include <nano/node/scheduler/manual.hpp>
+#include <nano/secure/ledger.hpp>
+#include <nano/secure/ledger_set_any.hpp>
 
 nano::scheduler::manual::manual (nano::node & node) :
 	node{ node }
@@ -105,20 +109,25 @@ void nano::scheduler::manual::run ()
 
 			lock.unlock ();
 
-			// Ensure block has sideband
-			if (!block->has_sideband ())
+			// Use block directly if sideband is present, otherwise fetch from ledger
+			std::optional<nano::stored_block> stored;
+			if (block->has_sideband ())
 			{
-				auto ledger_block = node.block (block->hash ());
-				if (!ledger_block)
-				{
-					promise.set_value (nullptr);
-					lock.lock ();
-					continue;
-				}
-				block = ledger_block;
+				stored = *block;
+			}
+			else
+			{
+				auto transaction = node.ledger.tx_begin_read ();
+				stored = node.ledger.any.block_get (transaction, block->hash ());
+			}
+			if (!stored)
+			{
+				promise.set_value (nullptr);
+				lock.lock ();
+				continue;
 			}
 
-			auto result = node.active.insert (block, nano::election_behavior::manual);
+			auto result = node.active.insert (*stored, nano::election_behavior::manual);
 			if (result.inserted)
 			{
 				node.stats.inc (nano::stat::type::election_scheduler, nano::stat::detail::insert_manual);
