@@ -26,7 +26,8 @@ class stored_block
 public:
 	stored_block () = default;
 	stored_block (nano::raw_block raw, nano::block_sideband sideband);
-	explicit stored_block (nano::block const & legacy);
+	stored_block (nano::block const & legacy);
+	stored_block (std::shared_ptr<nano::block> const & legacy);
 
 	// Conversion to legacy shared_ptr<block> (for backward compat)
 	std::shared_ptr<nano::block> to_legacy () const;

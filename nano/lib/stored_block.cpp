@@ -15,6 +15,12 @@ nano::stored_block::stored_block (nano::block const & legacy) :
 {
 }
 
+nano::stored_block::stored_block (std::shared_ptr<nano::block> const & legacy) :
+	stored_block (*legacy)
+{
+	debug_assert (legacy != nullptr);
+}
+
 std::shared_ptr<nano::block> nano::stored_block::to_legacy () const
 {
 	auto result = nano::to_legacy (raw_m);
