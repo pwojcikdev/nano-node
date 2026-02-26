@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <deque>
+#include <optional>
 
 namespace mi = boost::multi_index;
 
@@ -50,8 +51,8 @@ public:
 	// --- Phase 1: Index fetching ---
 
 	// Returns the next position to query from a peer.
-	// Returns a zero query if nothing is available (all in cooldown or done).
-	index_query next ();
+	// Returns std::nullopt if nothing is available (all in cooldown or done).
+	std::optional<index_query> next ();
 
 	// Process an index response from a peer.
 	// Returns true if this head advanced (converged).

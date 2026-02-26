@@ -157,7 +157,7 @@ private:
 	/* Waits for next available frontier scan range */
 	nano::account wait_frontier ();
 	/* Waits for the next topo index query */
-	nano::bootstrap::topo_scan::index_query wait_topo_index ();
+	std::optional<nano::bootstrap::topo_scan::index_query> wait_topo_index ();
 	/* Waits for blocks to be available for fetching */
 	std::deque<nano::block_hash> wait_topo_blocks ();
 

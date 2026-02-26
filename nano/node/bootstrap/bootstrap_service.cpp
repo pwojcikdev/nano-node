@@ -576,9 +576,9 @@ nano::account nano::bootstrap_service::wait_frontier ()
 	return result;
 }
 
-nano::bootstrap::topo_scan::index_query nano::bootstrap_service::wait_topo_index ()
+std::optional<nano::bootstrap::topo_scan::index_query> nano::bootstrap_service::wait_topo_index ()
 {
-	nano::bootstrap::topo_scan::index_query result;
+	std::optional<nano::bootstrap::topo_scan::index_query> result;
 	wait ([this, &result] () {
 		debug_assert (!mutex.try_lock ());
 		if (count_tags (query_source::topo_index) > 0)
@@ -586,7 +586,7 @@ nano::bootstrap::topo_scan::index_query nano::bootstrap_service::wait_topo_index
 			return false;
 		}
 		result = topo_scan.next ();
-		return !result.is_zero () || !topo_scan.indexing ();
+		return result.has_value () || !topo_scan.indexing ();
 	});
 	return result;
 }
@@ -888,11 +888,11 @@ void nano::bootstrap_service::run_one_topo_index ()
 		return;
 	}
 	auto query = wait_topo_index ();
-	if (query.is_zero () && !topo_scan.indexing ())
+	if (!query)
 	{
-		return; // Indexing is done
+		return; // Indexing is done or nothing available
 	}
-	request_topo_index (query, config.topo_scan.index_batch_size, channel, query_source::topo_index);
+	request_topo_index (query.value (), config.topo_scan.index_batch_size, channel, query_source::topo_index);
 }
 
 void nano::bootstrap_service::run_topo_index ()

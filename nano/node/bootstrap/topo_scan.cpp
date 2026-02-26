@@ -12,12 +12,12 @@ void nano::bootstrap::topo_scan::reset ()
 	blocks.clear ();
 }
 
-nano::bootstrap::topo_scan::index_query nano::bootstrap::topo_scan::next ()
+auto nano::bootstrap::topo_scan::next () -> std::optional<index_query>
 {
 	if (head.done)
 	{
 		stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::next_none);
-		return {};
+		return std::nullopt;
 	}
 
 	auto const cutoff = std::chrono::steady_clock::now () - config.cooldown;
@@ -26,7 +26,7 @@ nano::bootstrap::topo_scan::index_query nano::bootstrap::topo_scan::next ()
 	if (head.requests > 0 && head.timestamp > cutoff)
 	{
 		stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::next_none);
-		return {};
+		return std::nullopt;
 	}
 
 	stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::next_topo_index);

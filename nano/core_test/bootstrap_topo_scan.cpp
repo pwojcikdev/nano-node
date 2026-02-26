@@ -41,7 +41,8 @@ TEST (bootstrap_topo_scan, next_discovery)
 
 	// First next() should return a zero query (start from beginning)
 	auto query = scan.next ();
-	ASSERT_TRUE (query.is_zero ());
+	ASSERT_TRUE (query.has_value ());
+	ASSERT_TRUE (query->is_zero ());
 }
 
 TEST (bootstrap_topo_scan, process_basic)
@@ -50,7 +51,7 @@ TEST (bootstrap_topo_scan, process_basic)
 	auto & scan = ctx.topo_scan;
 
 	auto query = scan.next ();
-	ASSERT_TRUE (query.is_zero ());
+	ASSERT_TRUE (query.has_value ());
 
 	// Create response with entries
 	std::deque<nano::bootstrap::topo_scan::index_entry> entries;
@@ -59,7 +60,7 @@ TEST (bootstrap_topo_scan, process_basic)
 	entries.push_back ({ 3, nano::block_hash{ 300 } });
 
 	// Process - short response since entries.size() < index_batch_size
-	bool done = scan.process (query, entries);
+	bool done = scan.process (query.value (), entries);
 	ASSERT_TRUE (done); // Short response = end of topo space
 
 	// Scan should no longer be indexing
@@ -77,7 +78,8 @@ TEST (bootstrap_topo_scan, process_advances_cursor)
 	auto & scan = ctx.topo_scan;
 
 	auto query = scan.next ();
-	ASSERT_TRUE (query.is_zero ());
+	ASSERT_TRUE (query.has_value ());
+	ASSERT_TRUE (query->is_zero ());
 
 	// Response with exactly batch_size entries = not done
 	std::deque<nano::bootstrap::topo_scan::index_entry> entries;
@@ -85,7 +87,7 @@ TEST (bootstrap_topo_scan, process_advances_cursor)
 	entries.push_back ({ 2, nano::block_hash{ 200 } });
 	entries.push_back ({ 3, nano::block_hash{ 300 } });
 
-	bool done = scan.process (query, entries);
+	bool done = scan.process (query.value (), entries);
 	ASSERT_FALSE (done); // Full batch = more to fetch
 
 	// Still indexing
@@ -93,8 +95,9 @@ TEST (bootstrap_topo_scan, process_advances_cursor)
 
 	// Next query should start from cursor position (last entry)
 	auto next_query = scan.next ();
-	ASSERT_EQ (next_query.start_index, 3);
-	ASSERT_EQ (next_query.start_hash, nano::block_hash{ 300 });
+	ASSERT_TRUE (next_query.has_value ());
+	ASSERT_EQ (next_query->start_index, 3);
+	ASSERT_EQ (next_query->start_hash, nano::block_hash{ 300 });
 }
 
 TEST (bootstrap_topo_scan, next_blocks_basic)
@@ -108,7 +111,7 @@ TEST (bootstrap_topo_scan, next_blocks_basic)
 	entries.push_back ({ 1, nano::block_hash{ 100 } });
 	entries.push_back ({ 2, nano::block_hash{ 200 } });
 	entries.push_back ({ 3, nano::block_hash{ 300 } });
-	scan.process (query, entries);
+	scan.process (query.value (), entries);
 
 	// Get blocks to fetch
 	auto blocks = scan.next_blocks (10);
@@ -135,7 +138,7 @@ TEST (bootstrap_topo_scan, next_blocks_respects_max_count)
 	entries.push_back ({ 3, nano::block_hash{ 300 } });
 	entries.push_back ({ 4, nano::block_hash{ 400 } });
 	entries.push_back ({ 5, nano::block_hash{ 500 } });
-	scan.process (query, entries);
+	scan.process (query.value (), entries);
 
 	// Request only 2 blocks
 	auto blocks1 = scan.next_blocks (2);
@@ -160,7 +163,7 @@ TEST (bootstrap_topo_scan, received_individual)
 	entries.push_back ({ 1, nano::block_hash{ 100 } });
 	entries.push_back ({ 2, nano::block_hash{ 200 } });
 	entries.push_back ({ 3, nano::block_hash{ 300 } });
-	scan.process (query, entries);
+	scan.process (query.value (), entries);
 
 	auto blocks = scan.next_blocks (10);
 	ASSERT_EQ (blocks.size (), 3);
@@ -187,27 +190,30 @@ TEST (bootstrap_topo_scan, cooldown)
 
 	// First call should succeed
 	auto first = scan.next ();
-	ASSERT_TRUE (first.is_zero ()); // Valid discovery query
+	ASSERT_TRUE (first.has_value ());
+	ASSERT_TRUE (first->is_zero ()); // Valid discovery query
 
 	// Process a full batch so scan isn't done
 	std::deque<nano::bootstrap::topo_scan::index_entry> entries;
 	entries.push_back ({ 1, nano::block_hash{ 100 } });
 	entries.push_back ({ 2, nano::block_hash{ 200 } });
 	entries.push_back ({ 3, nano::block_hash{ 300 } });
-	scan.process (first, entries);
+	scan.process (first.value (), entries);
 
 	// Next call should succeed (requests reset after process)
 	auto second = scan.next ();
-	ASSERT_FALSE (second.is_zero ());
+	ASSERT_TRUE (second.has_value ());
+	ASSERT_FALSE (second->is_zero ());
 
 	// Immediate second call should fail (request pending, in cooldown)
 	auto third = scan.next ();
-	ASSERT_TRUE (third.is_zero ());
+	ASSERT_FALSE (third.has_value ());
 
 	// After cooldown, should succeed again
 	std::this_thread::sleep_for (500ms);
 	auto fourth = scan.next ();
-	ASSERT_FALSE (fourth.is_zero ());
+	ASSERT_TRUE (fourth.has_value ());
+	ASSERT_FALSE (fourth->is_zero ());
 }
 
 TEST (bootstrap_topo_scan, reset)
@@ -220,7 +226,7 @@ TEST (bootstrap_topo_scan, reset)
 	std::deque<nano::bootstrap::topo_scan::index_entry> entries;
 	entries.push_back ({ 1, nano::block_hash{ 100 } });
 	entries.push_back ({ 2, nano::block_hash{ 200 } });
-	scan.process (query, entries);
+	scan.process (query.value (), entries);
 	ASSERT_FALSE (scan.indexing ()); // Done (short response)
 	ASSERT_TRUE (scan.has_blocks_pending ());
 
@@ -231,7 +237,8 @@ TEST (bootstrap_topo_scan, reset)
 	ASSERT_TRUE (scan.indexing ());
 	ASSERT_FALSE (scan.has_blocks_pending ());
 	auto next_query = scan.next ();
-	ASSERT_TRUE (next_query.is_zero ());
+	ASSERT_TRUE (next_query.has_value ());
+	ASSERT_TRUE (next_query->is_zero ());
 }
 
 TEST (bootstrap_topo_scan, empty_response_signals_end)
@@ -243,14 +250,14 @@ TEST (bootstrap_topo_scan, empty_response_signals_end)
 
 	// Empty response
 	std::deque<nano::bootstrap::topo_scan::index_entry> empty;
-	bool done = scan.process (query, empty);
+	bool done = scan.process (query.value (), empty);
 	ASSERT_TRUE (done);
 	ASSERT_FALSE (scan.indexing ());
 	ASSERT_FALSE (scan.has_blocks_pending ());
 
 	// No more queries should be returned
 	auto next_query = scan.next ();
-	ASSERT_TRUE (next_query.is_zero ());
+	ASSERT_FALSE (next_query.has_value ());
 }
 
 TEST (bootstrap_topo_scan, duplicate_entries_ignored)
@@ -263,7 +270,7 @@ TEST (bootstrap_topo_scan, duplicate_entries_ignored)
 	entries.push_back ({ 1, nano::block_hash{ 100 } });
 	entries.push_back ({ 2, nano::block_hash{ 200 } });
 	entries.push_back ({ 3, nano::block_hash{ 100 } }); // Duplicate hash
-	scan.process (query, entries);
+	scan.process (query.value (), entries);
 
 	// Should only have 2 unique blocks
 	auto blocks = scan.next_blocks (10);
@@ -280,7 +287,7 @@ TEST (bootstrap_topo_scan, container_info)
 	entries.push_back ({ 1, nano::block_hash{ 100 } });
 	entries.push_back ({ 2, nano::block_hash{ 200 } });
 	entries.push_back ({ 3, nano::block_hash{ 300 } });
-	scan.process (query, entries);
+	scan.process (query.value (), entries);
 
 	// Get some blocks and mark one as received
 	scan.next_blocks (2);
