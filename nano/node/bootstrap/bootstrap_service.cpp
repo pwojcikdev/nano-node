@@ -253,7 +253,7 @@ bool nano::bootstrap_service::send (std::shared_ptr<nano::transport::channel> co
 
 			nano::messages::asc_pull_req::topo_index_payload pld;
 			pld.start_hash = tag.hash;
-			pld.start_index = 0; // TODO: Store topo_index in tag for precise seeking
+			pld.start_index = tag.start_index;
 			pld.count = static_cast<uint16_t> (tag.count);
 			request.payload = pld;
 		}
@@ -597,7 +597,8 @@ std::deque<nano::block_hash> nano::bootstrap_service::wait_topo_blocks ()
 	wait ([this, &result] () {
 		debug_assert (!mutex.try_lock ());
 		result = topo_scan.next_blocks (config.topo_scan.block_batch_size);
-		return !result.empty () || !topo_scan.has_blocks_pending ();
+		// Wake up if blocks are available, or if indexing is done and nothing remains
+		return !result.empty () || (!topo_scan.has_blocks_pending () && !topo_scan.indexing ());
 	});
 	return result;
 }
@@ -709,7 +710,7 @@ bool nano::bootstrap_service::request_topo_index (nano::bootstrap::topo_scan::in
 	async_tag tag{};
 	tag.type = query_type::topo_index;
 	tag.source = source;
-	tag.start = nano::hash_or_account{ query.start_hash };
+	tag.start_index = query.start_index;
 	tag.hash = query.start_hash;
 	tag.count = count;
 
@@ -900,6 +901,12 @@ void nano::bootstrap_service::run_topo_index ()
 	nano::unique_lock<nano::mutex> lock{ mutex };
 	while (!stopped)
 	{
+		// Wait if indexing is complete (resumes after reset)
+		if (!topo_scan.indexing ())
+		{
+			condition.wait (lock);
+			continue;
+		}
 		lock.unlock ();
 		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_topo_index);
 		run_one_topo_index ();
@@ -937,6 +944,12 @@ void nano::bootstrap_service::run_topo_blocks ()
 	nano::unique_lock<nano::mutex> lock{ mutex };
 	while (!stopped)
 	{
+		// Wait if there's nothing to do (no blocks and indexing done)
+		if (!topo_scan.has_blocks_pending () && !topo_scan.indexing ())
+		{
+			condition.wait (lock);
+			continue;
+		}
 		lock.unlock ();
 		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_topo_blocks);
 		run_one_topo_blocks ();
@@ -1243,7 +1256,7 @@ bool nano::bootstrap_service::process (nano::messages::asc_pull_ack::topo_index_
 	}
 
 	nano::bootstrap::topo_scan::index_query start;
-	start.start_index = tag.start.as_block_hash ().number ().template convert_to<uint64_t> ();
+	start.start_index = tag.start_index;
 	start.start_hash = tag.hash;
 
 	topo_scan.process (start, entries);

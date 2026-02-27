@@ -112,6 +112,7 @@ public: // Tag
 		nano::hash_or_account start{ 0 };
 		nano::account account{ 0 };
 		nano::block_hash hash{ 0 };
+		uint64_t start_index{ 0 };
 		size_t count{ 0 };
 		std::chrono::steady_clock::time_point cutoff{};
 		std::chrono::steady_clock::time_point timestamp{ std::chrono::steady_clock::now () };
