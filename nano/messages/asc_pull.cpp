@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/object_stream.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/lib/utility.hpp>
@@ -365,10 +366,9 @@ void asc_pull_ack::blocks_payload::serialize (nano::stream & stream) const
 {
 	debug_assert (blocks.size () <= max_blocks);
 
-	for (auto & block : blocks)
+	for (auto const & block : blocks)
 	{
-		debug_assert (block != nullptr);
-		nano::serialize_block (stream, *block);
+		nano::serialize_raw_block (stream, block);
 	}
 	// For convenience, end with null block terminator
 	nano::write (stream, nano::block_type::not_a_block);
@@ -376,17 +376,21 @@ void asc_pull_ack::blocks_payload::serialize (nano::stream & stream) const
 
 void asc_pull_ack::blocks_payload::deserialize (nano::stream & stream)
 {
-	auto current = nano::deserialize_block (stream);
-	while (current && blocks.size () < max_blocks)
+	nano::block_type type;
+	nano::read (stream, type);
+	while (type != nano::block_type::not_a_block && blocks.size () < max_blocks)
 	{
-		blocks.push_back (current);
-		current = nano::deserialize_block (stream);
+		blocks.push_back (nano::deserialize_raw_block (stream, type));
+		nano::read (stream, type);
 	}
 }
 
 void asc_pull_ack::blocks_payload::operator() (nano::object_stream & obs) const
 {
-	obs.write_range ("blocks", blocks);
+	obs.write_range ("blocks", blocks, [] (auto const & block, nano::object_stream & obs) {
+		obs.write ("hash", block.hash ());
+		obs.write ("type", block.type ());
+	});
 }
 
 /*

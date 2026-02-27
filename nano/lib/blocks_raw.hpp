@@ -179,6 +179,7 @@ public:
 
 	// Serialization
 	void serialize (nano::stream &) const;
+	void serialize_json (std::string &) const;
 
 	// Type-specific accessors
 	std::optional<raw_send_block> as_send () const;

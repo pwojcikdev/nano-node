@@ -66,7 +66,7 @@ void nano::http_callbacks::setup_callbacks ()
 				event.add ("account", account_a.to_account ());
 				event.add ("hash", block_a.hash ().to_string ());
 				std::string block_text;
-				nano::to_legacy (block_a)->serialize_json (block_text);
+				block_a.serialize_json (block_text);
 				event.add ("block", block_text);
 				event.add ("amount", amount_a.to_string_dec ());
 

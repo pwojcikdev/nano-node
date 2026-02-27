@@ -333,17 +333,17 @@ nano::messages::asc_pull_ack nano::bootstrap_server::prepare_empty_blocks_respon
 	return response;
 }
 
-std::deque<std::shared_ptr<nano::block>> nano::bootstrap_server::prepare_blocks (secure::transaction const & transaction, nano::block_hash start_block, std::size_t count) const
+std::deque<nano::raw_block> nano::bootstrap_server::prepare_blocks (secure::transaction const & transaction, nano::block_hash start_block, std::size_t count) const
 {
 	debug_assert (count <= max_blocks); // Should be filtered out earlier
 
-	std::deque<std::shared_ptr<nano::block>> result;
+	std::deque<nano::raw_block> result;
 	if (!start_block.is_zero ())
 	{
 		auto current = ledger.any.block_get (transaction, start_block);
 		while (current && result.size () < count)
 		{
-			result.push_back (current->to_legacy ());
+			result.push_back (current->raw ());
 
 			auto successor_hash = ledger.store.successor.get (transaction, current->hash ());
 			current = successor_hash ? ledger.any.block_get (transaction, *successor_hash) : std::nullopt;

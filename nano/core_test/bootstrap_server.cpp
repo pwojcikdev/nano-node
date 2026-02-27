@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/node/transport/fake.hpp>
 #include <nano/test_common/chains.hpp>
 #include <nano/test_common/random.hpp>
@@ -9,6 +10,7 @@
 
 #include <iterator>
 #include <map>
+#include <type_traits>
 
 using namespace std::chrono_literals;
 
@@ -48,6 +50,22 @@ private:
 };
 
 /**
+ * Helper to get hash from either raw_block or shared_ptr<block>
+ */
+template <typename T>
+nano::block_hash get_hash (T const & block)
+{
+	if constexpr (std::is_same_v<std::decay_t<T>, nano::raw_block>)
+	{
+		return block.hash ();
+	}
+	else
+	{
+		return block->hash ();
+	}
+}
+
+/**
  * Checks if both lists contain the same blocks, with `blocks_b` skipped by `skip` elements
  */
 bool compare_blocks (auto const & blocks_a, auto const & blocks_b, int skip = 0)
@@ -57,11 +75,7 @@ bool compare_blocks (auto const & blocks_a, auto const & blocks_b, int skip = 0)
 	const auto count = blocks_a.size ();
 	for (int n = 0; n < count; ++n)
 	{
-		auto & block_a = *blocks_a[n];
-		auto & block_b = *blocks_b[n + skip];
-
-		// nano::block does not have != operator
-		if (!(block_a == block_b))
+		if (get_hash (blocks_a[n]) != get_hash (blocks_b[n + skip]))
 		{
 			return false;
 		}
@@ -196,7 +210,7 @@ TEST (bootstrap_server, serve_hash_one)
 	nano::messages::asc_pull_ack::blocks_payload response_payload;
 	ASSERT_NO_THROW (response_payload = std::get<nano::messages::asc_pull_ack::blocks_payload> (response.payload));
 	ASSERT_EQ (response_payload.blocks.size (), 1);
-	ASSERT_EQ (response_payload.blocks.front ()->hash (), request_payload.start.as_block_hash ());
+	ASSERT_EQ (response_payload.blocks.front ().hash (), request_payload.start.as_block_hash ());
 }
 
 TEST (bootstrap_server, serve_end_of_chain)
@@ -236,7 +250,7 @@ TEST (bootstrap_server, serve_end_of_chain)
 	ASSERT_NO_THROW (response_payload = std::get<nano::messages::asc_pull_ack::blocks_payload> (response.payload));
 	// Response should contain only the last block from chain
 	ASSERT_EQ (response_payload.blocks.size (), 1);
-	ASSERT_EQ (*response_payload.blocks.front (), *blocks.back ());
+	ASSERT_EQ (response_payload.blocks.front ().hash (), blocks.back ()->hash ());
 }
 
 TEST (bootstrap_server, serve_missing)

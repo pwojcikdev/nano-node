@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/object_stream.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/messages/message_visitor.hpp>
@@ -6,37 +7,47 @@
 
 namespace nano::messages
 {
-publish::publish (bool & error_a, nano::stream & stream_a, message_header const & header_a, nano::network_filter::digest_t const & digest_a, nano::block_uniquer * uniquer_a) :
+publish::publish (bool & error_a, nano::stream & stream_a, message_header const & header_a, nano::network_filter::digest_t const & digest_a) :
 	message (header_a),
 	digest{ digest_a }
 {
 	if (!error_a)
 	{
-		error_a = deserialize (stream_a, uniquer_a);
+		error_a = deserialize (stream_a);
 	}
 }
 
-publish::publish (nano::network_constants const & constants, std::shared_ptr<nano::block> const & block_a, bool is_originator_a) :
+publish::publish (nano::network_constants const & constants, nano::raw_block const & block_a, bool is_originator_a) :
 	message (constants, message_type::publish),
 	block{ block_a }
 {
-	header.block_type_set (block->type ());
+	header.block_type_set (block.type ());
 	header.flag_set (originator_flag, is_originator_a);
+}
+
+publish::publish (nano::network_constants const & constants, std::shared_ptr<nano::block> const & block_a, bool is_originator_a) :
+	publish (constants, nano::to_raw (*block_a), is_originator_a)
+{
 }
 
 void publish::serialize (nano::stream & stream_a) const
 {
-	debug_assert (block != nullptr);
 	header.serialize (stream_a);
-	block->serialize (stream_a);
+	block.serialize (stream_a);
 }
 
-bool publish::deserialize (nano::stream & stream_a, nano::block_uniquer * uniquer_a)
+bool publish::deserialize (nano::stream & stream_a)
 {
 	debug_assert (header.type == message_type::publish);
-	block = nano::deserialize_block (stream_a, header.block_type (), uniquer_a);
-	auto result (block == nullptr);
-	return result;
+	try
+	{
+		block = nano::deserialize_raw_block (stream_a, header.block_type ());
+		return false;
+	}
+	catch (...)
+	{
+		return true;
+	}
 }
 
 void publish::visit (message_visitor & visitor_a) const
@@ -46,7 +57,7 @@ void publish::visit (message_visitor & visitor_a) const
 
 bool publish::operator== (publish const & other_a) const
 {
-	return *block == *other_a.block;
+	return block == other_a.block;
 }
 
 bool publish::is_originator () const
@@ -58,7 +69,7 @@ void publish::operator() (nano::object_stream & obs) const
 {
 	message::operator() (obs); // Write common data
 
-	obs.write ("block", block);
+	obs.write ("block", block.hash ());
 	obs.write ("originator", is_originator ());
 }
 }

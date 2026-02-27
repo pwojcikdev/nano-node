@@ -577,6 +577,11 @@ void nano::raw_block::serialize (nano::stream & stream) const
 	data_m);
 }
 
+void nano::raw_block::serialize_json (std::string & string_a) const
+{
+	nano::to_legacy (*this)->serialize_json (string_a);
+}
+
 nano::raw_block_variant const & nano::raw_block::variant () const
 {
 	return data_m;

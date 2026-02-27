@@ -70,7 +70,6 @@ private:
 	std::chrono::milliseconds base_latency () const;
 
 	// Callbacks
-	std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action;
 	std::function<void (nano::account const &)> vote_action;
 	std::function<void (nano::qualified_root const &)> update_action;
 
@@ -120,7 +119,6 @@ public: // Interface
 	nano::node &,
 	nano::stored_block const & block,
 	nano::election_behavior behavior,
-	std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action = nullptr,
 	std::function<void (nano::account const &)> vote_action = nullptr,
 	std::function<void (nano::qualified_root const &)> update_action = nullptr);
 

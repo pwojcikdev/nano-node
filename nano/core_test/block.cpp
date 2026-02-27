@@ -336,7 +336,7 @@ TEST (block, publish_req_serialization)
 	nano::messages::publish req2 (error, stream2, header);
 	ASSERT_FALSE (error);
 	ASSERT_EQ (req, req2);
-	ASSERT_EQ (*req.block, *req2.block);
+	ASSERT_EQ (req.block, req2.block);
 }
 
 TEST (block, difficulty)

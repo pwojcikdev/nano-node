@@ -278,7 +278,6 @@ auto nano::transport::tcp_server::receive_message_impl () -> asio::awaitable<nan
 	auto result = nano::deserialize_message (payload_buffer, header,
 	node.network_params.network,
 	&node.network.filter,
-	&node.block_uniquer,
 	&node.vote_uniquer);
 
 	co_return result;

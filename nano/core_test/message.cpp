@@ -1,5 +1,6 @@
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/node/endpoint.hpp>
@@ -113,7 +114,7 @@ TEST (message, publish)
 
 	// Assert that the original and deserialized messages are equal
 	ASSERT_EQ (original, deserialized);
-	ASSERT_EQ (*original.block, *deserialized.block);
+	ASSERT_EQ (original.block, deserialized.block);
 	ASSERT_EQ (original.is_originator (), deserialized.is_originator ());
 }
 
@@ -142,7 +143,7 @@ TEST (message, publish_originator_flag)
 	// Assert that the originator flag is set correctly in both the original and deserialized messages
 	ASSERT_TRUE (deserialized.is_originator ());
 	ASSERT_EQ (original, deserialized);
-	ASSERT_EQ (*original.block, *deserialized.block);
+	ASSERT_EQ (original.block, deserialized.block);
 }
 
 TEST (message, confirm_header_flags)
@@ -598,7 +599,7 @@ TEST (message, asc_pull_ack_serialization_blocks)
 	nano::messages::asc_pull_ack::blocks_payload original_payload{};
 	for (int n = 0; n < nano::messages::asc_pull_ack::blocks_payload::max_blocks; ++n)
 	{
-		original_payload.blocks.push_back (random_block ());
+		original_payload.blocks.push_back (nano::to_raw (*random_block ()));
 	}
 
 	original.payload = original_payload;
@@ -629,9 +630,7 @@ TEST (message, asc_pull_ack_serialization_blocks)
 
 	// Compare blocks
 	ASSERT_EQ (original_payload.blocks.size (), message_payload.blocks.size ());
-	ASSERT_TRUE (std::equal (original_payload.blocks.begin (), original_payload.blocks.end (), message_payload.blocks.begin (), message_payload.blocks.end (), [] (auto a, auto b) {
-		return *a == *b;
-	}));
+	ASSERT_TRUE (std::equal (original_payload.blocks.begin (), original_payload.blocks.end (), message_payload.blocks.begin (), message_payload.blocks.end ()));
 
 	ASSERT_TRUE (nano::at_end (stream));
 }

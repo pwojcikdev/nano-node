@@ -1,5 +1,3 @@
-#include <nano/lib/blocks.hpp>
-#include <nano/lib/blocks_raw.hpp>
 #include <nano/node/confirmation_solicitor.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -35,7 +33,7 @@ bool nano::confirmation_solicitor::broadcast (nano::election const & election_a)
 	if (rebroadcasted++ < max_block_broadcasts)
 	{
 		auto const & hash (election_a.status.winner.hash ());
-		nano::messages::publish winner{ config.network_params.network, nano::to_legacy (election_a.status.winner) };
+		nano::messages::publish winner{ config.network_params.network, election_a.status.winner };
 		unsigned count = 0;
 		// Directed broadcasting to principal representatives
 		for (auto i (representatives_broadcasts.begin ()), n (representatives_broadcasts.end ()); i != n && count < max_election_broadcasts; ++i)

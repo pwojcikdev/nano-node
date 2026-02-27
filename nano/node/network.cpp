@@ -361,18 +361,18 @@ size_t nano::network::flood_vote_pr (std::shared_ptr<nano::vote> const & vote) c
 	return result;
 }
 
-size_t nano::network::flood_block (std::shared_ptr<nano::block> const & block, nano::transport::traffic_type type) const
+size_t nano::network::flood_block (nano::raw_block const & block, nano::transport::traffic_type type) const
 {
 	nano::messages::publish message{ node.network_params.network, block };
 	return flood_message (message, type);
 }
 
-size_t nano::network::flood_block (nano::raw_block const & block, nano::transport::traffic_type type) const
+size_t nano::network::flood_block (std::shared_ptr<nano::block> const & block, nano::transport::traffic_type type) const
 {
-	return flood_block (nano::to_legacy (block), type);
+	return flood_block (nano::to_raw (*block), type);
 }
 
-size_t nano::network::flood_block_initial (std::shared_ptr<nano::block> const & block) const
+size_t nano::network::flood_block_initial (nano::raw_block const & block) const
 {
 	nano::messages::publish message{ node.network_params.network, block, /* is_originator */ true };
 
@@ -390,20 +390,20 @@ size_t nano::network::flood_block_initial (std::shared_ptr<nano::block> const & 
 	return result;
 }
 
-size_t nano::network::flood_block_initial (nano::raw_block const & block) const
+size_t nano::network::flood_block_initial (std::shared_ptr<nano::block> const & block) const
 {
-	return flood_block_initial (nano::to_legacy (block));
+	return flood_block_initial (nano::to_raw (*block));
 }
 
-size_t nano::network::flood_block_all (std::shared_ptr<nano::block> const & block, nano::transport::traffic_type type) const
+size_t nano::network::flood_block_all (nano::raw_block const & block, nano::transport::traffic_type type) const
 {
 	nano::messages::publish message{ node.network_params.network, block };
 	return flood_message_all (message, type);
 }
 
-size_t nano::network::flood_block_all (nano::raw_block const & block, nano::transport::traffic_type type) const
+size_t nano::network::flood_block_all (std::shared_ptr<nano::block> const & block, nano::transport::traffic_type type) const
 {
-	return flood_block_all (nano::to_legacy (block), type);
+	return flood_block_all (nano::to_raw (*block), type);
 }
 
 void nano::network::flood_block_many (std::deque<std::shared_ptr<nano::block>> blocks, nano::transport::traffic_type type, std::chrono::milliseconds delay, std::function<void ()> callback) const

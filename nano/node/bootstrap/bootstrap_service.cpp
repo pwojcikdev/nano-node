@@ -903,7 +903,7 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 
 			// Avoid re-processing the block we already have
 			release_assert (blocks.size () >= 1);
-			if (blocks.front ()->hash () == tag.start.as_block_hash ())
+			if (blocks.front ().hash () == tag.start.as_block_hash ())
 			{
 				blocks.pop_front ();
 			}
@@ -1137,7 +1137,7 @@ auto nano::bootstrap_service::verify (const nano::messages::asc_pull_ack::blocks
 	{
 		return verify_result::nothing_new;
 	}
-	if (blocks.size () == 1 && blocks.front ()->hash () == tag.start.as_block_hash ())
+	if (blocks.size () == 1 && blocks.front ().hash () == tag.start.as_block_hash ())
 	{
 		return verify_result::nothing_new;
 	}
@@ -1151,7 +1151,7 @@ auto nano::bootstrap_service::verify (const nano::messages::asc_pull_ack::blocks
 	{
 		case query_type::blocks_by_hash:
 		{
-			if (first->hash () != tag.start.as_block_hash ())
+			if (first.hash () != tag.start.as_block_hash ())
 			{
 				// TODO: Stat & log
 				return verify_result::invalid;
@@ -1161,7 +1161,7 @@ auto nano::bootstrap_service::verify (const nano::messages::asc_pull_ack::blocks
 		case query_type::blocks_by_account:
 		{
 			// Open & state blocks always contain account field
-			if (first->account_field ().value_or (0) != tag.start.as_account ())
+			if (first.account_field ().value_or (0) != tag.start.as_account ())
 			{
 				// TODO: Stat & log
 				return verify_result::invalid;
@@ -1173,16 +1173,16 @@ auto nano::bootstrap_service::verify (const nano::messages::asc_pull_ack::blocks
 	}
 
 	// Verify blocks make a valid chain
-	nano::block_hash previous_hash = blocks.front ()->hash ();
+	nano::block_hash previous_hash = blocks.front ().hash ();
 	for (int n = 1; n < blocks.size (); ++n)
 	{
 		auto & block = blocks[n];
-		if (block->previous () != previous_hash)
+		if (block.previous () != previous_hash)
 		{
 			// TODO: Stat & log
 			return verify_result::invalid; // Blocks do not make a chain
 		}
-		previous_hash = block->hash ();
+		previous_hash = block.hash ();
 	}
 
 	return verify_result::ok;

@@ -729,15 +729,15 @@ TEST (node, fork_flip)
 	auto election1 (node2.active.election (nano::qualified_root (nano::dev::genesis->hash (), nano::dev::genesis->hash ())));
 	ASSERT_NE (nullptr, election1);
 	ASSERT_EQ (1, election1->votes ().size ());
-	ASSERT_TRUE (node1.block (publish1.block->hash ()));
-	ASSERT_TRUE (node2.block (publish2.block->hash ()));
-	ASSERT_TIMELY (10s, node2.block_or_pruned_exists (publish1.block->hash ()));
+	ASSERT_TRUE (node1.block (publish1.block.hash ()));
+	ASSERT_TRUE (node2.block (publish2.block.hash ()));
+	ASSERT_TIMELY (10s, node2.block_or_pruned_exists (publish1.block.hash ()));
 	auto winner (*election1->tally ().begin ());
-	ASSERT_EQ (nano::to_raw (*publish1.block), winner.second);
+	ASSERT_EQ (publish1.block, winner.second);
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 100, winner.first);
-	ASSERT_TRUE (node1.block_or_pruned_exists (publish1.block->hash ()));
-	ASSERT_TRUE (node2.block_or_pruned_exists (publish1.block->hash ()));
-	ASSERT_FALSE (node2.block_or_pruned_exists (publish2.block->hash ()));
+	ASSERT_TRUE (node1.block_or_pruned_exists (publish1.block.hash ()));
+	ASSERT_TRUE (node2.block_or_pruned_exists (publish1.block.hash ()));
+	ASSERT_FALSE (node2.block_or_pruned_exists (publish2.block.hash ()));
 }
 
 /**
@@ -893,9 +893,9 @@ TEST (node, fork_open)
 	nano::messages::publish publish1{ nano::dev::network_params.network, send1 };
 	auto channel1 = std::make_shared<nano::transport::fake::channel> (node);
 	node.inbound (publish1, channel1);
-	ASSERT_TIMELY (5s, (election = node.active.election (publish1.block->qualified_root ())) != nullptr);
+	ASSERT_TIMELY (5s, (election = node.active.election (publish1.block.qualified_root ())) != nullptr);
 	election->force_confirm ();
-	ASSERT_TIMELY (5s, node.active.empty () && node.block_confirmed (publish1.block->hash ()));
+	ASSERT_TIMELY (5s, node.active.empty () && node.block_confirmed (publish1.block.hash ()));
 
 	// register key for genesis account, not sure why we do this, it seems needless,
 	// since the genesis account at this stage has zero voting weight
@@ -904,7 +904,7 @@ TEST (node, fork_open)
 	// create the 1st open block to receive send1, which should be regarded as the winner just because it is first
 	nano::open_block_builder builder;
 	auto open1 = builder.make_block ()
-				 .source (publish1.block->hash ())
+				 .source (publish1.block.hash ())
 				 .representative (1)
 				 .account (key1.pub)
 				 .sign (key1.prv, key1.pub)
@@ -916,7 +916,7 @@ TEST (node, fork_open)
 
 	// create 2nd open block, which is a fork of open1 block
 	auto open2 = builder.make_block ()
-				 .source (publish1.block->hash ())
+				 .source (publish1.block.hash ())
 				 .representative (2)
 				 .account (key1.pub)
 				 .sign (key1.prv, key1.pub)
@@ -924,19 +924,19 @@ TEST (node, fork_open)
 				 .build ();
 	nano::messages::publish publish3{ nano::dev::network_params.network, open2 };
 	node.inbound (publish3, channel1);
-	ASSERT_TIMELY (5s, (election = node.active.election (publish3.block->qualified_root ())) != nullptr);
+	ASSERT_TIMELY (5s, (election = node.active.election (publish3.block.qualified_root ())) != nullptr);
 
 	// we expect to find 2 blocks in the election and we expect the first block to be the winner just because it was first
 	ASSERT_TIMELY_EQ (5s, 2, election->blocks ().size ());
-	ASSERT_EQ (publish2.block->hash (), election->winner ().hash ());
+	ASSERT_EQ (publish2.block.hash (), election->winner ().hash ());
 
 	// wait for a second and check that the election did not get confirmed
 	system.delay_ms (1000ms);
 	ASSERT_FALSE (election->confirmed ());
 
 	// check that only the first block is saved to the ledger
-	ASSERT_TIMELY (5s, node.block (publish2.block->hash ()));
-	ASSERT_FALSE (node.block (publish3.block->hash ()));
+	ASSERT_TIMELY (5s, node.block (publish2.block.hash ()));
+	ASSERT_FALSE (node.block (publish3.block.hash ()));
 }
 
 /**

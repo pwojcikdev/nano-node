@@ -17,7 +17,6 @@ auto message_deserializer_success_checker (message_type & message_original) -> v
 {
 	// Dependencies for the message deserializer.
 	nano::network_filter filter (1);
-	nano::block_uniquer block_uniquer;
 	nano::vote_uniquer vote_uniquer;
 
 	// Data used to simulate the incoming buffer to be deserialized, the offset tracks how much has been read from the input_source
@@ -26,7 +25,7 @@ auto message_deserializer_success_checker (message_type & message_original) -> v
 	std::size_t offset{ 0 };
 
 	// Message Deserializer with the query function tweaked to read from the `input_source`.
-	auto const message_deserializer = std::make_shared<nano::transport::message_deserializer> (nano::dev::network_params.network, filter, block_uniquer, vote_uniquer,
+	auto const message_deserializer = std::make_shared<nano::transport::message_deserializer> (nano::dev::network_params.network, filter, vote_uniquer,
 	[&input_source, &offset] (std::shared_ptr<std::vector<uint8_t>> const & data_a, std::size_t size_a, std::function<void (boost::system::error_code const &, std::size_t)> callback_a) {
 		debug_assert (input_source.size () >= size_a);
 		data_a->resize (size_a);

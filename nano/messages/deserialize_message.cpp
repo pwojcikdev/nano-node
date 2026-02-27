@@ -20,7 +20,6 @@ nano::buffer_view buffer,
 nano::messages::message_header const & header,
 nano::network_constants const & network_constants,
 nano::network_filter * network_filter,
-nano::block_uniquer * block_uniquer,
 nano::vote_uniquer * vote_uniquer)
 -> deserialize_message_result
 {
@@ -51,10 +50,10 @@ nano::vote_uniquer * vote_uniquer)
 			}
 
 			bool error = false;
-			auto message = std::make_unique<nano::messages::publish> (error, stream, header, digest, block_uniquer);
-			if (!error && at_end (stream) || !message->block)
+			auto message = std::make_unique<nano::messages::publish> (error, stream, header, digest);
+			if (!error && at_end (stream))
 			{
-				if (!network_constants.work.validate_entry (*message->block))
+				if (!network_constants.work.validate_entry (message->block))
 				{
 					return { std::move (message), deserialize_message_status::success };
 				}

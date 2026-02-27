@@ -2,12 +2,11 @@
 #include <nano/node/node.hpp>
 #include <nano/node/transport/message_deserializer.hpp>
 
-nano::transport::message_deserializer::message_deserializer (nano::network_constants const & network_constants_a, nano::network_filter & network_filter_a, nano::block_uniquer & block_uniquer_a, nano::vote_uniquer & vote_uniquer_a,
+nano::transport::message_deserializer::message_deserializer (nano::network_constants const & network_constants_a, nano::network_filter & network_filter_a, nano::vote_uniquer & vote_uniquer_a,
 read_query read_op) :
 	read_buffer{ std::make_shared<std::vector<uint8_t>> () },
 	network_constants_m{ network_constants_a },
 	network_filter_m{ network_filter_a },
-	block_uniquer_m{ block_uniquer_a },
 	vote_uniquer_m{ vote_uniquer_a },
 	read_op{ std::move (read_op) }
 {
@@ -221,11 +220,10 @@ std::unique_ptr<nano::messages::keepalive> nano::transport::message_deserializer
 std::unique_ptr<nano::messages::publish> nano::transport::message_deserializer::deserialize_publish (nano::stream & stream, nano::messages::message_header const & header, nano::network_filter::digest_t const & digest_a)
 {
 	auto error = false;
-	auto incoming = std::make_unique<nano::messages::publish> (error, stream, header, digest_a, &block_uniquer_m);
+	auto incoming = std::make_unique<nano::messages::publish> (error, stream, header, digest_a);
 	if (!error && nano::at_end (stream))
 	{
-		release_assert (incoming->block);
-		if (!network_constants_m.work.validate_entry (*incoming->block))
+		if (!network_constants_m.work.validate_entry (incoming->block))
 		{
 			return incoming;
 		}

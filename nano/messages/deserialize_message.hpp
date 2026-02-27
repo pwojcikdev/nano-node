@@ -44,6 +44,5 @@ nano::buffer_view buffer,
 nano::messages::message_header const & header,
 nano::network_constants const &,
 nano::network_filter * = nullptr,
-nano::block_uniquer * = nullptr,
 nano::vote_uniquer * = nullptr);
 }

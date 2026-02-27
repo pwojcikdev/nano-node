@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/messages/message.hpp>
 
@@ -158,7 +159,7 @@ public: // Payload definitions
 		void deserialize (nano::stream &);
 
 	public: // Payload
-		std::deque<std::shared_ptr<nano::block>> blocks;
+		std::deque<nano::raw_block> blocks;
 
 	public: // Logging
 		void operator() (nano::object_stream &) const;

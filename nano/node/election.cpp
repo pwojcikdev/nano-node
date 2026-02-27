@@ -1,4 +1,3 @@
-#include <nano/lib/blocks.hpp>
 #include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/enum_util.hpp>
 #include <nano/lib/stored_block.hpp>
@@ -25,8 +24,7 @@ std::chrono::milliseconds nano::election::base_latency () const
  * election
  */
 
-nano::election::election (nano::node & node_a, nano::stored_block const & block_a, nano::election_behavior election_behavior_a, std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action_a, std::function<void (nano::account const &)> vote_action_a, std::function<void (nano::qualified_root const &)> update_action_a) :
-	confirmation_action (std::move (confirmation_action_a)),
+nano::election::election (nano::node & node_a, nano::stored_block const & block_a, nano::election_behavior election_behavior_a, std::function<void (nano::account const &)> vote_action_a, std::function<void (nano::qualified_root const &)> update_action_a) :
 	vote_action (std::move (vote_action_a)),
 	update_action (std::move (update_action_a)),
 	node (node_a),
@@ -86,13 +84,6 @@ void nano::election::confirm_once (nano::unique_lock<nano::mutex> & lock)
 		{
 			node.election_workers.post ([qualified_root_l = qualified_root, update_action_l = update_action] () {
 				update_action_l (qualified_root_l);
-			});
-		}
-
-		if (confirmation_action)
-		{
-			node.election_workers.post ([status_l, confirmation_action_l = confirmation_action] () {
-				confirmation_action_l (nano::to_legacy (status_l.winner));
 			});
 		}
 	}
@@ -935,9 +926,10 @@ void nano::election_extended_status::operator() (nano::object_stream & obs) cons
 		obs.write ("time", info.time.time_since_epoch ().count ());
 	});
 
-	obs.write_range ("blocks", blocks, [] (auto const & entry) {
+	obs.write_range ("blocks", blocks, [] (auto const & entry, nano::object_stream & obs) {
 		auto const & [hash, block] = entry;
-		return nano::to_legacy (block);
+		obs.write ("hash", block.hash ());
+		obs.write ("type", block.type ());
 	});
 
 	obs.write_range ("tally", tally, [] (auto const & entry, nano::object_stream & obs) {
