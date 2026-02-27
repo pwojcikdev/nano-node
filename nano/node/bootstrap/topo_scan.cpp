@@ -147,9 +147,7 @@ void nano::bootstrap::topo_scan::received (nano::block_hash const & hash)
 	auto it = blocks_by_hash.find (hash);
 	if (it != blocks_by_hash.end ())
 	{
-		blocks_by_hash.modify (it, [] (block_entry & entry) {
-			entry.status = block_status::completed;
-		});
+		blocks_by_hash.erase (it);
 		stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::received);
 	}
 }
@@ -161,7 +159,7 @@ bool nano::bootstrap::topo_scan::indexing () const
 
 bool nano::bootstrap::topo_scan::has_blocks_pending () const
 {
-	return count_outstanding () > 0;
+	return !blocks.empty ();
 }
 
 std::size_t nano::bootstrap::topo_scan::count_pending () const
@@ -192,41 +190,16 @@ std::size_t nano::bootstrap::topo_scan::count_in_flight () const
 
 std::size_t nano::bootstrap::topo_scan::count_outstanding () const
 {
-	std::size_t count = 0;
-	for (auto const & entry : blocks)
-	{
-		if (entry.status != block_status::completed)
-		{
-			++count;
-		}
-	}
-	return count;
+	// All entries in the container are outstanding (completed entries are erased)
+	return blocks.size ();
 }
 
 nano::container_info nano::bootstrap::topo_scan::container_info () const
 {
-	std::size_t pending = 0, in_flight = 0, completed = 0;
-	for (auto const & entry : blocks)
-	{
-		switch (entry.status)
-		{
-			case block_status::pending:
-				++pending;
-				break;
-			case block_status::in_flight:
-				++in_flight;
-				break;
-			case block_status::completed:
-				++completed;
-				break;
-		}
-	}
-
 	nano::container_info info;
-	info.put ("blocks_total", blocks.size ());
-	info.put ("blocks_pending", pending);
-	info.put ("blocks_in_flight", in_flight);
-	info.put ("blocks_completed", completed);
+	info.put ("blocks_outstanding", blocks.size ());
+	info.put ("blocks_pending", count_pending ());
+	info.put ("blocks_in_flight", count_in_flight ());
 	info.put ("cursor_index", head.cursor_index);
 	info.put ("indexing_done", head.done ? 1 : 0);
 	return info;
