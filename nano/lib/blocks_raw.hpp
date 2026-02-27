@@ -5,6 +5,8 @@
 #include <nano/lib/fwd.hpp>
 #include <nano/lib/work_version.hpp>
 
+#include <boost/property_tree/ptree_fwd.hpp>
+
 #include <variant>
 
 namespace nano
@@ -180,6 +182,7 @@ public:
 	// Serialization
 	void serialize (nano::stream &) const;
 	void serialize_json (std::string &) const;
+	void serialize_json (boost::property_tree::ptree &) const;
 
 	// Type-specific accessors
 	std::optional<raw_send_block> as_send () const;

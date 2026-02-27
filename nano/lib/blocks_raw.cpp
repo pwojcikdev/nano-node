@@ -6,6 +6,7 @@
 #include <nano/lib/stream.hpp>
 
 #include <boost/endian/conversion.hpp>
+#include <boost/property_tree/ptree.hpp>
 
 /*
  * raw_send_block
@@ -580,6 +581,11 @@ void nano::raw_block::serialize (nano::stream & stream) const
 void nano::raw_block::serialize_json (std::string & string_a) const
 {
 	nano::to_legacy (*this)->serialize_json (string_a);
+}
+
+void nano::raw_block::serialize_json (boost::property_tree::ptree & tree_a) const
+{
+	nano::to_legacy (*this)->serialize_json (tree_a);
 }
 
 nano::raw_block_variant const & nano::raw_block::variant () const
