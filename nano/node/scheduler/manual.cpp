@@ -43,14 +43,14 @@ void nano::scheduler::manual::notify ()
 	condition.notify_all ();
 }
 
-auto nano::scheduler::manual::push (std::shared_ptr<nano::block> const & block) -> std::future<std::shared_ptr<nano::election>>
+auto nano::scheduler::manual::push (nano::stored_block const & block) -> std::future<std::shared_ptr<nano::election>>
 {
 	nano::lock_guard<nano::mutex> lock{ mutex };
 
 	// Check if block already exists
 	auto & hash_index = queue.get<tag_hash> ();
 
-	if (hash_index.contains (block->hash ()))
+	if (hash_index.contains (block.hash ()))
 	{
 		// Block already exists, return future that immediately resolves to nullptr
 		std::promise<std::shared_ptr<nano::election>> promise;
@@ -109,25 +109,7 @@ void nano::scheduler::manual::run ()
 
 			lock.unlock ();
 
-			// Use block directly if sideband is present, otherwise fetch from ledger
-			std::optional<nano::stored_block> stored;
-			if (block->has_sideband ())
-			{
-				stored = *block;
-			}
-			else
-			{
-				auto transaction = node.ledger.tx_begin_read ();
-				stored = node.ledger.any.block_get (transaction, block->hash ());
-			}
-			if (!stored)
-			{
-				promise.set_value (nullptr);
-				lock.lock ();
-				continue;
-			}
-
-			auto result = node.active.insert (*stored, nano::election_behavior::manual);
+			auto result = node.active.insert (block, nano::election_behavior::manual);
 			if (result.inserted)
 			{
 				node.stats.inc (nano::stat::type::election_scheduler, nano::stat::detail::insert_manual);

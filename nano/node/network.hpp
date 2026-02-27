@@ -116,14 +116,11 @@ public:
 	size_t flood_vote_non_pr (std::shared_ptr<nano::vote> const &, float scale) const;
 
 	// Flood block to a random selection of peers
-	size_t flood_block (std::shared_ptr<nano::block> const &, nano::transport::traffic_type) const;
 	size_t flood_block (nano::raw_block const &, nano::transport::traffic_type) const;
-	size_t flood_block_all (std::shared_ptr<nano::block> const &, nano::transport::traffic_type) const;
 	size_t flood_block_all (nano::raw_block const &, nano::transport::traffic_type) const;
 	// Flood block to all PRs and a random selection of non-PRs
-	size_t flood_block_initial (std::shared_ptr<nano::block> const &) const;
 	size_t flood_block_initial (nano::raw_block const &) const;
-	void flood_block_many (std::deque<std::shared_ptr<nano::block>>, nano::transport::traffic_type, std::chrono::milliseconds delay = 10ms, std::function<void ()> callback = nullptr) const;
+	void flood_block_many (std::deque<nano::raw_block>, nano::transport::traffic_type, std::chrono::milliseconds delay = 10ms, std::function<void ()> callback = nullptr) const;
 
 	void send_keepalive (std::shared_ptr<nano::transport::channel> const &) const;
 	void send_keepalive_self (std::shared_ptr<nano::transport::channel> const &) const;

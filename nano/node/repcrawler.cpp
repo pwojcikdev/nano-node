@@ -301,18 +301,18 @@ auto nano::rep_crawler::prepare_query_target () const -> hash_root_t
 	for (auto const & block : random_blocks)
 	{
 		// Avoid blocks that could still have live votes coming in
-		if (active.recently_confirmed.contains (block->hash ()))
+		if (active.recently_confirmed.contains (block.hash ()))
 		{
 			continue;
 		}
 
 		// Nodes will not respond to queries for blocks that are not confirmed
-		if (!node.ledger.cemented.block_exists (transaction, block->hash ()))
+		if (!node.ledger.cemented.block_exists (transaction, block.hash ()))
 		{
 			continue;
 		}
 
-		return std::make_pair (block->hash (), block->root ());
+		return std::make_pair (block.hash (), block.root ());
 	}
 
 	// If no suitable block was found, query genesis

@@ -2,6 +2,7 @@
 
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/node/fwd.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
@@ -28,7 +29,7 @@ public:
 	void start ();
 	void stop ();
 
-	std::future<std::shared_ptr<nano::election>> push (std::shared_ptr<nano::block> const & block);
+	std::future<std::shared_ptr<nano::election>> push (nano::stored_block const & block);
 
 	bool contains (nano::block_hash const &) const;
 
@@ -45,12 +46,12 @@ private: // Dependencies
 private:
 	struct entry
 	{
-		std::shared_ptr<nano::block> block;
+		nano::stored_block block;
 		mutable std::promise<std::shared_ptr<nano::election>> promise;
 
 		nano::block_hash hash () const
 		{
-			return block->hash ();
+			return block.hash ();
 		}
 	};
 

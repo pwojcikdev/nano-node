@@ -436,9 +436,9 @@ std::string nano::ledger::block_text (nano::block_hash const & hash_a)
 	return result;
 }
 
-std::deque<std::shared_ptr<nano::block>> nano::ledger::random_blocks (secure::transaction const & transaction, size_t count) const
+std::deque<nano::stored_block> nano::ledger::random_blocks (secure::transaction const & transaction, size_t count) const
 {
-	std::deque<std::shared_ptr<nano::block>> result;
+	std::deque<nano::stored_block> result;
 
 	auto const starting_hash = nano::random_pool::generate<nano::block_hash> ();
 
@@ -449,7 +449,7 @@ std::deque<std::shared_ptr<nano::block>> nano::ledger::random_blocks (secure::tr
 	{
 		if (it != end)
 		{
-			result.push_back (it->second.to_legacy ());
+			result.push_back (it->second);
 		}
 		++it; // Store iterators wrap around when reaching the end
 	}
@@ -601,7 +601,7 @@ std::shared_ptr<nano::block> nano::ledger::find_receive_block_by_send_hash (secu
 	return nullptr;
 }
 
-std::optional<nano::account> nano::ledger::linked_account (secure::transaction const & transaction, nano::block const & block)
+std::optional<nano::account> nano::ledger::linked_account (secure::transaction const & transaction, nano::stored_block const & block)
 {
 	if (block.is_send ())
 	{

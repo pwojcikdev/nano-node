@@ -1144,7 +1144,7 @@ void nano::json_handler::block_info ()
 			bool include_linked_account = request.get<bool> ("include_linked_account", false);
 			if (include_linked_account)
 			{
-				auto linked_account = node.ledger.linked_account (transaction, *block->to_legacy ());
+				auto linked_account = node.ledger.linked_account (transaction, *block);
 				if (linked_account.has_value ())
 				{
 					response_l.put ("linked_account", linked_account.value ().to_account ());
@@ -1208,7 +1208,7 @@ void nano::json_handler::block_confirm ()
 				// Start new confirmation for unconfirmed (or not being confirmed) block
 				if (!node.cementing_set.contains (hash))
 				{
-					node.start_election (block_l->to_legacy ());
+					node.start_election (*block_l);
 				}
 			}
 			else
@@ -1314,7 +1314,7 @@ void nano::json_handler::blocks_info ()
 					entry.put ("block_account", account.to_account ());
 					if (include_linked_account)
 					{
-						auto linked_account = node.ledger.linked_account (transaction, *block->to_legacy ());
+						auto linked_account = node.ledger.linked_account (transaction, *block);
 						if (linked_account.has_value ())
 						{
 							entry.put ("linked_account", linked_account.value ().to_account ());
@@ -2122,17 +2122,16 @@ void nano::json_handler::confirmation_info ()
 				total += tally;
 				if (contents)
 				{
-					auto block_legacy = nano::to_legacy (block);
 					if (json_block_l)
 					{
 						boost::property_tree::ptree block_node_l;
-						block_legacy->serialize_json (block_node_l);
+						block.serialize_json (block_node_l);
 						entry.add_child ("contents", block_node_l);
 					}
 					else
 					{
 						std::string contents;
-						block_legacy->serialize_json (contents);
+						block.serialize_json (contents);
 						entry.put ("contents", contents);
 					}
 				}
@@ -2711,7 +2710,7 @@ void nano::json_handler::account_history ()
 				{
 					if (include_linked_account)
 					{
-						auto linked_account = node.ledger.linked_account (transaction, *block->to_legacy ());
+						auto linked_account = node.ledger.linked_account (transaction, *block);
 						if (linked_account.has_value ())
 						{
 							entry.put ("linked_account", linked_account.value ().to_account ());
@@ -3670,7 +3669,7 @@ void nano::json_handler::republish ()
 		auto block = node.ledger.any.block_get (transaction, hash);
 		if (block)
 		{
-			std::deque<std::shared_ptr<nano::block>> republish_bundle;
+			std::deque<nano::raw_block> republish_bundle;
 			for (auto i (0); !hash.is_zero () && i < count; ++i)
 			{
 				block = node.ledger.any.block_get (transaction, hash);
@@ -3689,13 +3688,13 @@ void nano::json_handler::republish ()
 					for (auto & hash_l : hashes)
 					{
 						block_a = node.ledger.any.block_get (transaction, hash_l);
-						republish_bundle.push_back (block_a->to_legacy ());
+						republish_bundle.push_back (block_a->raw ());
 						boost::property_tree::ptree entry_l;
 						entry_l.put ("", hash_l.to_string ());
 						blocks.push_back (std::make_pair ("", entry_l));
 					}
 				}
-				republish_bundle.push_back (block->to_legacy ()); // Republish block
+				republish_bundle.push_back (block->raw ()); // Republish block
 				boost::property_tree::ptree entry;
 				entry.put ("", hash.to_string ());
 				blocks.push_back (std::make_pair ("", entry));
@@ -3726,7 +3725,7 @@ void nano::json_handler::republish ()
 							for (auto & hash_l : hashes)
 							{
 								block_d = node.ledger.any.block_get (transaction, hash_l);
-								republish_bundle.push_back (block_d->to_legacy ());
+								republish_bundle.push_back (block_d->raw ());
 								boost::property_tree::ptree entry_l;
 								entry_l.put ("", hash_l.to_string ());
 								blocks.push_back (std::make_pair ("", entry_l));
@@ -4166,18 +4165,17 @@ void nano::json_handler::unchecked ()
 		boost::property_tree::ptree unchecked;
 		node.unchecked.for_each (
 		[&unchecked, &json_block_l] (nano::unchecked_key const & key, nano::unchecked_info const & info) {
-			auto block = nano::to_legacy (info.block);
 			if (json_block_l)
 			{
 				boost::property_tree::ptree block_node_l;
-				block->serialize_json (block_node_l);
-				unchecked.add_child (block->hash ().to_string (), block_node_l);
+				info.block.serialize_json (block_node_l);
+				unchecked.add_child (info.block.hash ().to_string (), block_node_l);
 			}
 			else
 			{
 				std::string contents;
-				block->serialize_json (contents);
-				unchecked.put (block->hash ().to_string (), contents);
+				info.block.serialize_json (contents);
+				unchecked.put (info.block.hash ().to_string (), contents);
 			} }, [iterations = 0, count = count] () mutable { return iterations++ < count; });
 		response_l.add_child ("blocks", unchecked);
 	}
@@ -4206,17 +4204,16 @@ void nano::json_handler::unchecked_get ()
 			{
 				response_l.put ("modified_timestamp", std::to_string (info.modified ()));
 
-				auto block = nano::to_legacy (info.block);
 				if (json_block_l)
 				{
 					boost::property_tree::ptree block_node_l;
-					block->serialize_json (block_node_l);
+					info.block.serialize_json (block_node_l);
 					response_l.add_child ("contents", block_node_l);
 				}
 				else
 				{
 					std::string contents;
-					block->serialize_json (contents);
+					info.block.serialize_json (contents);
 					response_l.put ("contents", contents);
 				}
 				done = true;
@@ -4248,21 +4245,20 @@ void nano::json_handler::unchecked_keys ()
 		node.unchecked.for_each (
 		key,
 		[&unchecked, json_block_l] (nano::unchecked_key const & key, nano::unchecked_info const & info) {
-			auto block = nano::to_legacy (info.block);
 			boost::property_tree::ptree entry;
 			entry.put ("key", key.key ().to_string ());
-			entry.put ("hash", block->hash ().to_string ());
+			entry.put ("hash", info.block.hash ().to_string ());
 			entry.put ("modified_timestamp", std::to_string (info.modified ()));
 			if (json_block_l)
 			{
 				boost::property_tree::ptree block_node_l;
-				block->serialize_json (block_node_l);
+				info.block.serialize_json (block_node_l);
 				entry.add_child ("contents", block_node_l);
 			}
 			else
 			{
 				std::string contents;
-				block->serialize_json (contents);
+				info.block.serialize_json (contents);
 				entry.put ("contents", contents);
 			}
 			unchecked.push_back (std::make_pair ("", entry)); }, [&unchecked, &count] () { return unchecked.size () < count; });
@@ -4920,7 +4916,7 @@ void nano::json_handler::wallet_republish ()
 	if (!ec)
 	{
 		boost::property_tree::ptree blocks;
-		std::deque<std::shared_ptr<nano::block>> republish_bundle;
+		std::deque<nano::raw_block> republish_bundle;
 		auto block_transaction = node.ledger.tx_begin_read ();
 		for (auto const & account : wallet->accounts ())
 		{
@@ -4944,7 +4940,7 @@ void nano::json_handler::wallet_republish ()
 			for (auto & hash : hashes)
 			{
 				block = node.ledger.any.block_get (block_transaction, hash);
-				republish_bundle.push_back (block->to_legacy ());
+				republish_bundle.push_back (block->raw ());
 				boost::property_tree::ptree entry;
 				entry.put ("", hash.to_string ());
 				blocks.push_back (std::make_pair ("", entry));
@@ -5429,7 +5425,7 @@ bool block_confirmed (nano::node & node, nano::secure::transaction & transaction
 	else if (!include_only_confirmed)
 	{
 		auto block = node.ledger.any.block_get (transaction, hash);
-		is_confirmed = (block && !node.active.active (*block->to_legacy ()));
+		is_confirmed = (block && !node.active.active (*block));
 	}
 
 	return is_confirmed;

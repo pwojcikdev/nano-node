@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -193,7 +194,7 @@ TEST (network, send_discarded_publish)
 				 .build ();
 	{
 		auto transaction = node1.ledger.tx_begin_read ();
-		auto sent = node1.network.flood_block (block, nano::transport::traffic_type::test);
+		auto sent = node1.network.flood_block (nano::to_raw (*block), nano::transport::traffic_type::test);
 		ASSERT_EQ (1, sent);
 		ASSERT_EQ (nano::dev::genesis->hash (), node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
 		ASSERT_EQ (nano::dev::genesis->hash (), node2.latest (nano::dev::genesis_key.pub));
@@ -220,7 +221,7 @@ TEST (network, send_invalid_publish)
 				 .build ();
 	{
 		auto transaction = node1.ledger.tx_begin_read ();
-		auto sent = node1.network.flood_block (block, nano::transport::traffic_type::test);
+		auto sent = node1.network.flood_block (nano::to_raw (*block), nano::transport::traffic_type::test);
 		ASSERT_EQ (1, sent);
 		ASSERT_EQ (nano::dev::genesis->hash (), node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
 		ASSERT_EQ (nano::dev::genesis->hash (), node2.latest (nano::dev::genesis_key.pub));

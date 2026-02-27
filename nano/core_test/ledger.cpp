@@ -1001,7 +1001,7 @@ TEST (votes, add_one)
 	node1.work_generate_blocking (*send1);
 	auto transaction = node1.ledger.tx_begin_write ();
 	ASSERT_EQ (nano::block_status::progress, node1.ledger.process (transaction, send1));
-	node1.start_election (send1);
+	node1.start_election (*node1.ledger.any.block_get (transaction, send1->hash ()));
 	ASSERT_TIMELY (5s, node1.active.election (send1->qualified_root ()));
 	auto election1 = node1.active.election (send1->qualified_root ());
 	ASSERT_EQ (1, election1->votes ().size ());
@@ -1099,7 +1099,7 @@ TEST (votes, add_old)
 	node1.work_generate_blocking (*send1);
 	auto transaction = node1.ledger.tx_begin_write ();
 	ASSERT_EQ (nano::block_status::progress, node1.ledger.process (transaction, send1));
-	node1.start_election (send1);
+	node1.start_election (*node1.ledger.any.block_get (transaction, send1->hash ()));
 	ASSERT_TIMELY (5s, node1.active.election (send1->qualified_root ()));
 	auto election1 = node1.active.election (send1->qualified_root ());
 	auto vote1 = nano::test::make_vote (nano::dev::genesis_key, { send1 }, nano::vote::timestamp_min * 2, 0);
@@ -1204,7 +1204,7 @@ TEST (votes, add_cooldown)
 	node1.work_generate_blocking (*send1);
 	auto transaction = node1.ledger.tx_begin_write ();
 	ASSERT_EQ (nano::block_status::progress, node1.ledger.process (transaction, send1));
-	node1.start_election (send1);
+	node1.start_election (*node1.ledger.any.block_get (transaction, send1->hash ()));
 	ASSERT_TIMELY (5s, node1.active.election (send1->qualified_root ()));
 	auto election1 = node1.active.election (send1->qualified_root ());
 	auto vote1 = nano::test::make_vote (nano::dev::genesis_key, { send1 }, nano::vote::timestamp_min * 1, 0);
@@ -5774,7 +5774,7 @@ TEST (ledger, random_blocks)
 			auto blocks = ledger.random_blocks (transaction, 10);
 			ASSERT_EQ (blocks.size (), 10); // Random blocks should repeat if the ledger is smaller than the requested count
 			auto first = blocks.front ();
-			done = (first->hash () == send1->hash ());
+			done = (first.hash () == send1->hash ());
 		}
 		ASSERT_FALSE (done);
 	}
@@ -5788,7 +5788,7 @@ TEST (ledger, random_blocks)
 			auto blocks = ledger.random_blocks (transaction, 1);
 			ASSERT_EQ (blocks.size (), 1);
 			auto first = blocks.front ();
-			done = (first->hash () == send2->hash ());
+			done = (first.hash () == send2->hash ());
 			ASSERT_LE (iteration, 1000);
 		}
 	}
@@ -5801,7 +5801,7 @@ TEST (ledger, random_blocks)
 			auto blocks = ledger.random_blocks (transaction, 1);
 			ASSERT_EQ (blocks.size (), 1);
 			auto first = blocks.front ();
-			done = (first->hash () == nano::dev::genesis->hash ());
+			done = (first.hash () == nano::dev::genesis->hash ());
 			ASSERT_LE (iteration, 1000);
 		}
 	}

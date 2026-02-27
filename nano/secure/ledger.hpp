@@ -64,7 +64,7 @@ public:
 	nano::block_hash representative_block (secure::transaction const &, nano::block_hash const &);
 	std::string block_text (char const *);
 	std::string block_text (nano::block_hash const &);
-	std::deque<std::shared_ptr<nano::block>> random_blocks (secure::transaction const &, size_t count) const;
+	std::deque<nano::stored_block> random_blocks (secure::transaction const &, size_t count) const;
 	std::optional<nano::pending_info> pending_info (secure::transaction const &, nano::pending_key const & key) const;
 	std::deque<nano::stored_block> cement (secure::write_transaction &, nano::block_hash const & hash, size_t max_blocks = 1024 * 128);
 
@@ -84,7 +84,7 @@ public:
 	uint64_t pruning_action (secure::write_transaction &, nano::block_hash const &, uint64_t const);
 	bool is_epoch_link (nano::link const &) const;
 	std::shared_ptr<nano::block> find_receive_block_by_send_hash (secure::transaction const &, nano::account const & destination, nano::block_hash const & send_block_hash);
-	std::optional<nano::account> linked_account (secure::transaction const &, nano::block const &);
+	std::optional<nano::account> linked_account (secure::transaction const &, nano::stored_block const &);
 	nano::account const & epoch_signer (nano::link const &) const;
 	nano::link const & epoch_link (nano::epoch) const;
 	bool bootstrap_height_reached () const;

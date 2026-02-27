@@ -1596,7 +1596,7 @@ TEST (rpc, process_subtype_open)
 	ASSERT_EQ (nano::block_status::progress, node1->process (send));
 	ASSERT_EQ (nano::block_status::progress, node2.process (send));
 	auto const rpc_ctx = add_rpc (system, node1);
-	node1->scheduler.manual.push (send);
+	node1->scheduler.manual.push (*node1->block (send->hash ()));
 	auto open = builder
 				.state ()
 				.account (key.pub)
@@ -1645,7 +1645,7 @@ TEST (rpc, process_subtype_receive)
 	ASSERT_EQ (nano::block_status::progress, node1->process (send));
 	ASSERT_EQ (nano::block_status::progress, node2.process (send));
 	auto const rpc_ctx = add_rpc (system, node1);
-	node1->scheduler.manual.push (send);
+	node1->scheduler.manual.push (*node1->block (send->hash ()));
 	auto receive = builder
 				   .state ()
 				   .account (nano::dev::genesis_key.pub)

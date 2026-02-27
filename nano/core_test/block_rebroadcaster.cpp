@@ -192,8 +192,8 @@ TEST (block_rebroadcaster, basic_operation)
 	ASSERT_EQ (nano::block_status::progress, node.process (send));
 
 	// Start an election - this should trigger block_rebroadcaster
-	node.start_election (send);
-	ASSERT_TIMELY (5s, node.active.active (*send));
+	node.start_election (*node.block (send->hash ()));
+	ASSERT_TIMELY (5s, node.active.active (*node.block (send->hash ())));
 
 	// Verify it was queued for rebroadcast
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::queued), 1);
@@ -280,8 +280,8 @@ TEST (block_rebroadcaster, propagates_to_peer)
 	ASSERT_EQ (nano::block_status::progress, node_a.process (send));
 
 	// Start election - this triggers block_rebroadcaster via election_started callback
-	node_a.start_election (send);
-	ASSERT_TIMELY (5s, node_a.active.active (*send));
+	node_a.start_election (*node_a.block (send->hash ()));
+	ASSERT_TIMELY (5s, node_a.active.active (*node_a.block (send->hash ())));
 
 	// Verify block was queued for rebroadcast
 	ASSERT_TIMELY (5s, node_a.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::queued) >= 1);
@@ -391,8 +391,8 @@ TEST (block_rebroadcaster, stale_election_rebroadcasts)
 	ASSERT_EQ (nano::block_status::progress, node.process (send));
 
 	// Start election - this triggers first rebroadcast via election_started callback
-	node.start_election (send);
-	ASSERT_TIMELY (5s, node.active.active (*send));
+	node.start_election (*node.block (send->hash ()));
+	ASSERT_TIMELY (5s, node.active.active (*node.block (send->hash ())));
 
 	// Verify first rebroadcast from election_started
 	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::queued) >= 1);

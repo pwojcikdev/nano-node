@@ -86,6 +86,7 @@ public:
 
 	/// Is the root of this block in the roots container
 	bool active (nano::block const &) const;
+	bool active (nano::stored_block const &) const;
 	bool active (nano::qualified_root const &) const;
 
 	std::shared_ptr<nano::election> election (nano::qualified_root const &) const;
@@ -94,6 +95,7 @@ public:
 	std::vector<std::shared_ptr<nano::election>> list_active (std::size_t max_count = std::numeric_limits<std::size_t>::max ());
 
 	bool erase (nano::block const &);
+	bool erase (nano::stored_block const &);
 	bool erase (nano::qualified_root const &);
 
 	bool empty () const;

@@ -398,6 +398,11 @@ bool nano::active_elections::erase (nano::block const & block)
 	return erase (block.qualified_root ());
 }
 
+bool nano::active_elections::erase (nano::stored_block const & block)
+{
+	return erase (block.qualified_root ());
+}
+
 auto nano::active_elections::block_cemented (nano::stored_block const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election) -> block_cemented_result
 {
 	debug_assert (!mutex.try_lock ());
@@ -742,8 +747,12 @@ bool nano::active_elections::active (nano::qualified_root const & root_a) const
 
 bool nano::active_elections::active (nano::block const & block_a) const
 {
-	nano::lock_guard<nano::mutex> guard{ mutex };
-	return index.exists (block_a.qualified_root ());
+	return active (block_a.qualified_root ());
+}
+
+bool nano::active_elections::active (nano::stored_block const & block_a) const
+{
+	return active (block_a.qualified_root ());
 }
 
 std::shared_ptr<nano::election> nano::active_elections::election (nano::qualified_root const & root) const

@@ -2,6 +2,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/stats.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/work_version.hpp>
@@ -1049,13 +1050,13 @@ std::shared_ptr<nano::block> nano::wallet::send_action (nano::account const & so
 				auto block = wallets.ledger.any.block_get (ledger_txn, hash);
 				if (block)
 				{
-					block_legacy = block->to_legacy ();
+					block_legacy = *block;
 					logger.warn (nano::log::type::wallet, "Block already exists for send action with id: {}, existing hash: {}",
 					id_a.value (),
 					hash.to_string ());
 
 					cached_block = true;
-					wallets.network.flood_block (block_legacy, nano::transport::traffic_type::block_broadcast_initial);
+					wallets.network.flood_block (block->raw (), nano::transport::traffic_type::block_broadcast_initial);
 				}
 				else
 				{
@@ -1208,12 +1209,12 @@ void nano::wallet::change_async (nano::account const & source_a, nano::account c
 	});
 }
 
-bool nano::wallet::receive_sync (std::shared_ptr<nano::block> const & block_a, nano::account const & representative_a, nano::uint128_t const & amount_a)
+bool nano::wallet::receive_sync (nano::stored_block const & block_a, nano::account const & representative_a, nano::uint128_t const & amount_a)
 {
 	std::promise<bool> result;
 	std::future<bool> future = result.get_future ();
 	receive_async (
-	block_a->hash (), representative_a, amount_a, block_a->destination (), [&result] (std::shared_ptr<nano::block> const & block_a) {
+	block_a.hash (), representative_a, amount_a, block_a.destination (), [&result] (std::shared_ptr<nano::block> const & block_a) {
 		result.set_value (block_a == nullptr);
 	},
 	true);
@@ -1339,8 +1340,7 @@ bool nano::wallet::search_receivable_impl (nano::store::transaction const & wall
 							if (block)
 							{
 								// Request confirmation for block which is not being processed yet
-								std::shared_ptr<nano::block> block_legacy = *block;
-								wallets.node.start_election (block_legacy);
+								wallets.node.start_election (*block);
 							}
 						}
 					}

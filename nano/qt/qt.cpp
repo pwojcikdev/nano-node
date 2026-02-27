@@ -780,8 +780,7 @@ void nano_qt::block_viewer::rebroadcast_action (nano::block_hash const & hash_a)
 	auto block (wallet.node.ledger.any.block_get (transaction, hash_a));
 	if (block)
 	{
-		std::shared_ptr<nano::block> block_legacy = *block;
-		wallet.node.network.flood_block (block_legacy, nano::transport::traffic_type::block_broadcast_initial);
+		wallet.node.network.flood_block (block->raw (), nano::transport::traffic_type::block_broadcast_initial);
 		auto successor = wallet.node.ledger.any.block_successor (transaction, hash_a);
 		if (successor)
 		{

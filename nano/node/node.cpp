@@ -837,7 +837,7 @@ void nano::node::add_initial_peers ()
 	}
 }
 
-void nano::node::start_election (std::shared_ptr<nano::block> const & block)
+void nano::node::start_election (nano::stored_block const & block)
 {
 	scheduler.manual.push (block);
 }

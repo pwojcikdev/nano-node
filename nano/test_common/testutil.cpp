@@ -170,7 +170,7 @@ bool nano::test::activate (nano::node & node, std::vector<nano::block_hash> hash
 			// Block does not exist in the ledger yet
 			return false;
 		}
-		node.scheduler.manual.push (disk_block->to_legacy ());
+		node.scheduler.manual.push (*disk_block);
 	}
 	return true;
 }
@@ -261,7 +261,7 @@ std::shared_ptr<nano::election> nano::test::start_election (nano::test::system &
 	auto block_l = node.block (hash);
 	debug_assert (block_l);
 
-	auto fut = node.scheduler.manual.push (block_l->to_legacy ());
+	auto fut = node.scheduler.manual.push (*block_l);
 
 	// Wait for the block to be scheduled
 	auto status = fut.wait_for (5s);

@@ -448,7 +448,7 @@ void nano::test::system::generate_rollback (nano::node & node_a, std::vector<nan
 			debug_assert (!error);
 			for (auto & i : rollback_list)
 			{
-				node_a.active.erase (*i.to_legacy ());
+				node_a.active.erase (i);
 			}
 		}
 	}
@@ -469,7 +469,7 @@ void nano::test::system::generate_receive (nano::node & node_a)
 	}
 	if (send_block)
 	{
-		auto receive_error (wallet (0)->receive_sync (send_block->to_legacy (), nano::dev::genesis_key.pub, std::numeric_limits<nano::uint128_t>::max ()));
+		auto receive_error (wallet (0)->receive_sync (*send_block, nano::dev::genesis_key.pub, std::numeric_limits<nano::uint128_t>::max ()));
 		(void)receive_error;
 	}
 }

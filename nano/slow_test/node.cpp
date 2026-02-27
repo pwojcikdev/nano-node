@@ -1,5 +1,6 @@
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/thread_runner.hpp>
 #include <nano/lib/version.hpp>
@@ -304,7 +305,7 @@ TEST (node, fork_storm)
 			auto open_result (node_i->process (open));
 			ASSERT_EQ (nano::block_status::progress, open_result);
 			auto transaction (node_i->store.tx_begin_read ());
-			node_i->network.flood_block (open, nano::transport::traffic_type::test);
+			node_i->network.flood_block (nano::to_raw (*open), nano::transport::traffic_type::test);
 		}
 	}
 	auto again (true);
@@ -689,7 +690,7 @@ TEST (confirmation_height, many_accounts_single_confirmation)
 	{
 		auto block = node->block (last_open_hash);
 		ASSERT_TRUE (block);
-		node->scheduler.manual.push (block->to_legacy ());
+		node->scheduler.manual.push (*block);
 		std::shared_ptr<nano::election> election;
 		ASSERT_TIMELY (10s, (election = node->active.election (block->qualified_root ())) != nullptr);
 		election->force_confirm ();
@@ -770,7 +771,7 @@ TEST (confirmation_height, many_accounts_many_confirmations)
 	// Confirm all of the accounts
 	for (auto & open_block : open_blocks)
 	{
-		node->scheduler.manual.push (open_block);
+		node->scheduler.manual.push (*node->block (open_block->hash ()));
 		std::shared_ptr<nano::election> election;
 		ASSERT_TIMELY (10s, (election = node->active.election (open_block->qualified_root ())) != nullptr);
 		election->force_confirm ();
@@ -907,7 +908,7 @@ TEST (confirmation_height, long_chains)
 
 	// Call block confirm on the existing receive block on the genesis account which will confirm everything underneath on both accounts
 	{
-		node->scheduler.manual.push (receive1);
+		node->scheduler.manual.push (*node->block (receive1->hash ()));
 		std::shared_ptr<nano::election> election;
 		ASSERT_TIMELY (10s, (election = node->active.election (receive1->qualified_root ())) != nullptr);
 		election->force_confirm ();
@@ -1044,7 +1045,7 @@ TEST (confirmation_height, many_accounts_send_receive_self)
 	// Confirm all of the accounts
 	for (auto & open_block : open_blocks)
 	{
-		node->start_election (open_block);
+		node->start_election (*node->block (open_block->hash ()));
 		std::shared_ptr<nano::election> election;
 		ASSERT_TIMELY (10s, (election = node->active.election (open_block->qualified_root ())) != nullptr);
 		election->force_confirm ();
@@ -2059,7 +2060,7 @@ TEST (node, wallet_create_block_confirm_conflicts)
 		// Call block confirm on the top level send block which will confirm everything underneath on both accounts.
 		{
 			auto block = node->ledger.any.block_get (node->ledger.tx_begin_read (), latest);
-			node->scheduler.manual.push (block->to_legacy ());
+			node->scheduler.manual.push (*block);
 			std::shared_ptr<nano::election> election;
 			ASSERT_TIMELY (10s, (election = node->active.election (block->qualified_root ())) != nullptr);
 			election->force_confirm ();

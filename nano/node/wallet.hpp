@@ -20,6 +20,7 @@
 
 namespace nano
 {
+class stored_block;
 class wallets;
 
 /*
@@ -195,7 +196,7 @@ public:
 	// Sync/async block operations
 	bool change_sync (nano::account const & source, nano::account const & representative);
 	void change_async (nano::account const & source, nano::account const & representative, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true);
-	bool receive_sync (std::shared_ptr<nano::block> const & block, nano::account const & representative, nano::uint128_t const & amount);
+	bool receive_sync (nano::stored_block const & block, nano::account const & representative, nano::uint128_t const & amount);
 	void receive_async (nano::block_hash const & hash, nano::account const & representative, nano::uint128_t const & amount, nano::account const & account, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true);
 	nano::block_hash send_sync (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount);
 	void send_async (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true, boost::optional<std::string> id = {});

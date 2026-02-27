@@ -442,7 +442,7 @@ TEST (request_aggregator, cannot_vote)
 	ASSERT_EQ (0, node.stats.count (nano::stat::type::message, nano::stat::detail::confirm_ack, nano::stat::dir::out));
 
 	// With an ongoing election
-	node.start_election (send2);
+	node.start_election (*node.block (send2->hash ()));
 	ASSERT_TIMELY (5s, node.active.election (send2->qualified_root ()));
 
 	node.aggregator.request (request, dummy_channel);
