@@ -88,6 +88,7 @@ public: // Tag
 		blocks_by_account,
 		account_info_by_hash,
 		frontiers,
+		blocks_random,
 		topo_index,
 	};
 
@@ -114,6 +115,7 @@ public: // Tag
 		nano::block_hash hash{ 0 };
 		uint64_t start_index{ 0 };
 		size_t count{ 0 };
+		std::deque<nano::block_hash> hashes; // For blocks_random requests
 		std::chrono::steady_clock::time_point cutoff{};
 		std::chrono::steady_clock::time_point timestamp{ std::chrono::steady_clock::now () };
 		id_t id{ nano::bootstrap::generate_id () };
@@ -164,6 +166,7 @@ private:
 
 	bool request (nano::account, size_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool request_topology (nano::block_hash, size_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
+	bool request_blocks_random (std::deque<nano::block_hash> hashes, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool request_topo_index (nano::bootstrap::topo_scan::index_query, uint16_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool request_info (nano::block_hash, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool request_frontiers (nano::account, std::shared_ptr<nano::transport::channel> const &, query_source);

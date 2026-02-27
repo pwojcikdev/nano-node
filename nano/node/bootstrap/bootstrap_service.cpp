@@ -247,6 +247,15 @@ bool nano::bootstrap_service::send (std::shared_ptr<nano::transport::channel> co
 			request.payload = pld;
 		}
 		break;
+		case query_type::blocks_random:
+		{
+			request.type = nano::messages::asc_pull_type::blocks_random;
+
+			nano::messages::asc_pull_req::blocks_random_payload pld;
+			pld.hashes = tag.hashes;
+			request.payload = pld;
+		}
+		break;
 		case query_type::topo_index:
 		{
 			request.type = nano::messages::asc_pull_type::topo_index;
@@ -703,6 +712,23 @@ bool nano::bootstrap_service::request_topology (nano::block_hash start, size_t c
 	return send (channel, tag);
 }
 
+bool nano::bootstrap_service::request_blocks_random (std::deque<nano::block_hash> hashes, std::shared_ptr<nano::transport::channel> const & channel, query_source source)
+{
+	debug_assert (!hashes.empty ());
+	debug_assert (hashes.size () <= nano::messages::asc_pull_req::blocks_random_payload::max_hashes);
+
+	async_tag tag{};
+	tag.type = query_type::blocks_random;
+	tag.source = source;
+	tag.hash = hashes.front ();
+	tag.count = hashes.size ();
+	tag.hashes = std::move (hashes);
+
+	logger.debug (nano::log::type::bootstrap, "Requesting {} random blocks from: {}", tag.count, channel->to_string ());
+
+	return send (channel, tag);
+}
+
 bool nano::bootstrap_service::request_topo_index (nano::bootstrap::topo_scan::index_query query, uint16_t count, std::shared_ptr<nano::transport::channel> const & channel, query_source source)
 {
 	debug_assert (source == query_source::topo_index);
@@ -927,16 +953,7 @@ void nano::bootstrap_service::run_one_topo_blocks ()
 	{
 		return; // No more blocks to fetch
 	}
-	// Fetch blocks one by one using existing topology block request
-	for (auto const & hash : blocks)
-	{
-		auto ch = wait_channel ();
-		if (!ch)
-		{
-			break;
-		}
-		request_topology (hash, 1, ch, query_source::topo_blocks);
-	}
+	request_blocks_random (std::move (blocks), channel, query_source::topo_blocks);
 }
 
 void nano::bootstrap_service::run_topo_blocks ()
@@ -1026,7 +1043,7 @@ void nano::bootstrap_service::process (nano::messages::asc_pull_ack const & mess
 
 		bool operator() (const nano::messages::asc_pull_ack::blocks_payload & response) const
 		{
-			return type == query_type::blocks_by_hash || type == query_type::blocks_by_account;
+			return type == query_type::blocks_by_hash || type == query_type::blocks_by_account || type == query_type::blocks_random;
 		}
 		bool operator() (const nano::messages::asc_pull_ack::account_info_payload & response) const
 		{
@@ -1077,11 +1094,12 @@ void nano::bootstrap_service::process (nano::messages::asc_pull_ack const & mess
 bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::blocks_payload & response, const async_tag & tag)
 {
 	debug_assert (!mutex.try_lock ());
-	debug_assert (tag.type == query_type::blocks_by_hash || tag.type == query_type::blocks_by_account);
+	debug_assert (tag.type == query_type::blocks_by_hash || tag.type == query_type::blocks_by_account || tag.type == query_type::blocks_random);
 
 	stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::blocks);
 
-	auto result = verify (response, tag);
+	// For blocks_random, skip verification (blocks will be validated by block_processor)
+	auto result = tag.type == query_type::blocks_random ? verify_result::ok : verify (response, tag);
 	switch (result)
 	{
 		case verify_result::ok:
@@ -1091,10 +1109,16 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 
 			auto blocks = response.blocks;
 
+			// Empty response for blocks_random is valid (server may not have some blocks)
+			if (blocks.empty ())
+			{
+				break;
+			}
+
 			// Avoid re-processing the block we already have for hash-based queries
-			// For topo sources, the first block IS the block we want to fetch
-			release_assert (blocks.size () >= 1);
+			// For topo sources and blocks_random, the first block IS the block we want to fetch
 			if (tag.source != query_source::topology && tag.source != query_source::topo_blocks
+				&& tag.type != query_type::blocks_random
 				&& !tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
 			{
 				blocks.pop_front ();

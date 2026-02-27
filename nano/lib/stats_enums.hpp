@@ -515,6 +515,7 @@ enum class detail
 	channel_full,
 	frontiers,
 	account_info,
+	blocks_random,
 	topo_index,
 
 	// backlog

@@ -86,6 +86,13 @@ void asc_pull_req::deserialize_payload (nano::stream & stream)
 			payload = pld;
 			break;
 		}
+		case asc_pull_type::blocks_random:
+		{
+			blocks_random_payload pld{};
+			pld.deserialize (stream);
+			payload = pld;
+			break;
+		}
 		case asc_pull_type::topo_index:
 		{
 			topo_index_payload pld{};
@@ -138,6 +145,10 @@ bool asc_pull_req::verify_consistency () const
 		void operator() (frontiers_payload) const
 		{
 			debug_assert (type == asc_pull_type::frontiers);
+		}
+		void operator() (blocks_random_payload) const
+		{
+			debug_assert (type == asc_pull_type::blocks_random);
 		}
 		void operator() (topo_index_payload) const
 		{
@@ -225,6 +236,38 @@ void asc_pull_req::frontiers_payload::operator() (nano::object_stream & obs) con
 {
 	obs.write ("start", start);
 	obs.write ("count", count);
+}
+
+/*
+ * asc_pull_req::blocks_random_payload
+ */
+
+void asc_pull_req::blocks_random_payload::serialize (nano::stream & stream) const
+{
+	debug_assert (hashes.size () <= max_hashes);
+
+	for (auto const & hash : hashes)
+	{
+		nano::write (stream, hash);
+	}
+	// Terminator: zero hash
+	nano::write (stream, nano::block_hash{ 0 });
+}
+
+void asc_pull_req::blocks_random_payload::deserialize (nano::stream & stream)
+{
+	nano::block_hash hash;
+	nano::read (stream, hash);
+	while (!hash.is_zero () && hashes.size () < max_hashes)
+	{
+		hashes.push_back (hash);
+		nano::read (stream, hash);
+	}
+}
+
+void asc_pull_req::blocks_random_payload::operator() (nano::object_stream & obs) const
+{
+	obs.write_range ("hashes", hashes);
 }
 
 /*
@@ -332,6 +375,14 @@ void asc_pull_ack::deserialize_payload (nano::stream & stream)
 			payload = pld;
 			break;
 		}
+		case asc_pull_type::blocks_random:
+		{
+			// Response reuses blocks_payload format
+			blocks_payload pld{};
+			pld.deserialize (stream);
+			payload = pld;
+			break;
+		}
 		case asc_pull_type::topo_index:
 		{
 			topo_index_payload pld{};
@@ -375,7 +426,7 @@ bool asc_pull_ack::verify_consistency () const
 		}
 		void operator() (blocks_payload) const
 		{
-			debug_assert (type == asc_pull_type::blocks);
+			debug_assert (type == asc_pull_type::blocks || type == asc_pull_type::blocks_random);
 		}
 		void operator() (account_info_payload) const
 		{

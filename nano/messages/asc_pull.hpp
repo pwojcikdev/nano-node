@@ -20,7 +20,8 @@ enum class asc_pull_type : uint8_t
 	blocks = 0x1,
 	account_info = 0x2,
 	frontiers = 0x3,
-	topo_index = 0x4,
+	blocks_random = 0x4,
+	topo_index = 0x5,
 };
 
 /**
@@ -103,6 +104,20 @@ public: // Payload definitions
 		void operator() (nano::object_stream &) const;
 	};
 
+	struct blocks_random_payload
+	{
+		constexpr static std::size_t max_hashes = 128;
+
+		void serialize (nano::stream &) const;
+		void deserialize (nano::stream &);
+
+	public: // Payload
+		std::deque<nano::block_hash> hashes;
+
+	public: // Logging
+		void operator() (nano::object_stream &) const;
+	};
+
 	struct topo_index_payload
 	{
 		void serialize (nano::stream &) const;
@@ -122,7 +137,7 @@ public: // Payload
 	id_t id{ 0 };
 
 	/** Payload depends on `asc_pull_type` */
-	std::variant<empty_payload, blocks_payload, account_info_payload, frontiers_payload, topo_index_payload> payload;
+	std::variant<empty_payload, blocks_payload, account_info_payload, frontiers_payload, blocks_random_payload, topo_index_payload> payload;
 
 public:
 	/** Size of message without payload */
@@ -242,6 +257,7 @@ public: // Payload
 	id_t id{ 0 };
 
 	/** Payload depends on `asc_pull_type` */
+	// Note: blocks_random response reuses blocks_payload (same wire format)
 	std::variant<empty_payload, blocks_payload, account_info_payload, frontiers_payload, topo_index_payload> payload;
 
 public:
