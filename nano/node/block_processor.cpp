@@ -405,6 +405,8 @@ nano::block_status nano::block_processor::process_one (secure::write_transaction
 	{
 		case nano::block_status::progress:
 		{
+			stats.inc (nano::stat::type::ledger, nano::stat::detail::progress);
+
 			unchecked.trigger (hash);
 
 			/*
