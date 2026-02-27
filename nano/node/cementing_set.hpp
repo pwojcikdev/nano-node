@@ -2,6 +2,7 @@
 
 #include <nano/lib/interval.hpp>
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/observer_set.hpp>
 #include <nano/lib/thread_pool.hpp>
@@ -73,7 +74,7 @@ public:
 public: // Events
 	struct context
 	{
-		std::shared_ptr<nano::block> block;
+		nano::stored_block block;
 		nano::block_hash confirmation_root;
 		std::shared_ptr<nano::election> election;
 	};
@@ -82,7 +83,7 @@ public: // Events
 	nano::observer_set<std::deque<nano::block_hash> const &> already_cemented;
 	nano::observer_set<nano::block_hash> cementing_failed;
 
-	nano::observer_set<std::shared_ptr<nano::block>> cemented_observers;
+	nano::observer_set<nano::stored_block const &> cemented_observers;
 
 private: // Dependencies
 	cementing_set_config const & config;

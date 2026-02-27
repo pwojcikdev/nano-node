@@ -2,6 +2,7 @@
 
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/observer_set.hpp>
 #include <nano/lib/rate_limiting.hpp>
@@ -51,7 +52,7 @@ public:
 public:
 	backlog_index () = default;
 
-	bool insert (nano::block const & block, nano::bucket_index, nano::priority_timestamp);
+	bool insert (nano::stored_block const & block, nano::bucket_index, nano::priority_timestamp);
 
 	bool erase (nano::account const & account);
 	bool erase (nano::block_hash const & hash);
@@ -133,7 +134,7 @@ private: // Dependencies
 private:
 	void activate (nano::secure::transaction &, nano::account const &, nano::account_info const &, nano::confirmation_height_info const &);
 	void update (nano::secure::transaction const &, nano::block_hash const &);
-	bool insert (nano::secure::transaction const &, nano::block const &);
+	bool insert (nano::secure::transaction const &, nano::stored_block const &);
 
 	bool predicate () const;
 	void run ();

@@ -55,8 +55,7 @@ nano::scheduler::priority::priority (nano::node_config & node_config, nano::node
 		auto transaction = ledger.tx_begin_read ();
 		for (auto const & context : batch)
 		{
-			release_assert (context.block != nullptr);
-			activate_successors (transaction, *context.block);
+			activate_successors (transaction, context.block);
 		}
 	});
 }
@@ -131,9 +130,9 @@ bool nano::scheduler::priority::activate (secure::transaction const & transactio
 	{
 		return false; // Not activated
 	}
-	if (ledger.dependencies_cemented (transaction, *block->to_legacy ()))
+	if (ledger.dependencies_cemented (transaction, *block))
 	{
-		auto const [priority_balance, priority_timestamp] = ledger.block_priority (transaction, *block->to_legacy ());
+		auto const [priority_balance, priority_timestamp] = ledger.block_priority (transaction, *block);
 		auto const bucket_index = bucketing.bucket_index (priority_balance);
 
 		bool added = false;
@@ -150,7 +149,7 @@ bool nano::scheduler::priority::activate (secure::transaction const & transactio
 
 			logger.trace (nano::log::type::election_scheduler, nano::log::detail::block_activated,
 			nano::log::arg{ "account", account },
-			nano::log::arg{ "block", block->to_legacy () },
+			nano::log::arg{ "block", block->hash () },
 			nano::log::arg{ "time", account_info.modified },
 			nano::log::arg{ "priority_balance", priority_balance },
 			nano::log::arg{ "priority_timestamp", priority_timestamp });
@@ -182,7 +181,7 @@ bool nano::scheduler::priority::push (nano::stored_block const & block, nano::bu
 	return true;
 }
 
-bool nano::scheduler::priority::activate_successors (secure::transaction const & transaction, nano::block const & block)
+bool nano::scheduler::priority::activate_successors (secure::transaction const & transaction, nano::stored_block const & block)
 {
 	bool result = activate (transaction, block.account ());
 

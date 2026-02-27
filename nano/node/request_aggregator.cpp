@@ -221,16 +221,16 @@ void nano::request_aggregator::erase_duplicates (std::vector<std::pair<nano::blo
 // This filters candidates for vote generation, the final decision and necessary checks are also performed by the vote generator
 auto nano::request_aggregator::aggregate (nano::secure::transaction const & transaction, request_type const & requests_a, std::shared_ptr<nano::transport::channel> const & channel_a) const -> aggregate_result
 {
-	std::vector<std::shared_ptr<nano::block>> to_generate;
-	std::vector<std::shared_ptr<nano::block>> to_generate_final;
+	std::vector<nano::stored_block> to_generate;
+	std::vector<nano::stored_block> to_generate_final;
 
 	for (auto const & [hash, root] : requests_a)
 	{
-		auto search_for_block = [&] () -> std::shared_ptr<nano::block> {
+		auto search_for_block = [&] () -> std::optional<nano::stored_block> {
 			// Ledger by hash
 			if (auto block = ledger.any.block_get (transaction, hash))
 			{
-				return *block;
+				return block;
 			}
 
 			// Ledger by root
@@ -239,43 +239,39 @@ auto nano::request_aggregator::aggregate (nano::secure::transaction const & tran
 				// Search for successor of root
 				if (auto successor = ledger.any.block_successor (transaction, root.as_block_hash ()))
 				{
-					auto block = ledger.any.block_get (transaction, successor.value ());
-					return block ? block->to_legacy () : nullptr;
+					return ledger.any.block_get (transaction, successor.value ());
 				}
 
 				// If that fails treat root as account
 				if (auto info = ledger.any.account_get (transaction, root.as_account ()))
 				{
-					auto block = ledger.any.block_get (transaction, info->open_block);
-					return block ? block->to_legacy () : nullptr;
+					return ledger.any.block_get (transaction, info->open_block);
 				}
 			}
 
-			return nullptr;
+			return std::nullopt;
 		};
 
 		auto block = search_for_block ();
 
-		auto should_generate_final_vote = [&] (auto const & block) {
-			release_assert (block);
-
+		auto should_generate_final_vote = [&] (nano::stored_block const & block) {
 			// Check if final vote is set for this block
-			if (auto final_hash = ledger.store.final_vote.get (transaction, block->qualified_root ()))
+			if (auto final_hash = ledger.store.final_vote.get (transaction, block.qualified_root ()))
 			{
-				return final_hash == block->hash ();
+				return final_hash == block.hash ();
 			}
 			// If the final vote is not set, generate vote if the block is confirmed
 			else
 			{
-				return ledger.cemented.block_exists (transaction, block->hash ());
+				return ledger.cemented.block_exists (transaction, block.hash ());
 			}
 		};
 
 		if (block)
 		{
-			if (should_generate_final_vote (block))
+			if (should_generate_final_vote (*block))
 			{
-				to_generate_final.push_back (block);
+				to_generate_final.push_back (*block);
 
 				stats.inc (nano::stat::type::requests, nano::stat::detail::requests_final);
 

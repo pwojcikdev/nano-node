@@ -37,7 +37,7 @@ nano::local_block_broadcaster::local_block_broadcaster (local_block_broadcaster_
 
 				nano::lock_guard<nano::mutex> guard{ mutex };
 
-				local_blocks.emplace_back (local_entry{ context.block->to_legacy (), std::chrono::steady_clock::now () });
+				local_blocks.emplace_back (local_entry{ context.block->raw (), std::chrono::steady_clock::now () });
 				stats.inc (nano::stat::type::local_block_broadcaster, nano::stat::detail::insert);
 
 				// Erase oldest blocks if the queue gets too big
@@ -60,14 +60,14 @@ nano::local_block_broadcaster::local_block_broadcaster (local_block_broadcaster_
 		nano::lock_guard<nano::mutex> guard{ mutex };
 		for (auto const & block : blocks)
 		{
-			auto erased = local_blocks.get<tag_hash> ().erase (block->hash ());
+			auto erased = local_blocks.get<tag_hash> ().erase (block.hash ());
 			stats.add (nano::stat::type::local_block_broadcaster, nano::stat::detail::rollback, erased);
 		}
 	});
 
 	cementing_set.cemented_observers.add ([this] (auto const & block) {
 		nano::lock_guard<nano::mutex> guard{ mutex };
-		auto erased = local_blocks.get<tag_hash> ().erase (block->hash ());
+		auto erased = local_blocks.get<tag_hash> ().erase (block.hash ());
 		stats.add (nano::stat::type::local_block_broadcaster, nano::stat::detail::cemented, erased);
 	});
 }
@@ -164,7 +164,6 @@ void nano::local_block_broadcaster::run_broadcasts (nano::unique_lock<nano::mute
 	for (auto const & entry : boost::make_iterator_range (by_broadcast.begin (), by_broadcast.upper_bound (now)))
 	{
 		debug_assert (entry.next_broadcast <= now);
-		release_assert (entry.block != nullptr);
 		to_broadcast.push_back (entry);
 	}
 
@@ -196,7 +195,7 @@ void nano::local_block_broadcaster::run_broadcasts (nano::unique_lock<nano::mute
 		}
 
 		logger.debug (nano::log::type::local_block_broadcaster, "Broadcasting block: {} (rebroadcasts so far: {})",
-		entry.block->hash (),
+		entry.block.hash (),
 		entry.rebroadcasts);
 
 		stats.inc (nano::stat::type::local_block_broadcaster, nano::stat::detail::broadcast);
@@ -226,10 +225,10 @@ void nano::local_block_broadcaster::cleanup (nano::unique_lock<nano::mutex> & lo
 			{
 				continue;
 			}
-			if (node.block_confirmed_or_being_confirmed (transaction, entry.block->hash ()))
+			if (node.block_confirmed_or_being_confirmed (transaction, entry.block.hash ()))
 			{
 				stats.inc (nano::stat::type::local_block_broadcaster, nano::stat::detail::already_confirmed);
-				already_confirmed.insert (entry.block->hash ());
+				already_confirmed.insert (entry.block.hash ());
 			}
 		}
 	}
@@ -238,7 +237,7 @@ void nano::local_block_broadcaster::cleanup (nano::unique_lock<nano::mutex> & lo
 
 	// Erase blocks that have been confirmed
 	erase_if (local_blocks, [&already_confirmed] (auto const & entry) {
-		return already_confirmed.contains (entry.block->hash ());
+		return already_confirmed.contains (entry.block.hash ());
 	});
 }
 

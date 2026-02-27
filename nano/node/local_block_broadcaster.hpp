@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/interval.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/processing_queue.hpp>
@@ -84,7 +85,7 @@ private: // Dependencies
 private:
 	struct local_entry
 	{
-		std::shared_ptr<nano::block> block;
+		nano::raw_block block;
 		std::chrono::steady_clock::time_point arrival;
 
 		std::chrono::steady_clock::time_point last_broadcast{};
@@ -93,7 +94,7 @@ private:
 
 		nano::block_hash hash () const
 		{
-			return block->hash ();
+			return block.hash ();
 		}
 	};
 

@@ -123,7 +123,7 @@ void rollback_degenerate_impl (nano::test::ledger_context & ctx, size_t num_acco
 
 	// Initiate rollback from the *first* send (G->A0)
 	std::cout << "Starting degenerate rollback from first send (G->A0)..." << std::endl;
-	std::deque<std::shared_ptr<nano::block>> rolled_back_list;
+	std::deque<nano::stored_block> rolled_back_list;
 	{
 		auto transaction = ledger.tx_begin_write ();
 		ASSERT_FALSE (first_receive_hash.is_zero ()); // Make sure we captured it

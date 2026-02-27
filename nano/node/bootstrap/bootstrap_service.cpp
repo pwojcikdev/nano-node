@@ -57,8 +57,7 @@ nano::block_processor & block_processor_a, nano::network & network_a, nano::stat
 		nano::lock_guard<nano::mutex> lock{ mutex };
 		for (auto const & block : blocks)
 		{
-			debug_assert (block != nullptr);
-			accounts.unblock (block->account ());
+			accounts.unblock (block.account ());
 		}
 	});
 

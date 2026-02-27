@@ -15,7 +15,7 @@ namespace nano
 class ledger_rollback
 {
 public:
-	ledger_rollback (nano::secure::write_transaction const &, nano::ledger &, std::deque<std::shared_ptr<nano::block>> & list, size_t depth, size_t max_depth);
+	ledger_rollback (nano::secure::write_transaction const &, nano::ledger &, std::deque<nano::stored_block> & list, size_t depth, size_t max_depth);
 
 	void rollback (nano::stored_block const & block);
 	bool error{ false };
@@ -29,7 +29,7 @@ private:
 
 	nano::secure::write_transaction const & transaction;
 	nano::ledger & ledger;
-	std::deque<std::shared_ptr<nano::block>> & list;
+	std::deque<nano::stored_block> & list;
 	size_t const depth;
 	size_t const max_depth;
 };

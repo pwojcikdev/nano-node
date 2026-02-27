@@ -2,6 +2,7 @@
 
 #include <nano/lib/function.hpp>
 #include <nano/lib/observer_set.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/node/block_context.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/secure/common.hpp>
@@ -22,8 +23,8 @@ public: // Events
 	processed_batch_event_t blocks_processed;
 
 	// Rolled back blocks <rolled back blocks, root of rollback>
-	using rolled_back_batch_t = std::deque<std::shared_ptr<nano::block>>;
-	using rolled_back_event_t = nano::observer_set<std::deque<std::shared_ptr<nano::block>>, nano::qualified_root>;
+	using rolled_back_batch_t = std::deque<nano::stored_block>;
+	using rolled_back_event_t = nano::observer_set<std::deque<nano::stored_block>, nano::qualified_root>;
 	rolled_back_event_t blocks_rolled_back;
 
 public:

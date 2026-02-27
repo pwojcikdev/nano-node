@@ -66,7 +66,7 @@ public:
 	std::string block_text (nano::block_hash const &);
 	std::deque<std::shared_ptr<nano::block>> random_blocks (secure::transaction const &, size_t count) const;
 	std::optional<nano::pending_info> pending_info (secure::transaction const &, nano::pending_key const & key) const;
-	std::deque<std::shared_ptr<nano::block>> cement (secure::write_transaction &, nano::block_hash const & hash, size_t max_blocks = 1024 * 128);
+	std::deque<nano::stored_block> cement (secure::write_transaction &, nano::block_hash const & hash, size_t max_blocks = 1024 * 128);
 
 	// Result of processing a block, contains stored block with sideband on success
 	struct process_result
@@ -78,7 +78,7 @@ public:
 	process_result process (secure::write_transaction const &, nano::raw_block const & block);
 	nano::block_status process (secure::write_transaction const &, std::shared_ptr<nano::block> block);
 
-	bool rollback (secure::write_transaction const &, nano::block_hash const &, std::deque<std::shared_ptr<nano::block>> & rollback_list, size_t depth = 0, size_t max_depth = nano::ledger_max_rollback_depth ());
+	bool rollback (secure::write_transaction const &, nano::block_hash const &, std::deque<nano::stored_block> & rollback_list, size_t depth = 0, size_t max_depth = nano::ledger_max_rollback_depth ());
 	bool rollback (secure::write_transaction const &, nano::block_hash const &);
 	void update_account (secure::write_transaction const &, nano::account const &, nano::account_info const &, nano::account_info const &);
 	uint64_t pruning_action (secure::write_transaction &, nano::block_hash const &, uint64_t const);
@@ -101,13 +101,13 @@ public:
 	/**
 	 * Checks if all blocks that this block depends on are cemented (or pruned)
 	 */
-	bool dependencies_cemented (secure::transaction const &, nano::block const &) const;
+	bool dependencies_cemented (secure::transaction const &, nano::stored_block const &) const;
 
 	/**
 	 * Computes the priority balance and timestamp for bucket-based prioritization
 	 */
 	using block_priority_result = std::pair<nano::amount, nano::priority_timestamp>;
-	block_priority_result block_priority (secure::transaction const &, nano::block const &) const;
+	block_priority_result block_priority (secure::transaction const &, nano::stored_block const &) const;
 
 	uint64_t cemented_count () const;
 	uint64_t block_count () const;

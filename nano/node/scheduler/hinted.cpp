@@ -97,7 +97,7 @@ void nano::scheduler::hinted::activate (secure::read_transaction & transaction, 
 			if (check_dependencies)
 			{
 				// Perform a depth-first search of the dependency graph
-				if (!node.ledger.dependencies_cemented (transaction, *block->to_legacy ()))
+				if (!node.ledger.dependencies_cemented (transaction, *block))
 				{
 					stats.inc (nano::stat::type::hinting, nano::stat::detail::dependency_unconfirmed);
 					auto dependencies = block->dependencies ();

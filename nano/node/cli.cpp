@@ -527,7 +527,7 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 						{
 							std::cout << "Rolling back " << block_hash.to_string () << " ..." << std::endl;
 
-							std::deque<std::shared_ptr<nano::block>> rollback_list;
+							std::deque<nano::stored_block> rollback_list;
 							bool error = node.node->ledger.rollback (transaction, block_hash, rollback_list);
 							if (!error)
 							{

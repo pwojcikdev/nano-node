@@ -27,18 +27,12 @@ nano::block_rebroadcaster::block_rebroadcaster (nano::block_rebroadcaster_config
 
 	// Rebroadcast blocks when they enter active elections
 	active.election_started.add ([this] (std::shared_ptr<nano::election> const & election, nano::bucket_index, nano::priority_timestamp) {
-		if (auto block = election->winner ())
-		{
-			push (block);
-		}
+		push (election->winner ());
 	});
 
 	// Rebroadcast blocks when elections become stale
 	active.election_stale.add ([this] (std::shared_ptr<nano::election> const & election) {
-		if (auto block = election->winner ())
-		{
-			push (block);
-		}
+		push (election->winner ());
 	});
 }
 
@@ -75,7 +69,7 @@ void nano::block_rebroadcaster::stop ()
 	}
 }
 
-bool nano::block_rebroadcaster::push (std::shared_ptr<nano::block> const & block)
+bool nano::block_rebroadcaster::push (nano::raw_block const & block)
 {
 	if (!config.enable)
 	{
@@ -86,7 +80,7 @@ bool nano::block_rebroadcaster::push (std::shared_ptr<nano::block> const & block
 	{
 		std::lock_guard guard{ mutex };
 
-		auto const hash = block->hash ();
+		auto const hash = block.hash ();
 
 		// Don't queue if already in queue or queue is full
 		if (!queue_dedup.contains (hash) && queue.size () < config.max_queue)
@@ -104,7 +98,7 @@ bool nano::block_rebroadcaster::push (std::shared_ptr<nano::block> const & block
 	return added;
 }
 
-std::shared_ptr<nano::block> nano::block_rebroadcaster::next ()
+nano::raw_block nano::block_rebroadcaster::next ()
 {
 	debug_assert (!mutex.try_lock ());
 	debug_assert (!queue.empty ());
@@ -112,7 +106,7 @@ std::shared_ptr<nano::block> nano::block_rebroadcaster::next ()
 	auto block = queue.front ();
 	queue.pop_front ();
 
-	auto erased = queue_dedup.erase (block->hash ());
+	auto erased = queue_dedup.erase (block.hash ());
 	debug_assert (erased == 1);
 
 	return block;
@@ -168,7 +162,7 @@ void nano::block_rebroadcaster::run ()
 
 			auto block = next ();
 			auto const now = std::chrono::steady_clock::now ();
-			auto const hash = block->hash ();
+			auto const hash = block.hash ();
 
 			lock.unlock ();
 
@@ -190,7 +184,7 @@ void nano::block_rebroadcaster::run ()
 	}
 }
 
-size_t nano::block_rebroadcaster::broadcast (std::shared_ptr<nano::block> const & block)
+size_t nano::block_rebroadcaster::broadcast (nano::raw_block const & block)
 {
 	if (flags.super_rebroadcaster)
 	{

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/interval.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
@@ -86,7 +87,7 @@ public:
 	void start ();
 	void stop ();
 
-	bool push (std::shared_ptr<nano::block> const &);
+	bool push (nano::raw_block const &);
 
 	nano::container_info container_info () const;
 
@@ -100,14 +101,14 @@ public: // Dependencies
 
 private:
 	void run ();
-	std::shared_ptr<nano::block> next ();
+	nano::raw_block next ();
 	void cleanup ();
-	size_t broadcast (std::shared_ptr<nano::block> const &);
+	size_t broadcast (nano::raw_block const &);
 	bool check_capacity () const;
 
 private:
 	// Simple FIFO queue of blocks to rebroadcast
-	std::deque<std::shared_ptr<nano::block>> queue;
+	std::deque<nano::raw_block> queue;
 	std::unordered_set<nano::block_hash> queue_dedup; // Avoid duplicates in the queue
 
 	nano::locked<block_rebroadcaster_index> rebroadcasts;

@@ -490,7 +490,7 @@ TEST (node, coherent_observer)
 	nano::test::system system (1);
 	auto & node1 (*system.nodes[0]);
 	node1.observers.blocks.add ([&node1] (nano::election_status const & status_a, std::vector<nano::vote_with_weight_info> const &, nano::account const &, nano::uint128_t const &, bool, bool) {
-		ASSERT_TRUE (node1.ledger.any.block_exists (node1.ledger.tx_begin_read (), status_a.winner->hash ()));
+		ASSERT_TRUE (node1.ledger.any.block_exists (node1.ledger.tx_begin_read (), status_a.winner.hash ()));
 	});
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	nano::keypair key;
@@ -613,8 +613,8 @@ TEST (node, fork_publish_inactive)
 	ASSERT_TRUE (find_block (send1->hash ()));
 	ASSERT_TRUE (find_block (send2->hash ()));
 
-	ASSERT_EQ (election->winner ()->hash (), send1->hash ());
-	ASSERT_NE (election->winner ()->hash (), send2->hash ());
+	ASSERT_EQ (election->winner ().hash (), send1->hash ());
+	ASSERT_NE (election->winner ().hash (), send2->hash ());
 }
 
 /**
@@ -729,8 +729,8 @@ TEST (node, fork_flip)
 	auto election1 (node2.active.election (nano::qualified_root (nano::dev::genesis->hash (), nano::dev::genesis->hash ())));
 	ASSERT_NE (nullptr, election1);
 	ASSERT_EQ (1, election1->votes ().size ());
-	ASSERT_NE (nullptr, node1.block (publish1.block->hash ()));
-	ASSERT_NE (nullptr, node2.block (publish2.block->hash ()));
+	ASSERT_TRUE (node1.block (publish1.block->hash ()));
+	ASSERT_TRUE (node2.block (publish2.block->hash ()));
 	ASSERT_TIMELY (10s, node2.block_or_pruned_exists (publish1.block->hash ()));
 	auto winner (*election1->tally ().begin ());
 	ASSERT_EQ (nano::to_raw (*publish1.block), winner.second);
@@ -928,7 +928,7 @@ TEST (node, fork_open)
 
 	// we expect to find 2 blocks in the election and we expect the first block to be the winner just because it was first
 	ASSERT_TIMELY_EQ (5s, 2, election->blocks ().size ());
-	ASSERT_EQ (publish2.block->hash (), election->winner ()->hash ());
+	ASSERT_EQ (publish2.block->hash (), election->winner ().hash ());
 
 	// wait for a second and check that the election did not get confirmed
 	system.delay_ms (1000ms);
@@ -993,7 +993,7 @@ TEST (node, fork_open_flip)
 
 	// give block open1 to node1, manually trigger an election for open1 and ensure it is in the ledger
 	node1.process_active (open1);
-	ASSERT_TIMELY (5s, node1.block (open1->hash ()) != nullptr);
+	ASSERT_TIMELY (5s, node1.block (open1->hash ()));
 	node1.scheduler.manual.push (open1);
 	ASSERT_TIMELY (5s, (election = node1.active.election (open1->qualified_root ())) != nullptr);
 	election->transition_active ();
@@ -1006,7 +1006,7 @@ TEST (node, fork_open_flip)
 	system.initialization_blocks.clear ();
 
 	// ensure open2 is in node2 ledger (and therefore has sideband) and manually trigger an election for open2
-	ASSERT_TIMELY (5s, node2.block (open2->hash ()) != nullptr);
+	ASSERT_TIMELY (5s, node2.block (open2->hash ()));
 	node2.scheduler.manual.push (open2);
 	ASSERT_TIMELY (5s, (election = node2.active.election (open2->qualified_root ())) != nullptr);
 	election->transition_active ();
@@ -1220,7 +1220,7 @@ TEST (node, DISABLED_fork_stale)
 	node1.work_generate_blocking (*send3);
 	node1.process_active (send3);
 	system2.deadline_set (10s);
-	while (node2.block (send3->hash ()) == nullptr)
+	while (!node2.block (send3->hash ()))
 	{
 		system1.poll ();
 		ASSERT_NO_ERROR (system2.poll ());
@@ -1255,7 +1255,7 @@ TEST (node, DISABLED_fork_stale)
 	node1.process_active (send2);
 	node2.process_active (send1);
 	node2.process_active (send2);
-	while (node2.block (send1->hash ()) == nullptr)
+	while (!node2.block (send1->hash ()))
 	{
 		system1.poll ();
 		ASSERT_NO_ERROR (system2.poll ());
@@ -1350,8 +1350,8 @@ TEST (node, DISABLED_broadcast_elected)
 	for (auto & node : system.nodes)
 	{
 		auto block (node->block (node->latest (nano::dev::genesis_key.pub)));
-		ASSERT_NE (nullptr, block);
-		node->start_election (block);
+		ASSERT_TRUE (block);
+		node->start_election (block->to_legacy ());
 		auto election (node->active.election (block->qualified_root ()));
 		ASSERT_NE (nullptr, election);
 		election->force_confirm ();
@@ -1428,7 +1428,9 @@ TEST (node, rep_self_vote)
 	ASSERT_EQ (nano::block_status::progress, node0->process (open_big));
 
 	// Confirm both blocks, allowing voting on the upcoming block
-	node0->start_election (node0->block (open_big->hash ()));
+	auto open_big_block = node0->block (open_big->hash ());
+	ASSERT_TRUE (open_big_block);
+	node0->start_election (open_big_block->to_legacy ());
 
 	std::shared_ptr<nano::election> election;
 	ASSERT_TIMELY (5s, election = node0->active.election (open_big->qualified_root ()));
@@ -1484,7 +1486,7 @@ TEST (node, DISABLED_bootstrap_no_publish)
 	}
 	ASSERT_TRUE (node1->active.empty ());
 	system1.deadline_set (10s);
-	while (node1->block (send0->hash ()) == nullptr)
+	while (!node1->block (send0->hash ()))
 	{
 		// Poll until the TCP connection is torn down and in_progress goes false
 		system0.poll ();
@@ -2503,11 +2505,11 @@ TEST (node, block_processor_signatures)
 	node1.process_active (receive1);
 	node1.process_active (receive2);
 	node1.process_active (receive3);
-	ASSERT_TIMELY (5s, node1.block (receive2->hash ()) != nullptr); // Implies send1, send2, send3, receive1.
+	ASSERT_TIMELY (5s, node1.block (receive2->hash ())); // Implies send1, send2, send3, receive1.
 	ASSERT_TIMELY_EQ (5s, node1.unchecked.count (), 0);
-	ASSERT_EQ (nullptr, node1.block (receive3->hash ())); // Invalid signer
-	ASSERT_EQ (nullptr, node1.block (send4->hash ())); // Invalid signature via process_active
-	ASSERT_EQ (nullptr, node1.block (send5->hash ())); // Invalid signature via unchecked
+	ASSERT_FALSE (node1.block (receive3->hash ())); // Invalid signer
+	ASSERT_FALSE (node1.block (send4->hash ())); // Invalid signature via process_active
+	ASSERT_FALSE (node1.block (send5->hash ())); // Invalid signature via unchecked
 }
 
 /*
@@ -2581,7 +2583,7 @@ TEST (node, confirm_back)
 	node.process_active (send1);
 	node.process_active (open);
 	node.process_active (send2);
-	ASSERT_TIMELY (5s, node.block (send2->hash ()) != nullptr);
+	ASSERT_TIMELY (5s, node.block (send2->hash ()));
 	ASSERT_TRUE (nano::test::start_elections (system, node, { send1, open, send2 }));
 	ASSERT_EQ (3, node.active.size ());
 	std::vector<nano::block_hash> vote_blocks;
@@ -2884,7 +2886,7 @@ TEST (node, rollback_vote_self)
 	ASSERT_TIMELY (5s, election = node.active.election (send2->qualified_root ()));
 	node.process_active (fork);
 	ASSERT_TIMELY_EQ (5s, 2, election->blocks ().size ());
-	ASSERT_EQ (election->winner ()->hash (), send2->hash ());
+	ASSERT_EQ (election->winner ().hash (), send2->hash ());
 
 	{
 		// The write guard prevents the block processor from performing the rollback
@@ -2895,7 +2897,7 @@ TEST (node, rollback_vote_self)
 		election->vote (key.pub, 0, fork->hash (), nano::vote_source::live);
 		ASSERT_EQ (1, election->votes_with_weight ().size ());
 		// The winner changed
-		ASSERT_EQ (election->winner ()->hash (), fork->hash ());
+		ASSERT_EQ (election->winner ().hash (), fork->hash ());
 
 		// Insert genesis key in the wallet
 		system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
@@ -2966,24 +2968,24 @@ TEST (node, rollback_gap_source)
 	ASSERT_EQ (nano::block_status::progress, node.process (send1));
 	ASSERT_EQ (nano::block_status::progress, node.process (fork1a));
 	// Node has 'fork1a' & doesn't have source 'send2' for winning 'fork1b' block
-	ASSERT_EQ (nullptr, node.block (send2->hash ()));
+	ASSERT_FALSE (node.block (send2->hash ()));
 	node.block_processor.force (fork1b);
-	ASSERT_TIMELY_EQ (5s, node.block (fork1a->hash ()), nullptr);
+	ASSERT_TIMELY (5s, !node.block (fork1a->hash ()));
 	// Wait for the rollback (attempt to replace fork with open)
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::rollback, nano::stat::detail::open), 1);
 	// But replacing is not possible (missing source block - send2)
-	ASSERT_EQ (nullptr, node.block (fork1b->hash ()));
+	ASSERT_FALSE (node.block (fork1b->hash ()));
 	// Fork can be returned by some other forked node
 	node.process_active (fork1a);
-	ASSERT_TIMELY (5s, node.block (fork1a->hash ()) != nullptr);
+	ASSERT_TIMELY (5s, node.block (fork1a->hash ()));
 	// With send2 block in ledger election can start again to remove fork block
 	ASSERT_EQ (nano::block_status::progress, node.process (send2));
 	node.block_processor.force (fork1b);
 	// Wait for new rollback
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::rollback, nano::stat::detail::open), 2);
 	// Now fork block should be replaced with open
-	ASSERT_TIMELY (5s, node.block (fork1b->hash ()) != nullptr);
-	ASSERT_EQ (nullptr, node.block (fork1a->hash ()));
+	ASSERT_TIMELY (5s, node.block (fork1b->hash ()));
+	ASSERT_FALSE (node.block (fork1a->hash ()));
 }
 
 // Confirm a complex dependency graph starting from the first block
@@ -3509,7 +3511,7 @@ TEST (node, pruning_automatic)
 				 .work (*system.work.generate (latest_hash))
 				 .build ();
 	node1.process_active (send2);
-	ASSERT_TIMELY (5s, node1.block (send2->hash ()) != nullptr);
+	ASSERT_TIMELY (5s, node1.block (send2->hash ()));
 
 	// Force-confirm both blocks
 	node1.cementing_set.add (send1->hash ());
@@ -3884,7 +3886,7 @@ TEST (node, bootstrap_poison)
 	std::cout << "Waiting for: " << open_fork->hash ().to_string () << std::endl;
 
 	// The node should initially get the incorrect block from the poisoned node
-	ASSERT_TIMELY (15s, node.block (open_fork->hash ()) != nullptr);
+	ASSERT_TIMELY (15s, node.block (open_fork->hash ()));
 	ASSERT_NEVER (1s, node.stats.count (nano::stat::type::ledger, nano::stat::detail::fork) > 0);
 
 	// Create another non-rep node that will serve the correct side of the fork
@@ -3911,11 +3913,11 @@ TEST (node, bootstrap_poison)
 	ASSERT_TRUE (nano::test::start_election (system, node, open_fork->hash ()));
 
 	// Wait for the node to resolve the fork conflict
-	ASSERT_TIMELY (15s, node.block (open_correct->hash ()) != nullptr);
+	ASSERT_TIMELY (15s, node.block (open_correct->hash ()));
 
 	// Verify that the node got the correct block and not the fork
-	ASSERT_NE (nullptr, node.block (open_correct->hash ()));
-	ASSERT_EQ (nullptr, node.block (open_fork->hash ()));
+	ASSERT_TRUE (node.block (open_correct->hash ()));
+	ASSERT_FALSE (node.block (open_fork->hash ()));
 
 	// Verify the account information on the bootstrap node is correct
 	nano::account_info account_info;

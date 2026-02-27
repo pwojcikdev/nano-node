@@ -60,7 +60,7 @@ nano::bounded_backlog::bounded_backlog (nano::node_config const & config_a, nano
 			if (result == nano::block_status::progress)
 			{
 				release_assert (context.block);
-				insert (transaction, *context.block->to_legacy ());
+				insert (transaction, *context.block);
 			}
 		}
 	});
@@ -70,7 +70,7 @@ nano::bounded_backlog::bounded_backlog (nano::node_config const & config_a, nano
 		nano::lock_guard<nano::mutex> guard{ mutex };
 		for (auto const & block : blocks)
 		{
-			index.erase (block->hash ());
+			index.erase (block.hash ());
 		}
 	});
 
@@ -79,7 +79,7 @@ nano::bounded_backlog::bounded_backlog (nano::node_config const & config_a, nano
 		nano::lock_guard<nano::mutex> guard{ mutex };
 		for (auto const & context : batch)
 		{
-			index.erase (context.block->hash ());
+			index.erase (context.block.hash ());
 		}
 	});
 }
@@ -156,7 +156,7 @@ void nano::bounded_backlog::activate (nano::secure::transaction & transaction, n
 			break;
 		}
 
-		bool inserted = insert (transaction, *block->to_legacy ());
+		bool inserted = insert (transaction, *block);
 
 		// If the block was not inserted, we already have it in the backlog
 		if (!inserted)
@@ -180,7 +180,7 @@ void nano::bounded_backlog::update (nano::secure::transaction const & transactio
 	}
 }
 
-bool nano::bounded_backlog::insert (nano::secure::transaction const & transaction, nano::block const & block)
+bool nano::bounded_backlog::insert (nano::secure::transaction const & transaction, nano::stored_block const & block)
 {
 	auto const [priority_balance, priority_timestamp] = ledger.block_priority (transaction, block);
 	auto const bucket_index = bucketing.bucket_index (priority_balance);
@@ -314,7 +314,7 @@ std::deque<nano::block_hash> nano::bounded_backlog::perform_rollbacks (std::dequ
 		{
 			logger.debug (nano::log::type::bounded_backlog, "Rolling back: {}, account: {}", hash, block->account ());
 
-			std::deque<std::shared_ptr<nano::block>> rollback_list;
+			std::deque<nano::stored_block> rollback_list;
 			bool error = ledger.rollback (transaction, hash, rollback_list);
 			if (error)
 			{
@@ -329,7 +329,7 @@ std::deque<nano::block_hash> nano::bounded_backlog::perform_rollbacks (std::dequ
 
 			for (auto const & rollback : rollback_list)
 			{
-				processed.push_back (rollback->hash ());
+				processed.push_back (rollback.hash ());
 			}
 
 			if (!rollback_list.empty ())
@@ -451,7 +451,7 @@ nano::container_info nano::bounded_backlog::container_info () const
  * backlog_index
  */
 
-bool nano::backlog_index::insert (nano::block const & block, nano::bucket_index bucket, nano::priority_timestamp priority)
+bool nano::backlog_index::insert (nano::stored_block const & block, nano::bucket_index bucket, nano::priority_timestamp priority)
 {
 	auto const hash = block.hash ();
 	auto const account = block.account ();

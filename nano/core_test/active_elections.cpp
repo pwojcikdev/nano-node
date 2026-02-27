@@ -214,7 +214,7 @@ TEST (active_elections, confirm_fork)
 
 	// The election should confirm and choose fork2 as the winner
 	ASSERT_TIMELY (5s, election->confirmed ());
-	ASSERT_EQ (fork2->hash (), election->status.winner->hash ());
+	ASSERT_EQ (fork2->hash (), election->status.winner.hash ());
 
 	// Ledger view: fork2 cemented, fork1 not
 	ASSERT_TIMELY (3s, node.block_confirmed (fork2->hash ()));
@@ -258,7 +258,7 @@ TEST (active_elections, confirm_fork_cache)
 
 	// The election should confirm
 	ASSERT_TIMELY (5s, election->confirmed ());
-	ASSERT_EQ (fork1->hash (), election->status.winner->hash ());
+	ASSERT_EQ (fork1->hash (), election->status.winner.hash ());
 
 	ASSERT_TIMELY (3s, node.block_confirmed (fork1->hash ()));
 }
@@ -853,7 +853,7 @@ TEST (active_elections, republish_winner)
 	auto vote = nano::test::make_final_vote (nano::dev::genesis_key, { fork });
 	node1.vote_processor.vote (vote, std::make_shared<nano::transport::inproc::channel> (node1, node1));
 	ASSERT_TIMELY (5s, election->confirmed ());
-	ASSERT_EQ (fork->hash (), election->status.winner->hash ());
+	ASSERT_EQ (fork->hash (), election->status.winner.hash ());
 	ASSERT_TIMELY (5s, node2.block_confirmed (fork->hash ()));
 }
 

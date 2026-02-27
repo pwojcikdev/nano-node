@@ -5313,7 +5313,7 @@ TEST (rpc, block_confirm_confirmed)
 	// Check confirmation history
 	auto confirmed (node->active.recently_cemented.list ());
 	ASSERT_EQ (1, confirmed.size ());
-	ASSERT_EQ (nano::dev::genesis->hash (), confirmed.begin ()->winner->hash ());
+	ASSERT_EQ (nano::dev::genesis->hash (), confirmed.begin ()->winner.hash ());
 	// Check callback
 	// Callback result is error because callback target port isn't listening
 	// Check for error count greater than zero as the address goes through DNS resolution and may make multiple attempts for multiple IPs per DNS

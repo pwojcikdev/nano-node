@@ -28,7 +28,7 @@ nano::election_status make_test_election_status ()
 {
 	auto block = make_test_block ();
 	nano::election_status status;
-	status.winner = block;
+	status.winner = nano::to_raw (*block);
 	status.type = nano::election_status_type::active_confirmed_quorum;
 	status.election_end = std::chrono::system_clock::now ();
 	status.election_duration = std::chrono::milliseconds (100);
@@ -139,13 +139,13 @@ TEST (recently_cemented_cache, put)
 	ASSERT_EQ (3, cache.size ());
 
 	// First entries should have been evicted (LRU)
-	ASSERT_FALSE (cache.contains (statuses[0].winner->qualified_root ()));
-	ASSERT_FALSE (cache.contains (statuses[1].winner->qualified_root ()));
+	ASSERT_FALSE (cache.contains (statuses[0].winner.qualified_root ()));
+	ASSERT_FALSE (cache.contains (statuses[1].winner.qualified_root ()));
 
 	// Last entries should still be present
-	ASSERT_TRUE (cache.contains (statuses[2].winner->qualified_root ()));
-	ASSERT_TRUE (cache.contains (statuses[3].winner->qualified_root ()));
-	ASSERT_TRUE (cache.contains (statuses[4].winner->qualified_root ()));
+	ASSERT_TRUE (cache.contains (statuses[2].winner.qualified_root ()));
+	ASSERT_TRUE (cache.contains (statuses[3].winner.qualified_root ()));
+	ASSERT_TRUE (cache.contains (statuses[4].winner.qualified_root ()));
 }
 
 TEST (recently_cemented_cache, erase)
@@ -154,12 +154,12 @@ TEST (recently_cemented_cache, erase)
 	auto status = make_test_election_status ();
 
 	cache.put (status);
-	ASSERT_TRUE (cache.contains (status.winner->hash ()));
+	ASSERT_TRUE (cache.contains (status.winner.hash ()));
 	ASSERT_EQ (1, cache.size ());
 
-	cache.erase (status.winner->hash ());
-	ASSERT_FALSE (cache.contains (status.winner->hash ()));
-	ASSERT_FALSE (cache.contains (status.winner->qualified_root ()));
+	cache.erase (status.winner.hash ());
+	ASSERT_FALSE (cache.contains (status.winner.hash ()));
+	ASSERT_FALSE (cache.contains (status.winner.qualified_root ()));
 	ASSERT_EQ (0, cache.size ());
 }
 
@@ -201,7 +201,7 @@ TEST (recently_cemented_cache, list)
 	// List should be in reverse order (most recent first)
 	for (size_t i = 0; i < list.size (); ++i)
 	{
-		ASSERT_EQ (statuses[4 - i].winner->hash (), list[i].winner->hash ());
+		ASSERT_EQ (statuses[4 - i].winner.hash (), list[i].winner.hash ());
 	}
 
 	// Test list with limit

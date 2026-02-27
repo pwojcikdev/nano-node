@@ -1214,7 +1214,7 @@ void nano::json_handler::block_confirm ()
 			else
 			{
 				// Add record in confirmation history for confirmed block
-				nano::election_status status{ block_l->to_legacy (), nano::election_status_type::active_confirmation_height };
+				nano::election_status status{ block_l->raw (), nano::election_status_type::active_confirmation_height };
 				node.active.recently_cemented.put (status);
 				// Trigger callback for confirmed block
 				auto account = block_l->account ();
@@ -2071,10 +2071,10 @@ void nano::json_handler::confirmation_history ()
 		// Default to 2000 for now since it was the previous limit
 		for (auto const & status : node.active.recently_cemented.list (2000))
 		{
-			if (hash.is_zero () || status.winner->hash () == hash)
+			if (hash.is_zero () || status.winner.hash () == hash)
 			{
 				boost::property_tree::ptree election;
-				election.put ("hash", status.winner->hash ().to_string ());
+				election.put ("hash", status.winner.hash ().to_string ());
 				election.put ("duration", status.election_duration.count ());
 				election.put ("time", milliseconds_since_epoch (status.election_end));
 				election.put ("tally", status.tally.to_string_dec ());
@@ -2112,7 +2112,7 @@ void nano::json_handler::confirmation_info ()
 			auto info = election->current_status ();
 			response_l.put ("announcements", std::to_string (info.status.confirmation_request_count));
 			response_l.put ("voters", std::to_string (info.votes.size ()));
-			response_l.put ("last_winner", info.status.winner->hash ().to_string ());
+			response_l.put ("last_winner", info.status.winner.hash ().to_string ());
 			nano::uint128_t total (0);
 			boost::property_tree::ptree blocks;
 			for (auto const & [tally, block] : info.tally)

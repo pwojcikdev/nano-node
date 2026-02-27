@@ -217,8 +217,8 @@ TEST (block_rebroadcaster, duplicate_block)
 				.build ();
 
 	// Manually push the same block twice
-	ASSERT_TRUE (node.block_rebroadcaster.push (send));
-	ASSERT_FALSE (node.block_rebroadcaster.push (send)); // Should reject duplicate
+	ASSERT_TRUE (node.block_rebroadcaster.push (nano::to_raw (*send)));
+	ASSERT_FALSE (node.block_rebroadcaster.push (nano::to_raw (*send))); // Should reject duplicate
 
 	ASSERT_EQ (node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::queued), 1);
 }
@@ -243,7 +243,7 @@ TEST (block_rebroadcaster, disabled)
 				.build ();
 
 	// Push should fail when disabled
-	ASSERT_FALSE (node.block_rebroadcaster.push (send));
+	ASSERT_FALSE (node.block_rebroadcaster.push (nano::to_raw (*send)));
 }
 
 // Verify blocks are propagated from Node A to Node B via block_rebroadcaster when election starts
@@ -294,7 +294,7 @@ TEST (block_rebroadcaster, propagates_to_peer)
 	ASSERT_TIMELY (10s, node_b.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in) >= 1);
 
 	// Verify node_b has the block in its ledger
-	ASSERT_TIMELY (10s, node_b.block (send->hash ()) != nullptr);
+	ASSERT_TIMELY (10s, node_b.block (send->hash ()));
 }
 
 // Verify cooldown prevents duplicate rebroadcasts, but allows rebroadcast after expiry
@@ -331,14 +331,14 @@ TEST (block_rebroadcaster, cooldown)
 				.build ();
 
 	// First push and wait for rebroadcast
-	ASSERT_TRUE (node.block_rebroadcaster.push (send));
+	ASSERT_TRUE (node.block_rebroadcaster.push (nano::to_raw (*send)));
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::rebroadcast), 1);
 
 	// Verify block propagated to peer
-	ASSERT_TIMELY (5s, peer_node.block (send->hash ()) != nullptr);
+	ASSERT_TIMELY (5s, peer_node.block (send->hash ()));
 
 	// Push same block again immediately (within cooldown)
-	ASSERT_TRUE (node.block_rebroadcaster.push (send));
+	ASSERT_TRUE (node.block_rebroadcaster.push (nano::to_raw (*send)));
 
 	// Second attempt should be blocked by cooldown
 	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::already_rebroadcasted) >= 1);
@@ -350,7 +350,7 @@ TEST (block_rebroadcaster, cooldown)
 	ASSERT_EQ (node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::rebroadcast), 1);
 
 	// Push after cooldown should trigger another rebroadcast
-	ASSERT_TRUE (node.block_rebroadcaster.push (send));
+	ASSERT_TRUE (node.block_rebroadcaster.push (nano::to_raw (*send)));
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::rebroadcast), 2);
 }
 
@@ -399,7 +399,7 @@ TEST (block_rebroadcaster, stale_election_rebroadcasts)
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::rebroadcast), 1);
 
 	// Verify block propagated to peer
-	ASSERT_TIMELY (5s, peer_node.block (send->hash ()) != nullptr);
+	ASSERT_TIMELY (5s, peer_node.block (send->hash ()));
 
 	// Wait for election to become stale (default stale_threshold is 1s in dev mode)
 	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::active_elections, nano::stat::detail::stale) >= 1);

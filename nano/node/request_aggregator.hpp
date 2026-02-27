@@ -3,6 +3,7 @@
 #include <nano/lib/interval.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/node/fair_queue.hpp>
 #include <nano/node/fwd.hpp>
@@ -67,8 +68,8 @@ private:
 
 	struct aggregate_result
 	{
-		std::vector<std::shared_ptr<nano::block>> remaining_normal;
-		std::vector<std::shared_ptr<nano::block>> remaining_final;
+		std::vector<nano::stored_block> remaining_normal;
+		std::vector<nano::stored_block> remaining_final;
 	};
 
 	/** Aggregate \p requests_a and send cached votes to \p channel_a . Return the remaining hashes that need vote generation for each block for regular & final vote generators **/

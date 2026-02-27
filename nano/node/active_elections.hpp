@@ -135,7 +135,7 @@ private:
 		std::vector<nano::vote_with_weight_info> votes;
 	};
 
-	block_cemented_result block_cemented (std::shared_ptr<nano::block> const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election);
+	block_cemented_result block_cemented (nano::stored_block const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election);
 	void notify_observers (nano::secure::transaction const &, nano::election_status const & status, std::vector<nano::vote_with_weight_info> const & votes) const;
 
 	std::shared_ptr<nano::election> election_impl (nano::qualified_root const &) const;

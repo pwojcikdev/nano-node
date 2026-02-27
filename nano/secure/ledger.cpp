@@ -293,9 +293,9 @@ nano::uint128_t nano::ledger::account_receivable (secure::transaction const & tr
 
 // Both stack and result set are bounded to limit maximum memory usage
 // Due to the max_blocks limit, the target block may not be cemented in a single call. Callers should call this function multiple times until the target is cemented.
-std::deque<std::shared_ptr<nano::block>> nano::ledger::cement (secure::write_transaction & transaction, nano::block_hash const & target_hash, size_t max_blocks)
+std::deque<nano::stored_block> nano::ledger::cement (secure::write_transaction & transaction, nano::block_hash const & target_hash, size_t max_blocks)
 {
-	std::deque<std::shared_ptr<nano::block>> result;
+	std::deque<nano::stored_block> result;
 
 	auto start_block_opt = any.block_get (transaction, target_hash);
 	release_assert (start_block_opt, "attempting to cement a non-existent block", target_hash.to_string ());
@@ -338,7 +338,7 @@ std::deque<std::shared_ptr<nano::block>> nano::ledger::cement (secure::write_tra
 		debug_assert (dependencies_cemented (transaction, *block));
 		cement_one (transaction, *block);
 
-		result.push_back (block);
+		result.emplace_back (*block);
 
 		// Refresh the transaction to avoid long-running transactions
 		// Ensure that the block wasn't rolled back during the refresh
@@ -498,7 +498,7 @@ nano::uint128_t nano::ledger::weight_exact (secure::transaction const & txn_a, n
 
 // Rollback blocks until `block_a' doesn't exist or it tries to penetrate the confirmation height
 // TODO: Refactor rollback operation to use non-recursive algorithm
-bool nano::ledger::rollback (secure::write_transaction const & transaction_a, nano::block_hash const & block_a, std::deque<std::shared_ptr<nano::block>> & list_a, size_t depth, size_t const max_depth)
+bool nano::ledger::rollback (secure::write_transaction const & transaction_a, nano::block_hash const & block_a, std::deque<nano::stored_block> & list_a, size_t depth, size_t const max_depth)
 {
 	if (depth > max_depth)
 	{
@@ -539,7 +539,7 @@ bool nano::ledger::rollback (secure::write_transaction const & transaction_a, na
 
 bool nano::ledger::rollback (secure::write_transaction const & transaction_a, nano::block_hash const & block_a)
 {
-	std::deque<std::shared_ptr<nano::block>> rollback_list;
+	std::deque<nano::stored_block> rollback_list;
 	return rollback (transaction_a, block_a, rollback_list);
 }
 
@@ -557,9 +557,8 @@ nano::root nano::ledger::latest_root (secure::transaction const & transaction_a,
 	}
 }
 
-bool nano::ledger::dependencies_cemented (secure::transaction const & transaction, nano::block const & block) const
+bool nano::ledger::dependencies_cemented (secure::transaction const & transaction, nano::stored_block const & block) const
 {
-	release_assert (block.has_sideband ());
 	auto dependencies = block.dependencies ();
 	return std::all_of (dependencies.begin (), dependencies.end (), [this, &transaction] (nano::block_hash const & hash) {
 		return hash.is_zero () || cemented.block_exists_or_pruned (transaction, hash);
@@ -711,17 +710,13 @@ uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a
 // Balance uses the maximum of current and previous block balance to avoid deprioritizing full sends
 // Timestamp uses the previous block's timestamp for least-recently-used ordering within a bucket,
 // falling back to the current block's sideband timestamp when there is no previous block (e.g. open blocks)
-auto nano::ledger::block_priority (nano::secure::transaction const & transaction, nano::block const & block) const -> block_priority_result
+auto nano::ledger::block_priority (nano::secure::transaction const & transaction, nano::stored_block const & block) const -> block_priority_result
 {
 	auto const balance = block.balance ();
 	auto const previous_block = !block.previous ().is_zero () ? any.block_get (transaction, block.previous ()) : std::nullopt;
 	auto const previous_balance = previous_block ? previous_block->balance () : 0;
 
-	// Handle full send case nicely where the balance would otherwise be 0
 	auto const priority_balance = std::max (balance, block.is_send () ? previous_balance : 0);
-
-	// Use previous block timestamp as priority timestamp for least recently used prioritization within the same bucket
-	// Account info timestamp is not used here because it will get out of sync when rollbacks happen
 	auto const priority_timestamp = previous_block ? previous_block->sideband ().timestamp : block.sideband ().timestamp;
 	return { priority_balance, priority_timestamp };
 }

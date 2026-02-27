@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/work.hpp>
 #include <nano/node/endpoint.hpp>
 #include <nano/node/vote_with_weight_info.hpp>
@@ -105,7 +106,7 @@ namespace websocket
 		message bootstrap_started (std::string const & id_a, std::string const & mode_a);
 		message bootstrap_exited (std::string const & id_a, std::string const & mode_a, std::chrono::steady_clock::time_point const start_time_a, uint64_t const total_blocks_a);
 		message telemetry_received (nano::messages::telemetry_data const &, nano::endpoint const &);
-		message new_block_arrived (nano::block const & block_a);
+		message new_block_arrived (nano::stored_block const & block_a);
 
 	private:
 		/** Set the common fields for messages: timestamp and topic. */

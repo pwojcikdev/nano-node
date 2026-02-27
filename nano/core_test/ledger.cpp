@@ -1124,7 +1124,7 @@ TEST (votes, add_old)
 	auto votes (election1->votes ());
 	ASSERT_NE (votes.end (), votes.find (nano::dev::genesis_key.pub));
 	ASSERT_EQ (send1->hash (), votes[nano::dev::genesis_key.pub].hash);
-	ASSERT_EQ (*send1, *election1->winner ());
+	ASSERT_EQ (nano::to_raw (*send1), election1->winner ());
 }
 }
 
@@ -1182,8 +1182,8 @@ TEST (votes, DISABLED_add_old_different_account)
 	ASSERT_NE (votes2.end (), votes2.find (nano::dev::genesis_key.pub));
 	ASSERT_EQ (send1->hash (), votes1[nano::dev::genesis_key.pub].hash);
 	ASSERT_EQ (send2->hash (), votes2[nano::dev::genesis_key.pub].hash);
-	ASSERT_EQ (*send1, *election1->winner ());
-	ASSERT_EQ (*send2, *election2->winner ());
+	ASSERT_EQ (nano::to_raw (*send1), election1->winner ());
+	ASSERT_EQ (nano::to_raw (*send2), election2->winner ());
 }
 
 // The voting cooldown is respected
@@ -1226,7 +1226,7 @@ TEST (votes, add_cooldown)
 	auto votes (election1->votes ());
 	ASSERT_NE (votes.end (), votes.find (nano::dev::genesis_key.pub));
 	ASSERT_EQ (send1->hash (), votes[nano::dev::genesis_key.pub].hash);
-	ASSERT_EQ (*send1, *election1->winner ());
+	ASSERT_EQ (nano::to_raw (*send1), election1->winner ());
 }
 
 // Query for block successor
@@ -3530,7 +3530,7 @@ TEST (ledger, rollback_depth_exceeded)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, receive2));
 
 	// This call should fail because the rollback depth exceeds the limit
-	std::deque<std::shared_ptr<nano::block>> rollback_list;
+	std::deque<nano::stored_block> rollback_list;
 	ASSERT_TRUE (ledger.rollback (transaction, send1->hash (), rollback_list, 0, 1));
 	ASSERT_EQ (rollback_list.size (), 0);
 	ASSERT_EQ (ledger.any.account_balance (transaction, key1.pub), 0);
@@ -4315,10 +4315,10 @@ TEST (ledger, block_hash_account_conflict)
 	auto winner2 (election2->winner ());
 	auto winner3 (election3->winner ());
 	auto winner4 (election4->winner ());
-	ASSERT_EQ (*send1, *winner1);
-	ASSERT_EQ (*receive1, *winner2);
-	ASSERT_EQ (*send2, *winner3);
-	ASSERT_EQ (*open_epoch1, *winner4);
+	ASSERT_EQ (nano::to_raw (*send1), winner1);
+	ASSERT_EQ (nano::to_raw (*receive1), winner2);
+	ASSERT_EQ (nano::to_raw (*send2), winner3);
+	ASSERT_EQ (nano::to_raw (*open_epoch1), winner4);
 }
 
 TEST (ledger, unchecked_epoch)
@@ -5935,7 +5935,7 @@ TEST (ledger, cement_unbounded)
 	auto & ledger = ctx.ledger ();
 	auto bottom = ctx.blocks ().back ();
 
-	std::deque<std::shared_ptr<nano::block>> confirmed;
+	std::deque<nano::stored_block> confirmed;
 	{
 		auto tx = ledger.tx_begin_write ();
 		confirmed = ledger.cement (tx, bottom->hash ());
@@ -5944,7 +5944,7 @@ TEST (ledger, cement_unbounded)
 	// Check that all blocks got confirmed in a single call
 	ASSERT_TRUE (std::all_of (ctx.blocks ().begin (), ctx.blocks ().end (), [&] (auto const & block) {
 		return std::find_if (confirmed.begin (), confirmed.end (), [&] (auto const & block2) {
-			return block2->hash () == block->hash ();
+			return block2.hash () == block->hash ();
 		})
 		!= confirmed.end ();
 	}));
@@ -5957,7 +5957,7 @@ TEST (ledger, cement_bounded)
 	auto & ledger = ctx.ledger ();
 	auto bottom = ctx.blocks ().back ();
 
-	std::deque<std::shared_ptr<nano::block>> confirmed1, confirmed2, confirmed3;
+	std::deque<nano::stored_block> confirmed1, confirmed2, confirmed3;
 
 	{
 		// This should only cement some of the dependencies
@@ -5968,7 +5968,7 @@ TEST (ledger, cement_bounded)
 	ASSERT_EQ (confirmed1.size (), 3);
 	// Only topmost dependencies should get cemented during this call
 	ASSERT_TRUE (std::all_of (confirmed1.begin (), confirmed1.end (), [&] (auto const & block) {
-		return ledger.dependencies_cemented (ledger.tx_begin_read (), *block);
+		return ledger.dependencies_cemented (ledger.tx_begin_read (), block);
 	}));
 
 	{
@@ -5980,7 +5980,7 @@ TEST (ledger, cement_bounded)
 	ASSERT_EQ (confirmed2.size (), 16);
 	// Only topmost dependencies should get cemented during this call
 	ASSERT_TRUE (std::all_of (confirmed2.begin (), confirmed2.end (), [&] (auto const & block) {
-		return ledger.dependencies_cemented (ledger.tx_begin_read (), *block);
+		return ledger.dependencies_cemented (ledger.tx_begin_read (), block);
 	}));
 
 	{
@@ -6003,7 +6003,7 @@ TEST (ledger, cement_bounded_diamond)
 	auto & ledger = ctx.ledger ();
 	auto bottom = ctx.blocks ().back ();
 
-	std::deque<std::shared_ptr<nano::block>> confirmed1, confirmed2, confirmed3, confirmed4;
+	std::deque<nano::stored_block> confirmed1, confirmed2, confirmed3, confirmed4;
 
 	{
 		// This should only cement some of the dependencies
@@ -6014,7 +6014,7 @@ TEST (ledger, cement_bounded_diamond)
 	ASSERT_EQ (confirmed1.size (), 3);
 	// Only topmost dependencies should get cemented during this call
 	ASSERT_TRUE (std::all_of (confirmed1.begin (), confirmed1.end (), [&] (auto const & block) {
-		return ledger.dependencies_cemented (ledger.tx_begin_read (), *block);
+		return ledger.dependencies_cemented (ledger.tx_begin_read (), block);
 	}));
 
 	{
@@ -6026,7 +6026,7 @@ TEST (ledger, cement_bounded_diamond)
 	ASSERT_EQ (confirmed2.size (), 16);
 	// Only topmost dependencies should get cemented during this call
 	ASSERT_TRUE (std::all_of (confirmed2.begin (), confirmed2.end (), [&] (auto const & block) {
-		return ledger.dependencies_cemented (ledger.tx_begin_read (), *block);
+		return ledger.dependencies_cemented (ledger.tx_begin_read (), block);
 	}));
 
 	{
@@ -6038,7 +6038,7 @@ TEST (ledger, cement_bounded_diamond)
 	ASSERT_EQ (confirmed3.size (), 64);
 	// Only topmost dependencies should get cemented during this call
 	ASSERT_TRUE (std::all_of (confirmed2.begin (), confirmed2.end (), [&] (auto const & block) {
-		return ledger.dependencies_cemented (ledger.tx_begin_read (), *block);
+		return ledger.dependencies_cemented (ledger.tx_begin_read (), block);
 	}));
 
 	{

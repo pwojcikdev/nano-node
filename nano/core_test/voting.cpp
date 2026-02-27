@@ -98,7 +98,7 @@ TEST (vote_generator, multiple_representatives)
 	ASSERT_EQ (4, node.wallets.reps ().voting);
 	auto hash = wallet.send_sync (nano::dev::genesis_key.pub, nano::dev::genesis_key.pub, 1);
 	auto send = node.block (hash);
-	ASSERT_NE (nullptr, send);
+	ASSERT_TRUE (send);
 	ASSERT_TIMELY_EQ (5s, node.history.votes (send->root (), send->hash ()).size (), 4);
 	auto votes (node.history.votes (send->root (), send->hash ()));
 	for (auto const & account : { key1.pub, key2.pub, key3.pub, nano::dev::genesis_key.pub })

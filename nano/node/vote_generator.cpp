@@ -47,30 +47,28 @@ nano::vote_generator::~vote_generator ()
 bool nano::vote_generator::should_vote (transaction_variant_t const & transaction_variant, nano::root const & root_a, nano::block_hash const & hash_a) const
 {
 	bool should_vote = false;
-	std::shared_ptr<nano::block> block;
+	std::optional<nano::stored_block> block_opt;
 	if (is_final)
 	{
 		debug_assert (std::holds_alternative<nano::secure::write_transaction> (transaction_variant));
 		auto const & transaction = std::get<nano::secure::write_transaction> (transaction_variant);
 
-		auto block_opt = ledger.any.block_get (transaction, hash_a);
-		block = block_opt ? block_opt->to_legacy () : nullptr;
-		should_vote = block && ledger.dependencies_cemented (transaction, *block) && ledger.store.final_vote.put (transaction, block->qualified_root (), hash_a);
-		debug_assert (!block || root_a == block->root ());
+		block_opt = ledger.any.block_get (transaction, hash_a);
+		should_vote = block_opt && ledger.dependencies_cemented (transaction, *block_opt) && ledger.store.final_vote.put (transaction, block_opt->qualified_root (), hash_a);
+		debug_assert (!block_opt || root_a == block_opt->root ());
 	}
 	else
 	{
 		debug_assert (std::holds_alternative<nano::secure::read_transaction> (transaction_variant));
 		auto const & transaction = std::get<nano::secure::read_transaction> (transaction_variant);
 
-		auto block_opt = ledger.any.block_get (transaction, hash_a);
-		block = block_opt ? block_opt->to_legacy () : nullptr;
-		should_vote = block && ledger.dependencies_cemented (transaction, *block);
+		block_opt = ledger.any.block_get (transaction, hash_a);
+		should_vote = block_opt && ledger.dependencies_cemented (transaction, *block_opt);
 	}
 
 	logger.trace (log_type (), nano::log::detail::should_vote,
 	nano::log::arg{ "should_vote", should_vote },
-	nano::log::arg{ "block", block },
+	nano::log::arg{ "block", block_opt ? block_opt->hash () : nano::block_hash{ 0 } },
 	nano::log::arg{ "is_final", is_final });
 
 	return should_vote;
@@ -151,16 +149,16 @@ void nano::vote_generator::process_batch (std::deque<queue_entry_t> & batch)
 	}
 }
 
-std::size_t nano::vote_generator::generate (std::vector<std::shared_ptr<nano::block>> const & blocks_a, std::shared_ptr<nano::transport::channel> const & channel_a)
+std::size_t nano::vote_generator::generate (std::vector<nano::stored_block> const & blocks_a, std::shared_ptr<nano::transport::channel> const & channel_a)
 {
 	request_t::first_type req_candidates;
 	{
 		auto transaction = ledger.tx_begin_read ();
 		auto dependencies_cemented = [&transaction, this] (auto const & block_a) {
-			return this->ledger.dependencies_cemented (transaction, *block_a);
+			return this->ledger.dependencies_cemented (transaction, block_a);
 		};
 		auto as_candidate = [] (auto const & block_a) {
-			return candidate_t{ block_a->root (), block_a->hash () };
+			return candidate_t{ block_a.root (), block_a.hash () };
 		};
 		nano::transform_if (blocks_a.begin (), blocks_a.end (), std::back_inserter (req_candidates), dependencies_cemented, as_candidate);
 	}

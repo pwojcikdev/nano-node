@@ -101,14 +101,14 @@ std::optional<nano::amount> nano::ledger_set_any::block_amount (secure::transact
 	return block_amount (transaction, *block_l);
 }
 
-std::optional<nano::amount> nano::ledger_set_any::block_amount (secure::transaction const & transaction, std::shared_ptr<nano::block> const & block) const
+std::optional<nano::amount> nano::ledger_set_any::block_amount (secure::transaction const & transaction, nano::stored_block const & block) const
 {
-	auto block_balance = block->balance ();
-	if (block->previous ().is_zero ())
+	auto block_balance = block.balance ();
+	if (block.previous ().is_zero ())
 	{
 		return block_balance.number ();
 	}
-	auto previous_balance = this->block_balance (transaction, block->previous ());
+	auto previous_balance = this->block_balance (transaction, block.previous ());
 	if (!previous_balance)
 	{
 		return std::nullopt;

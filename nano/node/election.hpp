@@ -103,7 +103,7 @@ public: // Status
 	bool confirmed () const;
 	bool failed () const;
 	nano::election_extended_status current_status () const;
-	std::shared_ptr<nano::block> winner () const;
+	nano::raw_block winner () const;
 	std::chrono::milliseconds duration () const;
 
 	std::atomic<unsigned> confirmation_request_count{ 0 };

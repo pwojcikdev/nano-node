@@ -12,7 +12,7 @@ nano::recently_cemented_cache::recently_cemented_cache (std::size_t max_size_a) 
 void nano::recently_cemented_cache::put (const nano::election_status & status)
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
-	entries.emplace_back (entry{ status.winner->qualified_root (), status.winner->hash (), status });
+	entries.emplace_back (entry{ status.winner.qualified_root (), status.winner.hash (), status });
 	if (entries.size () > max_size)
 	{
 		entries.pop_front (); // Remove oldest

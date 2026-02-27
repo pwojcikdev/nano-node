@@ -64,9 +64,9 @@ void nano::http_callbacks::setup_callbacks ()
 				// Construct the callback payload as a property tree
 				boost::property_tree::ptree event;
 				event.add ("account", account_a.to_account ());
-				event.add ("hash", block_a->hash ().to_string ());
+				event.add ("hash", block_a.hash ().to_string ());
 				std::string block_text;
-				block_a->serialize_json (block_text);
+				nano::to_legacy (block_a)->serialize_json (block_text);
 				event.add ("block", block_text);
 				event.add ("amount", amount_a.to_string_dec ());
 
@@ -78,15 +78,15 @@ void nano::http_callbacks::setup_callbacks ()
 				}
 
 				// Handle different state block subtypes
-				else if (block_a->type () == nano::block_type::state)
+				else if (block_a.type () == nano::block_type::state)
 				{
-					if (block_a->is_change ())
+					if (block_a.link_field ().value ().is_zero ())
 					{
 						event.add ("subtype", "change");
 					}
 					else if (is_state_epoch_a)
 					{
-						debug_assert (amount_a == 0 && ledger.is_epoch_link (block_a->link_field ().value ()));
+						debug_assert (amount_a == 0 && ledger.is_epoch_link (block_a.link_field ().value ()));
 						event.add ("subtype", "epoch");
 					}
 					else

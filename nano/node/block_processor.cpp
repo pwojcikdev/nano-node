@@ -200,7 +200,7 @@ void nano::block_processor::rollback_competitor (secure::write_transaction & tra
 		// Replace our block with the winner and roll back any dependent blocks
 		logger.debug (nano::log::type::block_processor, "Rolling back: {} and replacing with: {}", successor->hash ().to_string (), hash.to_string ());
 
-		std::deque<std::shared_ptr<nano::block>> rollback_list;
+		std::deque<nano::stored_block> rollback_list;
 		bool error = ledger.rollback (transaction, successor->hash (), rollback_list);
 		if (error)
 		{

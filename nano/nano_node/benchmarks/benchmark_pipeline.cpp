@@ -177,7 +177,7 @@ pipeline_benchmark::pipeline_benchmark (std::shared_ptr<nano::node> node_a, benc
 	// Track when elections start
 	node->active.election_started.add ([this] (std::shared_ptr<nano::election> const & election, nano::bucket_index const & bucket, nano::priority_timestamp const & priority) {
 		auto now = std::chrono::steady_clock::now ();
-		auto hash = election->winner ()->hash ();
+		auto hash = election->winner ().hash ();
 		auto timings_l = block_timings.lock ();
 
 		if (auto it = timings_l->find (hash); it != timings_l->end ())
@@ -191,7 +191,7 @@ pipeline_benchmark::pipeline_benchmark (std::shared_ptr<nano::node> node_a, benc
 	// Track when elections stop (regardless of confirmation)
 	node->active.election_erased.add ([this] (std::shared_ptr<nano::election> const & election) {
 		auto now = std::chrono::steady_clock::now ();
-		auto hash = election->winner ()->hash ();
+		auto hash = election->winner ().hash ();
 		auto timings_l = block_timings.lock ();
 
 		if (auto it = timings_l->find (hash); it != timings_l->end ())
@@ -211,7 +211,7 @@ pipeline_benchmark::pipeline_benchmark (std::shared_ptr<nano::node> node_a, benc
 
 		for (auto const & ctx : hashes)
 		{
-			auto hash = ctx.block->hash ();
+			auto hash = ctx.block.hash ();
 
 			if (auto it = timings_l->find (hash); it != timings_l->end ())
 			{

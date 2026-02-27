@@ -1,5 +1,6 @@
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/network_filter.hpp>
 #include <nano/lib/stream.hpp>
@@ -109,7 +110,7 @@ nano::uint128_t nano::network_filter::hash (OBJECT const & object_a) const
 	std::vector<uint8_t> bytes;
 	{
 		nano::vectorstream stream (bytes);
-		object_a->serialize (stream);
+		object_a.serialize (stream);
 	}
 	return hash (bytes.data (), bytes.size ());
 }
@@ -139,5 +140,5 @@ nano::uint128_t nano::network_filter::hash (uint8_t const * bytes_a, size_t coun
 }
 
 // Explicitly instantiate
-template nano::uint128_t nano::network_filter::hash (std::shared_ptr<nano::block> const &) const;
-template void nano::network_filter::clear (std::shared_ptr<nano::block> const &);
+template nano::uint128_t nano::network_filter::hash (nano::raw_block const &) const;
+template void nano::network_filter::clear (nano::raw_block const &);

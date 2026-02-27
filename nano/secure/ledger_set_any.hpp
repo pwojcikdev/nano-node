@@ -36,7 +36,7 @@ public: // Operations on accounts
 public: // Operations on blocks
 	std::optional<nano::account> block_account (nano::secure::transaction const &, nano::block_hash const &) const;
 	std::optional<nano::amount> block_amount (nano::secure::transaction const &, nano::block_hash const &) const;
-	std::optional<nano::amount> block_amount (nano::secure::transaction const &, std::shared_ptr<nano::block> const &) const;
+	std::optional<nano::amount> block_amount (nano::secure::transaction const &, nano::stored_block const &) const;
 	std::optional<nano::amount> block_balance (nano::secure::transaction const &, nano::block_hash const &) const;
 	bool block_exists (nano::secure::transaction const &, nano::block_hash const &) const;
 	bool block_exists_or_pruned (nano::secure::transaction const &, nano::block_hash const &) const;

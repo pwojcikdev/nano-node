@@ -688,8 +688,8 @@ TEST (confirmation_height, many_accounts_single_confirmation)
 	// Call block confirm on the last open block which will confirm everything
 	{
 		auto block = node->block (last_open_hash);
-		ASSERT_NE (nullptr, block);
-		node->scheduler.manual.push (block);
+		ASSERT_TRUE (block);
+		node->scheduler.manual.push (block->to_legacy ());
 		std::shared_ptr<nano::election> election;
 		ASSERT_TIMELY (10s, (election = node->active.election (block->qualified_root ())) != nullptr);
 		election->force_confirm ();
@@ -1983,7 +1983,7 @@ TEST (node, aggressive_flooding)
 
 	auto all_have_block = [&nodes_wallets] (nano::block_hash const & hash_a) {
 		return std::all_of (nodes_wallets.begin (), nodes_wallets.end (), [hash = hash_a] (auto const & node_wallet) {
-			return node_wallet.first->block (hash) != nullptr;
+			return node_wallet.first->block (hash).has_value ();
 		});
 	};
 

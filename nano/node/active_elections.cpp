@@ -86,9 +86,9 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 	ledger_notifications.blocks_rolled_back.add ([this] (auto const & blocks, auto const & rollback_root) {
 		for (auto const & block : blocks)
 		{
-			if (block->qualified_root () != rollback_root)
+			if (block.qualified_root () != rollback_root)
 			{
-				erase (block->qualified_root ());
+				erase (block.qualified_root ());
 			}
 		}
 	});
@@ -364,7 +364,7 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 	for (auto const & [hash, block] : blocks_l)
 	{
 		// Notify observers about dropped elections & blocks lost confirmed elections
-		if (!election->confirmed () || hash != election->winner ()->hash ())
+		if (!election->confirmed () || hash != election->winner ().hash ())
 		{
 			node.observers.active_stopped.notify (hash);
 		}
@@ -372,7 +372,7 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 		if (!election->confirmed ())
 		{
 			// Clear from publish filter
-			node.network.filter.clear (nano::to_legacy (block));
+			node.network.filter.clear (block);
 		}
 	}
 }
@@ -398,23 +398,23 @@ bool nano::active_elections::erase (nano::block const & block)
 	return erase (block.qualified_root ());
 }
 
-auto nano::active_elections::block_cemented (std::shared_ptr<nano::block> const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election) -> block_cemented_result
+auto nano::active_elections::block_cemented (nano::stored_block const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election) -> block_cemented_result
 {
 	debug_assert (!mutex.try_lock ());
-	debug_assert (node.block_confirmed (block->hash ()));
+	debug_assert (node.block_confirmed (block.hash ()));
 
 	// Dependent elections are implicitly confirmed when their block is cemented
-	auto election = election_impl (block->qualified_root ());
+	auto election = election_impl (block.qualified_root ());
 
 	nano::election_status status;
 	std::vector<nano::vote_with_weight_info> votes;
-	status.winner = block;
+	status.winner = block.raw ();
 
 	// Check if the currently cemented block was part of an election that triggered the confirmation
-	if (source_election && source_election->qualified_root == block->qualified_root ())
+	if (source_election && source_election->qualified_root == block.qualified_root ())
 	{
 		status = source_election->get_status ();
-		debug_assert (status.winner->hash () == block->hash ());
+		debug_assert (status.winner.hash () == block.hash ());
 		votes = source_election->votes_with_weight ();
 		status.type = nano::election_status_type::active_confirmed_quorum;
 	}
@@ -433,12 +433,12 @@ auto nano::active_elections::block_cemented (std::shared_ptr<nano::block> const 
 	node.stats.inc (nano::stat::type::active_elections_cemented, to_stat_detail (status.type));
 
 	node.logger.debug (nano::log::type::active_elections, "Cemented root: {} with block: {} (status: {})",
-	block->qualified_root (),
-	block->hash (),
+	block.qualified_root (),
+	block.hash (),
 	to_string (status.type));
 
 	node.logger.trace (nano::log::type::active_elections, nano::log::detail::active_cemented,
-	nano::log::arg{ "block", block },
+	nano::log::arg{ "block", block.hash () },
 	nano::log::arg{ "confirmation_root", confirmation_root },
 	nano::log::arg{ "source_election", source_election });
 
@@ -448,7 +448,7 @@ auto nano::active_elections::block_cemented (std::shared_ptr<nano::block> const 
 void nano::active_elections::notify_observers (nano::secure::transaction const & transaction, nano::election_status const & status, std::vector<nano::vote_with_weight_info> const & votes) const
 {
 	// Get block from ledger to ensure sideband is set (forked blocks may not have sideband)
-	auto const block = node.ledger.any.block_get (transaction, status.winner->hash ());
+	auto const block = node.ledger.any.block_get (transaction, status.winner.hash ());
 	release_assert (block); // Block must exist in the ledger since it was cemented
 	auto const account = block->account ();
 
@@ -469,7 +469,7 @@ void nano::active_elections::notify_observers (nano::secure::transaction const &
 
 	if (!node.observers.blocks.empty ())
 	{
-		auto amount = node.ledger.any.block_amount (transaction, block->to_legacy ()).value_or (0).number ();
+		auto amount = node.ledger.any.block_amount (transaction, *block).value_or (0).number ();
 		auto is_state_send = block->type () == block_type::state && block->is_send ();
 		auto is_state_epoch = block->type () == block_type::state && block->is_epoch ();
 		node.observers.blocks.notify (status, votes, account, amount, is_state_send, is_state_epoch);

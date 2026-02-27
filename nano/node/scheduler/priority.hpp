@@ -51,7 +51,7 @@ public:
 	 */
 	bool activate (nano::secure::transaction const &, nano::account const &);
 	bool activate (nano::secure::transaction const &, nano::account const &, nano::account_info const &, nano::confirmation_height_info const &);
-	bool activate_successors (nano::secure::transaction const &, nano::block const &);
+	bool activate_successors (nano::secure::transaction const &, nano::stored_block const &);
 
 	bool contains (nano::block_hash const &) const;
 	void notify ();

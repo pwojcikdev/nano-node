@@ -148,7 +148,7 @@ elections_benchmark::elections_benchmark (std::shared_ptr<nano::node> node_a, be
 	// Track when elections start
 	node->active.election_started.add ([this] (std::shared_ptr<nano::election> const & election, nano::bucket_index const & bucket, nano::priority_timestamp const & priority) {
 		auto now = std::chrono::steady_clock::now ();
-		auto hash = election->winner ()->hash ();
+		auto hash = election->winner ().hash ();
 		auto timings_l = block_timings.lock ();
 
 		if (auto it = timings_l->find (hash); it != timings_l->end ())
@@ -162,7 +162,7 @@ elections_benchmark::elections_benchmark (std::shared_ptr<nano::node> node_a, be
 	// Track when elections stop (regardless of confirmation)
 	node->active.election_erased.add ([this] (std::shared_ptr<nano::election> const & election) {
 		auto now = std::chrono::steady_clock::now ();
-		auto hash = election->winner ()->hash ();
+		auto hash = election->winner ().hash ();
 		auto timings_l = block_timings.lock ();
 		auto pending_confirmation_l = pending_confirmation.lock ();
 
@@ -184,7 +184,7 @@ elections_benchmark::elections_benchmark (std::shared_ptr<nano::node> node_a, be
 
 		for (auto const & ctx : hashes)
 		{
-			auto hash = ctx.block->hash ();
+			auto hash = ctx.block.hash ();
 
 			if (auto it = timings_l->find (hash); it != timings_l->end ())
 			{
@@ -232,7 +232,7 @@ void elections_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>
 
 			// Add to cementing set for direct cementing
 			auto cemented = node->ledger.cement (transaction, send->hash ());
-			release_assert (!cemented.empty () && cemented.back ()->hash () == send->hash ());
+			release_assert (!cemented.empty () && cemented.back ().hash () == send->hash ());
 		}
 	}
 

@@ -137,7 +137,7 @@ cementing_benchmark::cementing_benchmark (std::shared_ptr<nano::node> node_a, be
 		auto pending_l = pending_cementing.lock ();
 		for (auto const & ctx : hashes)
 		{
-			pending_l->erase (ctx.block->hash ());
+			pending_l->erase (ctx.block.hash ());
 			cemented_blocks_count++;
 		}
 	});

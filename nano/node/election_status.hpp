@@ -1,15 +1,10 @@
 #pragma once
 
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/stats_enums.hpp>
 
 #include <chrono>
-#include <memory>
-
-namespace nano
-{
-class block;
-}
 
 namespace nano
 {
@@ -30,7 +25,7 @@ nano::stat::detail to_stat_detail (election_status_type);
 class election_status final
 {
 public:
-	std::shared_ptr<nano::block> winner;
+	nano::raw_block winner;
 	nano::amount tally{ 0 };
 	nano::amount final_tally{ 0 };
 	std::chrono::system_clock::time_point election_end{};
@@ -43,8 +38,8 @@ public:
 
 	election_status () = default;
 
-	election_status (std::shared_ptr<nano::block> block_a, election_status_type type_a = nano::election_status_type::ongoing) :
-		winner (block_a),
+	election_status (nano::raw_block winner_a, election_status_type type_a = nano::election_status_type::ongoing) :
+		winner (std::move (winner_a)),
 		type (type_a)
 	{
 		block_count = 1;

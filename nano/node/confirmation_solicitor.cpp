@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/node/confirmation_solicitor.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -33,8 +34,8 @@ bool nano::confirmation_solicitor::broadcast (nano::election const & election_a)
 	bool error (true);
 	if (rebroadcasted++ < max_block_broadcasts)
 	{
-		auto const & hash (election_a.status.winner->hash ());
-		nano::messages::publish winner{ config.network_params.network, election_a.status.winner };
+		auto const & hash (election_a.status.winner.hash ());
+		nano::messages::publish winner{ config.network_params.network, nano::to_legacy (election_a.status.winner) };
 		unsigned count = 0;
 		// Directed broadcasting to principal representatives
 		for (auto i (representatives_broadcasts.begin ()), n (representatives_broadcasts.end ()); i != n && count < max_election_broadcasts; ++i)
@@ -58,7 +59,7 @@ bool nano::confirmation_solicitor::add (nano::election const & election_a)
 	debug_assert (prepared);
 	bool error (true);
 	unsigned count = 0;
-	auto const & hash (election_a.status.winner->hash ());
+	auto const & hash (election_a.status.winner.hash ());
 	for (auto i (representatives_requests.begin ()); i != representatives_requests.end () && count < max_election_requests;)
 	{
 		bool full_queue (false);
@@ -72,7 +73,7 @@ bool nano::confirmation_solicitor::add (nano::election const & election_a)
 			if (!rep.channel->max (nano::transport::traffic_type::confirmation_requests))
 			{
 				auto & request_queue (requests[rep.channel]);
-				request_queue.emplace_back (election_a.status.winner->hash (), election_a.status.winner->root ());
+				request_queue.emplace_back (election_a.status.winner.hash (), election_a.status.winner.root ());
 				count += different ? 0 : 1;
 				error = false;
 			}

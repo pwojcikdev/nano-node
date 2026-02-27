@@ -15,6 +15,7 @@
 #include <nano/node/wallet.hpp>
 #include <nano/node/websocket.hpp>
 #include <nano/secure/ledger.hpp>
+#include <nano/secure/ledger_set_any.hpp>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/property_tree/json_parser.hpp>
@@ -969,7 +970,7 @@ nano::websocket::message nano::websocket::message_builder::telemetry_received (n
 	return message_l;
 }
 
-nano::websocket::message nano::websocket::message_builder::new_block_arrived (nano::block const & block_a)
+nano::websocket::message nano::websocket::message_builder::new_block_arrived (nano::stored_block const & block_a)
 {
 	nano::websocket::message message_l (nano::websocket::topic::new_unconfirmed_block);
 	set_common_fields (message_l);
@@ -1025,7 +1026,14 @@ nano::websocket_server::websocket_server (nano::websocket::config & config_a, na
 
 		if (server->any_subscriber (nano::websocket::topic::confirmation))
 		{
-			auto block_a = status_a.winner;
+			// Fetch block from ledger to get sideband
+			auto block_a = ledger.any.block_get (ledger.tx_begin_read (), status_a.winner.hash ());
+			debug_assert (block_a);
+			if (!block_a)
+			{
+				return;
+			}
+
 			std::string subtype;
 			if (is_state_send_a)
 			{
@@ -1033,7 +1041,7 @@ nano::websocket_server::websocket_server (nano::websocket::config & config_a, na
 			}
 			else if (block_a->type () == nano::block_type::state)
 			{
-				if (block_a->is_change ())
+				if (block_a->link_field ().value ().is_zero ())
 				{
 					subtype = "change";
 				}
@@ -1048,7 +1056,7 @@ nano::websocket_server::websocket_server (nano::websocket::config & config_a, na
 				}
 			}
 
-			server->broadcast_confirmation (block_a, account_a, amount_a, subtype, status_a, votes_a);
+			server->broadcast_confirmation (block_a->to_legacy (), account_a, amount_a, subtype, status_a, votes_a);
 		}
 	});
 

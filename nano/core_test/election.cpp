@@ -79,8 +79,8 @@ TEST (election, quorum_minimum_flip_success)
 
 	ASSERT_TIMELY (5s, election->confirmed ());
 	auto const winner = election->winner ();
-	ASSERT_NE (nullptr, winner);
-	ASSERT_EQ (*winner, *send2);
+	ASSERT_FALSE (winner.hash ().is_zero ());
+	ASSERT_EQ (winner, nano::to_raw (*send2));
 }
 
 TEST (election, quorum_minimum_flip_fail)
@@ -161,7 +161,7 @@ TEST (election, quorum_minimum_confirm_success)
 
 	auto vote = nano::test::make_final_vote (nano::dev::genesis_key, { send1->hash () });
 	ASSERT_EQ (nano::vote_code::vote, node1.vote_router.vote (vote).at (send1->hash ()));
-	ASSERT_NE (nullptr, node1.block (send1->hash ()));
+	ASSERT_TRUE (node1.block (send1->hash ()));
 	ASSERT_TIMELY (5s, election->confirmed ());
 }
 
@@ -225,7 +225,7 @@ TEST (election, quorum_minimum_update_weight_before_quorum_checks)
 					   .work (*system.work.generate (latest))
 					   .build ();
 	node1.process_active (send1);
-	ASSERT_TIMELY (5s, node1.block (send1->hash ()) != nullptr);
+	ASSERT_TIMELY (5s, node1.block (send1->hash ()));
 
 	auto const open1 = nano::open_block_builder{}.make_block ().account (key1.pub).source (send1->hash ()).representative (key1.pub).sign (key1.prv, key1.pub).work (*system.work.generate (key1.pub)).build ();
 	ASSERT_EQ (nano::block_status::progress, node1.process (open1));
@@ -266,7 +266,7 @@ TEST (election, quorum_minimum_update_weight_before_quorum_checks)
 	node1.online_reps.force_online_weight (node_config.online_weight_minimum.number () + 20);
 	ASSERT_EQ (nano::vote_code::vote, node1.vote_router.vote (vote2).at (send1->hash ()));
 	ASSERT_TIMELY (5s, election->confirmed ());
-	ASSERT_NE (nullptr, node1.block (send1->hash ()));
+	ASSERT_TRUE (node1.block (send1->hash ()));
 }
 
 TEST (election, continuous_voting)

@@ -194,7 +194,7 @@ void nano::test::system::setup_node (nano::node & node)
 
 		auto cemented = node.ledger.cement (transaction, block->hash ());
 		debug_assert (std::find_if (cemented.begin (), cemented.end (), [&block] (auto const & cemented_block) {
-			return cemented_block->hash () == block->hash ();
+			return cemented_block.hash () == block->hash ();
 		})
 		!= cemented.end ());
 	}
@@ -442,13 +442,13 @@ void nano::test::system::generate_rollback (nano::node & node_a, std::vector<nan
 		{
 			accounts_a[index] = accounts_a[accounts_a.size () - 1];
 			accounts_a.pop_back ();
-			std::deque<std::shared_ptr<nano::block>> rollback_list;
+			std::deque<nano::stored_block> rollback_list;
 			auto error = node_a.ledger.rollback (transaction, hash, rollback_list);
 			(void)error;
 			debug_assert (!error);
 			for (auto & i : rollback_list)
 			{
-				node_a.active.erase (*i);
+				node_a.active.erase (*i.to_legacy ());
 			}
 		}
 	}

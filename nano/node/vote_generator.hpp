@@ -5,6 +5,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/processing_queue.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/secure/common.hpp>
@@ -51,7 +52,7 @@ public:
 	/** Queue items for vote generation, or broadcast votes already in cache */
 	void add (nano::root const &, nano::block_hash const &);
 	/** Queue blocks for vote generation, returning the number of successful candidates.*/
-	std::size_t generate (std::vector<std::shared_ptr<nano::block>> const & blocks_a, std::shared_ptr<nano::transport::channel> const & channel_a);
+	std::size_t generate (std::vector<nano::stored_block> const & blocks_a, std::shared_ptr<nano::transport::channel> const & channel_a);
 
 	void start ();
 	void stop ();

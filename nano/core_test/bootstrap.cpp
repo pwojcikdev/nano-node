@@ -279,7 +279,7 @@ TEST (bootstrap, account_base)
 				 .build ();
 	ASSERT_EQ (nano::block_status::progress, node0.process (send1));
 	auto & node1 = *system.add_node (flags);
-	ASSERT_TIMELY (5s, node1.block (send1->hash ()) != nullptr);
+	ASSERT_TIMELY (5s, node1.block (send1->hash ()));
 }
 
 /**
@@ -314,7 +314,7 @@ TEST (bootstrap, account_inductive)
 	ASSERT_EQ (nano::block_status::progress, node0.process (send2));
 
 	auto & node1 = *system.add_node (flags);
-	ASSERT_TIMELY (50s, node1.block (send2->hash ()) != nullptr);
+	ASSERT_TIMELY (50s, node1.block (send2->hash ()));
 }
 
 /**
@@ -352,7 +352,7 @@ TEST (bootstrap, trace_base)
 	ASSERT_EQ (nano::block_status::progress, node0.process (receive1));
 
 	ASSERT_TIMELY (10s, node1.ledger.any.receivable_upper_bound (node1.ledger.tx_begin_read (), key.pub, 0) != node1.ledger.any.receivable_end ());
-	ASSERT_TIMELY (10s, node1.block (receive1->hash ()) != nullptr);
+	ASSERT_TIMELY (10s, node1.block (receive1->hash ()));
 }
 
 /*

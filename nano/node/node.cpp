@@ -257,7 +257,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 			{
 				if (websocket.server && websocket.server->any_subscriber (nano::websocket::topic::new_unconfirmed_block))
 				{
-					websocket.server->broadcast (nano::websocket::message_builder (ledger).new_block_arrived (*context.block->to_legacy ()));
+					websocket.server->broadcast (nano::websocket::message_builder (ledger).new_block_arrived (*context.block));
 				}
 			}
 		}
@@ -267,7 +267,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	ledger_notifications.blocks_rolled_back.add ([this] (auto const & blocks, auto const & rollback_root) {
 		for (auto const & block : blocks)
 		{
-			history.erase (block->root ());
+			history.erase (block.root ());
 		}
 	});
 
@@ -434,9 +434,9 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 
 	cementing_set.cemented_observers.add ([this] (auto const & block) {
 		// TODO: Is it neccessary to call this for all blocks?
-		if (block->is_send ())
+		if (block.is_send ())
 		{
-			wallet_workers.post ([this, hash = block->hash (), destination = block->destination ()] () {
+			wallet_workers.post ([this, hash = block.hash (), destination = block.destination ()] () {
 				wallets.receive_confirmed (hash, destination);
 			});
 		}
@@ -675,10 +675,9 @@ nano::uint128_t nano::node::balance (nano::account const & account_a)
 	return ledger.any.account_balance (ledger.tx_begin_read (), account_a).value_or (0).number ();
 }
 
-std::shared_ptr<nano::block> nano::node::block (nano::block_hash const & hash_a)
+std::optional<nano::stored_block> nano::node::block (nano::block_hash const & hash_a)
 {
-	auto result = ledger.any.block_get (ledger.tx_begin_read (), hash_a);
-	return result ? result->to_legacy () : nullptr;
+	return ledger.any.block_get (ledger.tx_begin_read (), hash_a);
 }
 
 bool nano::node::block_or_pruned_exists (nano::block_hash const & hash_a) const
