@@ -351,6 +351,9 @@ void nano::bootstrap_service::inspect (secure::transaction const & tx, nano::blo
 	{
 		case nano::block_status::progress:
 		{
+			// Mark successfully processed blocks as received in topo_scan
+			topo_scan.received (hash);
+
 			// Progress blocks from live traffic don't need further bootstrapping
 			if (source != nano::block_source::live)
 			{
@@ -367,6 +370,12 @@ void nano::bootstrap_service::inspect (secure::transaction const & tx, nano::blo
 					accounts.priority_set (destination);
 				}
 			}
+		}
+		break;
+		case nano::block_status::old:
+		{
+			// Mark already processed blocks as received in topo_scan
+			topo_scan.received (hash);
 		}
 		break;
 		case nano::block_status::gap_source:
@@ -1118,8 +1127,8 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 			// Avoid re-processing the block we already have for hash-based queries
 			// For topo sources and blocks_random, the first block IS the block we want to fetch
 			if (tag.source != query_source::topology && tag.source != query_source::topo_blocks
-				&& tag.type != query_type::blocks_random
-				&& !tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
+			&& tag.type != query_type::blocks_random
+			&& !tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
 			{
 				blocks.pop_front ();
 			}
@@ -1147,14 +1156,6 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 			if (tag.source == query_source::topology)
 			{
 				// Old topology path - no longer needed but kept for compatibility
-			}
-			else if (tag.source == query_source::topo_blocks)
-			{
-				// Mark each received block individually in topo_scan
-				for (auto const & block : blocks)
-				{
-					topo_scan.received (block->hash ());
-				}
 			}
 			else if (tag.source == query_source::database)
 			{
@@ -1386,7 +1387,7 @@ auto nano::bootstrap_service::verify (const nano::messages::asc_pull_ack::blocks
 		return verify_result::nothing_new;
 	}
 	if (tag.source != query_source::topology && tag.source != query_source::topo_blocks
-		&& blocks.size () == 1 && !tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
+	&& blocks.size () == 1 && !tag.start.is_zero () && blocks.front ()->hash () == tag.start.as_block_hash ())
 	{
 		return verify_result::nothing_new;
 	}
