@@ -169,6 +169,9 @@ public:
 	nano::qualified_root qualified_root () const;
 	nano::block_hash previous () const;
 
+	// Mutators (work is not part of the hash, so mutation is safe)
+	void set_work (uint64_t work);
+
 	// Field accessors
 	std::optional<nano::account> account_field () const;
 	std::optional<nano::amount> balance_field () const;

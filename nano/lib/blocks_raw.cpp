@@ -450,6 +450,14 @@ uint64_t nano::raw_block::block_work () const
 	data_m);
 }
 
+void nano::raw_block::set_work (uint64_t work)
+{
+	std::visit ([work] (auto & b) {
+		b.work = work;
+	},
+	data_m);
+}
+
 uint64_t nano::raw_block::work_field () const
 {
 	return block_work ();
