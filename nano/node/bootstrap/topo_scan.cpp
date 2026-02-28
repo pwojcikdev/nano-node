@@ -97,21 +97,29 @@ std::deque<nano::block_hash> nano::bootstrap::topo_scan::next_blocks (std::size_
 {
 	std::deque<nano::block_hash> result;
 
-	auto in_flight = count_in_flight ();
+	auto const now = std::chrono::steady_clock::now ();
+	auto const retry_cutoff = now - config.block_retry;
 
-	// Don't send more requests when too many are already in-flight
-	if (in_flight >= config.max_blocks_outstanding)
+	// Count only actively in-flight blocks (not yet eligible for retry)
+	std::size_t active_in_flight = 0;
+	for (auto const & entry : blocks)
+	{
+		if (entry.status == block_status::in_flight && entry.timestamp >= retry_cutoff)
+		{
+			++active_in_flight;
+		}
+	}
+
+	// Don't send more requests when too many are actively in-flight
+	if (active_in_flight >= config.max_blocks_outstanding)
 	{
 		stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::next_none);
 		return result;
 	}
 
 	// Cap how many new requests we can add
-	auto const capacity = config.max_blocks_outstanding - in_flight;
+	auto const capacity = config.max_blocks_outstanding - active_in_flight;
 	max_count = std::min (max_count, capacity);
-
-	auto const now = std::chrono::steady_clock::now ();
-	auto const retry_cutoff = now - config.block_retry;
 
 	auto & blocks_by_order = blocks.get<tag_sequenced> ();
 	for (auto it = blocks_by_order.begin (); it != blocks_by_order.end () && result.size () < max_count; ++it)
