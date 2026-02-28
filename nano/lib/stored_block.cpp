@@ -43,6 +43,11 @@ nano::block_type nano::stored_block::type () const
 	return raw_m.type ();
 }
 
+nano::work_version nano::stored_block::work_version () const
+{
+	return raw_m.work_version ();
+}
+
 nano::signature const & nano::stored_block::block_signature () const
 {
 	return raw_m.block_signature ();
@@ -56,6 +61,11 @@ nano::root nano::stored_block::root () const
 uint64_t nano::stored_block::block_work () const
 {
 	return raw_m.block_work ();
+}
+
+uint64_t nano::stored_block::work () const
+{
+	return raw_m.work ();
 }
 
 nano::qualified_root nano::stored_block::qualified_root () const

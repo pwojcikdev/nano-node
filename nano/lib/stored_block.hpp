@@ -36,9 +36,11 @@ public:
 	// Core accessors (delegated to raw_block)
 	nano::block_hash const & hash () const;
 	nano::block_type type () const;
+	nano::work_version work_version () const;
 	nano::signature const & block_signature () const;
 	nano::root root () const;
 	uint64_t block_work () const;
+	uint64_t work () const;
 	nano::qualified_root qualified_root () const;
 	nano::block_hash previous () const;
 
