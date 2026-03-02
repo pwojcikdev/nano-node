@@ -458,6 +458,14 @@ void nano::raw_block::set_work (uint64_t work)
 	data_m);
 }
 
+void nano::raw_block::set_signature (nano::signature const & signature)
+{
+	std::visit ([&signature] (auto & b) {
+		b.signature = signature;
+	},
+	data_m);
+}
+
 uint64_t nano::raw_block::work_field () const
 {
 	return block_work ();
@@ -818,4 +826,93 @@ void nano::serialize_raw_block (nano::stream & stream, nano::raw_block const & b
 {
 	nano::write (stream, block.type ());
 	block.serialize (stream);
+}
+
+nano::raw_block nano::deserialize_raw_block_json (boost::property_tree::ptree const & tree)
+{
+	auto type_str = tree.get<std::string> ("type");
+	auto signature_str = tree.get<std::string> ("signature");
+	auto work_str = tree.get<std::string> ("work");
+
+	nano::signature signature;
+	if (signature.decode_hex (signature_str))
+	{
+		throw std::runtime_error ("Invalid signature");
+	}
+	uint64_t work;
+	if (nano::from_string_hex (work_str, work))
+	{
+		throw std::runtime_error ("Invalid work");
+	}
+
+	if (type_str == "send")
+	{
+		nano::raw_send_block block;
+		if (block.hashables.previous.decode_hex (tree.get<std::string> ("previous")))
+			throw std::runtime_error ("Invalid previous");
+		if (block.hashables.destination.decode_account (tree.get<std::string> ("destination")))
+			throw std::runtime_error ("Invalid destination");
+		if (block.hashables.balance.decode_hex (tree.get<std::string> ("balance")))
+			throw std::runtime_error ("Invalid balance");
+		block.signature = signature;
+		block.work = work;
+		return nano::raw_block{ std::move (block) };
+	}
+	else if (type_str == "receive")
+	{
+		nano::raw_receive_block block;
+		if (block.hashables.previous.decode_hex (tree.get<std::string> ("previous")))
+			throw std::runtime_error ("Invalid previous");
+		if (block.hashables.source.decode_hex (tree.get<std::string> ("source")))
+			throw std::runtime_error ("Invalid source");
+		block.signature = signature;
+		block.work = work;
+		return nano::raw_block{ std::move (block) };
+	}
+	else if (type_str == "open")
+	{
+		nano::raw_open_block block;
+		if (block.hashables.source.decode_hex (tree.get<std::string> ("source")))
+			throw std::runtime_error ("Invalid source");
+		if (block.hashables.representative.decode_account (tree.get<std::string> ("representative")))
+			throw std::runtime_error ("Invalid representative");
+		if (block.hashables.account.decode_account (tree.get<std::string> ("account")))
+			throw std::runtime_error ("Invalid account");
+		block.signature = signature;
+		block.work = work;
+		return nano::raw_block{ std::move (block) };
+	}
+	else if (type_str == "change")
+	{
+		nano::raw_change_block block;
+		if (block.hashables.previous.decode_hex (tree.get<std::string> ("previous")))
+			throw std::runtime_error ("Invalid previous");
+		if (block.hashables.representative.decode_account (tree.get<std::string> ("representative")))
+			throw std::runtime_error ("Invalid representative");
+		block.signature = signature;
+		block.work = work;
+		return nano::raw_block{ std::move (block) };
+	}
+	else if (type_str == "state")
+	{
+		nano::raw_state_block block;
+		if (block.hashables.account.decode_account (tree.get<std::string> ("account")))
+			throw std::runtime_error ("Invalid account");
+		if (block.hashables.previous.decode_hex (tree.get<std::string> ("previous")))
+			throw std::runtime_error ("Invalid previous");
+		if (block.hashables.representative.decode_account (tree.get<std::string> ("representative")))
+			throw std::runtime_error ("Invalid representative");
+		if (block.hashables.balance.decode_dec (tree.get<std::string> ("balance")))
+			throw std::runtime_error ("Invalid balance");
+		auto link_str = tree.get<std::string> ("link");
+		if (block.hashables.link.decode_account (link_str) && block.hashables.link.decode_hex (link_str))
+			throw std::runtime_error ("Invalid link");
+		block.signature = signature;
+		block.work = work;
+		return nano::raw_block{ std::move (block) };
+	}
+	else
+	{
+		throw std::runtime_error ("Unknown block type: " + type_str);
+	}
 }

@@ -169,8 +169,9 @@ public:
 	nano::qualified_root qualified_root () const;
 	nano::block_hash previous () const;
 
-	// Mutators (work is not part of the hash, so mutation is safe)
+	// Mutators
 	void set_work (uint64_t work);
+	void set_signature (nano::signature const & signature);
 
 	// Field accessors
 	std::optional<nano::account> account_field () const;
@@ -236,4 +237,7 @@ nano::raw_block deserialize_raw_block (nano::stream &);
 // Deserialization with pre-read type (for store layer where type is already parsed)
 nano::raw_block deserialize_raw_block (nano::stream &, nano::block_type type);
 void serialize_raw_block (nano::stream &, nano::raw_block const &);
+
+// JSON deserialization
+nano::raw_block deserialize_raw_block_json (boost::property_tree::ptree const &);
 }
