@@ -149,6 +149,37 @@ std::deque<nano::block_hash> nano::bootstrap::topo_scan::next_blocks (std::size_
 	return result;
 }
 
+void nano::bootstrap::topo_scan::block_received (nano::block_hash const & hash, std::shared_ptr<nano::block> const & block)
+{
+	auto & blocks_by_hash = blocks.get<tag_hash> ();
+	auto it = blocks_by_hash.find (hash);
+	if (it != blocks_by_hash.end ())
+	{
+		blocks_by_hash.modify (it, [&block] (block_entry & entry) {
+			entry.status = block_status::completed;
+			entry.block = block;
+		});
+		stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::received);
+	}
+}
+
+std::deque<std::shared_ptr<nano::block>> nano::bootstrap::topo_scan::next_ordered_blocks (std::size_t max_count)
+{
+	std::deque<std::shared_ptr<nano::block>> result;
+	auto & blocks_by_order = blocks.get<tag_sequenced> ();
+	while (!blocks_by_order.empty () && result.size () < max_count)
+	{
+		auto it = blocks_by_order.begin ();
+		if (it->status != block_status::completed)
+		{
+			break; // Stop at first non-completed block to maintain topo order
+		}
+		result.push_back (it->block);
+		blocks_by_order.erase (it);
+	}
+	return result;
+}
+
 void nano::bootstrap::topo_scan::received (nano::block_hash const & hash)
 {
 	auto & blocks_by_hash = blocks.get<tag_hash> ();
@@ -196,9 +227,21 @@ std::size_t nano::bootstrap::topo_scan::count_in_flight () const
 	return count;
 }
 
+std::size_t nano::bootstrap::topo_scan::count_completed () const
+{
+	std::size_t count = 0;
+	for (auto const & entry : blocks)
+	{
+		if (entry.status == block_status::completed)
+		{
+			++count;
+		}
+	}
+	return count;
+}
+
 std::size_t nano::bootstrap::topo_scan::count_outstanding () const
 {
-	// All entries in the container are outstanding (completed entries are erased)
 	return blocks.size ();
 }
 
@@ -208,6 +251,7 @@ nano::container_info nano::bootstrap::topo_scan::container_info () const
 	info.put ("blocks_outstanding", blocks.size ());
 	info.put ("blocks_pending", count_pending ());
 	info.put ("blocks_in_flight", count_in_flight ());
+	info.put ("blocks_completed", count_completed ());
 	info.put ("cursor_index", head.cursor_index);
 	info.put ("indexing_done", head.done ? 1 : 0);
 	return info;

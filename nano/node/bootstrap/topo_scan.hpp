@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/fwd.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/node/bootstrap/bootstrap_config.hpp>
@@ -13,6 +14,7 @@
 
 #include <chrono>
 #include <deque>
+#include <memory>
 #include <optional>
 
 namespace mi = boost::multi_index;
@@ -64,7 +66,15 @@ public:
 	// Marks returned hashes as in-flight.
 	std::deque<nano::block_hash> next_blocks (std::size_t max_count);
 
-	// Marks a single block as received.
+	// Stores received block data. Block will be submitted to block_processor in topo order via next_ordered_blocks().
+	void block_received (nano::block_hash const & hash, std::shared_ptr<nano::block> const & block);
+
+	// Returns consecutive completed blocks from the front of the ordered container.
+	// Stops at the first non-completed entry to maintain topological ordering.
+	// Erases returned entries from the container.
+	std::deque<std::shared_ptr<nano::block>> next_ordered_blocks (std::size_t max_count);
+
+	// Marks a single block as received and erases it from the container.
 	void received (nano::block_hash const & hash);
 
 	// --- State queries ---
@@ -78,7 +88,8 @@ public:
 	// Counts of blocks by status
 	std::size_t count_pending () const;
 	std::size_t count_in_flight () const;
-	std::size_t count_outstanding () const; // pending + in_flight
+	std::size_t count_completed () const;
+	std::size_t count_outstanding () const;
 
 	void reset ();
 
@@ -129,6 +140,7 @@ private:
 		uint64_t topo_index{ 0 };
 		block_status status{ block_status::pending };
 		std::chrono::steady_clock::time_point timestamp{}; // When request was sent (for retry)
+		std::shared_ptr<nano::block> block; // Actual block data when received from network
 	};
 
 	// clang-format off

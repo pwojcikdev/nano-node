@@ -1133,23 +1133,39 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::block
 				blocks.pop_front ();
 			}
 
-			for (auto const & block : blocks)
+			if (tag.source == query_source::topo_blocks)
 			{
-				if (tag.source != query_source::topology && tag.source != query_source::topo_blocks && block == blocks.back ())
+				// Store received blocks in topo_scan, then drain in topological order
+				for (auto const & block : blocks)
 				{
-					// It's the last block submitted for this account chain, reset timestamp to allow more requests
-					block_processor.add (block, nano::block_source::bootstrap, nullptr, [this, account = tag.account] (auto result) {
-						stats.inc (nano::stat::type::bootstrap, nano::stat::detail::timestamp_reset);
-						{
-							nano::lock_guard<nano::mutex> guard{ mutex };
-							accounts.timestamp_reset (account);
-						}
-						condition.notify_all ();
-					});
+					topo_scan.block_received (block->hash (), block);
 				}
-				else
+				auto ordered = topo_scan.next_ordered_blocks (std::numeric_limits<std::size_t>::max ());
+				for (auto const & block : ordered)
 				{
 					block_processor.add (block, nano::block_source::bootstrap);
+				}
+			}
+			else
+			{
+				for (auto const & block : blocks)
+				{
+					if (block == blocks.back ())
+					{
+						// It's the last block submitted for this account chain, reset timestamp to allow more requests
+						block_processor.add (block, nano::block_source::bootstrap, nullptr, [this, account = tag.account] (auto result) {
+							stats.inc (nano::stat::type::bootstrap, nano::stat::detail::timestamp_reset);
+							{
+								nano::lock_guard<nano::mutex> guard{ mutex };
+								accounts.timestamp_reset (account);
+							}
+							condition.notify_all ();
+						});
+					}
+					else
+					{
+						block_processor.add (block, nano::block_source::bootstrap);
+					}
 				}
 			}
 
