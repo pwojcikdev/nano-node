@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
@@ -31,8 +32,11 @@ TEST (processor_service, bad_send_signature)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				.work (*pool.generate (info1->head))
 				.build ();
-	send->signature.bytes[32] ^= 0x1;
-	ASSERT_EQ (nano::block_status::bad_signature, ledger.process (transaction, send));
+	auto send_legacy = nano::to_legacy (send);
+	auto sig = send_legacy->block_signature ();
+	sig.bytes[32] ^= 0x1;
+	send_legacy->signature_set (sig);
+	ASSERT_EQ (nano::block_status::bad_signature, ledger.process (transaction, send_legacy));
 }
 
 TEST (processor_service, bad_receive_signature)
@@ -54,8 +58,8 @@ TEST (processor_service, bad_receive_signature)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				.work (*pool.generate (info1->head))
 				.build ();
-	nano::block_hash hash1 (send->hash ());
-	ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send));
+	nano::block_hash hash1 (send.hash ());
+	ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send).code);
 	auto info2 = ledger.any.account_get (transaction, nano::dev::genesis_key.pub);
 	ASSERT_TRUE (info2);
 	auto receive = builder
@@ -65,6 +69,9 @@ TEST (processor_service, bad_receive_signature)
 				   .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				   .work (*pool.generate (hash1))
 				   .build ();
-	receive->signature.bytes[32] ^= 0x1;
-	ASSERT_EQ (nano::block_status::bad_signature, ledger.process (transaction, receive));
+	auto receive_legacy = nano::to_legacy (receive);
+	auto sig = receive_legacy->block_signature ();
+	sig.bytes[32] ^= 0x1;
+	receive_legacy->signature_set (sig);
+	ASSERT_EQ (nano::block_status::bad_signature, ledger.process (transaction, receive_legacy));
 }

@@ -83,7 +83,7 @@ public:
 	pipeline_benchmark (std::shared_ptr<nano::node> node_a, benchmark_config const & config_a);
 
 	void run ();
-	void run_iteration (std::deque<std::shared_ptr<nano::block>> & blocks);
+	void run_iteration (std::deque<nano::raw_block> & blocks);
 	void print_statistics ();
 };
 
@@ -244,7 +244,7 @@ void pipeline_benchmark::run ()
 	print_statistics ();
 }
 
-void pipeline_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>> & blocks)
+void pipeline_benchmark::run_iteration (std::deque<nano::raw_block> & blocks)
 {
 	auto const total_blocks = blocks.size ();
 
@@ -255,8 +255,8 @@ void pipeline_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>>
 		auto pending_l = pending_cementing.lock ();
 		for (auto const & block : blocks)
 		{
-			timings_l->emplace (block->hash (), block_timing{ now });
-			pending_l->emplace (block->hash (), now);
+			timings_l->emplace (block.hash (), block_timing{ now });
+			pending_l->emplace (block.hash (), now);
 		}
 	}
 
@@ -265,7 +265,7 @@ void pipeline_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>>
 	// Submit all blocks through the full pipeline
 	while (!blocks.empty ())
 	{
-		auto block = blocks.front ();
+		auto block = std::move (blocks.front ());
 		blocks.pop_front ();
 
 		// Process block through full confirmation pipeline

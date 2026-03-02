@@ -22,7 +22,7 @@ void rollback_degenerate_impl (nano::test::ledger_context & ctx, size_t num_acco
 
 	// Track the head block hash for each account involved (Genesis + A0..A(N-1))
 	std::vector<nano::block_hash> current_head_hashes (num_accounts + 1);
-	current_head_hashes[0] = nano::dev::genesis->hash (); // Index 0 for Genesis
+	current_head_hashes[0] = nano::dev::genesis.hash (); // Index 0 for Genesis
 
 	// Track balances (needed for creating send blocks)
 	std::vector<nano::uint128_t> current_balances (num_accounts + 1);
@@ -56,8 +56,8 @@ void rollback_degenerate_impl (nano::test::ledger_context & ctx, size_t num_acco
 							  .work (*pool.generate (sender_previous_hash))
 							  .build ();
 
-			ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send_block)) << "Failed processing send block " << i;
-			current_head_hashes[sender_account_index] = send_block->hash (); // Update sender's chain head
+			ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send_block).code) << "Failed processing send block " << i;
+			current_head_hashes[sender_account_index] = send_block.hash (); // Update sender's chain head
 			current_balances[sender_account_index] = sender_balance; // Update sender's balance
 
 			// --- Receive Block (acting as open for Ai) ---
@@ -68,19 +68,19 @@ void rollback_degenerate_impl (nano::test::ledger_context & ctx, size_t num_acco
 								 .previous (0) // Open block
 								 .representative (keys[i].pub) // Self representation
 								 .balance (1) // Received 1 raw
-								 .link (send_block->hash ()) // Link to the send block
+								 .link (send_block.hash ()) // Link to the send block
 								 .sign (keys[i].prv, keys[i].pub)
 								 .work (*pool.generate (keys[i].pub))
 								 .build ();
 
 			if (i == 0)
 			{
-				first_send_hash = send_block->hash (); // Capture the first send hash (G->A0)
-				first_receive_hash = receive_block->hash (); // Capture the first receive hash (A0 open)
+				first_send_hash = send_block.hash (); // Capture the first send hash (G->A0)
+				first_receive_hash = receive_block.hash (); // Capture the first receive hash (A0 open)
 			}
 
-			ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, receive_block)) << "Failed processing receive block " << i;
-			current_head_hashes[receiver_account_index] = receive_block->hash (); // Update head for Ai
+			ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, receive_block).code) << "Failed processing receive block " << i;
+			current_head_hashes[receiver_account_index] = receive_block.hash (); // Update head for Ai
 			current_balances[receiver_account_index] = 1; // Update balance for Ai
 
 			// Commit periodically to keep transaction size manageable and release locks

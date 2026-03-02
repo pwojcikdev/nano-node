@@ -27,8 +27,8 @@ namespace test
 
 		void stop ();
 
-		void set_initialization_blocks (std::deque<std::shared_ptr<nano::block>> blocks);
-		void set_cemented_initialization_blocks (std::deque<std::shared_ptr<nano::block>> blocks);
+		void set_initialization_blocks (std::deque<nano::raw_block> blocks);
+		void set_cemented_initialization_blocks (std::deque<nano::raw_block> blocks);
 
 		void ledger_initialization_set (std::deque<nano::keypair> const & reps, nano::amount const & reserve = 0);
 		void generate_activity (nano::node &, std::vector<nano::account> &);
@@ -43,7 +43,7 @@ namespace test
 		void generate_receive (nano::node &);
 		void generate_send_new (nano::node &, std::vector<nano::account> &);
 		void generate_send_existing (nano::node &, std::vector<nano::account> &);
-		std::shared_ptr<nano::state_block> upgrade_genesis_epoch (nano::node &, nano::epoch const);
+		std::optional<nano::raw_block> upgrade_genesis_epoch (nano::node &, nano::epoch const);
 		std::shared_ptr<nano::wallet> wallet (size_t);
 		/** Generate work with difficulty between \p min_difficulty_a (inclusive) and \p max_difficulty_a (exclusive) */
 		uint64_t work_generate_limited (nano::block_hash const & root_a, uint64_t min_difficulty_a, uint64_t max_difficulty_a);
@@ -92,11 +92,11 @@ namespace test
 		std::chrono::time_point<std::chrono::steady_clock, std::chrono::duration<double>> deadline{ std::chrono::steady_clock::time_point::max () };
 		double deadline_scaling_factor{ 1.0 };
 		unsigned node_sequence{ 0 };
-		std::deque<std::shared_ptr<nano::block>> initialization_blocks;
-		std::deque<std::shared_ptr<nano::block>> initialization_blocks_cemented;
+		std::deque<nano::raw_block> initialization_blocks;
+		std::deque<nano::raw_block> initialization_blocks_cemented;
 	};
 
-	std::shared_ptr<nano::state_block> upgrade_epoch (nano::work_pool &, nano::ledger &, nano::epoch);
+	std::optional<nano::raw_block> upgrade_epoch (nano::work_pool &, nano::ledger &, nano::epoch);
 	void cleanup_dev_directories_on_exit ();
 }
 }

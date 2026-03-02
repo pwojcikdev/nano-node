@@ -1,6 +1,5 @@
 #include <nano/boost/asio/ip/tcp.hpp>
 #include <nano/crypto_lib/random_pool.hpp>
-#include <nano/lib/blocks.hpp>
 #include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/enum_util.hpp>
@@ -66,12 +65,12 @@ std::string const test_genesis_data = nano::env::get ("NANO_TEST_GENESIS_BLOCK")
 	"signature": "15049467CAEE3EC768639E8E35792399B6078DA763DA4EBA8ECAD33B0EDC4AF2E7403893A5A602EB89B978DABEF1D6606BB00F3C0EE11449232B143B6E07170E"
     })%%%");
 
-std::shared_ptr<nano::block> parse_block_from_genesis_data (std::string const & genesis_data_a)
+nano::raw_block parse_block_from_genesis_data (std::string const & genesis_data_a)
 {
 	boost::property_tree::ptree tree;
 	std::stringstream istream (genesis_data_a);
 	boost::property_tree::read_json (istream, tree);
-	return nano::deserialize_block_json (tree);
+	return nano::deserialize_raw_block_json (tree);
 }
 }
 
@@ -82,7 +81,7 @@ std::shared_ptr<nano::block> parse_block_from_genesis_data (std::string const & 
 nano::keypair nano::dev::genesis_key{ dev_private_key_data };
 nano::network_params nano::dev::network_params{ nano::network_type::nano_dev_network };
 nano::ledger_constants & nano::dev::constants{ nano::dev::network_params.ledger };
-std::shared_ptr<nano::block> & nano::dev::genesis = nano::dev::constants.genesis;
+nano::stored_block & nano::dev::genesis = nano::dev::constants.genesis;
 
 /*
  *
@@ -123,66 +122,44 @@ nano::network_params::network_params (nano::network_type network_type) :
  *
  */
 
+namespace
+{
+nano::block_sideband make_genesis_sideband (nano::account const & account)
+{
+	return nano::block_sideband{
+		/* account */ account,
+		/* successor (block_hash) */ nano::block_hash{ 0 },
+		/* balance (amount) */ nano::amount{ std::numeric_limits<nano::uint128_t>::max () },
+		/* height */ uint64_t{ 1 },
+		/* local_timestamp */ 0,
+		/* epoch */ nano::epoch::epoch_0,
+		/* is_send */ false,
+		/* is_receive */ false,
+		/* is_epoch */ false,
+		/* source_epoch */ nano::epoch::epoch_0
+	};
+}
+
+nano::stored_block make_genesis_stored (std::string const & genesis_data)
+{
+	auto raw = parse_block_from_genesis_data (genesis_data);
+	auto account = raw.account_field ().value ();
+	return nano::stored_block{ std::move (raw), make_genesis_sideband (account) };
+}
+}
+
 nano::ledger_constants::ledger_constants (nano::network_type network_type) :
 	zero_key{ "0" },
 	nano_beta_account{ beta_public_key_data },
 	nano_live_account{ live_public_key_data },
 	nano_test_account{ test_public_key_data },
-	nano_dev_genesis{ parse_block_from_genesis_data (dev_genesis_data) },
-	nano_beta_genesis{ parse_block_from_genesis_data (beta_genesis_data) },
-	nano_live_genesis{ parse_block_from_genesis_data (live_genesis_data) },
-	nano_test_genesis{ parse_block_from_genesis_data (test_genesis_data) },
+	nano_dev_genesis{ make_genesis_stored (dev_genesis_data) },
+	nano_beta_genesis{ make_genesis_stored (beta_genesis_data) },
+	nano_live_genesis{ make_genesis_stored (live_genesis_data) },
+	nano_test_genesis{ make_genesis_stored (test_genesis_data) },
 	genesis_amount{ std::numeric_limits<nano::uint128_t>::max () },
 	burn_account{ nano::account{ 0 } }
 {
-	nano_beta_genesis->sideband_set (nano::block_sideband{
-	/* account */ nano_beta_genesis->account_field ().value (),
-	/* successor (block_hash) */ nano::block_hash{ 0 },
-	/* balance (amount) */ nano::amount{ std::numeric_limits<nano::uint128_t>::max () },
-	/* height */ uint64_t{ 1 },
-	/* local_timestamp */ 0,
-	/* epoch */ nano::epoch::epoch_0,
-	/* is_send */ false,
-	/* is_receive */ false,
-	/* is_epoch */ false,
-	/* source_epoch */ nano::epoch::epoch_0 });
-
-	nano_dev_genesis->sideband_set (nano::block_sideband{
-	/* account */ nano_dev_genesis->account_field ().value (),
-	/* successor (block_hash) */ nano::block_hash{ 0 },
-	/* balance (amount) */ nano::amount{ std::numeric_limits<nano::uint128_t>::max () },
-	/* height */ uint64_t{ 1 },
-	/* local_timestamp */ 0,
-	/* epoch */ nano::epoch::epoch_0,
-	/* is_send */ false,
-	/* is_receive */ false,
-	/* is_epoch */ false,
-	/* source_epoch */ nano::epoch::epoch_0 });
-
-	nano_live_genesis->sideband_set (nano::block_sideband{
-	/* account */ nano_live_genesis->account_field ().value (),
-	/* successor (block_hash) */ nano::block_hash{ 0 },
-	/* balance (amount) */ nano::amount{ std::numeric_limits<nano::uint128_t>::max () },
-	/* height */ uint64_t{ 1 },
-	/* local_timestamp */ 0,
-	/* epoch */ nano::epoch::epoch_0,
-	/* is_send */ false,
-	/* is_receive */ false,
-	/* is_epoch */ false,
-	/* source_epoch */ nano::epoch::epoch_0 });
-
-	nano_test_genesis->sideband_set (nano::block_sideband{
-	/* account */ nano_test_genesis->account_field ().value (),
-	/* successor (block_hash) */ nano::block_hash{ 0 },
-	/* balance (amount) */ nano::amount{ std::numeric_limits<nano::uint128_t>::max () },
-	/* height */ uint64_t{ 1 },
-	/* local_timestamp */ 0,
-	/* epoch */ nano::epoch::epoch_0,
-	/* is_send */ false,
-	/* is_receive */ false,
-	/* is_epoch */ false,
-	/* source_epoch */ nano::epoch::epoch_0 });
-
 	nano::account epoch_v2_signer;
 	switch (network_type)
 	{
@@ -214,11 +191,10 @@ nano::ledger_constants::ledger_constants (nano::network_type network_type) :
 			release_assert (false, "invalid network");
 			break;
 	}
-	release_assert (genesis != nullptr);
 	release_assert (!epoch_v2_signer.is_zero ());
 
 	nano::link const epoch_link_v1{ "epoch v1 block" };
-	epochs.add (nano::epoch::epoch_1, genesis->account (), epoch_link_v1);
+	epochs.add (nano::epoch::epoch_1, genesis.account (), epoch_link_v1);
 
 	nano::link const epoch_link_v2{ "epoch v2 block" };
 	epochs.add (nano::epoch::epoch_2, epoch_v2_signer, epoch_link_v2);
@@ -296,12 +272,6 @@ nano::bootstrap_constants::bootstrap_constants (nano::network_constants const & 
 
 nano::unchecked_info::unchecked_info (nano::raw_block const & block_a) :
 	block (block_a),
-	modified_m (nano::seconds_since_epoch ())
-{
-}
-
-nano::unchecked_info::unchecked_info (std::shared_ptr<nano::block> const & block_a) :
-	block (nano::to_raw (*block_a)),
 	modified_m (nano::seconds_since_epoch ())
 {
 }

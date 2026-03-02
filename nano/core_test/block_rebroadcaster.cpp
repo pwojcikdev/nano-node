@@ -180,20 +180,20 @@ TEST (block_rebroadcaster, basic_operation)
 	nano::keypair key;
 	auto send = nano::state_block_builder ()
 				.account (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.representative (nano::dev::genesis_key.pub)
 				.balance (nano::dev::constants.genesis_amount - nano::nano_ratio)
 				.link (key.pub)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
 
 	// Process the block
 	ASSERT_EQ (nano::block_status::progress, node.process (send));
 
 	// Start an election - this should trigger block_rebroadcaster
-	node.start_election (*node.block (send->hash ()));
-	ASSERT_TIMELY (5s, node.active.active (*node.block (send->hash ())));
+	node.start_election (*node.block (send.hash ()));
+	ASSERT_TIMELY (5s, node.active.active (*node.block (send.hash ())));
 
 	// Verify it was queued for rebroadcast
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::queued), 1);
@@ -208,17 +208,17 @@ TEST (block_rebroadcaster, duplicate_block)
 	nano::keypair key;
 	auto send = nano::state_block_builder ()
 				.account (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.representative (nano::dev::genesis_key.pub)
 				.balance (nano::dev::constants.genesis_amount - nano::nano_ratio)
 				.link (key.pub)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
 
 	// Manually push the same block twice
-	ASSERT_TRUE (node.block_rebroadcaster.push (nano::to_raw (*send)));
-	ASSERT_FALSE (node.block_rebroadcaster.push (nano::to_raw (*send))); // Should reject duplicate
+	ASSERT_TRUE (node.block_rebroadcaster.push (send));
+	ASSERT_FALSE (node.block_rebroadcaster.push (send)); // Should reject duplicate
 
 	ASSERT_EQ (node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::queued), 1);
 }
@@ -234,16 +234,16 @@ TEST (block_rebroadcaster, disabled)
 	nano::keypair key;
 	auto send = nano::state_block_builder ()
 				.account (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.representative (nano::dev::genesis_key.pub)
 				.balance (nano::dev::constants.genesis_amount - nano::nano_ratio)
 				.link (key.pub)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
 
 	// Push should fail when disabled
-	ASSERT_FALSE (node.block_rebroadcaster.push (nano::to_raw (*send)));
+	ASSERT_FALSE (node.block_rebroadcaster.push (send));
 }
 
 // Verify blocks are propagated from Node A to Node B via block_rebroadcaster when election starts
@@ -268,20 +268,20 @@ TEST (block_rebroadcaster, propagates_to_peer)
 	nano::keypair key;
 	auto send = nano::state_block_builder ()
 				.account (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.representative (nano::dev::genesis_key.pub)
 				.balance (nano::dev::constants.genesis_amount - nano::nano_ratio)
 				.link (key.pub)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
 
 	// Process the block on node_a only
 	ASSERT_EQ (nano::block_status::progress, node_a.process (send));
 
 	// Start election - this triggers block_rebroadcaster via election_started callback
-	node_a.start_election (*node_a.block (send->hash ()));
-	ASSERT_TIMELY (5s, node_a.active.active (*node_a.block (send->hash ())));
+	node_a.start_election (*node_a.block (send.hash ()));
+	ASSERT_TIMELY (5s, node_a.active.active (*node_a.block (send.hash ())));
 
 	// Verify block was queued for rebroadcast
 	ASSERT_TIMELY (5s, node_a.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::queued) >= 1);
@@ -294,7 +294,7 @@ TEST (block_rebroadcaster, propagates_to_peer)
 	ASSERT_TIMELY (10s, node_b.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in) >= 1);
 
 	// Verify node_b has the block in its ledger
-	ASSERT_TIMELY (10s, node_b.block (send->hash ()));
+	ASSERT_TIMELY (10s, node_b.block (send.hash ()));
 }
 
 // Verify cooldown prevents duplicate rebroadcasts, but allows rebroadcast after expiry
@@ -322,23 +322,23 @@ TEST (block_rebroadcaster, cooldown)
 	nano::keypair key;
 	auto send = nano::state_block_builder ()
 				.account (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.representative (nano::dev::genesis_key.pub)
 				.balance (nano::dev::constants.genesis_amount - nano::nano_ratio)
 				.link (key.pub)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
 
 	// First push and wait for rebroadcast
-	ASSERT_TRUE (node.block_rebroadcaster.push (nano::to_raw (*send)));
+	ASSERT_TRUE (node.block_rebroadcaster.push (send));
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::rebroadcast), 1);
 
 	// Verify block propagated to peer
-	ASSERT_TIMELY (5s, peer_node.block (send->hash ()));
+	ASSERT_TIMELY (5s, peer_node.block (send.hash ()));
 
 	// Push same block again immediately (within cooldown)
-	ASSERT_TRUE (node.block_rebroadcaster.push (nano::to_raw (*send)));
+	ASSERT_TRUE (node.block_rebroadcaster.push (send));
 
 	// Second attempt should be blocked by cooldown
 	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::already_rebroadcasted) >= 1);
@@ -350,7 +350,7 @@ TEST (block_rebroadcaster, cooldown)
 	ASSERT_EQ (node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::rebroadcast), 1);
 
 	// Push after cooldown should trigger another rebroadcast
-	ASSERT_TRUE (node.block_rebroadcaster.push (nano::to_raw (*send)));
+	ASSERT_TRUE (node.block_rebroadcaster.push (send));
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::rebroadcast), 2);
 }
 
@@ -379,27 +379,27 @@ TEST (block_rebroadcaster, stale_election_rebroadcasts)
 	nano::keypair key;
 	auto send = nano::state_block_builder ()
 				.account (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.representative (nano::dev::genesis_key.pub)
 				.balance (nano::dev::constants.genesis_amount - nano::nano_ratio)
 				.link (key.pub)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
 
 	// Process the block
 	ASSERT_EQ (nano::block_status::progress, node.process (send));
 
 	// Start election - this triggers first rebroadcast via election_started callback
-	node.start_election (*node.block (send->hash ()));
-	ASSERT_TIMELY (5s, node.active.active (*node.block (send->hash ())));
+	node.start_election (*node.block (send.hash ()));
+	ASSERT_TIMELY (5s, node.active.active (*node.block (send.hash ())));
 
 	// Verify first rebroadcast from election_started
 	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::queued) >= 1);
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::block_rebroadcaster, nano::stat::detail::rebroadcast), 1);
 
 	// Verify block propagated to peer
-	ASSERT_TIMELY (5s, peer_node.block (send->hash ()));
+	ASSERT_TIMELY (5s, peer_node.block (send.hash ()));
 
 	// Wait for election to become stale (default stale_threshold is 1s in dev mode)
 	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::active_elections, nano::stat::detail::stale) >= 1);

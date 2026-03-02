@@ -1170,7 +1170,7 @@ bool nano::wallet::action_complete (std::shared_ptr<nano::block> const & block_a
 		}
 		if (!error)
 		{
-			auto result = wallets.node.process_local (block_a);
+			auto result = wallets.node.process_local (nano::to_raw (*block_a));
 			error = !result || result->status != nano::block_status::progress;
 			if (!error && result->block)
 			{

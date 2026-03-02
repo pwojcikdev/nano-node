@@ -23,16 +23,16 @@ TEST (conflicts, start_stop)
 	nano::block_builder builder;
 	auto send1 = builder
 				 .send ()
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .destination (key1.pub)
 				 .balance (0)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				 .work (0)
 				 .build ();
-	node1.work_generate_blocking (*send1);
+	send1.set_work (*node1.work_generate_blocking (send1.root ()));
 	ASSERT_EQ (nano::block_status::progress, node1.process (send1));
 	ASSERT_EQ (0, node1.active.size ());
-	auto election1 = nano::test::start_election (system, node1, send1->hash ());
+	auto election1 = nano::test::start_election (system, node1, send1.hash ());
 	ASSERT_EQ (1, node1.active.size ());
 	ASSERT_NE (nullptr, election1);
 	ASSERT_EQ (1, election1->votes ().size ());
@@ -48,44 +48,43 @@ TEST (conflicts, add_existing)
 	nano::block_builder builder;
 	auto send1 = builder
 				 .send ()
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .destination (key1.pub)
 				 .balance (0)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				 .work (0)
 				 .build ();
-	node1.work_generate_blocking (*send1);
+	send1.set_work (*node1.work_generate_blocking (send1.root ()));
 
 	// add the block to ledger as an unconfirmed block
 	ASSERT_EQ (nano::block_status::progress, node1.process (send1));
 
 	// wait for send1 to be inserted in the ledger
-	ASSERT_TIMELY (5s, node1.block (send1->hash ()));
+	ASSERT_TIMELY (5s, node1.block (send1.hash ()));
 
 	// instruct the election scheduler to trigger an election for send1
-	nano::test::start_election (system, node1, send1->hash ());
+	nano::test::start_election (system, node1, send1.hash ());
 
 	// wait for election to be started before processing send2
-	ASSERT_TIMELY (5s, node1.active.active (*send1));
+	ASSERT_TIMELY (5s, node1.active.active (send1.qualified_root ()));
 
 	nano::keypair key2;
 	auto send2 = builder
 				 .send ()
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .destination (key2.pub)
 				 .balance (0)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				 .work (0)
 				 .build ();
-	node1.work_generate_blocking (*send2);
-	send2->sideband_set ({});
+	send2.set_work (*node1.work_generate_blocking (send2.root ()));
 
 	// the block processor will notice that the block is a fork and it will try to publish it
 	// which will update the election object
 	node1.block_processor.add (send2);
 
-	ASSERT_TRUE (node1.active.active (*send1));
-	ASSERT_TIMELY (5s, node1.active.active (*send2));
+	ASSERT_TRUE (node1.active.active (send1.qualified_root ()));
+	ASSERT_TIMELY (5s, node1.active.active (send2.qualified_root ()));
 }
 
 TEST (conflicts, add_two)
@@ -103,30 +102,30 @@ TEST (conflicts, add_two)
 	// send 1 raw to account key3 from key1
 	auto send_a = nano::state_block_builder ()
 				  .account (key1.pub)
-				  .previous (open1->hash ())
+				  .previous (open1.hash ())
 				  .representative (nano::dev::genesis_key.pub)
 				  .balance (0)
 				  .link (key3.pub)
 				  .sign (key1.prv, key1.pub)
-				  .work (*system.work.generate (open1->hash ()))
+				  .work (*system.work.generate (open1.hash ()))
 				  .build ();
 
 	// send 1 raw to account key3 from key2
 	auto send_b = nano::state_block_builder ()
 				  .account (key2.pub)
-				  .previous (open2->hash ())
+				  .previous (open2.hash ())
 				  .representative (nano::dev::genesis_key.pub)
 				  .balance (0)
 				  .link (key3.pub)
 				  .sign (key2.prv, key2.pub)
-				  .work (*system.work.generate (open2->hash ()))
+				  .work (*system.work.generate (open2.hash ()))
 				  .build ();
 
 	// activate elections for the previous two send blocks (to account3) that we did not forcefully confirm
 	ASSERT_TRUE (nano::test::process (*node, { send_a, send_b }));
 	ASSERT_TRUE (nano::test::start_elections (system, *node, { send_a, send_b }));
-	ASSERT_TRUE (node->active.election (send_a->qualified_root ()));
-	ASSERT_TRUE (node->active.election (send_b->qualified_root ()));
+	ASSERT_TRUE (node->active.election (send_a.qualified_root ()));
+	ASSERT_TRUE (node->active.election (send_b.qualified_root ()));
 	ASSERT_TIMELY_EQ (5s, node->active.size (), 2);
 }
 
@@ -152,7 +151,7 @@ TEST (vote_uniquer, vbh_one)
 				 .work (0)
 				 .build ();
 	std::vector<nano::block_hash> hashes;
-	hashes.push_back (block->hash ());
+	hashes.push_back (block.hash ());
 	auto vote1 = nano::test::make_vote (key, { hashes }, 0, 0);
 	auto vote2 (std::make_shared<nano::vote> (*vote1));
 	ASSERT_EQ (vote1, uniquer.unique (vote1));
@@ -175,7 +174,7 @@ TEST (vote_uniquer, vbh_two)
 				  .work (0)
 				  .build ();
 	std::vector<nano::block_hash> hashes1;
-	hashes1.push_back (block1->hash ());
+	hashes1.push_back (block1.hash ());
 	auto block2 = builder
 				  .state ()
 				  .account (1)
@@ -187,7 +186,7 @@ TEST (vote_uniquer, vbh_two)
 				  .work (0)
 				  .build ();
 	std::vector<nano::block_hash> hashes2;
-	hashes2.push_back (block2->hash ());
+	hashes2.push_back (block2.hash ());
 	auto vote1 = nano::test::make_vote (key, { hashes1 }, 0, 0);
 	auto vote2 = nano::test::make_vote (key, { hashes2 }, 0, 0);
 	ASSERT_EQ (vote1, uniquer.unique (vote1));

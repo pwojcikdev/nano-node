@@ -39,7 +39,7 @@ TEST (block_processor, backlog_throttling)
 	auto latest = node.latest (nano::dev::genesis_key.pub);
 	auto balance = node.balance (nano::dev::genesis_key.pub);
 
-	std::vector<std::shared_ptr<nano::block>> blocks;
+	std::vector<nano::raw_block> blocks;
 	for (int n = 0; n < spam_count; ++n)
 	{
 		nano::keypair throwaway;
@@ -57,7 +57,7 @@ TEST (block_processor, backlog_throttling)
 					.work (*system.work.generate (latest))
 					.build ();
 
-		latest = send->hash ();
+		latest = send.hash ();
 
 		blocks.push_back (send);
 	}

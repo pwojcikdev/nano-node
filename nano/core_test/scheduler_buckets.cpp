@@ -30,7 +30,7 @@ nano::keypair & key3 ()
 	static nano::keypair result;
 	return result;
 }
-std::shared_ptr<nano::state_block> & blockzero ()
+nano::raw_block & blockzero ()
 {
 	nano::block_builder builder;
 	static auto result = builder
@@ -45,7 +45,7 @@ std::shared_ptr<nano::state_block> & blockzero ()
 						 .build ();
 	return result;
 }
-std::shared_ptr<nano::state_block> & block0 ()
+nano::raw_block & block0 ()
 {
 	nano::block_builder builder;
 	static auto result = builder
@@ -60,7 +60,7 @@ std::shared_ptr<nano::state_block> & block0 ()
 						 .build ();
 	return result;
 }
-std::shared_ptr<nano::state_block> & block1 ()
+nano::raw_block & block1 ()
 {
 	nano::block_builder builder;
 	static auto result = builder
@@ -75,7 +75,7 @@ std::shared_ptr<nano::state_block> & block1 ()
 						 .build ();
 	return result;
 }
-std::shared_ptr<nano::state_block> & block2 ()
+nano::raw_block & block2 ()
 {
 	nano::block_builder builder;
 	static auto result = builder
@@ -90,7 +90,7 @@ std::shared_ptr<nano::state_block> & block2 ()
 						 .build ();
 	return result;
 }
-std::shared_ptr<nano::state_block> & block3 ()
+nano::raw_block & block3 ()
 {
 	nano::block_builder builder;
 	static auto result = builder

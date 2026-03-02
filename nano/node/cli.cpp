@@ -658,10 +658,10 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 					{
 						auto transaction (node.node->store.tx_begin_write ());
 						auto conf_height_reset_num = 0;
-						if (account == node.node->network_params.ledger.genesis->account ())
+						if (account == node.node->network_params.ledger.genesis.account ())
 						{
 							conf_height_reset_num = 1;
-							node.node->store.confirmation_height.put (transaction, account, { confirmation_height_info.height, node.node->network_params.ledger.genesis->hash () });
+							node.node->store.confirmation_height.put (transaction, account, { confirmation_height_info.height, node.node->network_params.ledger.genesis.hash () });
 						}
 						else
 						{
@@ -1406,7 +1406,7 @@ void reset_confirmation_heights (nano::ledger_constants & constants, nano::store
 
 	// Then make sure the confirmation height of the genesis account open block is 1
 	auto transaction = store.tx_begin_write ();
-	store.confirmation_height.put (transaction, constants.genesis->account (), { 1, constants.genesis->hash () });
+	store.confirmation_height.put (transaction, constants.genesis.account (), { 1, constants.genesis.hash () });
 }
 
 bool is_using_rocksdb (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::error_code & ec)

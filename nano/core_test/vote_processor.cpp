@@ -27,6 +27,8 @@ TEST (vote_processor, codes)
 	auto & node = *system.add_node (node_config);
 
 	auto blocks = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false);
+	auto stored = node.block (blocks[0].hash ());
+	ASSERT_TRUE (stored);
 	auto vote = nano::test::make_vote (nano::dev::genesis_key, { blocks[0] }, nano::vote::timestamp_min * 1, 0);
 	auto vote_invalid = std::make_shared<nano::vote> (*vote);
 	vote_invalid->signature.bytes[0] ^= 1;
@@ -42,9 +44,9 @@ TEST (vote_processor, codes)
 	node.vote_cache.clear ();
 
 	// First vote from an account for an ongoing election
-	node.start_election (blocks[0]);
+	node.start_election (*stored);
 	std::shared_ptr<nano::election> election;
-	ASSERT_TIMELY (5s, election = node.active.election (blocks[0]->qualified_root ()));
+	ASSERT_TIMELY (5s, election = node.active.election (blocks[0].qualified_root ()));
 	ASSERT_EQ (nano::vote_code::vote, node.vote_processor.vote_blocking (vote, channel));
 
 	// Processing the same vote is a replay
@@ -54,7 +56,7 @@ TEST (vote_processor, codes)
 	ASSERT_EQ (nano::vote_code::invalid, node.vote_processor.vote_blocking (vote_invalid, channel));
 
 	// Once the election is removed (confirmed / dropped) the vote is again indeterminate
-	ASSERT_TRUE (node.active.erase (blocks[0]->qualified_root ()));
+	ASSERT_TRUE (node.active.erase (blocks[0].qualified_root ()));
 	ASSERT_EQ (nano::vote_code::indeterminate, node.vote_processor.vote_blocking (vote, channel));
 }
 
@@ -64,12 +66,12 @@ TEST (vote_processor, invalid_signature)
 	auto & node = *system.nodes[0];
 	auto chain = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false);
 	nano::keypair key;
-	auto vote = std::make_shared<nano::vote> (key.pub, key.prv, nano::vote::timestamp_min * 1, 0, std::vector<nano::block_hash>{ chain[0]->hash () });
+	auto vote = std::make_shared<nano::vote> (key.pub, key.prv, nano::vote::timestamp_min * 1, 0, std::vector<nano::block_hash>{ chain[0].hash () });
 	auto vote_invalid = std::make_shared<nano::vote> (*vote);
 	vote_invalid->signature.bytes[0] ^= 1;
 	auto channel = std::make_shared<nano::transport::inproc::channel> (node, node);
 
-	auto election = nano::test::start_election (system, node, chain[0]->hash ());
+	auto election = nano::test::start_election (system, node, chain[0].hash ());
 	ASSERT_NE (election, nullptr);
 	ASSERT_EQ (1, election->votes ().size ());
 
@@ -86,7 +88,7 @@ TEST (vote_processor, overflow)
 	node_flags.vote_processor_capacity = 1;
 	auto & node (*system.add_node (node_flags));
 	nano::keypair key;
-	auto vote = nano::test::make_vote (key, { nano::dev::genesis }, nano::vote::timestamp_min * 1, 0);
+	auto vote = nano::test::make_vote (key, { nano::dev::genesis.hash () }, nano::vote::timestamp_min * 1, 0);
 	auto channel (std::make_shared<nano::transport::inproc::channel> (node, node));
 	auto start_time = std::chrono::system_clock::now ();
 
@@ -114,7 +116,7 @@ TEST (vote_processor, weights)
 	auto & node (*system.nodes[0]);
 
 	// Create representatives of different weight levels
-	auto const stake = nano::dev::genesis->balance ().number ();
+	auto const stake = nano::dev::genesis.balance ().number ();
 	auto const level0 = stake / 5000; // 0.02%
 	auto const level1 = stake / 500; // 0.2%
 	auto const level2 = stake / 50; // 2%
@@ -161,15 +163,15 @@ TEST (vote_processor, election)
 	auto blocks = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false);
 	auto & block = blocks[0];
 
-	auto election = nano::test::start_election (system, node, block->hash ());
+	auto election = nano::test::start_election (system, node, block.hash ());
 	ASSERT_NE (nullptr, election);
 	ASSERT_EQ (1, election->votes ().size ()); // Just the initial vote
 
 	// Create votes from multiple accounts
 	nano::keypair key1, key2, key3;
-	auto vote1 = nano::test::make_vote (key1, { block }, nano::vote::timestamp_min * 1, 0);
-	auto vote2 = nano::test::make_vote (key2, { block }, nano::vote::timestamp_min * 2, 0);
-	auto vote3 = nano::test::make_vote (key3, { block }, nano::vote::timestamp_min * 3, 0);
+	auto vote1 = nano::test::make_vote (key1, { block.hash () }, nano::vote::timestamp_min * 1, 0);
+	auto vote2 = nano::test::make_vote (key2, { block.hash () }, nano::vote::timestamp_min * 2, 0);
+	auto vote3 = nano::test::make_vote (key3, { block.hash () }, nano::vote::timestamp_min * 3, 0);
 
 	auto channel = nano::test::fake_channel (node);
 
@@ -208,10 +210,10 @@ TEST (vote_processor, multiple_elections)
 	auto & block4 = blocks[3];
 
 	// Start elections for all blocks
-	auto election1 = nano::test::start_election (system, node, block1->hash ());
-	auto election2 = nano::test::start_election (system, node, block2->hash ());
-	auto election3 = nano::test::start_election (system, node, block3->hash ());
-	auto election4 = nano::test::start_election (system, node, block4->hash ());
+	auto election1 = nano::test::start_election (system, node, block1.hash ());
+	auto election2 = nano::test::start_election (system, node, block2.hash ());
+	auto election3 = nano::test::start_election (system, node, block3.hash ());
+	auto election4 = nano::test::start_election (system, node, block4.hash ());
 	ASSERT_NE (nullptr, election1);
 	ASSERT_NE (nullptr, election2);
 	ASSERT_NE (nullptr, election3);
@@ -219,7 +221,7 @@ TEST (vote_processor, multiple_elections)
 
 	// Create a single vote containing all block hashes
 	nano::keypair key;
-	auto vote = nano::test::make_vote (key, { block1, block2, block3, block4 }, nano::vote::timestamp_min * 1, 0);
+	auto vote = nano::test::make_vote (key, { block1.hash (), block2.hash (), block3.hash (), block4.hash () }, nano::vote::timestamp_min * 1, 0);
 	ASSERT_EQ (vote->hashes.size (), 4);
 
 	auto channel = nano::test::fake_channel (node);
@@ -266,7 +268,7 @@ TEST (vote, timestamp_and_duration_masking)
 {
 	nano::test::system system;
 	nano::keypair key;
-	auto hash = std::vector<nano::block_hash>{ nano::dev::genesis->hash () };
+	auto hash = std::vector<nano::block_hash>{ nano::dev::genesis.hash () };
 	auto vote = std::make_shared<nano::vote> (key.pub, key.prv, 0x123f, 0xf, hash);
 	ASSERT_EQ (vote->timestamp (), 0x1230);
 	ASSERT_EQ (vote->duration ().count (), 524288);

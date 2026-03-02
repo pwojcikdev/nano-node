@@ -1,5 +1,5 @@
 #include <nano/crypto_lib/random_pool.hpp>
-#include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/stored_block.hpp>
 #include <nano/lib/thread_runner.hpp>
 #include <nano/lib/work_version.hpp>
@@ -99,12 +99,12 @@ void nano::test::system::stop ()
 	work.stop ();
 }
 
-void nano::test::system::set_initialization_blocks (std::deque<std::shared_ptr<nano::block>> blocks)
+void nano::test::system::set_initialization_blocks (std::deque<nano::raw_block> blocks)
 {
 	this->initialization_blocks = std::move (blocks);
 }
 
-void nano::test::system::set_cemented_initialization_blocks (std::deque<std::shared_ptr<nano::block>> blocks)
+void nano::test::system::set_cemented_initialization_blocks (std::deque<nano::raw_block> blocks)
 {
 	this->initialization_blocks_cemented = std::move (blocks);
 }
@@ -181,20 +181,20 @@ void nano::test::system::setup_node (nano::node & node)
 {
 	auto transaction = node.ledger.tx_begin_write ();
 
-	for (auto block : initialization_blocks)
+	for (auto const & block : initialization_blocks)
 	{
 		auto result = node.ledger.process (transaction, block);
-		debug_assert (result == nano::block_status::progress);
+		debug_assert (result.code == nano::block_status::progress);
 	}
 
-	for (auto block : initialization_blocks_cemented)
+	for (auto const & block : initialization_blocks_cemented)
 	{
 		auto result = node.ledger.process (transaction, block);
-		debug_assert (result == nano::block_status::progress);
+		debug_assert (result.code == nano::block_status::progress);
 
-		auto cemented = node.ledger.cement (transaction, block->hash ());
+		auto cemented = node.ledger.cement (transaction, block.hash ());
 		debug_assert (std::find_if (cemented.begin (), cemented.end (), [&block] (auto const & cemented_block) {
-			return cemented_block.hash () == block->hash ();
+			return cemented_block.hash () == block.hash ();
 		})
 		!= cemented.end ());
 	}
@@ -220,7 +220,7 @@ void nano::test::system::stop_node (nano::node & node)
 
 void nano::test::system::ledger_initialization_set (std::deque<nano::keypair> const & reps, nano::amount const & reserve)
 {
-	nano::block_hash previous = nano::dev::genesis->hash ();
+	nano::block_hash previous = nano::dev::genesis.hash ();
 	auto amount = (nano::dev::constants.genesis_amount - reserve.number ()) / reps.size ();
 	auto balance = nano::dev::constants.genesis_amount;
 	for (auto const & i : reps)
@@ -235,7 +235,7 @@ void nano::test::system::ledger_initialization_set (std::deque<nano::keypair> co
 		.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 		.work (*work.generate (previous));
 		initialization_blocks.emplace_back (builder.build ());
-		previous = initialization_blocks.back ()->hash ();
+		previous = initialization_blocks.back ().hash ();
 		builder.make_block ();
 		builder.account (i.pub)
 		.previous (0)
@@ -271,7 +271,7 @@ uint64_t nano::test::system::work_generate_limited (nano::block_hash const & roo
 /** Initiate an epoch upgrade. Writes the epoch block into the ledger and leaves it to
  *  node background processes (e.g. frontiers confirmation) to cement the block.
  */
-std::shared_ptr<nano::state_block> nano::test::upgrade_epoch (nano::work_pool & pool_a, nano::ledger & ledger_a, nano::epoch epoch_a)
+std::optional<nano::raw_block> nano::test::upgrade_epoch (nano::work_pool & pool_a, nano::ledger & ledger_a, nano::epoch epoch_a)
 {
 	auto transaction = ledger_a.tx_begin_write ();
 	auto dev_genesis_key = nano::dev::genesis_key;
@@ -291,16 +291,21 @@ std::shared_ptr<nano::state_block> nano::test::upgrade_epoch (nano::work_pool & 
 				 .work (*pool_a.generate (latest, pool_a.network_constants.work.threshold (nano::work_version::work_1, nano::block_details (epoch_a, false, false, true))))
 				 .build (ec);
 
-	bool error{ true };
-	if (!ec && epoch)
+	if (ec)
 	{
-		error = ledger_a.process (transaction, epoch) != nano::block_status::progress;
+		return std::nullopt;
 	}
 
-	return !error ? std::move (epoch) : nullptr;
+	auto result = ledger_a.process (transaction, epoch);
+	if (result.code != nano::block_status::progress)
+	{
+		return std::nullopt;
+	}
+
+	return epoch;
 }
 
-std::shared_ptr<nano::state_block> nano::test::system::upgrade_genesis_epoch (nano::node & node_a, nano::epoch const epoch_a)
+std::optional<nano::raw_block> nano::test::system::upgrade_genesis_epoch (nano::node & node_a, nano::epoch const epoch_a)
 {
 	return upgrade_epoch (work, node_a.ledger, epoch_a);
 }
@@ -438,7 +443,7 @@ void nano::test::system::generate_rollback (nano::node & node_a, std::vector<nan
 	if (info)
 	{
 		auto hash (info->open_block);
-		if (hash != node_a.network_params.ledger.genesis->hash ())
+		if (hash != node_a.network_params.ledger.genesis.hash ())
 		{
 			accounts_a[index] = accounts_a[accounts_a.size () - 1];
 			accounts_a.pop_back ();

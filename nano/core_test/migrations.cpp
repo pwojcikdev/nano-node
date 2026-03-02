@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
@@ -52,18 +53,19 @@ migration_test_data populate_ledger_for_migration (nano::store::ledger_store & s
 	nano::work_pool pool{ nano::dev::network_params.network, std::numeric_limits<unsigned>::max () };
 
 	// Generate blocks
-	auto previous = nano::dev::genesis->hash ();
+	auto previous = nano::dev::genesis.hash ();
 	for (size_t i = 0; i < num_blocks; ++i)
 	{
-		auto block = nano::state_block_builder ()
-					 .account (nano::dev::genesis_key.pub)
-					 .previous (previous)
-					 .representative (nano::dev::genesis_key.pub)
-					 .balance (nano::dev::constants.genesis_amount - (i + 1) * 1000)
-					 .link (nano::account (i + 1))
-					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					 .work (*pool.generate (previous))
-					 .build ();
+		auto raw = nano::state_block_builder ()
+				   .account (nano::dev::genesis_key.pub)
+				   .previous (previous)
+				   .representative (nano::dev::genesis_key.pub)
+				   .balance (nano::dev::constants.genesis_amount - (i + 1) * 1000)
+				   .link (nano::account (i + 1))
+				   .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				   .work (*pool.generate (previous))
+				   .build ();
+		auto block = nano::to_legacy (raw);
 		data.blocks.push_back (block);
 		previous = block->hash ();
 	}

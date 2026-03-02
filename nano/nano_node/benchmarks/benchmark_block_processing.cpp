@@ -66,7 +66,7 @@ public:
 	block_processing_benchmark (std::shared_ptr<nano::node> node_a, benchmark_config const & config_a);
 
 	void run ();
-	void run_iteration (std::deque<std::shared_ptr<nano::block>> & blocks);
+	void run_iteration (std::deque<nano::raw_block> & blocks);
 	void print_statistics ();
 };
 
@@ -180,7 +180,7 @@ void block_processing_benchmark::run ()
 	print_statistics ();
 }
 
-void block_processing_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>> & blocks)
+void block_processing_benchmark::run_iteration (std::deque<nano::raw_block> & blocks)
 {
 	auto const total_blocks = blocks.size ();
 
@@ -189,7 +189,7 @@ void block_processing_benchmark::run_iteration (std::deque<std::shared_ptr<nano:
 		auto current_l = current_blocks.lock ();
 		for (auto const & block : blocks)
 		{
-			current_l->insert (block->hash ());
+			current_l->insert (block.hash ());
 		}
 	}
 
@@ -198,7 +198,7 @@ void block_processing_benchmark::run_iteration (std::deque<std::shared_ptr<nano:
 	// Process all blocks
 	while (!blocks.empty ())
 	{
-		auto block = blocks.front ();
+		auto block = std::move (blocks.front ());
 		blocks.pop_front ();
 
 		bool added = node->block_processor.add (block, nano::block_source::test);

@@ -20,18 +20,18 @@ TEST (receivable, pending_table_query_epochs)
 	// epoch 0 send
 	auto send0 = builder
 				 .send ()
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .destination (key2.pub)
 				 .balance (nano::dev::constants.genesis_amount - 1)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 	nano::test::process (node, { send0 });
 	ASSERT_TIMELY (5s, nano::test::exists (node, { send0 }));
 
 	auto epoch1 = system.upgrade_genesis_epoch (node, nano::epoch::epoch_1);
 	ASSERT_TRUE (epoch1);
-	ASSERT_TIMELY (5s, nano::test::exists (node, { epoch1 }));
+	ASSERT_TIMELY (5s, nano::test::exists (node, { *epoch1 }));
 
 	// epoch 1 send
 	auto send1 = builder
@@ -49,7 +49,7 @@ TEST (receivable, pending_table_query_epochs)
 
 	auto epoch2 = system.upgrade_genesis_epoch (node, nano::epoch::epoch_2);
 	ASSERT_TRUE (epoch2);
-	ASSERT_TIMELY (5s, nano::test::exists (node, { epoch2 }));
+	ASSERT_TIMELY (5s, nano::test::exists (node, { *epoch2 }));
 
 	// epoch 2 send
 	auto send2 = builder
@@ -69,7 +69,7 @@ TEST (receivable, pending_table_query_epochs)
 
 	// check epoch 0 send
 	{
-		nano::pending_key key{ key2.pub, send0->hash () };
+		nano::pending_key key{ key2.pub, send0.hash () };
 		auto opt_info = node.store.pending.get (tx, key);
 		ASSERT_TRUE (opt_info.has_value ());
 		auto info = opt_info.value ();
@@ -80,7 +80,7 @@ TEST (receivable, pending_table_query_epochs)
 
 	// check epoch 1 send
 	{
-		nano::pending_key key{ key2.pub, send1->hash () };
+		nano::pending_key key{ key2.pub, send1.hash () };
 		auto opt_info = node.store.pending.get (tx, key);
 		ASSERT_TRUE (opt_info.has_value ());
 		auto info = opt_info.value ();
@@ -91,7 +91,7 @@ TEST (receivable, pending_table_query_epochs)
 
 	// check epoch 2 send
 	{
-		nano::pending_key key{ key2.pub, send2->hash () };
+		nano::pending_key key{ key2.pub, send2.hash () };
 		auto opt_info = node.store.pending.get (tx, key);
 		ASSERT_TRUE (opt_info.has_value ());
 		auto info = opt_info.value ();

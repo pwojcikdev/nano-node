@@ -194,15 +194,15 @@ TEST (network, send_discarded_publish)
 				 .build ();
 	{
 		auto transaction = node1.ledger.tx_begin_read ();
-		auto sent = node1.network.flood_block (nano::to_raw (*block), nano::transport::traffic_type::test);
+		auto sent = node1.network.flood_block (block, nano::transport::traffic_type::test);
 		ASSERT_EQ (1, sent);
-		ASSERT_EQ (nano::dev::genesis->hash (), node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
-		ASSERT_EQ (nano::dev::genesis->hash (), node2.latest (nano::dev::genesis_key.pub));
+		ASSERT_EQ (nano::dev::genesis.hash (), node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
+		ASSERT_EQ (nano::dev::genesis.hash (), node2.latest (nano::dev::genesis_key.pub));
 	}
 	ASSERT_TIMELY (10s, node2.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in) != 0);
 	auto transaction = node1.ledger.tx_begin_read ();
-	ASSERT_EQ (nano::dev::genesis->hash (), node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
-	ASSERT_EQ (nano::dev::genesis->hash (), node2.latest (nano::dev::genesis_key.pub));
+	ASSERT_EQ (nano::dev::genesis.hash (), node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
+	ASSERT_EQ (nano::dev::genesis.hash (), node2.latest (nano::dev::genesis_key.pub));
 }
 
 TEST (network, send_invalid_publish)
@@ -221,15 +221,15 @@ TEST (network, send_invalid_publish)
 				 .build ();
 	{
 		auto transaction = node1.ledger.tx_begin_read ();
-		auto sent = node1.network.flood_block (nano::to_raw (*block), nano::transport::traffic_type::test);
+		auto sent = node1.network.flood_block (block, nano::transport::traffic_type::test);
 		ASSERT_EQ (1, sent);
-		ASSERT_EQ (nano::dev::genesis->hash (), node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
-		ASSERT_EQ (nano::dev::genesis->hash (), node2.latest (nano::dev::genesis_key.pub));
+		ASSERT_EQ (nano::dev::genesis.hash (), node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
+		ASSERT_EQ (nano::dev::genesis.hash (), node2.latest (nano::dev::genesis_key.pub));
 	}
 	ASSERT_TIMELY (10s, node2.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in) != 0);
 	auto transaction = node1.ledger.tx_begin_read ();
-	ASSERT_EQ (nano::dev::genesis->hash (), node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
-	ASSERT_EQ (nano::dev::genesis->hash (), node2.latest (nano::dev::genesis_key.pub));
+	ASSERT_EQ (nano::dev::genesis.hash (), node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
+	ASSERT_EQ (nano::dev::genesis.hash (), node2.latest (nano::dev::genesis_key.pub));
 }
 
 TEST (network, send_valid_confirm_ack)
@@ -253,7 +253,7 @@ TEST (network, send_valid_confirm_ack)
 				  .work (*system.work.generate (latest1))
 				  .build ();
 	nano::block_hash latest2 (node2.latest (nano::dev::genesis_key.pub));
-	node1.process_active (std::make_shared<nano::send_block> (*block2));
+	node1.process_active (block2);
 	// Keep polling until latest block changes
 	ASSERT_TIMELY (10s, node2.latest (nano::dev::genesis_key.pub) != latest2);
 	// Make sure the balance has decreased after processing the block.
@@ -280,9 +280,9 @@ TEST (network, send_valid_publish)
 				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				  .work (*system.work.generate (latest1))
 				  .build ();
-	auto hash2 (block2->hash ());
+	auto hash2 (block2.hash ());
 	nano::block_hash latest2 (node2.latest (nano::dev::genesis_key.pub));
-	node2.process_active (std::make_shared<nano::send_block> (*block2));
+	node2.process_active (block2);
 	ASSERT_TIMELY (10s, node1.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::in) != 0);
 	ASSERT_NE (hash2, latest2);
 	ASSERT_TIMELY (10s, node2.latest (nano::dev::genesis_key.pub) != latest2);
@@ -321,15 +321,15 @@ TEST (receivable_processor, confirm_insufficient_pos)
 	nano::block_builder builder;
 	auto block1 = builder
 				  .send ()
-				  .previous (nano::dev::genesis->hash ())
+				  .previous (nano::dev::genesis.hash ())
 				  .destination (0)
 				  .balance (nano::dev::constants.genesis_amount - 1)
 				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				  .work (0)
 				  .build ();
-	node1.work_generate_blocking (*block1);
+	block1.set_work (*node1.work_generate_blocking (block1.root ()));
 	ASSERT_EQ (nano::block_status::progress, node1.process (block1));
-	auto election = nano::test::start_election (system, node1, block1->hash ());
+	auto election = nano::test::start_election (system, node1, block1.hash ());
 	nano::keypair key1;
 	auto vote = nano::test::make_final_vote (key1, { block1 });
 	nano::messages::confirm_ack con1{ nano::dev::network_params.network, vote };
@@ -347,15 +347,15 @@ TEST (receivable_processor, confirm_sufficient_pos)
 	nano::block_builder builder;
 	auto block1 = builder
 				  .send ()
-				  .previous (nano::dev::genesis->hash ())
+				  .previous (nano::dev::genesis.hash ())
 				  .destination (0)
 				  .balance (nano::dev::constants.genesis_amount - 1)
 				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				  .work (0)
 				  .build ();
-	node1.work_generate_blocking (*block1);
+	block1.set_work (*node1.work_generate_blocking (block1.root ()));
 	ASSERT_EQ (nano::block_status::progress, node1.process (block1));
-	auto election = nano::test::start_election (system, node1, block1->hash ());
+	auto election = nano::test::start_election (system, node1, block1.hash ());
 	auto vote = nano::test::make_final_vote (nano::dev::genesis_key, { block1 });
 	nano::messages::confirm_ack con1{ nano::dev::network_params.network, vote };
 	auto channel1 = std::make_shared<nano::transport::inproc::channel> (node1, node1);
@@ -622,7 +622,7 @@ TEST (network, duplicate_vote_detection)
 	auto & node0 = *system.add_node ();
 	auto & node1 = *system.add_node ();
 
-	auto vote = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis->hash () });
+	auto vote = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis.hash () });
 	nano::messages::confirm_ack message{ nano::dev::network_params.network, vote };
 
 	ASSERT_EQ (0, node1.stats.count (nano::stat::type::filter, nano::stat::detail::duplicate_confirm_ack_message));
@@ -649,11 +649,11 @@ TEST (network, duplicate_revert_vote)
 	auto & node0 = *system.add_node (node_config);
 	auto & node1 = *system.add_node (node_config);
 
-	auto vote1 = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis->hash () }, 1);
+	auto vote1 = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis.hash () }, 1);
 	nano::messages::confirm_ack message1{ nano::dev::network_params.network, vote1 };
 	auto bytes1 = message_payload_to_bytes (message1);
 
-	auto vote2 = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis->hash () }, 2);
+	auto vote2 = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis.hash () }, 2);
 	nano::messages::confirm_ack message2{ nano::dev::network_params.network, vote2 };
 	auto bytes2 = message_payload_to_bytes (message2);
 
@@ -682,7 +682,7 @@ TEST (network, expire_duplicate_filter)
 	auto & node0 = *system.add_node (node_config);
 	auto & node1 = *system.add_node (node_config);
 
-	auto vote = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis->hash () });
+	auto vote = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis.hash () });
 	nano::messages::confirm_ack message{ nano::dev::network_params.network, vote };
 	auto bytes = message_payload_to_bytes (message);
 
@@ -1111,7 +1111,7 @@ TEST (network, flood_vote)
 	system.wallet (1)->insert_adhoc (nano::dev::genesis_key.prv);
 	ASSERT_TIMELY_EQ (5s, node.rep_crawler.representative_count (), 1);
 
-	auto vote = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis->hash () });
+	auto vote = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis.hash () });
 	ASSERT_EQ (2, node.network.flood_vote (vote, nano::transport::traffic_type::test));
 	ASSERT_EQ (3, node.network.flood_vote_all (vote, nano::transport::traffic_type::test));
 	ASSERT_EQ (2, node.network.flood_vote_non_pr (vote, 999.0f));

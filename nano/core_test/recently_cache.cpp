@@ -1,4 +1,5 @@
 #include <nano/lib/blockbuilders.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/node/election_status.hpp>
 #include <nano/node/recently_cemented_cache.hpp>
 #include <nano/node/recently_confirmed_cache.hpp>
@@ -10,7 +11,7 @@
 
 namespace
 {
-std::shared_ptr<nano::block> make_test_block ()
+nano::raw_block make_test_block ()
 {
 	nano::block_builder builder;
 	return builder.state ()
@@ -28,7 +29,7 @@ nano::election_status make_test_election_status ()
 {
 	auto block = make_test_block ();
 	nano::election_status status;
-	status.winner = nano::to_raw (*block);
+	status.winner = block;
 	status.type = nano::election_status_type::active_confirmed_quorum;
 	status.election_end = std::chrono::system_clock::now ();
 	status.election_duration = std::chrono::milliseconds (100);

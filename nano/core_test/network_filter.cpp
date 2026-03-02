@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/network_filter.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/messages/messages.hpp>
@@ -23,7 +24,7 @@ TEST (network_filter, apply)
 TEST (network_filter, unit)
 {
 	nano::network_filter filter (1);
-	auto one_block = [&filter] (std::shared_ptr<nano::block> const & block_a, bool expect_duplicate_a) {
+	auto one_block = [&filter] (nano::raw_block const & block_a, bool expect_duplicate_a) {
 		nano::messages::publish message{ nano::dev::network_params.network, block_a };
 		auto bytes (message.to_bytes ());
 		nano::bufferstream stream (bytes->data (), bytes->size ());
@@ -34,7 +35,7 @@ TEST (network_filter, unit)
 		ASSERT_FALSE (error);
 
 		// This validates nano::messages::message_header::size
-		ASSERT_EQ (bytes->size (), block_a->size (block_a->type ()) + header.size);
+		ASSERT_EQ (bytes->size (), nano::block::size (block_a.type ()) + header.size);
 
 		// Now filter the rest of the stream
 		bool duplicate (filter.apply (bytes->data (), bytes->size () - header.size));
@@ -43,17 +44,17 @@ TEST (network_filter, unit)
 		// Make sure the stream was rewinded correctly
 		auto block (nano::deserialize_block (stream, header.block_type ()));
 		ASSERT_NE (nullptr, block);
-		ASSERT_EQ (*block, *block_a);
+		ASSERT_EQ (nano::to_raw (*block), block_a);
 	};
-	one_block (nano::dev::genesis, false);
+	one_block (nano::dev::genesis.raw (), false);
 	for (int i = 0; i < 10; ++i)
 	{
-		one_block (nano::dev::genesis, true);
+		one_block (nano::dev::genesis.raw (), true);
 	}
 	nano::state_block_builder builder;
 	auto new_block = builder
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (nano::dev::genesis->hash ())
+					 .previous (nano::dev::genesis.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .balance (nano::dev::constants.genesis_amount - 1000 * nano::raw_ratio)
 					 .link (nano::public_key ())
@@ -68,7 +69,7 @@ TEST (network_filter, unit)
 	}
 	for (int i = 0; i < 100; ++i)
 	{
-		one_block (nano::dev::genesis, false);
+		one_block (nano::dev::genesis.raw (), false);
 		one_block (new_block, false);
 	}
 }
@@ -82,7 +83,7 @@ TEST (network_filter, many)
 		nano::state_block_builder builder;
 		auto block = builder
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (nano::dev::genesis->hash ())
+					 .previous (nano::dev::genesis.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .balance (nano::dev::constants.genesis_amount - i * 1000 * nano::raw_ratio)
 					 .link (key1.pub)
@@ -100,18 +101,19 @@ TEST (network_filter, many)
 		ASSERT_FALSE (error);
 
 		// This validates nano::messages::message_header::size
-		ASSERT_EQ (bytes->size (), block->size + header.size);
+		auto block_size = nano::block::size (block.type ());
+		ASSERT_EQ (bytes->size (), block_size + header.size);
 
 		// Now filter the rest of the stream
 		// All blocks should pass through
-		ASSERT_FALSE (filter.apply (bytes->data (), block->size));
-		ASSERT_TRUE (filter.check (bytes->data (), block->size));
+		ASSERT_FALSE (filter.apply (bytes->data (), block_size));
+		ASSERT_TRUE (filter.check (bytes->data (), block_size));
 		ASSERT_FALSE (error);
 
 		// Make sure the stream was rewinded correctly
 		auto deserialized_block (nano::deserialize_block (stream, header.block_type ()));
 		ASSERT_NE (nullptr, deserialized_block);
-		ASSERT_EQ (*block, *deserialized_block);
+		ASSERT_EQ (block, nano::to_raw (*deserialized_block));
 	}
 }
 

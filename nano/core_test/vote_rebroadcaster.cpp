@@ -306,13 +306,13 @@ TEST (vote_rebroadcaster, basic_rebroadcast)
 	auto block = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false).front ();
 
 	// Start election for the block
-	ASSERT_TRUE (nano::test::start_election (system, node, block->hash ()));
+	ASSERT_TRUE (nano::test::start_election (system, node, block.hash ()));
 
 	// Genesis should be viewed as a principal representative
 	ASSERT_NE (nano::rep_tier::none, node.rep_tiers.tier (nano::dev::genesis_key.pub));
 
 	// Create a vote from genesis (principal representative)
-	auto vote = nano::test::make_vote (nano::dev::genesis_key, { block->hash () });
+	auto vote = nano::test::make_vote (nano::dev::genesis_key, { block.hash () });
 
 	// Clear stats
 	node.stats.clear ();
@@ -349,10 +349,10 @@ TEST (vote_rebroadcaster, local_representative_votes_skipped)
 
 	// Create a block and start an election
 	auto block = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false).front ();
-	ASSERT_TRUE (nano::test::start_election (system, node, block->hash ()));
+	ASSERT_TRUE (nano::test::start_election (system, node, block.hash ()));
 
 	// Create a vote from genesis (now a local representative)
-	auto vote = nano::test::make_vote (nano::dev::genesis_key, { block->hash () });
+	auto vote = nano::test::make_vote (nano::dev::genesis_key, { block.hash () });
 
 	// Clear stats and wait for refresh interval to elapse so local rep cache is updated
 	node.stats.clear ();
@@ -397,11 +397,11 @@ TEST (vote_rebroadcaster, disabled_when_principal_representative)
 	auto send = nano::state_block_builder ()
 				.account (nano::dev::genesis_key.pub)
 				.representative (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.link (other_rep.pub)
 				.balance (nano::dev::constants.genesis_amount - send_amount)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send));
 
@@ -410,7 +410,7 @@ TEST (vote_rebroadcaster, disabled_when_principal_representative)
 				.account (other_rep.pub)
 				.representative (other_rep.pub)
 				.previous (0)
-				.link (send->hash ())
+				.link (send.hash ())
 				.balance (send_amount)
 				.sign (other_rep.prv, other_rep.pub)
 				.work (*system.work.generate (other_rep.pub))
@@ -418,13 +418,13 @@ TEST (vote_rebroadcaster, disabled_when_principal_representative)
 	ASSERT_EQ (nano::block_status::progress, node.process (open));
 
 	// Start election for a block
-	ASSERT_TRUE (nano::test::start_election (system, node, send->hash ()));
+	ASSERT_TRUE (nano::test::start_election (system, node, send.hash ()));
 
 	// Wait for rep tiers to recognize other_rep
 	ASSERT_TIMELY (10s, node.rep_tiers.tier (other_rep.pub) != nano::rep_tier::none);
 
 	// Create a vote from other_rep (external principal representative)
-	auto vote = nano::test::make_vote (other_rep, { send->hash () });
+	auto vote = nano::test::make_vote (other_rep, { send.hash () });
 
 	// Process the vote (should not be queued)
 	node.process_active (vote);
@@ -448,13 +448,13 @@ TEST (vote_rebroadcaster, non_principal_rep_votes_rejected)
 
 	// Create a block and start election
 	auto block = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false).front ();
-	ASSERT_TRUE (nano::test::start_election (system, node, block->hash ()));
+	ASSERT_TRUE (nano::test::start_election (system, node, block.hash ()));
 
 	// Create a vote from a random keypair with no weight (non-principal)
 	nano::keypair random_key;
 	ASSERT_EQ (nano::rep_tier::none, node.rep_tiers.tier (random_key.pub));
 
-	auto vote = nano::test::make_vote (random_key, { block->hash () });
+	auto vote = nano::test::make_vote (random_key, { block.hash () });
 
 	// Clear stats
 	node.stats.clear ();
@@ -484,10 +484,10 @@ TEST (vote_rebroadcaster, duplicate_vote_ignored)
 
 	// Create a block and start election
 	auto block = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false).front ();
-	ASSERT_TRUE (nano::test::start_election (system, node, block->hash ()));
+	ASSERT_TRUE (nano::test::start_election (system, node, block.hash ()));
 
 	// Create a vote from genesis
-	auto vote = nano::test::make_vote (nano::dev::genesis_key, { block->hash () });
+	auto vote = nano::test::make_vote (nano::dev::genesis_key, { block.hash () });
 
 	// Clear stats
 	node.stats.clear ();
@@ -525,10 +525,10 @@ TEST (vote_rebroadcaster, disabled)
 
 	// Create a block and start election
 	auto block = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false).front ();
-	ASSERT_TRUE (nano::test::start_election (system, node, block->hash ()));
+	ASSERT_TRUE (nano::test::start_election (system, node, block.hash ()));
 
 	// Create a vote from genesis
-	auto vote = nano::test::make_vote (nano::dev::genesis_key, { block->hash () });
+	auto vote = nano::test::make_vote (nano::dev::genesis_key, { block.hash () });
 
 	// Clear stats
 	node.stats.clear ();

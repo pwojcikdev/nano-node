@@ -1121,7 +1121,7 @@ void nano::json_handler::active_difficulty ()
 
 void nano::json_handler::available_supply ()
 {
-	auto genesis_balance (node.balance (node.network_params.ledger.genesis->account ())); // Cold storage genesis
+	auto genesis_balance (node.balance (node.network_params.ledger.genesis.account ())); // Cold storage genesis
 	auto landing_balance (node.balance (nano::account ("059F68AAB29DE0D3A27443625C7EA9CDDB6517A8B76FE37727EF6A4D76832AD5"))); // Active unavailable account
 	auto faucet_balance (node.balance (nano::account ("8E319CE6F3025E5B2DF66DA7AB1467FE48F1679C13DD43BFDB29FA2E9FC40D3B"))); // Faucet account
 	auto burned_balance ((node.balance_pending (nano::account{}, false)).second); // Burning 0 account
@@ -1677,14 +1677,14 @@ void nano::json_handler::block_create ()
 				}
 			}
 			nano::block_builder builder_l;
-			std::shared_ptr<nano::block> block_l{ nullptr };
+			std::optional<nano::raw_block> block_raw;
 			nano::root root_l;
 			std::error_code ec_build;
 			if (type == "state")
 			{
 				if (previous_text.is_initialized () && !representative.is_zero () && (!link.is_zero () || link_text.is_initialized ()))
 				{
-					block_l = builder_l.state ()
+					block_raw = builder_l.state ()
 							  .account (pub)
 							  .previous (previous)
 							  .representative (representative)
@@ -1710,7 +1710,7 @@ void nano::json_handler::block_create ()
 			{
 				if (representative != 0 && source != 0)
 				{
-					block_l = builder_l.open ()
+					block_raw = builder_l.open ()
 							  .account (pub)
 							  .source (source)
 							  .representative (representative)
@@ -1727,7 +1727,7 @@ void nano::json_handler::block_create ()
 			{
 				if (source != 0 && previous != 0)
 				{
-					block_l = builder_l.receive ()
+					block_raw = builder_l.receive ()
 							  .previous (previous)
 							  .source (source)
 							  .sign (prv, pub)
@@ -1743,7 +1743,7 @@ void nano::json_handler::block_create ()
 			{
 				if (representative != 0 && previous != 0)
 				{
-					block_l = builder_l.change ()
+					block_raw = builder_l.change ()
 							  .previous (previous)
 							  .representative (representative)
 							  .sign (prv, pub)
@@ -1761,7 +1761,7 @@ void nano::json_handler::block_create ()
 				{
 					if (balance.number () >= amount.number ())
 					{
-						block_l = builder_l.send ()
+						block_raw = builder_l.send ()
 								  .previous (previous)
 								  .destination (destination)
 								  .balance (balance.number () - amount.number ())
@@ -1785,6 +1785,8 @@ void nano::json_handler::block_create ()
 			}
 			if (!ec && (!ec_build || ec_build == nano::error_common::missing_work))
 			{
+				// Convert to legacy for work generation and response callbacks
+				auto block_l = nano::to_legacy (*block_raw);
 				if (work == 0)
 				{
 					// Difficulty calculation
@@ -2491,7 +2493,7 @@ public:
 			// Report opens as a receive
 			tree.put ("type", "receive");
 		}
-		if (block_a.source_field ().value () != handler.node.ledger.constants.genesis->account ().as_union ())
+		if (block_a.source_field ().value () != handler.node.ledger.constants.genesis.account ().as_union ())
 		{
 			bool error_or_pruned (false);
 			auto amount = handler.node.ledger.any.block_amount (transaction, hash);
@@ -2507,7 +2509,7 @@ public:
 		}
 		else
 		{
-			tree.put ("account", handler.node.ledger.constants.genesis->account ().to_account ());
+			tree.put ("account", handler.node.ledger.constants.genesis.account ().to_account ());
 			tree.put ("amount", nano::dev::constants.genesis_amount.convert_to<std::string> ());
 		}
 	}
@@ -3288,11 +3290,12 @@ void nano::json_handler::process ()
 		}
 		if (!rpc_l->ec)
 		{
-			if (!rpc_l->node.network_params.work.validate_entry (*block))
+			auto raw = nano::to_raw (*block);
+			if (!rpc_l->node.network_params.work.validate_entry (raw))
 			{
 				if (!is_async)
 				{
-					auto result_maybe = rpc_l->node.process_local (block);
+					auto result_maybe = rpc_l->node.process_local (raw);
 					if (!result_maybe)
 					{
 						rpc_l->ec = nano::error_rpc::stopped;
@@ -3304,7 +3307,7 @@ void nano::json_handler::process ()
 						{
 							case nano::block_status::progress:
 							{
-								rpc_l->response_l.put ("hash", block->hash ().to_string ());
+								rpc_l->response_l.put ("hash", raw.hash ().to_string ());
 								break;
 							}
 							case nano::block_status::gap_previous:
@@ -3358,9 +3361,9 @@ void nano::json_handler::process ()
 								bool const force = rpc_l->request.get<bool> ("force", false);
 								if (force)
 								{
-									rpc_l->node.active.erase (*block);
-									rpc_l->node.block_processor.force (block);
-									rpc_l->response_l.put ("hash", block->hash ().to_string ());
+									rpc_l->node.active.erase (raw.qualified_root ());
+									rpc_l->node.block_processor.force (raw);
+									rpc_l->response_l.put ("hash", raw.hash ().to_string ());
 								}
 								else
 								{
@@ -3386,9 +3389,9 @@ void nano::json_handler::process ()
 				}
 				else
 				{
-					if (block->type () == nano::block_type::state)
+					if (raw.type () == nano::block_type::state)
 					{
-						rpc_l->node.process_local_async (block);
+						rpc_l->node.process_local_async (raw);
 						rpc_l->response_l.put ("started", "1");
 					}
 					else
@@ -4341,7 +4344,7 @@ void nano::json_handler::version ()
 	response_l.put ("node_vendor", boost::str (boost::format ("Nano %1%") % NANO_VERSION_STRING));
 	response_l.put ("store_vendor", node.store.vendor_get ());
 	response_l.put ("network", node.network_params.network.get_current_network_as_string ());
-	response_l.put ("network_identifier", node.network_params.ledger.genesis->hash ().to_string ());
+	response_l.put ("network_identifier", node.network_params.ledger.genesis.hash ().to_string ());
 	response_l.put ("build_info", BUILD_INFO);
 	response_errors ();
 }

@@ -31,7 +31,7 @@ TEST (flamegraph, large_direct_processing)
 	auto & node = *system.add_node ();
 	auto prepare = [&] () {
 		nano::state_block_builder builder;
-		std::deque<std::shared_ptr<nano::block>> blocks;
+		std::deque<nano::raw_block> blocks;
 		std::deque<nano::keypair> keys;
 		auto previous = *std::prev (std::prev (system.initialization_blocks.end ()));
 		for (auto i = 0; i < 20000; ++i)
@@ -41,11 +41,11 @@ TEST (flamegraph, large_direct_processing)
 			auto block = builder.make_block ()
 						 .account (nano::dev::genesis_key.pub)
 						 .representative (nano::dev::genesis_key.pub)
-						 .previous (previous->hash ())
+						 .previous (previous.hash ())
 						 .link (key.pub)
-						 .balance (previous->balance_field ().value ().number () - 1000 * nano::raw_ratio)
+						 .balance (previous.balance_field ().value ().number () - 1000 * nano::raw_ratio)
 						 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-						 .work (*system.work.generate (previous->hash ()))
+						 .work (*system.work.generate (previous.hash ()))
 						 .build ();
 			blocks.push_back (block);
 			previous = block;
@@ -55,7 +55,7 @@ TEST (flamegraph, large_direct_processing)
 	auto const & [blocks, keys] = prepare ();
 	auto execute = [&] () {
 		auto count = 0;
-		for (auto block : blocks)
+		for (auto const & block : blocks)
 		{
 			ASSERT_EQ (nano::block_status::progress, node.process (block));
 		}
@@ -71,7 +71,7 @@ TEST (flamegraph, large_confirmation)
 	system.ledger_initialization_set (reps, circulating);
 	auto prepare = [&] () {
 		nano::state_block_builder builder;
-		std::deque<std::shared_ptr<nano::block>> blocks;
+		std::deque<nano::raw_block> blocks;
 		std::deque<nano::keypair> keys;
 		auto previous = *std::prev (std::prev (system.initialization_blocks.end ()));
 		for (auto i = 0; i < 100; ++i)
@@ -81,11 +81,11 @@ TEST (flamegraph, large_confirmation)
 			auto block = builder.make_block ()
 						 .account (nano::dev::genesis_key.pub)
 						 .representative (nano::dev::genesis_key.pub)
-						 .previous (previous->hash ())
+						 .previous (previous.hash ())
 						 .link (key.pub)
-						 .balance (previous->balance_field ().value ().number () - 1000 * nano::raw_ratio)
+						 .balance (previous.balance_field ().value ().number () - 1000 * nano::raw_ratio)
 						 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-						 .work (*system.work.generate (previous->hash ()))
+						 .work (*system.work.generate (previous.hash ()))
 						 .build ();
 			blocks.push_back (block);
 			previous = block;
@@ -101,6 +101,6 @@ TEST (flamegraph, large_confirmation)
 	auto & node3 = *system.add_node (config, flags, nano::transport::transport_type::tcp, reps[2]);
 	auto & node4 = *system.add_node (config, flags, nano::transport::transport_type::tcp, reps[3]);
 	ASSERT_TIMELY (300s, std::all_of (system.nodes.begin (), system.nodes.end (), [&] (auto const & node) {
-		return node->block_confirmed (system.initialization_blocks.back ()->hash ());
+		return node->block_confirmed (system.initialization_blocks.back ().hash ());
 	}));
 }

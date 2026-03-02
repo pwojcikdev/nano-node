@@ -76,7 +76,7 @@ bool nano::telemetry::verify (const nano::messages::telemetry_ack & telemetry, c
 		return false;
 	}
 
-	if (telemetry.data.genesis_block != network_params.ledger.genesis->hash ())
+	if (telemetry.data.genesis_block != network_params.ledger.genesis.hash ())
 	{
 		network.exclude (channel);
 

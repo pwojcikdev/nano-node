@@ -33,7 +33,7 @@ nano::keypair setup_rep (nano::test::system & system, nano::node & node, nano::u
 
 	auto open = builder
 				.open ()
-				.source (send->hash ())
+				.source (send.hash ())
 				.representative (key.pub)
 				.account (key.pub)
 				.sign (key.prv, key.pub)
@@ -41,7 +41,7 @@ nano::keypair setup_rep (nano::test::system & system, nano::node & node, nano::u
 				.build ();
 
 	EXPECT_TRUE (nano::test::process (node, { send, open }));
-	nano::test::confirm (node.ledger, open->hash ());
+	nano::test::confirm (node.ledger, open.hash ());
 
 	return key;
 }
@@ -60,13 +60,13 @@ std::vector<nano::keypair> setup_reps (nano::test::system & system, nano::node &
 /*
  * Creates `count` number of unconfirmed blocks with their dependencies confirmed, each directly sent from genesis
  */
-std::vector<std::shared_ptr<nano::block>> setup_blocks (nano::test::system & system, nano::node & node, int count)
+std::vector<nano::raw_block> setup_blocks (nano::test::system & system, nano::node & node, int count)
 {
 	auto latest = node.latest (nano::dev::genesis_key.pub);
 	auto balance = node.balance (nano::dev::genesis_key.pub);
 
-	std::vector<std::shared_ptr<nano::block>> sends;
-	std::vector<std::shared_ptr<nano::block>> receives;
+	std::vector<nano::raw_block> sends;
+	std::vector<nano::raw_block> receives;
 	for (int n = 0; n < count; ++n)
 	{
 		if (n % 10000 == 0)
@@ -87,14 +87,14 @@ std::vector<std::shared_ptr<nano::block>> setup_blocks (nano::test::system & sys
 
 		auto open = builder
 					.open ()
-					.source (send->hash ())
+					.source (send.hash ())
 					.representative (key.pub)
 					.account (key.pub)
 					.sign (key.prv, key.pub)
 					.work (*system.work.generate (key.pub))
 					.build ();
 
-		latest = send->hash ();
+		latest = send.hash ();
 
 		sends.push_back (send);
 		receives.push_back (open);
@@ -106,7 +106,7 @@ std::vector<std::shared_ptr<nano::block>> setup_blocks (nano::test::system & sys
 	EXPECT_TRUE (nano::test::process (node, receives));
 
 	// Confirm whole genesis chain at once
-	nano::test::confirm (node.ledger, sends.back ()->hash ());
+	nano::test::confirm (node.ledger, sends.back ().hash ());
 
 	std::cout << "setup_blocks done" << std::endl;
 
@@ -166,7 +166,7 @@ TEST (vote_cache, perf_singlethreaded)
 		for (int i = 0; i < single_vote_size; ++i)
 		{
 			block_idx = (block_idx + 1151) % blocks.size ();
-			hashes.push_back (blocks[block_idx]->hash ());
+			hashes.push_back (blocks[block_idx].hash ());
 		}
 
 		for (int i = 0; i < single_vote_reps; ++i)
@@ -231,7 +231,7 @@ TEST (vote_cache, perf_multithreaded)
 			for (int i = 0; i < single_vote_size; ++i)
 			{
 				block_idx = (block_idx + 1151) % blocks.size ();
-				hashes.push_back (blocks[block_idx]->hash ());
+				hashes.push_back (blocks[block_idx].hash ());
 			}
 
 			for (int i = 0; i < single_vote_reps; ++i)

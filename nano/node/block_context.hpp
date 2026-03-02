@@ -37,15 +37,6 @@ public:
 		debug_assert (source != nano::block_source::unknown);
 	}
 
-	// Legacy constructor (converts via to_raw)
-	block_context (std::shared_ptr<nano::block> const & block, nano::block_source source, callback_t callback = nullptr) :
-		input{ nano::to_raw (*block) },
-		source{ source },
-		callback{ std::move (callback) }
-	{
-		debug_assert (source != nano::block_source::unknown);
-	}
-
 	std::future<nano::block_result> get_future ()
 	{
 		return promise.get_future ();

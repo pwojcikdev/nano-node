@@ -66,7 +66,7 @@ public:
 	cementing_benchmark (std::shared_ptr<nano::node> node_a, benchmark_config const & config_a);
 
 	void run ();
-	void run_iteration (std::deque<std::shared_ptr<nano::block>> & blocks);
+	void run_iteration (std::deque<nano::raw_block> & blocks);
 	void print_statistics ();
 };
 
@@ -156,7 +156,7 @@ void cementing_benchmark::run ()
 	{
 		std::cout << fmt::format ("\n--- Iteration {}/{} --------------------------------------------------------------\n", iteration + 1, config.num_iterations);
 
-		std::deque<std::shared_ptr<nano::block>> blocks;
+		std::deque<nano::raw_block> blocks;
 		if (config.cementing_mode == cementing_mode::root)
 		{
 			std::cout << fmt::format ("Generating dependent chain topology...\n");
@@ -175,7 +175,7 @@ void cementing_benchmark::run ()
 	print_statistics ();
 }
 
-void cementing_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>> & blocks)
+void cementing_benchmark::run_iteration (std::deque<nano::raw_block> & blocks)
 {
 	auto const total_blocks = blocks.size ();
 
@@ -185,7 +185,7 @@ void cementing_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>
 		auto pending_l = pending_cementing.lock ();
 		for (auto const & block : blocks)
 		{
-			pending_l->emplace (block->hash (), now);
+			pending_l->emplace (block.hash (), now);
 		}
 	}
 
@@ -196,7 +196,7 @@ void cementing_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>
 		auto transaction = node->ledger.tx_begin_write ();
 		for (auto const & block : blocks)
 		{
-			auto result = node->ledger.process (transaction, block);
+			auto result = node->ledger.process (transaction, nano::to_legacy (block));
 			release_assert (result == nano::block_status::progress, to_string (result));
 		}
 	}
@@ -212,8 +212,8 @@ void cementing_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>
 		// In root mode, only submit the final block which depends on all others
 		if (!blocks.empty ())
 		{
-			auto final_block = blocks.back ();
-			bool added = node->cementing_set.add (final_block->hash ());
+			auto const & final_block = blocks.back ();
+			bool added = node->cementing_set.add (final_block.hash ());
 			release_assert (added, "failed to add final block to cementing set");
 			blocks_submitted = 1;
 
@@ -226,10 +226,10 @@ void cementing_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>
 		// Sequential mode - submit each block separately
 		while (!blocks.empty ())
 		{
-			auto block = blocks.front ();
+			auto block = std::move (blocks.front ());
 			blocks.pop_front ();
 
-			bool added = node->cementing_set.add (block->hash ());
+			bool added = node->cementing_set.add (block.hash ());
 			release_assert (added, "failed to add block to cementing set");
 			blocks_submitted++;
 		}

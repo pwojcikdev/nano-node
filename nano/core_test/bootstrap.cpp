@@ -270,16 +270,16 @@ TEST (bootstrap, account_base)
 	nano::state_block_builder builder;
 	auto send1 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .link (0)
 				 .balance (nano::dev::constants.genesis_amount - 1)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 	ASSERT_EQ (nano::block_status::progress, node0.process (send1));
 	auto & node1 = *system.add_node (flags);
-	ASSERT_TIMELY (5s, node1.block (send1->hash ()));
+	ASSERT_TIMELY (5s, node1.block (send1.hash ()));
 }
 
 /**
@@ -293,28 +293,28 @@ TEST (bootstrap, account_inductive)
 	nano::state_block_builder builder;
 	auto send1 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .link (0)
 				 .balance (nano::dev::constants.genesis_amount - 1)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 	auto send2 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (send1->hash ())
+				 .previous (send1.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .link (0)
 				 .balance (nano::dev::constants.genesis_amount - 2)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send1->hash ()))
+				 .work (*system.work.generate (send1.hash ()))
 				 .build ();
 
 	ASSERT_EQ (nano::block_status::progress, node0.process (send1));
 	ASSERT_EQ (nano::block_status::progress, node0.process (send2));
 
 	auto & node1 = *system.add_node (flags);
-	ASSERT_TIMELY (50s, node1.block (send2->hash ()));
+	ASSERT_TIMELY (50s, node1.block (send2.hash ()));
 }
 
 /**
@@ -330,18 +330,18 @@ TEST (bootstrap, trace_base)
 	nano::state_block_builder builder;
 	auto send1 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .link (key.pub)
 				 .balance (nano::dev::constants.genesis_amount - 1)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 	auto receive1 = builder.make_block ()
 					.account (key.pub)
 					.previous (0)
 					.representative (nano::dev::genesis_key.pub)
-					.link (send1->hash ())
+					.link (send1.hash ())
 					.balance (1)
 					.sign (key.prv, key.pub)
 					.work (*system.work.generate (key.pub))
@@ -352,7 +352,7 @@ TEST (bootstrap, trace_base)
 	ASSERT_EQ (nano::block_status::progress, node0.process (receive1));
 
 	ASSERT_TIMELY (10s, node1.ledger.any.receivable_upper_bound (node1.ledger.tx_begin_read (), key.pub, 0) != node1.ledger.any.receivable_end ());
-	ASSERT_TIMELY (10s, node1.block (receive1->hash ()));
+	ASSERT_TIMELY (10s, node1.block (receive1.hash ()));
 }
 
 /*
@@ -375,13 +375,13 @@ TEST (bootstrap, frontier_scan)
 	config.hinted_scheduler.enable = false;
 
 	// Prepare blocks for frontier scan (genesis 10 sends -> 10 opens -> 10 updates)
-	std::vector<std::shared_ptr<nano::block>> sends;
-	std::vector<std::shared_ptr<nano::block>> opens;
-	std::vector<std::shared_ptr<nano::block>> updates;
+	std::vector<nano::raw_block> sends;
+	std::vector<nano::raw_block> opens;
+	std::vector<nano::raw_block> updates;
 	{
 		auto source = nano::dev::genesis_key;
-		auto latest = nano::dev::genesis->hash ();
-		auto balance = nano::dev::genesis->balance ().number ();
+		auto latest = nano::dev::genesis.hash ();
+		auto balance = nano::dev::genesis.balance ().number ();
 
 		size_t const count = 10;
 
@@ -402,7 +402,7 @@ TEST (bootstrap, frontier_scan)
 						.work (*system.work.generate (latest))
 						.build ();
 
-			latest = send->hash ();
+			latest = send.hash ();
 
 			auto open = builder
 						.state ()
@@ -410,7 +410,7 @@ TEST (bootstrap, frontier_scan)
 						.previous (0)
 						.representative (key.pub)
 						.balance (1)
-						.link (send->hash ())
+						.link (send.hash ())
 						.sign (key.prv, key.pub)
 						.work (*system.work.generate (key.pub))
 						.build ();
@@ -418,12 +418,12 @@ TEST (bootstrap, frontier_scan)
 			auto update = builder
 						  .state ()
 						  .account (key.pub)
-						  .previous (open->hash ())
+						  .previous (open.hash ())
 						  .representative (0)
 						  .balance (1)
 						  .link (0)
 						  .sign (key.prv, key.pub)
-						  .work (*system.work.generate (open->hash ()))
+						  .work (*system.work.generate (open.hash ()))
 						  .build ();
 
 			sends.push_back (send);
@@ -433,7 +433,7 @@ TEST (bootstrap, frontier_scan)
 	}
 
 	// Initialize nodes with blocks without the `updates` frontiers
-	std::vector<std::shared_ptr<nano::block>> blocks;
+	std::vector<nano::raw_block> blocks;
 	blocks.insert (blocks.end (), sends.begin (), sends.end ());
 	blocks.insert (blocks.end (), opens.begin (), opens.end ());
 	system.set_initialization_blocks ({ blocks.begin (), blocks.end () });
@@ -447,7 +447,7 @@ TEST (bootstrap, frontier_scan)
 
 	// Frontier scan should detect all the accounts with missing blocks
 	ASSERT_TIMELY (10s, std::all_of (updates.begin (), updates.end (), [&node1] (auto const & block) {
-		return node1.bootstrap.prioritized (block->account ());
+		return node1.bootstrap.prioritized (block.account_field ().value ());
 	}));
 }
 
@@ -471,12 +471,12 @@ TEST (bootstrap, frontier_scan_pending)
 	config.hinted_scheduler.enable = false;
 
 	// Prepare blocks for frontier scan (genesis 10 sends -> 10 opens)
-	std::vector<std::shared_ptr<nano::block>> sends;
-	std::vector<std::shared_ptr<nano::block>> opens;
+	std::vector<nano::raw_block> sends;
+	std::vector<nano::raw_block> opens;
 	{
 		auto source = nano::dev::genesis_key;
-		auto latest = nano::dev::genesis->hash ();
-		auto balance = nano::dev::genesis->balance ().number ();
+		auto latest = nano::dev::genesis.hash ();
+		auto balance = nano::dev::genesis.balance ().number ();
 
 		size_t const count = 10;
 
@@ -497,7 +497,7 @@ TEST (bootstrap, frontier_scan_pending)
 						.work (*system.work.generate (latest))
 						.build ();
 
-			latest = send->hash ();
+			latest = send.hash ();
 
 			auto open = builder
 						.state ()
@@ -505,7 +505,7 @@ TEST (bootstrap, frontier_scan_pending)
 						.previous (0)
 						.representative (key.pub)
 						.balance (1)
-						.link (send->hash ())
+						.link (send.hash ())
 						.sign (key.prv, key.pub)
 						.work (*system.work.generate (key.pub))
 						.build ();
@@ -516,7 +516,7 @@ TEST (bootstrap, frontier_scan_pending)
 	}
 
 	// Initialize nodes with blocks without the `updates` frontiers
-	std::vector<std::shared_ptr<nano::block>> blocks;
+	std::vector<nano::raw_block> blocks;
 	blocks.insert (blocks.end (), sends.begin (), sends.end ());
 	system.set_initialization_blocks ({ blocks.begin (), blocks.end () });
 
@@ -529,7 +529,7 @@ TEST (bootstrap, frontier_scan_pending)
 
 	// Frontier scan should detect all the accounts with missing blocks
 	ASSERT_TIMELY (10s, std::all_of (opens.begin (), opens.end (), [&node1] (auto const & block) {
-		return node1.bootstrap.prioritized (block->account ());
+		return node1.bootstrap.prioritized (block.account_field ().value ());
 	}));
 }
 
@@ -553,14 +553,14 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 	config.hinted_scheduler.enable = false;
 
 	// Prepare blocks for frontier scan (genesis 10 sends -> 10 opens -> 10 sends -> 10 opens)
-	std::vector<std::shared_ptr<nano::block>> sends;
-	std::vector<std::shared_ptr<nano::block>> opens;
-	std::vector<std::shared_ptr<nano::block>> sends2;
-	std::vector<std::shared_ptr<nano::block>> opens2;
+	std::vector<nano::raw_block> sends;
+	std::vector<nano::raw_block> opens;
+	std::vector<nano::raw_block> sends2;
+	std::vector<nano::raw_block> opens2;
 	{
 		auto source = nano::dev::genesis_key;
-		auto latest = nano::dev::genesis->hash ();
-		auto balance = nano::dev::genesis->balance ().number ();
+		auto latest = nano::dev::genesis.hash ();
+		auto balance = nano::dev::genesis.balance ().number ();
 
 		size_t const count = 10;
 
@@ -581,7 +581,7 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 						.work (*system.work.generate (latest))
 						.build ();
 
-			latest = send->hash ();
+			latest = send.hash ();
 
 			auto open = builder
 						.state ()
@@ -589,7 +589,7 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 						.previous (0)
 						.representative (key.pub)
 						.balance (1)
-						.link (send->hash ())
+						.link (send.hash ())
 						.sign (key.prv, key.pub)
 						.work (*system.work.generate (key.pub))
 						.build ();
@@ -597,12 +597,12 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 			auto send2 = builder
 						 .state ()
 						 .account (key.pub)
-						 .previous (open->hash ())
+						 .previous (open.hash ())
 						 .representative (key.pub)
 						 .balance (0)
 						 .link (key2.pub)
 						 .sign (key.prv, key.pub)
-						 .work (*system.work.generate (open->hash ()))
+						 .work (*system.work.generate (open.hash ()))
 						 .build ();
 
 			auto open2 = builder
@@ -611,7 +611,7 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 						 .previous (0)
 						 .representative (key2.pub)
 						 .balance (1)
-						 .link (send2->hash ())
+						 .link (send2.hash ())
 						 .sign (key2.prv, key2.pub)
 						 .work (*system.work.generate (key2.pub))
 						 .build ();
@@ -624,7 +624,7 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 	}
 
 	// Initialize nodes with blocks without the `updates` frontiers
-	std::vector<std::shared_ptr<nano::block>> blocks;
+	std::vector<nano::raw_block> blocks;
 	blocks.insert (blocks.end (), sends.begin (), sends.end ());
 	blocks.insert (blocks.end (), opens.begin (), opens.end ());
 	system.set_initialization_blocks ({ blocks.begin (), blocks.end () });
@@ -639,7 +639,7 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 
 	// Frontier scan should not detect the accounts
 	ASSERT_ALWAYS (1s, std::none_of (opens2.begin (), opens2.end (), [&node1] (auto const & block) {
-		return node1.bootstrap.prioritized (block->account ());
+		return node1.bootstrap.prioritized (block.account_field ().value ());
 	}));
 }
 

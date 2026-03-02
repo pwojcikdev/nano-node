@@ -51,12 +51,12 @@ TEST (priority_scheduler, activate_multiple_buckets)
 
 	auto send_to_a = builder.make_block ()
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (nano::dev::genesis->hash ())
+					 .previous (nano::dev::genesis.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .link (account_a.pub)
 					 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					 .work (*system.work.generate (nano::dev::genesis->hash ()))
+					 .work (*system.work.generate (nano::dev::genesis.hash ()))
 					 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send_to_a));
 
@@ -64,7 +64,7 @@ TEST (priority_scheduler, activate_multiple_buckets)
 				  .account (account_a.pub)
 				  .previous (0)
 				  .representative (account_a.pub)
-				  .link (send_to_a->hash ())
+				  .link (send_to_a.hash ())
 				  .balance (nano::Knano_ratio)
 				  .sign (account_a.prv, account_a.pub)
 				  .work (*system.work.generate (account_a.pub))
@@ -74,12 +74,12 @@ TEST (priority_scheduler, activate_multiple_buckets)
 	// Send to B from genesis' successor
 	auto send_to_b = builder.make_block ()
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (send_to_a->hash ())
+					 .previous (send_to_a.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .link (account_b.pub)
 					 .balance (nano::dev::constants.genesis_amount - 2 * nano::Knano_ratio)
 					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					 .work (*system.work.generate (send_to_a->hash ()))
+					 .work (*system.work.generate (send_to_a.hash ()))
 					 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send_to_b));
 
@@ -87,7 +87,7 @@ TEST (priority_scheduler, activate_multiple_buckets)
 				  .account (account_b.pub)
 				  .previous (0)
 				  .representative (account_b.pub)
-				  .link (send_to_b->hash ())
+				  .link (send_to_b.hash ())
 				  .balance (nano::Knano_ratio)
 				  .sign (account_b.prv, account_b.pub)
 				  .work (*system.work.generate (account_b.pub))
@@ -100,23 +100,23 @@ TEST (priority_scheduler, activate_multiple_buckets)
 	// Now create next blocks on both accounts; different balances produce different buckets by design
 	auto next_a = builder.make_block ()
 				  .account (account_a.pub)
-				  .previous (open_a->hash ())
+				  .previous (open_a.hash ())
 				  .representative (account_a.pub)
 				  .link (account_a.pub)
 				  .balance (0)
 				  .sign (account_a.prv, account_a.pub)
-				  .work (*system.work.generate (open_a->hash ()))
+				  .work (*system.work.generate (open_a.hash ()))
 				  .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (next_a));
 
 	auto next_b = builder.make_block ()
 				  .account (account_b.pub)
-				  .previous (open_b->hash ())
+				  .previous (open_b.hash ())
 				  .representative (account_b.pub)
 				  .link (account_b.pub)
 				  .balance (0)
 				  .sign (account_b.prv, account_b.pub)
-				  .work (*system.work.generate (open_b->hash ()))
+				  .work (*system.work.generate (open_b.hash ()))
 				  .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (next_b));
 
@@ -126,8 +126,8 @@ TEST (priority_scheduler, activate_multiple_buckets)
 
 	// Both should be scheduled and then started; pool empties and elections exist for both roots
 	ASSERT_TIMELY (5s, node.scheduler.priority.empty ());
-	ASSERT_TIMELY (5s, node.active.election (next_a->qualified_root ()) != nullptr);
-	ASSERT_TIMELY (5s, node.active.election (next_b->qualified_root ()) != nullptr);
+	ASSERT_TIMELY (5s, node.active.election (next_a.qualified_root ()) != nullptr);
+	ASSERT_TIMELY (5s, node.active.election (next_b.qualified_root ()) != nullptr);
 }
 
 /*
@@ -162,12 +162,12 @@ TEST (priority_scheduler, reserved_respected_no_vacancy)
 	// Create two accounts with same balance so they fall into the same bucket
 	auto send_to_a = builder.make_block ()
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (nano::dev::genesis->hash ())
+					 .previous (nano::dev::genesis.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .link (account_a.pub)
 					 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					 .work (*system.work.generate (nano::dev::genesis->hash ()))
+					 .work (*system.work.generate (nano::dev::genesis.hash ()))
 					 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send_to_a));
 
@@ -175,7 +175,7 @@ TEST (priority_scheduler, reserved_respected_no_vacancy)
 				  .account (account_a.pub)
 				  .previous (0)
 				  .representative (account_a.pub)
-				  .link (send_to_a->hash ())
+				  .link (send_to_a.hash ())
 				  .balance (nano::Knano_ratio)
 				  .sign (account_a.prv, account_a.pub)
 				  .work (*system.work.generate (account_a.pub))
@@ -184,12 +184,12 @@ TEST (priority_scheduler, reserved_respected_no_vacancy)
 
 	auto send_to_b = builder.make_block ()
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (send_to_a->hash ())
+					 .previous (send_to_a.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .link (account_b.pub)
 					 .balance (nano::dev::constants.genesis_amount - 2 * nano::Knano_ratio)
 					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					 .work (*system.work.generate (send_to_a->hash ()))
+					 .work (*system.work.generate (send_to_a.hash ()))
 					 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send_to_b));
 
@@ -197,7 +197,7 @@ TEST (priority_scheduler, reserved_respected_no_vacancy)
 				  .account (account_b.pub)
 				  .previous (0)
 				  .representative (account_b.pub)
-				  .link (send_to_b->hash ())
+				  .link (send_to_b.hash ())
 				  .balance (nano::Knano_ratio)
 				  .sign (account_b.prv, account_b.pub)
 				  .work (*system.work.generate (account_b.pub))
@@ -210,38 +210,38 @@ TEST (priority_scheduler, reserved_respected_no_vacancy)
 	// Create next blocks on both accounts (same balance = same bucket)
 	auto next_a = builder.make_block ()
 				  .account (account_a.pub)
-				  .previous (open_a->hash ())
+				  .previous (open_a.hash ())
 				  .representative (account_a.pub)
 				  .link (account_a.pub)
 				  .balance (0)
 				  .sign (account_a.prv, account_a.pub)
-				  .work (*system.work.generate (open_a->hash ()))
+				  .work (*system.work.generate (open_a.hash ()))
 				  .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (next_a));
 
 	auto next_b = builder.make_block ()
 				  .account (account_b.pub)
-				  .previous (open_b->hash ())
+				  .previous (open_b.hash ())
 				  .representative (account_b.pub)
 				  .link (account_b.pub)
 				  .balance (0)
 				  .sign (account_b.prv, account_b.pub)
-				  .work (*system.work.generate (open_b->hash ()))
+				  .work (*system.work.generate (open_b.hash ()))
 				  .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (next_b));
 
 	// Activate first account - should succeed and fill the AEC
 	node.scheduler.priority.activate (node.ledger.tx_begin_read (), account_a.pub);
-	ASSERT_TIMELY (5s, node.active.election (next_a->qualified_root ()) != nullptr);
+	ASSERT_TIMELY (5s, node.active.election (next_a.qualified_root ()) != nullptr);
 
 	// At this point AEC is at capacity (1/1), but bucket has only 1 election (below reserved limit of 2)
 	// Activate second account from same bucket - should succeed because reserved limit is not reached
 	node.scheduler.priority.activate (node.ledger.tx_begin_read (), account_b.pub);
-	ASSERT_TIMELY (5s, node.active.election (next_b->qualified_root ()) != nullptr);
+	ASSERT_TIMELY (5s, node.active.election (next_b.qualified_root ()) != nullptr);
 
 	// Both elections should be active, demonstrating that reserved_elections is respected even with no AEC vacancy
-	ASSERT_NE (node.active.election (next_a->qualified_root ()), nullptr);
-	ASSERT_NE (node.active.election (next_b->qualified_root ()), nullptr);
+	ASSERT_NE (node.active.election (next_a.qualified_root ()), nullptr);
+	ASSERT_NE (node.active.election (next_b.qualified_root ()), nullptr);
 }
 
 /*
@@ -276,19 +276,19 @@ TEST (priority_scheduler, queue_activations)
 	// Prepare keypair1 and keypair2 accounts
 	auto send1 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .link (keypair1.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send1));
 	auto open1 = builder.make_block ()
 				 .account (keypair1.pub)
 				 .previous (0)
 				 .representative (keypair1.pub)
-				 .link (send1->hash ())
+				 .link (send1.hash ())
 				 .balance (nano::Knano_ratio)
 				 .sign (keypair1.prv, keypair1.pub)
 				 .work (*system.work.generate (keypair1.pub))
@@ -297,19 +297,19 @@ TEST (priority_scheduler, queue_activations)
 
 	auto send2 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (send1->hash ())
+				 .previous (send1.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .link (keypair2.pub)
 				 .balance (nano::dev::constants.genesis_amount - 2 * nano::Knano_ratio)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send1->hash ()))
+				 .work (*system.work.generate (send1.hash ()))
 				 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send2));
 	auto open2 = builder.make_block ()
 				 .account (keypair2.pub)
 				 .previous (0)
 				 .representative (keypair2.pub)
-				 .link (send2->hash ())
+				 .link (send2.hash ())
 				 .balance (nano::Knano_ratio)
 				 .sign (keypair2.prv, keypair2.pub)
 				 .work (*system.work.generate (keypair2.pub))
@@ -322,23 +322,23 @@ TEST (priority_scheduler, queue_activations)
 	// Create next blocks on both
 	auto next_block1 = builder.make_block ()
 					   .account (keypair1.pub)
-					   .previous (open1->hash ())
+					   .previous (open1.hash ())
 					   .representative (keypair1.pub)
 					   .link (keypair1.pub)
 					   .balance (0)
 					   .sign (keypair1.prv, keypair1.pub)
-					   .work (*system.work.generate (open1->hash ()))
+					   .work (*system.work.generate (open1.hash ()))
 					   .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (next_block1));
 
 	auto next_block2 = builder.make_block ()
 					   .account (keypair2.pub)
-					   .previous (open2->hash ())
+					   .previous (open2.hash ())
 					   .representative (keypair2.pub)
 					   .link (keypair2.pub)
 					   .balance (0)
 					   .sign (keypair2.prv, keypair2.pub)
-					   .work (*system.work.generate (open2->hash ()))
+					   .work (*system.work.generate (open2.hash ()))
 					   .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (next_block2));
 
@@ -346,7 +346,7 @@ TEST (priority_scheduler, queue_activations)
 	node.scheduler.priority.activate (node.ledger.tx_begin_read (), keypair1.pub);
 
 	std::shared_ptr<nano::election> election1;
-	ASSERT_TIMELY (5s, (election1 = node.active.election (next_block1->qualified_root ())) != nullptr);
+	ASSERT_TIMELY (5s, (election1 = node.active.election (next_block1.qualified_root ())) != nullptr);
 
 	// Second activation should be queued because AEC is at capacity and reserved for the bucket is used
 	node.scheduler.priority.activate (node.ledger.tx_begin_read (), keypair2.pub);
@@ -385,19 +385,19 @@ TEST (priority_scheduler, cancel_worst_election)
 	// Fund two accounts with same balance so they land in the same bucket (low balance region)
 	auto send_to_c = builder.make_block ()
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (nano::dev::genesis->hash ())
+					 .previous (nano::dev::genesis.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .link (account_c.pub)
 					 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					 .work (*system.work.generate (nano::dev::genesis->hash ()))
+					 .work (*system.work.generate (nano::dev::genesis.hash ()))
 					 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send_to_c));
 	auto open_c = builder.make_block ()
 				  .account (account_c.pub)
 				  .previous (0)
 				  .representative (account_c.pub)
-				  .link (send_to_c->hash ())
+				  .link (send_to_c.hash ())
 				  .balance (nano::Knano_ratio)
 				  .sign (account_c.prv, account_c.pub)
 				  .work (*system.work.generate (account_c.pub))
@@ -406,19 +406,19 @@ TEST (priority_scheduler, cancel_worst_election)
 
 	auto send_to_d = builder.make_block ()
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (send_to_c->hash ())
+					 .previous (send_to_c.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .link (account_d.pub)
 					 .balance (nano::dev::constants.genesis_amount - 2 * nano::Knano_ratio)
 					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					 .work (*system.work.generate (send_to_c->hash ()))
+					 .work (*system.work.generate (send_to_c.hash ()))
 					 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send_to_d));
 	auto open_d = builder.make_block ()
 				  .account (account_d.pub)
 				  .previous (0)
 				  .representative (account_d.pub)
-				  .link (send_to_d->hash ())
+				  .link (send_to_d.hash ())
 				  .balance (nano::Knano_ratio)
 				  .sign (account_d.prv, account_d.pub)
 				  .work (*system.work.generate (account_d.pub))
@@ -431,23 +431,23 @@ TEST (priority_scheduler, cancel_worst_election)
 	// Create eligible next blocks for both accounts
 	auto worse_priority_block = builder.make_block ()
 								.account (account_c.pub)
-								.previous (open_c->hash ())
+								.previous (open_c.hash ())
 								.representative (account_c.pub)
 								.link (account_c.pub)
 								.balance (0)
 								.sign (account_c.prv, account_c.pub)
-								.work (*system.work.generate (open_c->hash ()))
+								.work (*system.work.generate (open_c.hash ()))
 								.build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (worse_priority_block));
 
 	auto better_priority_block = builder.make_block ()
 								 .account (account_d.pub)
-								 .previous (open_d->hash ())
+								 .previous (open_d.hash ())
 								 .representative (account_d.pub)
 								 .link (account_d.pub)
 								 .balance (0)
 								 .sign (account_d.prv, account_d.pub)
-								 .work (*system.work.generate (open_d->hash ()))
+								 .work (*system.work.generate (open_d.hash ()))
 								 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (better_priority_block));
 
@@ -459,17 +459,19 @@ TEST (priority_scheduler, cancel_worst_election)
 	nano::priority_timestamp better_priority = 0;
 
 	// Push worse first, should start immediately
-	ASSERT_TRUE (node.scheduler.priority.push (*worse_priority_block, bucket, worse_priority));
+	auto stored_worse = node.block (worse_priority_block.hash ());
+	ASSERT_TRUE (node.scheduler.priority.push (*stored_worse, bucket, worse_priority));
 
 	// Wait for first activation to insert one election in that bucket
-	ASSERT_TIMELY (5s, node.active.election (worse_priority_block->qualified_root ()) != nullptr);
+	ASSERT_TIMELY (5s, node.active.election (worse_priority_block.qualified_root ()) != nullptr);
 
 	// Now push a better-priority block from the same bucket; bucket may temporarily overfill
-	ASSERT_TRUE (node.scheduler.priority.push (*better_priority_block, bucket, better_priority));
+	auto stored_better = node.block (better_priority_block.hash ());
+	ASSERT_TRUE (node.scheduler.priority.push (*stored_better, bucket, better_priority));
 
 	// Eventually the better-priority election should remain active and the worse one should be evicted
-	ASSERT_TIMELY (5s, node.active.election (better_priority_block->qualified_root ()) != nullptr);
-	ASSERT_TIMELY (5s, node.active.election (worse_priority_block->qualified_root ()) == nullptr);
+	ASSERT_TIMELY (5s, node.active.election (better_priority_block.qualified_root ()) != nullptr);
+	ASSERT_TIMELY (5s, node.active.election (worse_priority_block.qualified_root ()) == nullptr);
 }
 
 /**
@@ -497,12 +499,12 @@ TEST (priority_scheduler, activate_successors)
 
 	auto send_to_destination = builder.make_block ()
 							   .account (nano::dev::genesis_key.pub)
-							   .previous (nano::dev::genesis->hash ())
+							   .previous (nano::dev::genesis.hash ())
 							   .representative (nano::dev::genesis_key.pub)
 							   .link (destination_account.pub)
 							   .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 							   .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-							   .work (*system.work.generate (nano::dev::genesis->hash ()))
+							   .work (*system.work.generate (nano::dev::genesis.hash ()))
 							   .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send_to_destination));
 	nano::test::confirm (node, { send_to_destination });
@@ -512,7 +514,7 @@ TEST (priority_scheduler, activate_successors)
 							.account (destination_account.pub)
 							.previous (0)
 							.representative (destination_account.pub)
-							.link (send_to_destination->hash ())
+							.link (send_to_destination.hash ())
 							.balance (nano::Knano_ratio)
 							.sign (destination_account.prv, destination_account.pub)
 							.work (*system.work.generate (destination_account.pub))
@@ -522,21 +524,22 @@ TEST (priority_scheduler, activate_successors)
 	// Next on sender and confirm its dependencies
 	auto next_genesis_block = builder.make_block ()
 							  .account (nano::dev::genesis_key.pub)
-							  .previous (send_to_destination->hash ())
+							  .previous (send_to_destination.hash ())
 							  .representative (nano::dev::genesis_key.pub)
 							  .link (nano::dev::genesis_key.pub)
 							  .balance (nano::dev::constants.genesis_amount - 2 * nano::Knano_ratio)
 							  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-							  .work (*system.work.generate (send_to_destination->hash ()))
+							  .work (*system.work.generate (send_to_destination.hash ()))
 							  .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (next_genesis_block));
 
 	// Activate successors from the send block: should try sender and destination
-	node.scheduler.priority.activate_successors (node.ledger.tx_begin_read (), *send_to_destination);
+	auto stored_send = node.block (send_to_destination.hash ());
+	node.scheduler.priority.activate_successors (node.ledger.tx_begin_read (), *stored_send);
 
 	// Assert on stable, observable end-state: both successors become active elections
-	ASSERT_TIMELY (5s, node.active.election (open_destination->qualified_root ()) != nullptr);
-	ASSERT_TIMELY (5s, node.active.election (next_genesis_block->qualified_root ()) != nullptr);
+	ASSERT_TIMELY (5s, node.active.election (open_destination.qualified_root ()) != nullptr);
+	ASSERT_TIMELY (5s, node.active.election (next_genesis_block.qualified_root ()) != nullptr);
 }
 
 /**
@@ -579,13 +582,13 @@ TEST (priority_scheduler, stress_test)
 			if (idx < blocks.size ())
 			{
 				auto txn = node.ledger.tx_begin_read ();
-				EXPECT_TRUE (node.scheduler.priority.activate (txn, blocks[idx]->account ()));
+				EXPECT_TRUE (node.scheduler.priority.activate (txn, blocks[idx].account_field ().value ()));
 			}
 		});
 	});
 
 	// Kick off the chain by activating the first block
-	ASSERT_TRUE (node.scheduler.priority.activate (node.ledger.tx_begin_read (), blocks[0]->account ()));
+	ASSERT_TRUE (node.scheduler.priority.activate (node.ledger.tx_begin_read (), blocks[0].account_field ().value ()));
 
 	// All blocks should eventually be activated
 	// If race occurs, some activations sit in pool and never get processed → timeout

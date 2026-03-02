@@ -316,7 +316,7 @@ auto nano::rep_crawler::prepare_query_target () const -> hash_root_t
 	}
 
 	// If no suitable block was found, query genesis
-	return std::make_pair (node.network_params.ledger.genesis->hash (), node.network_params.ledger.genesis->root ());
+	return std::make_pair (node.network_params.ledger.genesis.hash (), node.network_params.ledger.genesis.root ());
 }
 
 bool nano::rep_crawler::track_rep_request (hash_root_t hash_root, std::shared_ptr<nano::transport::channel> const & channel)

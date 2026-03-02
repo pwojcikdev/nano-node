@@ -159,13 +159,12 @@ ledger_store::~ledger_store () = default;
 void ledger_store::initialize (nano::store::write_transaction const & txn, nano::ledger_constants const & constants)
 {
 	release_assert (empty (txn), "attempt to initialize a non-empty ledger store");
-	release_assert (constants.genesis->has_sideband ());
 
 	// TODO: Use designated initialization
-	block.put (txn, constants.genesis->hash (), *constants.genesis);
-	confirmation_height.put (txn, constants.genesis->account (), nano::confirmation_height_info{ 1, constants.genesis->hash () });
-	account.put (txn, constants.genesis->account (), { constants.genesis->hash (), constants.genesis->account (), constants.genesis->hash (), std::numeric_limits<nano::uint128_t>::max (), nano::seconds_since_epoch (), 1, nano::epoch::epoch_0 });
-	rep_weight.put (txn, constants.genesis->account (), std::numeric_limits<nano::uint128_t>::max ());
+	block.put (txn, constants.genesis.hash (), constants.genesis.raw (), constants.genesis.sideband ());
+	confirmation_height.put (txn, constants.genesis.account (), nano::confirmation_height_info{ 1, constants.genesis.hash () });
+	account.put (txn, constants.genesis.account (), { constants.genesis.hash (), constants.genesis.account (), constants.genesis.hash (), std::numeric_limits<nano::uint128_t>::max (), nano::seconds_since_epoch (), 1, nano::epoch::epoch_0 });
+	rep_weight.put (txn, constants.genesis.account (), std::numeric_limits<nano::uint128_t>::max ());
 }
 
 bool ledger_store::empty (nano::store::transaction const & txn) const

@@ -39,20 +39,20 @@ TEST (confirmation_solicitor, batches)
 	nano::block_builder builder;
 	auto send = builder
 				.send ()
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.destination (nano::keypair ().pub)
 				.balance (nano::dev::constants.genesis_amount - 100)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
-	send->sideband_set ({});
+	nano::stored_block stored{ send, nano::block_sideband{} };
 	for (size_t i (0); i < nano::network::confirm_req_hashes_max; ++i)
 	{
-		auto election (std::make_shared<nano::election> (node2, *send, nano::election_behavior::priority));
+		auto election (std::make_shared<nano::election> (node2, stored, nano::election_behavior::priority));
 		ASSERT_FALSE (solicitor.add (*election));
 	}
 	// Reached the maximum amount of requests for the channel
-	auto election (std::make_shared<nano::election> (node2, *send, nano::election_behavior::priority));
+	auto election (std::make_shared<nano::election> (node2, stored, nano::election_behavior::priority));
 	// Broadcasting should be immediate
 	ASSERT_EQ (0, node2.stats.count (nano::stat::type::message, nano::stat::detail::publish, nano::stat::dir::out));
 	ASSERT_FALSE (solicitor.broadcast (*election));
@@ -90,14 +90,14 @@ TEST (confirmation_solicitor, different_hash)
 	nano::block_builder builder;
 	auto send = builder
 				.send ()
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.destination (nano::keypair ().pub)
 				.balance (nano::dev::constants.genesis_amount - 100)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
-	send->sideband_set ({});
-	auto election (std::make_shared<nano::election> (node2, *send, nano::election_behavior::priority));
+	nano::stored_block stored{ send, nano::block_sideband{} };
+	auto election (std::make_shared<nano::election> (node2, stored, nano::election_behavior::priority));
 	// Add a vote for something else, not the winner
 	election->last_votes[representative.account] = { std::chrono::steady_clock::now (), 1, 1 };
 	// Ensure the request and broadcast goes through
@@ -134,14 +134,14 @@ TEST (confirmation_solicitor, bypass_max_requests_cap)
 	nano::block_builder builder;
 	auto send = builder
 				.send ()
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.destination (nano::keypair ().pub)
 				.balance (nano::dev::constants.genesis_amount - 100)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
-	send->sideband_set ({});
-	auto election (std::make_shared<nano::election> (node2, *send, nano::election_behavior::priority));
+	nano::stored_block stored{ send, nano::block_sideband{} };
+	auto election (std::make_shared<nano::election> (node2, stored, nano::election_behavior::priority));
 	// Add a vote for something else, not the winner
 	for (auto const & rep : representatives)
 	{
@@ -154,7 +154,7 @@ TEST (confirmation_solicitor, bypass_max_requests_cap)
 	ASSERT_TIMELY_EQ (6s, max_representatives + 1, node2.stats.count (nano::stat::type::message, nano::stat::detail::confirm_req, nano::stat::dir::out));
 
 	solicitor.prepare (representatives);
-	auto election2 (std::make_shared<nano::election> (node2, *send, nano::election_behavior::priority));
+	auto election2 (std::make_shared<nano::election> (node2, stored, nano::election_behavior::priority));
 	ASSERT_FALSE (solicitor.add (*election2));
 	ASSERT_FALSE (solicitor.broadcast (*election2));
 

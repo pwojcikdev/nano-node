@@ -14,11 +14,11 @@ class ledger_context
 public:
 	/** 'blocks' initialises the ledger with each block in-order
 		Blocks must all return process_result::progress when processed */
-	ledger_context (std::deque<std::shared_ptr<nano::block>> && blocks = std::deque<std::shared_ptr<nano::block>>{});
+	ledger_context (std::deque<nano::raw_block> && blocks = std::deque<nano::raw_block>{});
 
 	nano::ledger & ledger ();
 	nano::store::ledger_store & store ();
-	std::deque<std::shared_ptr<nano::block>> const & blocks () const;
+	std::deque<nano::raw_block> const & blocks () const;
 	nano::work_pool & pool ();
 	nano::stats & stats ();
 	nano::logger & logger ();
@@ -28,7 +28,7 @@ private:
 	nano::stats stats_m{ logger_m };
 	std::unique_ptr<nano::store::ledger_store> store_m;
 	nano::ledger ledger_m;
-	std::deque<std::shared_ptr<nano::block>> blocks_m;
+	std::deque<nano::raw_block> blocks_m;
 	nano::work_pool pool_m;
 };
 

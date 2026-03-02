@@ -380,8 +380,17 @@ int main (int argc, char * const * argv)
 								  << "Account: " << rep.pub.to_account () << "\n";
 					}
 					nano::uint128_t balance (std::numeric_limits<nano::uint128_t>::max ());
-					nano::open_block genesis_block (reinterpret_cast<nano::block_hash const &> (genesis.pub), genesis.pub, genesis.pub, genesis.prv, genesis.pub, *work.generate (nano::work_version::work_1, genesis.pub, network_params.work.epoch_1));
-					std::cout << genesis_block.to_json ();
+					nano::block_builder block_builder;
+					auto genesis_block = block_builder.open ()
+						.source (reinterpret_cast<nano::block_hash const &> (genesis.pub))
+						.representative (genesis.pub)
+						.account (genesis.pub)
+						.sign (genesis.prv, genesis.pub)
+						.work (*work.generate (nano::work_version::work_1, genesis.pub, network_params.work.epoch_1))
+						.build ();
+					std::string genesis_block_json;
+					genesis_block.serialize_json (genesis_block_json);
+					std::cout << genesis_block_json;
 					std::cout.flush ();
 					nano::block_hash previous (genesis_block.hash ());
 					for (auto i (0); i != 8; ++i)
@@ -392,9 +401,17 @@ int main (int argc, char * const * argv)
 						{
 							debug_assert (balance > weekly_distribution);
 							balance = balance < (weekly_distribution * 2) ? 0 : balance - weekly_distribution;
-							nano::send_block send (previous, landing.pub, balance, genesis.prv, genesis.pub, *work.generate (nano::work_version::work_1, previous, network_params.work.epoch_1));
+							auto send = block_builder.send ()
+								.previous (previous)
+								.destination (landing.pub)
+								.balance (balance)
+								.sign (genesis.prv, genesis.pub)
+								.work (*work.generate (nano::work_version::work_1, previous, network_params.work.epoch_1))
+								.build ();
 							previous = send.hash ();
-							std::cout << send.to_json ();
+							std::string send_json;
+							send.serialize_json (send_json);
+							std::cout << send_json;
 							std::cout.flush ();
 						}
 					}
@@ -909,7 +926,7 @@ int main (int argc, char * const * argv)
 								.sign (key.prv, key.pub)
 								.work (0)
 								.build ();
-					latest = send->hash ();
+					latest = send.hash ();
 				}
 				auto end1 (std::chrono::high_resolution_clock::now ());
 				std::cerr << boost::str (boost::format ("%|1$ 12d|\n") % std::chrono::duration_cast<std::chrono::microseconds> (end1 - begin1).count ());
@@ -934,7 +951,7 @@ int main (int argc, char * const * argv)
 			std::vector<nano::root> frontiers (num_accounts);
 			std::vector<nano::uint128_t> balances (num_accounts, 1000000000);
 			// Generating blocks
-			std::deque<std::shared_ptr<nano::block>> blocks;
+			std::deque<nano::raw_block> blocks;
 			for (auto i (0); i != num_accounts; ++i)
 			{
 				genesis_balance = genesis_balance - 1000000000;
@@ -949,7 +966,7 @@ int main (int argc, char * const * argv)
 							.work (*node->work.generate (nano::work_version::work_1, genesis_latest, node->network_params.work.epoch_1))
 							.build ();
 
-				genesis_latest = send->hash ();
+				genesis_latest = send.hash ();
 				blocks.push_back (std::move (send));
 
 				auto open = builder.state ()
@@ -962,7 +979,7 @@ int main (int argc, char * const * argv)
 							.work (*node->work.generate (nano::work_version::work_1, keys[i].pub, node->network_params.work.epoch_1))
 							.build ();
 
-				frontiers[i] = open->hash ();
+				frontiers[i] = open.hash ();
 				blocks.push_back (std::move (open));
 			}
 			for (auto i (0); i != num_iterations; ++i)
@@ -983,7 +1000,7 @@ int main (int argc, char * const * argv)
 								.work (*node->work.generate (nano::work_version::work_1, frontiers[j], node->network_params.work.epoch_1))
 								.build ();
 
-					frontiers[j] = send->hash ();
+					frontiers[j] = send.hash ();
 					blocks.push_back (std::move (send));
 					// Receiving
 					++balances[other];
@@ -998,7 +1015,7 @@ int main (int argc, char * const * argv)
 								   .work (*node->work.generate (nano::work_version::work_1, frontiers[other], node->network_params.work.epoch_1))
 								   .build ();
 
-					frontiers[other] = receive->hash ();
+					frontiers[other] = receive.hash ();
 					blocks.push_back (std::move (receive));
 				}
 			}
@@ -1077,7 +1094,7 @@ int main (int argc, char * const * argv)
 							.work (*node->work.generate (nano::work_version::work_1, genesis_latest, node->network_params.work.epoch_1))
 							.build ();
 
-				genesis_latest = send->hash ();
+				genesis_latest = send.hash ();
 				node->ledger.process (transaction, send);
 
 				auto open = builder.state ()
@@ -1093,7 +1110,7 @@ int main (int argc, char * const * argv)
 				node->ledger.process (transaction, open);
 			}
 			// Generating blocks
-			std::deque<std::shared_ptr<nano::block>> blocks;
+			std::deque<nano::raw_block> blocks;
 			for (auto i (0); i != num_elections; ++i)
 			{
 				genesis_balance = genesis_balance - 1;
@@ -1109,7 +1126,7 @@ int main (int argc, char * const * argv)
 							.work (*node->work.generate (nano::work_version::work_1, genesis_latest, node->network_params.work.epoch_1))
 							.build ();
 
-				genesis_latest = send->hash ();
+				genesis_latest = send.hash ();
 				blocks.push_back (std::move (send));
 			}
 			// Generating votes
@@ -1119,7 +1136,7 @@ int main (int argc, char * const * argv)
 				uint64_t sequence (1);
 				for (auto & i : blocks)
 				{
-					auto vote (std::make_shared<nano::vote> (keys[j].pub, keys[j].prv, sequence, 0, std::vector<nano::block_hash> (1, i->hash ())));
+					auto vote (std::make_shared<nano::vote> (keys[j].pub, keys[j].prv, sequence, 0, std::vector<nano::block_hash> (1, i.hash ())));
 					votes.push_back (vote);
 					sequence++;
 				}
@@ -1199,7 +1216,7 @@ int main (int argc, char * const * argv)
 			nano::block_hash genesis_latest (node1->latest (nano::dev::genesis_key.pub));
 			nano::uint128_t genesis_balance (std::numeric_limits<nano::uint128_t>::max ());
 			// Generating blocks
-			std::deque<std::shared_ptr<nano::block>> blocks;
+			std::deque<nano::raw_block> blocks;
 			for (auto i (0); i != count; ++i)
 			{
 				nano::keypair key;
@@ -1215,7 +1232,7 @@ int main (int argc, char * const * argv)
 							.work (*work.generate (nano::work_version::work_1, genesis_latest, nano::dev::network_params.work.epoch_1))
 							.build ();
 
-				genesis_latest = send->hash ();
+				genesis_latest = send.hash ();
 
 				auto open = builder.state ()
 							.account (key.pub)
@@ -1254,7 +1271,7 @@ int main (int argc, char * const * argv)
 			// Confirm blocks for node1
 			for (auto & block : blocks)
 			{
-				node1->cementing_set.add (block->hash ());
+				node1->cementing_set.add (block.hash ());
 			}
 			while (node1->ledger.cemented_count () != node1->ledger.block_count ())
 			{
@@ -1828,7 +1845,7 @@ int main (int argc, char * const * argv)
 			auto begin (std::chrono::high_resolution_clock::now ());
 			uint64_t block_count (0);
 			size_t count (0);
-			std::deque<std::shared_ptr<nano::block>> epoch_open_blocks;
+			std::deque<nano::raw_block> epoch_open_blocks;
 			{
 				auto node_flags = nano::inactive_node_flag_defaults ();
 				nano::update_flags (node_flags, vm);
@@ -1854,12 +1871,12 @@ int main (int argc, char * const * argv)
 							{
 								std::cout << boost::str (boost::format ("%1% blocks retrieved") % count) << std::endl;
 							}
-							std::shared_ptr<nano::block> block_legacy = *block;
-							node.node->block_processor.add (block_legacy);
+							
+							node.node->block_processor.add (block->raw ());
 							if (block->type () == nano::block_type::state && block->previous ().is_zero () && source_node->ledger.is_epoch_link (block->link_field ().value ()))
 							{
 								// Epoch open blocks can be rejected without processed pending blocks to account, push it later again
-								epoch_open_blocks.push_back (block_legacy);
+								epoch_open_blocks.push_back (block->raw ());
 							}
 							// Retrieving previous block hash
 							hash = block->previous ();

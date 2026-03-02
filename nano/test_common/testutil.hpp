@@ -1,6 +1,8 @@
 #pragma once
 
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/locks.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/timer.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/transport/fwd.hpp>
@@ -274,18 +276,18 @@ namespace test
 		Convenience function to call `node::process` function for multiple blocks at once.
 		@return true if all blocks were successfully processed and inserted into ledger
 	 */
-	bool process (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks);
+	bool process (nano::node & node, std::vector<nano::raw_block> blocks);
 	/*
 	 * Convenience function to process multiple blocks as if they were live blocks arriving from the network
 	 * It is not guaranted that those blocks will be inserted into ledger (there might be forks, missing links etc)
 	 * @return true if all blocks were successfully processed
 	 */
-	bool process_live (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks);
+	bool process_live (nano::node & node, std::vector<nano::raw_block> blocks);
 	/*
 	 * Convenience function to check whether a list of blocks is confirmed.
 	 * @return true if all blocks are confirmed, false otherwise
 	 */
-	bool confirmed (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks);
+	bool confirmed (nano::node & node, std::vector<nano::raw_block> const & blocks);
 	/*
 	 * Convenience function to check whether a list of hashes is confirmed.
 	 * @return true if all blocks are confirmed, false otherwise
@@ -300,16 +302,16 @@ namespace test
 	 * Convenience function to check whether a list of blocks exists in node ledger.
 	 * @return true if all blocks are fully processed and inserted in the ledger, false otherwise
 	 */
-	bool exists (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks);
+	bool exists (nano::node & node, std::vector<nano::raw_block> const & blocks);
 	/*
 	 * Convenience function to confirm/cement a block in the ledger by setting the confirmation
 	 * height of the account to be the height of the block.
 	 * The blocks are confirmed in the order that they are given.
 	 */
-	void confirm (nano::ledger & ledger, std::vector<std::shared_ptr<nano::block>> const blocks);
-	void confirm (nano::ledger & ledger, std::shared_ptr<nano::block> const block);
+	void confirm (nano::ledger & ledger, std::vector<nano::raw_block> const & blocks);
+	void confirm (nano::ledger & ledger, nano::raw_block const & block);
 	void confirm (nano::ledger & ledger, nano::block_hash const & hash);
-	void confirm (nano::node & node, std::vector<std::shared_ptr<nano::block>> const blocks);
+	void confirm (nano::node & node, std::vector<nano::raw_block> const & blocks);
 	/*
 	 * Convenience function to check whether *all* of the hashes exists in node ledger or in the pruned table.
 	 * @return true if all blocks are fully processed and inserted in the ledger, false otherwise
@@ -319,7 +321,7 @@ namespace test
 	 * Convenience function to check whether *all* of the blocks exists in node ledger or their hash exists in the pruned table.
 	 * @return true if all blocks are fully processed and inserted in the ledger, false otherwise
 	 */
-	bool block_or_pruned_all_exists (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks);
+	bool block_or_pruned_all_exists (nano::node & node, std::vector<nano::raw_block> const & blocks);
 	/*
 	 * Convenience function to check whether *none* of the hashes exists in node ledger or in the pruned table.
 	 * @return true if none of the blocks are processed and inserted in the ledger, false otherwise
@@ -329,7 +331,7 @@ namespace test
 	 * Convenience function to check whether *none* of the blocks exists in node ledger or their hash exists in the pruned table.
 	 * @return true if none of the blocks are processed and inserted in the ledger, false otherwise
 	 */
-	bool block_or_pruned_none_exists (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks);
+	bool block_or_pruned_none_exists (nano::node & node, std::vector<nano::raw_block> const & blocks);
 	/*
 	 * Convenience function to start elections for a list of hashes. Blocks are loaded from ledger.
 	 * @return true if all blocks exist and were queued to election scheduler
@@ -339,7 +341,7 @@ namespace test
 	 * Convenience function to start elections for a list of hashes. Blocks are loaded from ledger.
 	 * @return true if all blocks exist and were queued to election scheduler
 	 */
-	bool activate (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks);
+	bool activate (nano::node & node, std::vector<nano::raw_block> const & blocks);
 	/*
 	 * Convenience function that checks whether all hashes from list have currently active elections
 	 * @return true if all blocks have currently active elections, false othersie
@@ -349,11 +351,11 @@ namespace test
 	 * Convenience function that checks whether all hashes from list have currently active elections
 	 * @return true if all blocks have currently active elections, false othersie
 	 */
-	bool active (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks);
+	bool active (nano::node & node, std::vector<nano::raw_block> const & blocks);
 	/*
 	 * Convenience function to create a new vote from list of blocks
 	 */
-	std::shared_ptr<nano::vote> make_vote (nano::keypair key, std::vector<std::shared_ptr<nano::block>> blocks, uint64_t timestamp = 0, uint8_t duration = 0);
+	std::shared_ptr<nano::vote> make_vote (nano::keypair key, std::vector<nano::raw_block> const & blocks, uint64_t timestamp = 0, uint8_t duration = 0);
 	/*
 	 * Convenience function to create a new vote from list of block hashes
 	 */
@@ -361,7 +363,7 @@ namespace test
 	/*
 	 * Convenience function to create a new final vote from list of blocks
 	 */
-	std::shared_ptr<nano::vote> make_final_vote (nano::keypair key, std::vector<std::shared_ptr<nano::block>> blocks);
+	std::shared_ptr<nano::vote> make_final_vote (nano::keypair key, std::vector<nano::raw_block> const & blocks);
 	/*
 	 * Convenience function to create a new final vote from list of block hashes
 	 */
@@ -369,11 +371,7 @@ namespace test
 	/*
 	 * Converts list of blocks to list of hashes
 	 */
-	std::vector<nano::block_hash> blocks_to_hashes (std::vector<std::shared_ptr<nano::block>> blocks);
-	/*
-	 * Clones list of blocks
-	 */
-	std::vector<std::shared_ptr<nano::block>> clone (std::vector<std::shared_ptr<nano::block>> blocks);
+	std::vector<nano::block_hash> blocks_to_hashes (std::vector<nano::raw_block> const & blocks);
 	/*
 	 * Creates a new fake channel associated with `node`
 	 */
@@ -403,7 +401,7 @@ namespace test
 	 * @return true if all elections were successfully started
 	 * NOTE: Each election is given 5 seconds to complete, if it does not complete in 5 seconds, it will return an error.
 	 */
-	[[nodiscard]] bool start_elections (nano::test::system &, nano::node &, std::vector<std::shared_ptr<nano::block>> const &, bool const forced_a = false);
+	[[nodiscard]] bool start_elections (nano::test::system &, nano::node &, std::vector<nano::raw_block> const &, bool const forced_a = false);
 
 	/**
 	 *  Return account_info for account "acc", if account is not found, a default initialised object is returned
@@ -428,7 +426,7 @@ namespace test
 	/**
 	 * Returns all blocks in the ledger
 	 */
-	std::vector<std::shared_ptr<nano::block>> all_blocks (nano::node &);
+	std::vector<nano::stored_block> all_blocks (nano::node &);
 
 	nano::uint128_t minimum_principal_weight ();
 }

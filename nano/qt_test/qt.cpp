@@ -372,8 +372,8 @@ TEST (wallet, create_send)
 	bool error (false);
 	auto send = std::make_shared<nano::state_block> (error, tree1);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (send));
-	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (send));
+	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (nano::to_raw (*send)));
+	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (nano::to_raw (*send)));
 }
 
 TEST (wallet, create_open_receive)
@@ -406,8 +406,8 @@ TEST (wallet, create_open_receive)
 	bool error (false);
 	auto open = std::make_shared<nano::state_block> (error, tree1);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (open));
-	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (open));
+	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (nano::to_raw (*open)));
+	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (nano::to_raw (*open)));
 	wallet->block_creation.block->clear ();
 	wallet->block_creation.source->clear ();
 	wallet->block_creation.receive->click ();
@@ -421,8 +421,8 @@ TEST (wallet, create_open_receive)
 	bool error2 (false);
 	auto receive = std::make_shared<nano::state_block> (error2, tree2);
 	ASSERT_FALSE (error2);
-	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (receive));
-	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (receive));
+	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (nano::to_raw (*receive)));
+	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (nano::to_raw (*receive)));
 }
 
 TEST (wallet, create_change)
@@ -449,8 +449,8 @@ TEST (wallet, create_change)
 	bool error (false);
 	auto change = std::make_shared<nano::state_block> (error, tree1);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (change));
-	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (change));
+	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (nano::to_raw (*change)));
+	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (nano::to_raw (*change)));
 }
 
 TEST (history, short_text)
@@ -963,8 +963,8 @@ TEST (wallet, epoch_2_validation)
 	auto & node = system.nodes[0];
 
 	// Upgrade the genesis account to epoch 2
-	ASSERT_NE (nullptr, system.upgrade_genesis_epoch (*node, nano::epoch::epoch_1));
-	ASSERT_NE (nullptr, system.upgrade_genesis_epoch (*node, nano::epoch::epoch_2));
+	ASSERT_TRUE (system.upgrade_genesis_epoch (*node, nano::epoch::epoch_1));
+	ASSERT_TRUE (system.upgrade_genesis_epoch (*node, nano::epoch::epoch_2));
 
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 
@@ -986,7 +986,7 @@ TEST (wallet, epoch_2_validation)
 		bool error (false);
 		auto block = std::make_shared<nano::state_block> (error, tree1);
 		EXPECT_FALSE (error);
-		EXPECT_EQ (nano::block_status::progress, node->process (block));
+		EXPECT_EQ (nano::block_status::progress, node->process (nano::to_raw (*block)));
 		return block->hash ();
 	};
 

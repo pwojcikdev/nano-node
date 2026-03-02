@@ -61,7 +61,7 @@ nano::block_processor & block_processor_a, nano::network & network_a, nano::stat
 		}
 	});
 
-	accounts.priority_set (node_config_a.network_params.ledger.genesis->account_field ().value ());
+	accounts.priority_set (node_config_a.network_params.ledger.genesis.account_field ().value ());
 }
 
 nano::bootstrap_service::~bootstrap_service ()

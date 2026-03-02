@@ -14,18 +14,17 @@
 
 namespace
 {
-std::shared_ptr<nano::block> random_block ()
+nano::raw_block random_block ()
 {
 	nano::block_builder builder;
-	auto block = builder
-				 .send ()
-				 .previous (nano::test::random_hash ())
-				 .destination (nano::keypair ().pub)
-				 .balance (2)
-				 .sign (nano::keypair ().prv, 4)
-				 .work (5)
-				 .build ();
-	return block;
+	return builder
+	.send ()
+	.previous (nano::test::random_hash ())
+	.destination (nano::keypair ().pub)
+	.balance (2)
+	.sign (nano::keypair ().prv, 4)
+	.work (5)
+	.build ();
 }
 }
 
@@ -218,7 +217,7 @@ TEST (message, confirm_ack_hash_serialization)
 					 .sign (key1.prv, key1.pub)
 					 .work (5)
 					 .build ();
-		hashes.push_back (block->hash ());
+		hashes.push_back (block.hash ());
 	}
 	nano::keypair representative1;
 	auto vote = nano::test::make_vote (representative1, { hashes }, 0, 0);
@@ -259,7 +258,7 @@ TEST (message, confirm_ack_hash_serialization_v2)
 					 .sign (key1.prv, key1.pub)
 					 .work (5)
 					 .build ();
-		hashes.push_back (block->hash ());
+		hashes.push_back (block.hash ());
 	}
 
 	nano::keypair representative1;
@@ -316,7 +315,7 @@ TEST (message, confirm_req_hash_serialization)
 				 .sign (nano::keypair ().prv, 2)
 				 .work (3)
 				 .build ();
-	nano::messages::confirm_req req{ nano::dev::network_params.network, block->hash (), block->root () };
+	nano::messages::confirm_req req{ nano::dev::network_params.network, block.hash (), block.root () };
 	std::vector<uint8_t> bytes;
 	{
 		nano::vectorstream stream (bytes);
@@ -348,7 +347,7 @@ TEST (message, confirm_req_hash_batch_serialization)
 				.sign (key.prv, key.pub)
 				.work (5)
 				.build ();
-	roots_hashes.push_back (std::make_pair (open->hash (), open->root ()));
+	roots_hashes.push_back (std::make_pair (open.hash (), open.root ()));
 	for (auto i (roots_hashes.size ()); i < 7; i++)
 	{
 		nano::keypair key1;
@@ -364,9 +363,9 @@ TEST (message, confirm_req_hash_batch_serialization)
 					 .sign (key1.prv, key1.pub)
 					 .work (5)
 					 .build ();
-		roots_hashes.push_back (std::make_pair (block->hash (), block->root ()));
+		roots_hashes.push_back (std::make_pair (block.hash (), block.root ()));
 	}
-	roots_hashes.push_back (std::make_pair (open->hash (), open->root ()));
+	roots_hashes.push_back (std::make_pair (open.hash (), open.root ()));
 	nano::messages::confirm_req req{ nano::dev::network_params.network, roots_hashes };
 	std::vector<uint8_t> bytes;
 	{
@@ -403,7 +402,7 @@ TEST (message, confirm_req_hash_batch_serialization_v2)
 				.build ();
 
 	std::vector<std::pair<nano::block_hash, nano::root>> roots_hashes;
-	roots_hashes.push_back (std::make_pair (open->hash (), open->root ()));
+	roots_hashes.push_back (std::make_pair (open.hash (), open.root ()));
 	for (auto i (roots_hashes.size ()); i < 255; i++)
 	{
 		nano::keypair key1;
@@ -419,7 +418,7 @@ TEST (message, confirm_req_hash_batch_serialization_v2)
 					 .sign (key1.prv, key1.pub)
 					 .work (5)
 					 .build ();
-		roots_hashes.push_back (std::make_pair (block->hash (), block->root ()));
+		roots_hashes.push_back (std::make_pair (block.hash (), block.root ()));
 	}
 
 	nano::messages::confirm_req req{ nano::dev::network_params.network, roots_hashes };
@@ -599,7 +598,7 @@ TEST (message, asc_pull_ack_serialization_blocks)
 	nano::messages::asc_pull_ack::blocks_payload original_payload{};
 	for (int n = 0; n < nano::messages::asc_pull_ack::blocks_payload::max_blocks; ++n)
 	{
-		original_payload.blocks.push_back (nano::to_raw (*random_block ()));
+		original_payload.blocks.push_back (random_block ());
 	}
 
 	original.payload = original_payload;

@@ -233,7 +233,7 @@ void benchmark_base::setup_genesis_distribution (double distribution_percentage)
 				.previous (0)
 				.representative (target_account)
 				.balance (send_amount)
-				.link (send->hash ())
+				.link (send.hash ())
 				.sign (target_keypair.prv, target_keypair.pub)
 				.work (0)
 				.build ();
@@ -248,7 +248,7 @@ void benchmark_base::setup_genesis_distribution (double distribution_percentage)
 	pool.set_initial_balance (target_account, send_amount);
 
 	// Initialize frontier for target account
-	pool.set_frontier (target_account, open->hash ());
+	pool.set_frontier (target_account, open.hash ());
 
 	std::cout << fmt::format ("Genesis distribution complete: {:.1f}% distributed, {:.1f}% retained for voting\n",
 	distribution_percentage * 100.0, (1.0 - distribution_percentage) * 100.0);
@@ -271,9 +271,9 @@ void benchmark_base::setup_genesis_distribution (double distribution_percentage)
  * The resulting blocks have no intentional dependency structure beyond the natural
  * send->receive pairs, making this suitable for testing sequential block processing.
  */
-std::deque<std::shared_ptr<nano::block>> benchmark_base::generate_random_transfers ()
+std::deque<nano::raw_block> benchmark_base::generate_random_transfers ()
 {
-	std::deque<std::shared_ptr<nano::block>> blocks;
+	std::deque<nano::raw_block> blocks;
 	std::random_device rd;
 	std::mt19937 gen (rd ());
 
@@ -331,7 +331,7 @@ std::deque<std::shared_ptr<nano::block>> benchmark_base::generate_random_transfe
 					.build ();
 
 		blocks.push_back (send);
-		pool.set_frontier (sender, send->hash ());
+		pool.set_frontier (sender, send.hash ());
 		pool.update_balance (sender, new_sender_balance);
 
 		// Create receive block
@@ -355,13 +355,13 @@ std::deque<std::shared_ptr<nano::block>> benchmark_base::generate_random_transfe
 					   .previous (receiver_frontier)
 					   .representative (receiver)
 					   .balance (new_receiver_balance)
-					   .link (send->hash ())
+					   .link (send.hash ())
 					   .sign (receiver_keypair.prv, receiver_keypair.pub)
 					   .work (0)
 					   .build ();
 
 		blocks.push_back (receive);
-		pool.set_frontier (receiver, receive->hash ());
+		pool.set_frontier (receiver, receive.hash ());
 		pool.update_balance (receiver, new_receiver_balance);
 
 		transfers_generated++;
@@ -388,9 +388,9 @@ std::deque<std::shared_ptr<nano::block>> benchmark_base::generate_random_transfe
  * The last block in the returned deque is the ultimate root that depends on all others.
  * Cementing this single block will cascade and cement all blocks in the tree.
  */
-std::deque<std::shared_ptr<nano::block>> benchmark_base::generate_dependent_chain ()
+std::deque<nano::raw_block> benchmark_base::generate_dependent_chain ()
 {
-	std::deque<std::shared_ptr<nano::block>> blocks;
+	std::deque<nano::raw_block> blocks;
 	std::random_device rd;
 	std::mt19937 gen (rd ());
 	nano::block_builder builder;
@@ -438,7 +438,7 @@ std::deque<std::shared_ptr<nano::block>> benchmark_base::generate_dependent_chai
 					.build ();
 
 		blocks.push_back (send);
-		pool.set_frontier (sender, send->hash ());
+		pool.set_frontier (sender, send.hash ());
 		pool.update_balance (sender, new_sender_balance);
 
 		// Create receive block
@@ -451,13 +451,13 @@ std::deque<std::shared_ptr<nano::block>> benchmark_base::generate_dependent_chai
 					   .previous (receiver_frontier)
 					   .representative (receiver)
 					   .balance (new_receiver_balance)
-					   .link (send->hash ())
+					   .link (send.hash ())
 					   .sign (receiver_keypair.prv, receiver_keypair.pub)
 					   .work (0)
 					   .build ();
 
 		blocks.push_back (receive);
-		pool.set_frontier (receiver, receive->hash ());
+		pool.set_frontier (receiver, receive.hash ());
 		pool.update_balance (receiver, new_receiver_balance);
 
 		transfers_generated++;
@@ -508,8 +508,8 @@ std::deque<std::shared_ptr<nano::block>> benchmark_base::generate_dependent_chai
 					.build ();
 
 		blocks.push_back (send);
-		convergence_sends.push_back ({ send->hash (), send_amount });
-		pool.set_frontier (account, send->hash ());
+		convergence_sends.push_back ({ send.hash (), send_amount });
+		pool.set_frontier (account, send.hash ());
 		pool.update_balance (account, remaining_balance);
 	}
 
@@ -528,7 +528,7 @@ std::deque<std::shared_ptr<nano::block>> benchmark_base::generate_dependent_chai
 					   .build ();
 
 		blocks.push_back (receive);
-		collector_frontier = receive->hash ();
+		collector_frontier = receive.hash ();
 	}
 
 	// Update collector state
@@ -544,10 +544,10 @@ std::deque<std::shared_ptr<nano::block>> benchmark_base::generate_dependent_chai
  * Generates independent blocks - one block per account with no dependencies.
  * Returns sends and opens separately so sends can be confirmed first, then opens processed for elections.
  */
-std::pair<std::deque<std::shared_ptr<nano::block>>, std::deque<std::shared_ptr<nano::block>>> benchmark_base::generate_independent_blocks ()
+std::pair<std::deque<nano::raw_block>, std::deque<nano::raw_block>> benchmark_base::generate_independent_blocks ()
 {
-	std::deque<std::shared_ptr<nano::block>> sends;
-	std::deque<std::shared_ptr<nano::block>> opens;
+	std::deque<nano::raw_block> sends;
+	std::deque<nano::raw_block> opens;
 	nano::block_builder builder;
 
 	// Find accounts with balance to send from
@@ -595,7 +595,7 @@ std::pair<std::deque<std::shared_ptr<nano::block>>, std::deque<std::shared_ptr<n
 					.previous (0) // First block for this account
 					.representative (receiver)
 					.balance (transfer_amount)
-					.link (send->hash ())
+					.link (send.hash ())
 					.sign (receiver_keypair.prv, receiver_keypair.pub)
 					.work (0)
 					.build ();
@@ -605,7 +605,7 @@ std::pair<std::deque<std::shared_ptr<nano::block>>, std::deque<std::shared_ptr<n
 		opens.push_back (open);
 
 		// Update pool state for sender only (receiver is new account not tracked)
-		pool.set_frontier (sender, send->hash ());
+		pool.set_frontier (sender, send.hash ());
 		pool.update_balance (sender, new_sender_balance);
 	}
 

@@ -227,6 +227,26 @@ nano::state_block_builder & nano::state_block_builder::from (nano::state_block c
 	return *this;
 }
 
+nano::state_block_builder & nano::state_block_builder::from (nano::raw_block const & other_block)
+{
+	debug_assert (other_block.type () == nano::block_type::state);
+	block->work = other_block.block_work ();
+	build_state |= build_flags::work_present;
+	block->signature = other_block.block_signature ();
+	build_state |= build_flags::signature_present;
+	block->hashables.account = other_block.account_field ().value ();
+	build_state |= build_flags::account_present;
+	block->hashables.balance = other_block.balance_field ().value ();
+	build_state |= build_flags::balance_present;
+	block->hashables.link = other_block.link_field ().value ();
+	build_state |= build_flags::link_present;
+	block->hashables.previous = other_block.previous ();
+	build_state |= build_flags::previous_present;
+	block->hashables.representative = other_block.representative_field ().value ();
+	build_state |= build_flags::representative_present;
+	return *this;
+}
+
 void nano::state_block_builder::validate ()
 {
 	if (!ec)
@@ -532,6 +552,22 @@ nano::send_block_builder & nano::send_block_builder::from (nano::send_block cons
 	return *this;
 }
 
+nano::send_block_builder & nano::send_block_builder::from (nano::raw_block const & other_block)
+{
+	debug_assert (other_block.type () == nano::block_type::send);
+	block->work = other_block.block_work ();
+	build_state |= build_flags::work_present;
+	block->signature = other_block.block_signature ();
+	build_state |= build_flags::signature_present;
+	block->hashables.balance = other_block.balance_field ().value ();
+	build_state |= build_flags::balance_present;
+	block->hashables.destination = other_block.destination_field ().value ();
+	build_state |= build_flags::link_present;
+	block->hashables.previous = other_block.previous ();
+	build_state |= build_flags::previous_present;
+	return *this;
+}
+
 nano::send_block_builder & nano::send_block_builder::make_block ()
 {
 	construct_block ();
@@ -671,25 +707,29 @@ nano::receive_block_builder & nano::receive_block_builder::source_hex (std::stri
 }
 
 template <typename BLOCKTYPE, typename BUILDER>
-std::shared_ptr<BLOCKTYPE> nano::abstract_builder<BLOCKTYPE, BUILDER>::build ()
+nano::raw_block nano::abstract_builder<BLOCKTYPE, BUILDER>::build ()
 {
 	if (!ec)
 	{
 		static_cast<BUILDER *> (this)->validate ();
 	}
 	debug_assert (!ec);
-	return std::move (block);
+	auto result = nano::to_raw (*block);
+	block.reset ();
+	return result;
 }
 
 template <typename BLOCKTYPE, typename BUILDER>
-std::shared_ptr<BLOCKTYPE> nano::abstract_builder<BLOCKTYPE, BUILDER>::build (std::error_code & ec)
+nano::raw_block nano::abstract_builder<BLOCKTYPE, BUILDER>::build (std::error_code & ec)
 {
 	if (!this->ec)
 	{
 		static_cast<BUILDER *> (this)->validate ();
 	}
 	ec = this->ec;
-	return std::move (block);
+	auto result = nano::to_raw (*block);
+	block.reset ();
+	return result;
 }
 
 template <typename BLOCKTYPE, typename BUILDER>
@@ -722,24 +762,6 @@ void nano::abstract_builder<BLOCKTYPE, BUILDER>::construct_block ()
 	block = std::make_unique<BLOCKTYPE> ();
 	ec.clear ();
 	build_state = 0;
-}
-
-template <typename BLOCKTYPE, typename BUILDER>
-nano::raw_block nano::abstract_builder<BLOCKTYPE, BUILDER>::build_raw ()
-{
-	auto block = build ();
-	return nano::to_raw (*block);
-}
-
-template <typename BLOCKTYPE, typename BUILDER>
-nano::raw_block nano::abstract_builder<BLOCKTYPE, BUILDER>::build_raw (std::error_code & ec)
-{
-	auto block = build (ec);
-	if (ec)
-	{
-		return nano::raw_block{};
-	}
-	return nano::to_raw (*block);
 }
 
 // Explicit instantiations

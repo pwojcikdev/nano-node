@@ -645,7 +645,7 @@ bool nano::network::verify_handshake_response (const nano::messages::node_id_han
 	}
 
 	// Prevent mismatched genesis
-	if (response.v2 && response.v2->genesis != node.network_params.ledger.genesis->hash ())
+	if (response.v2 && response.v2->genesis != node.network_params.ledger.genesis.hash ())
 	{
 		node.stats.inc (nano::stat::type::handshake, nano::stat::detail::invalid_genesis);
 		return false; // Fail
@@ -686,7 +686,7 @@ nano::messages::node_id_handshake::response_payload nano::network::prepare_hands
 	{
 		nano::messages::node_id_handshake::response_payload::v2_payload response_v2{};
 		response_v2.salt = nano::random_pool::generate<uint256_union> ();
-		response_v2.genesis = node.network_params.ledger.genesis->hash ();
+		response_v2.genesis = node.network_params.ledger.genesis.hash ();
 		response.v2 = response_v2;
 	}
 	response.sign (query.cookie, node.node_id);

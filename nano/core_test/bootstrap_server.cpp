@@ -146,7 +146,7 @@ TEST (bootstrap_server, serve_hash)
 	request.type = nano::messages::asc_pull_type::blocks;
 
 	nano::messages::asc_pull_req::blocks_payload request_payload{};
-	request_payload.start = blocks.front ()->hash ();
+	request_payload.start = blocks.front ().hash ();
 	request_payload.count = nano::bootstrap_server::max_blocks;
 	request_payload.start_type = nano::messages::asc_pull_req::hash_type::block;
 
@@ -191,7 +191,7 @@ TEST (bootstrap_server, serve_hash_one)
 	request.type = nano::messages::asc_pull_type::blocks;
 
 	nano::messages::asc_pull_req::blocks_payload request_payload{};
-	request_payload.start = blocks.front ()->hash ();
+	request_payload.start = blocks.front ().hash ();
 	request_payload.count = 1;
 	request_payload.start_type = nano::messages::asc_pull_req::hash_type::block;
 
@@ -230,7 +230,7 @@ TEST (bootstrap_server, serve_end_of_chain)
 	request.type = nano::messages::asc_pull_type::blocks;
 
 	nano::messages::asc_pull_req::blocks_payload request_payload{};
-	request_payload.start = blocks.back ()->hash ();
+	request_payload.start = blocks.back ().hash ();
 	request_payload.count = nano::bootstrap_server::max_blocks;
 	request_payload.start_type = nano::messages::asc_pull_req::hash_type::block;
 
@@ -250,7 +250,7 @@ TEST (bootstrap_server, serve_end_of_chain)
 	ASSERT_NO_THROW (response_payload = std::get<nano::messages::asc_pull_ack::blocks_payload> (response.payload));
 	// Response should contain only the last block from chain
 	ASSERT_EQ (response_payload.blocks.size (), 1);
-	ASSERT_EQ (response_payload.blocks.front ().hash (), blocks.back ()->hash ());
+	ASSERT_EQ (response_payload.blocks.front ().hash (), blocks.back ().hash ());
 }
 
 TEST (bootstrap_server, serve_missing)
@@ -388,10 +388,10 @@ TEST (bootstrap_server, serve_account_info)
 	ASSERT_NO_THROW (response_payload = std::get<nano::messages::asc_pull_ack::account_info_payload> (response.payload));
 
 	ASSERT_EQ (response_payload.account, account);
-	ASSERT_EQ (response_payload.account_open, blocks.front ()->hash ());
-	ASSERT_EQ (response_payload.account_head, blocks.back ()->hash ());
+	ASSERT_EQ (response_payload.account_open, blocks.front ().hash ());
+	ASSERT_EQ (response_payload.account_head, blocks.back ().hash ());
 	ASSERT_EQ (response_payload.account_block_count, blocks.size ());
-	ASSERT_EQ (response_payload.account_conf_frontier, blocks.back ()->hash ());
+	ASSERT_EQ (response_payload.account_conf_frontier, blocks.back ().hash ());
 	ASSERT_EQ (response_payload.account_conf_height, blocks.size ());
 
 	// Ensure we don't get any unexpected responses
@@ -484,7 +484,7 @@ TEST (bootstrap_server, serve_frontiers)
 	std::map<nano::account, nano::block_hash> expected_frontiers;
 	for (auto & [account, blocks] : chains)
 	{
-		expected_frontiers[account] = blocks.back ()->hash ();
+		expected_frontiers[account] = blocks.back ().hash ();
 	}
 	expected_frontiers[nano::dev::genesis_key.pub] = node.latest (nano::dev::genesis_key.pub);
 

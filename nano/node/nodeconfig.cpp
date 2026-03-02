@@ -52,7 +52,7 @@ nano::node_config::node_config (std::optional<uint16_t> peering_port_a, nano::ne
 	{
 		case nano::network_type::nano_dev_network:
 			enable_voting = true;
-			preconfigured_representatives.push_back (network_params.ledger.genesis->account ());
+			preconfigured_representatives.push_back (network_params.ledger.genesis.account ());
 			break;
 		case nano::network_type::nano_beta_network:
 		{
@@ -75,7 +75,7 @@ nano::node_config::node_config (std::optional<uint16_t> peering_port_a, nano::ne
 			break;
 		case nano::network_type::nano_test_network:
 			preconfigured_peers.push_back (default_test_peer_network);
-			preconfigured_representatives.push_back (network_params.ledger.genesis->account ());
+			preconfigured_representatives.push_back (network_params.ledger.genesis.account ());
 			break;
 		default:
 			debug_assert (false);

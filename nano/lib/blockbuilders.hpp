@@ -55,14 +55,10 @@ template <typename BLOCKTYPE, typename BUILDER>
 class abstract_builder
 {
 public:
-	/** Returns the built block*/
-	std::shared_ptr<BLOCKTYPE> build ();
-	/** Returns the built block. Any errors are placed in \p ec */
-	std::shared_ptr<BLOCKTYPE> build (std::error_code & ec);
 	/** Returns the built block as a raw_block */
-	nano::raw_block build_raw ();
+	nano::raw_block build ();
 	/** Returns the built block as a raw_block. Any errors are placed in \p ec */
-	nano::raw_block build_raw (std::error_code & ec);
+	nano::raw_block build (std::error_code & ec);
 	/** Set work value */
 	abstract_builder & work (uint64_t work);
 	/** Sign the block using the \p private_key and \p public_key */
@@ -100,6 +96,8 @@ public:
 	state_block_builder ();
 	/** Initialize from an existing block */
 	state_block_builder & from (nano::state_block const & block);
+	/** Initialize from a raw_block (must be state type) */
+	state_block_builder & from (nano::raw_block const & block);
 	/** Creates a new block with fields, signature and work set to sentinel values. All fields must be set or zeroed for build() to succeed. */
 	state_block_builder & make_block ();
 	/** Sets all hashables, signature and work to zero. */
@@ -207,6 +205,8 @@ public:
 	send_block_builder ();
 	/** Initialize from an existing block */
 	send_block_builder & from (nano::send_block const & block);
+	/** Initialize from a raw_block (must be send type) */
+	send_block_builder & from (nano::raw_block const & block);
 	/** Creates a new block with fields, signature and work set to sentinel values. All fields must be set or zeroed for build() to succeed. */
 	send_block_builder & make_block ();
 	/** Sets all hashables, signature and work to zero. */

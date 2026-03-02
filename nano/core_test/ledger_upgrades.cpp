@@ -614,20 +614,19 @@ public:
 	}
 
 	// Write a block with v24 sideband format (successor is part of sideband)
-	void add_block (nano::block & block, nano::block_hash const & successor_hash)
+	void add_block (nano::raw_block const & block, nano::block_sideband sideband, nano::block_hash const & successor_hash)
 	{
 		auto tx = backend->tx_begin_write ();
 
 		// Set successor in sideband before serializing
-		auto sideband = block.sideband ();
 		sideband.successor = successor_hash;
-		block.sideband_set (sideband);
 
 		std::vector<uint8_t> data;
 		{
 			nano::vectorstream stream{ data };
-			nano::serialize_block (stream, block);
-			block.sideband ().serialize (stream, block.type ());
+			nano::write (stream, block.type ());
+			block.serialize (stream);
+			sideband.serialize (stream, block.type ());
 		}
 
 		nano::store::db_val value{ data.size (), data.data () };
@@ -659,40 +658,42 @@ TEST (ledger_upgrades, upgrade_v24_to_v25)
 				  .sign (key1.prv, key1.pub)
 				  .work (0)
 				  .build ();
-	block1->sideband_set (nano::block_sideband{
-	key1.pub,
-	nano::block_hash{ 0 },
-	nano::amount{ 1000 },
-	1, 0, nano::epoch::epoch_0,
-	false, false, false, nano::epoch::epoch_0 });
+	nano::block_sideband sideband1{
+		key1.pub,
+		nano::block_hash{ 0 },
+		nano::amount{ 1000 },
+		1, 0, nano::epoch::epoch_0,
+		false, false, false, nano::epoch::epoch_0
+	};
 
 	// Create a state block with a previous (block1)
 	auto block2 = builder
 				  .state ()
 				  .account (key1.pub)
-				  .previous (block1->hash ())
+				  .previous (block1.hash ())
 				  .representative (key1.pub)
 				  .balance (500)
 				  .link (key2.pub)
 				  .sign (key1.prv, key1.pub)
 				  .work (0)
 				  .build ();
-	block2->sideband_set (nano::block_sideband{
-	key1.pub,
-	nano::block_hash{ 0 },
-	nano::amount{ 500 },
-	2, 0, nano::epoch::epoch_0,
-	true, false, false, nano::epoch::epoch_0 });
+	nano::block_sideband sideband2{
+		key1.pub,
+		nano::block_hash{ 0 },
+		nano::amount{ 500 },
+		2, 0, nano::epoch::epoch_0,
+		true, false, false, nano::epoch::epoch_0
+	};
 
 	auto const path = nano::unique_path ();
 	{
 		legacy_database_v24 legacy_db{ path };
 
 		// block1 has block2 as successor
-		legacy_db.add_block (*block1, block2->hash ());
+		legacy_db.add_block (block1, sideband1, block2.hash ());
 
 		// block2 has no successor (zero hash)
-		legacy_db.add_block (*block2, nano::block_hash{ 0 });
+		legacy_db.add_block (block2, sideband2, nano::block_hash{ 0 });
 	}
 
 	// Open through ledger_store which should trigger upgrade
@@ -708,15 +709,15 @@ TEST (ledger_upgrades, upgrade_v24_to_v25)
 	ASSERT_EQ (store.version.get (tx), nano::store::ledger_store::version_current);
 
 	// Verify successor table has the correct entry for block1 -> block2
-	auto successor_result = store.successor.get (tx, block1->hash ());
+	auto successor_result = store.successor.get (tx, block1.hash ());
 	ASSERT_TRUE (successor_result.has_value ());
-	ASSERT_EQ (*successor_result, block2->hash ());
+	ASSERT_EQ (*successor_result, block2.hash ());
 
 	// Verify block2 has no successor in the table
-	auto no_successor = store.successor.get (tx, block2->hash ());
+	auto no_successor = store.successor.get (tx, block2.hash ());
 	ASSERT_FALSE (no_successor.has_value ());
 
-	auto stored_block2 = store.block.get (tx, block2->hash ());
+	auto stored_block2 = store.block.get (tx, block2.hash ());
 	ASSERT_TRUE (stored_block2);
 	ASSERT_EQ (stored_block2->sideband ().height, 2);
 	ASSERT_EQ (stored_block2->sideband ().successor, nano::block_hash{ 0 });

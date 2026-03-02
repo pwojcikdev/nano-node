@@ -53,8 +53,8 @@ TEST (cementing_set, add_exists)
 	cementing_set_context ctx{ ledger_ctx };
 	nano::cementing_set & cementing_set = ctx.cementing_set;
 	auto send = ledger_ctx.blocks ()[0];
-	cementing_set.add (send->hash ());
-	ASSERT_TRUE (cementing_set.contains (send->hash ()));
+	cementing_set.add (send.hash ());
+	ASSERT_TRUE (cementing_set.contains (send.hash ()));
 }
 
 TEST (cementing_set, process_one)
@@ -66,7 +66,7 @@ TEST (cementing_set, process_one)
 	std::mutex mutex;
 	std::condition_variable condition;
 	cementing_set.cemented_observers.add ([&] (auto const &) { ++count; condition.notify_all (); });
-	cementing_set.add (ledger_ctx.blocks ()[0]->hash ());
+	cementing_set.add (ledger_ctx.blocks ()[0].hash ());
 	nano::test::start_stop_guard guard{ cementing_set };
 	std::unique_lock lock{ mutex };
 	ASSERT_TRUE (condition.wait_for (lock, 5s, [&] () { return count == 1; }));
@@ -84,8 +84,8 @@ TEST (cementing_set, process_multiple)
 	std::mutex mutex;
 	std::condition_variable condition;
 	cementing_set.cemented_observers.add ([&] (auto const &) { ++count; condition.notify_all (); });
-	cementing_set.add (ledger_ctx.blocks ()[0]->hash ());
-	cementing_set.add (ledger_ctx.blocks ()[1]->hash ());
+	cementing_set.add (ledger_ctx.blocks ()[0].hash ());
+	cementing_set.add (ledger_ctx.blocks ()[1].hash ());
 	nano::test::start_stop_guard guard{ cementing_set };
 	std::unique_lock lock{ mutex };
 	ASSERT_TRUE (condition.wait_for (lock, 5s, [&] () { return count == 2; }));
@@ -116,20 +116,20 @@ TEST (confirmation_callback, observer_callbacks)
 				.build ();
 	auto send1 = builder
 				 .send ()
-				 .previous (send->hash ())
+				 .previous (send.hash ())
 				 .destination (key1.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio * 2)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send->hash ()))
+				 .work (*system.work.generate (send.hash ()))
 				 .build ();
 
 	{
 		auto transaction = node->ledger.tx_begin_write ();
-		ASSERT_EQ (nano::block_status::progress, node->ledger.process (transaction, send));
-		ASSERT_EQ (nano::block_status::progress, node->ledger.process (transaction, send1));
+		ASSERT_EQ (nano::block_status::progress, node->ledger.process (transaction, send).code);
+		ASSERT_EQ (nano::block_status::progress, node->ledger.process (transaction, send1).code);
 	}
 
-	node->cementing_set.add (send1->hash ());
+	node->cementing_set.add (send1.hash ());
 
 	// Callback is performed for all blocks that are confirmed
 	ASSERT_TIMELY_EQ (5s, 2, node->ledger.stats.count (nano::stat::type::confirmation_observer, nano::stat::dir::out));
@@ -159,20 +159,20 @@ TEST (confirmation_callback, confirmed_history)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
 				.work (*system.work.generate (latest))
 				.build ();
-	ASSERT_EQ (nano::block_status::progress, node->ledger.process (node->ledger.tx_begin_write (), send));
+	ASSERT_EQ (nano::block_status::progress, node->ledger.process (node->ledger.tx_begin_write (), send).code);
 
 	auto send1 = builder
 				 .send ()
-				 .previous (send->hash ())
+				 .previous (send.hash ())
 				 .destination (key1.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio * 2)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send->hash ()))
+				 .work (*system.work.generate (send.hash ()))
 				 .build ();
-	ASSERT_EQ (nano::block_status::progress, node->ledger.process (node->ledger.tx_begin_write (), send1));
+	ASSERT_EQ (nano::block_status::progress, node->ledger.process (node->ledger.tx_begin_write (), send1).code);
 
 	std::shared_ptr<nano::election> election;
-	ASSERT_TIMELY (5s, election = nano::test::start_election (system, *node, send1->hash ()));
+	ASSERT_TIMELY (5s, election = nano::test::start_election (system, *node, send1.hash ()));
 	{
 		// The write guard prevents the confirmation height processor doing any writes
 		auto write_guard = node->store.write_queue.wait (nano::store::writer::testing);
@@ -184,7 +184,7 @@ TEST (confirmation_callback, confirmed_history)
 		ASSERT_TRUE (node->active.empty ());
 
 		auto transaction = node->ledger.tx_begin_read ();
-		ASSERT_FALSE (node->ledger.cemented.block_exists (transaction, send->hash ()));
+		ASSERT_FALSE (node->ledger.cemented.block_exists (transaction, send.hash ()));
 
 		ASSERT_TIMELY (10s, node->store.write_queue.contains (nano::store::writer::confirmation_height));
 
@@ -194,7 +194,7 @@ TEST (confirmation_callback, confirmed_history)
 
 	ASSERT_TIMELY (10s, !node->store.write_queue.contains (nano::store::writer::confirmation_height));
 
-	ASSERT_TIMELY (5s, node->ledger.cemented.block_exists (node->ledger.tx_begin_read (), send->hash ()));
+	ASSERT_TIMELY (5s, node->ledger.cemented.block_exists (node->ledger.tx_begin_read (), send.hash ()));
 
 	ASSERT_TIMELY_EQ (10s, node->active.size (), 0);
 	ASSERT_TIMELY_EQ (10s, node->stats.count (nano::stat::type::confirmation_observer, nano::stat::detail::active_quorum, nano::stat::dir::out), 1);
@@ -232,38 +232,38 @@ TEST (confirmation_callback, dependent_election)
 				.build ();
 	auto send1 = builder
 				 .send ()
-				 .previous (send->hash ())
+				 .previous (send.hash ())
 				 .destination (key1.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio * 2)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send->hash ()))
+				 .work (*system.work.generate (send.hash ()))
 				 .build ();
 	auto send2 = builder
 				 .send ()
-				 .previous (send1->hash ())
+				 .previous (send1.hash ())
 				 .destination (key1.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio * 3)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send1->hash ()))
+				 .work (*system.work.generate (send1.hash ()))
 				 .build ();
 	{
 		auto transaction = node->ledger.tx_begin_write ();
-		ASSERT_EQ (nano::block_status::progress, node->ledger.process (transaction, send));
-		ASSERT_EQ (nano::block_status::progress, node->ledger.process (transaction, send1));
-		ASSERT_EQ (nano::block_status::progress, node->ledger.process (transaction, send2));
+		ASSERT_EQ (nano::block_status::progress, node->ledger.process (transaction, send).code);
+		ASSERT_EQ (nano::block_status::progress, node->ledger.process (transaction, send1).code);
+		ASSERT_EQ (nano::block_status::progress, node->ledger.process (transaction, send2).code);
 	}
 
 	// This election should be confirmed as active_conf_height
-	ASSERT_TRUE (nano::test::start_election (system, *node, send1->hash ()));
+	ASSERT_TRUE (nano::test::start_election (system, *node, send1.hash ()));
 	// Start an election and confirm it
-	auto election = nano::test::start_election (system, *node, send2->hash ());
+	auto election = nano::test::start_election (system, *node, send2.hash ());
 	ASSERT_NE (nullptr, election);
 	election->force_confirm ();
 
 	// Wait for blocks to be confirmed in ledger, callbacks will happen after
 	ASSERT_TIMELY_EQ (5s, 3, node->stats.count (nano::stat::type::confirmation_height, nano::stat::detail::blocks_cemented, nano::stat::dir::in));
 	// Once the item added to the confirming set no longer exists, callbacks have completed
-	ASSERT_TIMELY (5s, !node->cementing_set.contains (send2->hash ()));
+	ASSERT_TIMELY (5s, !node->cementing_set.contains (send2.hash ()));
 
 	ASSERT_TIMELY_EQ (5s, 1, node->stats.count (nano::stat::type::confirmation_observer, nano::stat::detail::active_quorum, nano::stat::dir::out));
 	ASSERT_TIMELY_EQ (5s, 1, node->stats.count (nano::stat::type::confirmation_observer, nano::stat::detail::active_conf_height, nano::stat::dir::out));

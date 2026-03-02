@@ -36,7 +36,7 @@ TEST (backlog, population)
 	auto all_activated = [&] () {
 		nano::lock_guard<nano::mutex> lock{ mutex };
 		return std::all_of (blocks.begin (), blocks.end (), [&] (auto const & item) {
-			return activated.count (item->account ()) != 0;
+			return activated.count (item.account_field ().value ()) != 0;
 		});
 	};
 	ASSERT_TIMELY (5s, all_activated ());
@@ -63,16 +63,16 @@ TEST (backlog, election_activation)
 	auto send = builder
 				.state ()
 				.account (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.representative (nano::dev::genesis_key.pub)
 				.balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 				.link (key.pub)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*node.work_generate_blocking (nano::dev::genesis->hash ()))
+				.work (*node.work_generate_blocking (nano::dev::genesis.hash ()))
 				.build ();
 	{
 		auto transaction = node.ledger.tx_begin_write ();
-		ASSERT_EQ (nano::block_status::progress, node.ledger.process (transaction, send));
+		ASSERT_EQ (nano::block_status::progress, node.ledger.process (transaction, send).code);
 	}
 	ASSERT_TIMELY_EQ (5s, node.active.size (), 1);
 }

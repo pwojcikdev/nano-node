@@ -10,7 +10,7 @@
 
 namespace nano
 {
-using block_list_t = std::vector<std::shared_ptr<nano::block>>;
+using block_list_t = std::vector<nano::raw_block>;
 }
 
 /*
@@ -47,7 +47,7 @@ nano::block_list_t setup_independent_blocks (nano::test::system & system, nano::
  * \param dest_rep the rep that the dest account should have
  * \param force_confirm force confirm the blocks
  */
-std::pair<std::shared_ptr<nano::block>, std::shared_ptr<nano::block>> setup_new_account (nano::test::system & system, nano::node & node, nano::uint128_t const amount, nano::keypair source, nano::keypair dest, nano::account dest_rep, bool force_confirm);
+std::pair<nano::raw_block, nano::raw_block> setup_new_account (nano::test::system & system, nano::node & node, nano::uint128_t const amount, nano::keypair source, nano::keypair dest, nano::account dest_rep, bool force_confirm);
 
 /**
  * Sends `amount` raw from `source` account chain into a newly created account and sets that account as its own representative

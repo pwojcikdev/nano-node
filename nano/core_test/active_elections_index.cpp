@@ -22,7 +22,7 @@ class test_context final
 public:
 	nano::test::system system;
 	nano::node & node;
-	std::deque<std::shared_ptr<nano::block>> blocks;
+	std::deque<nano::raw_block> blocks;
 
 	explicit test_context (size_t count = 10) :
 		node{ *system.add_node () }
@@ -31,7 +31,7 @@ public:
 		blocks.insert (blocks.end (), chain.begin (), chain.end ());
 	}
 
-	std::shared_ptr<nano::block> next_block ()
+	nano::raw_block next_block ()
 	{
 		debug_assert (!blocks.empty ());
 		auto block = blocks.front ();
@@ -41,7 +41,10 @@ public:
 
 	std::shared_ptr<nano::election> random_election (nano::election_behavior behavior = nano::election_behavior::priority)
 	{
-		return std::make_shared<nano::election> (node, *next_block (), behavior);
+		auto block = next_block ();
+		auto stored = node.block (block.hash ());
+		debug_assert (stored);
+		return std::make_shared<nano::election> (node, *stored, behavior);
 	}
 };
 }

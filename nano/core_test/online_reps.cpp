@@ -32,14 +32,14 @@ TEST (online_reps, rep_crawler)
 	nano::node_flags flags;
 	flags.disable_rep_crawler = true;
 	auto & node1 = *system.add_node (flags);
-	auto vote = std::make_shared<nano::vote> (nano::dev::genesis_key.pub, nano::dev::genesis_key.prv, nano::milliseconds_since_epoch (), 0, std::vector<nano::block_hash>{ nano::dev::genesis->hash () });
+	auto vote = std::make_shared<nano::vote> (nano::dev::genesis_key.pub, nano::dev::genesis_key.prv, nano::milliseconds_since_epoch (), 0, std::vector<nano::block_hash>{ nano::dev::genesis.hash () });
 	ASSERT_EQ (0, node1.online_reps.online ());
 	// Without rep crawler
 	node1.vote_processor.vote_blocking (vote, std::make_shared<nano::transport::fake::channel> (node1));
 	ASSERT_EQ (0, node1.online_reps.online ());
 	// After inserting to rep crawler
 	auto channel = std::make_shared<nano::transport::fake::channel> (node1);
-	node1.rep_crawler.force_query (nano::dev::genesis->hash (), channel);
+	node1.rep_crawler.force_query (nano::dev::genesis.hash (), channel);
 	node1.vote_processor.vote_blocking (vote, channel);
 	ASSERT_EQ (nano::dev::constants.genesis_amount, node1.online_reps.online ());
 }
@@ -55,17 +55,17 @@ TEST (online_reps, election)
 	nano::state_block_builder builder;
 	auto send1 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 				 .link (key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*node1.work_generate_blocking (nano::dev::genesis->hash ()))
+				 .work (*node1.work_generate_blocking (nano::dev::genesis.hash ()))
 				 .build ();
 	node1.process_active (send1);
 	ASSERT_TIMELY_EQ (5s, 1, node1.active.size ());
 	// Process vote for ongoing election
-	auto vote = std::make_shared<nano::vote> (nano::dev::genesis_key.pub, nano::dev::genesis_key.prv, nano::milliseconds_since_epoch (), 0, std::vector<nano::block_hash>{ send1->hash () });
+	auto vote = std::make_shared<nano::vote> (nano::dev::genesis_key.pub, nano::dev::genesis_key.prv, nano::milliseconds_since_epoch (), 0, std::vector<nano::block_hash>{ send1.hash () });
 	ASSERT_EQ (0, node1.online_reps.online ());
 	node1.vote_processor.vote_blocking (vote, std::make_shared<nano::transport::fake::channel> (node1));
 	ASSERT_EQ (nano::dev::constants.genesis_amount - nano::Knano_ratio, node1.online_reps.online ());
@@ -107,37 +107,37 @@ TEST (online_reps, observe_multiple)
 		nano::block_builder builder;
 		auto send1 = builder.state ()
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (nano::dev::genesis->hash ())
+					 .previous (nano::dev::genesis.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .balance (nano::dev::constants.genesis_amount - weight_1)
 					 .link (key1.pub)
 					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					 .work (*system.work.generate (nano::dev::genesis->hash ()))
+					 .work (*system.work.generate (nano::dev::genesis.hash ()))
 					 .build ();
 		auto send2 = builder.state ()
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (send1->hash ())
+					 .previous (send1.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .balance (nano::dev::constants.genesis_amount - weight_1 - weight_2)
 					 .link (key2.pub)
 					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					 .work (*system.work.generate (send1->hash ()))
+					 .work (*system.work.generate (send1.hash ()))
 					 .build ();
 		auto send3 = builder.state ()
 					 .account (nano::dev::genesis_key.pub)
-					 .previous (send2->hash ())
+					 .previous (send2.hash ())
 					 .representative (nano::dev::genesis_key.pub)
 					 .balance (nano::dev::constants.genesis_amount - weight_1 - weight_2 - weight_3)
 					 .link (key3.pub)
 					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					 .work (*system.work.generate (send2->hash ()))
+					 .work (*system.work.generate (send2.hash ()))
 					 .build ();
 		auto open1 = builder.state ()
 					 .account (key1.pub)
 					 .previous (0)
 					 .representative (key1.pub)
 					 .balance (weight_1)
-					 .link (send1->hash ())
+					 .link (send1.hash ())
 					 .sign (key1.prv, key1.pub)
 					 .work (*system.work.generate (key1.pub))
 					 .build ();
@@ -146,7 +146,7 @@ TEST (online_reps, observe_multiple)
 					 .previous (0)
 					 .representative (key2.pub)
 					 .balance (weight_2)
-					 .link (send2->hash ())
+					 .link (send2.hash ())
 					 .sign (key2.prv, key2.pub)
 					 .work (*system.work.generate (key2.pub))
 					 .build ();
@@ -155,7 +155,7 @@ TEST (online_reps, observe_multiple)
 					 .previous (0)
 					 .representative (key3.pub)
 					 .balance (weight_3)
-					 .link (send3->hash ())
+					 .link (send3.hash ())
 					 .sign (key3.prv, key3.pub)
 					 .work (*system.work.generate (key3.pub))
 					 .build ();
@@ -199,28 +199,28 @@ TEST (online_reps, observe_slow)
 	nano::block_builder builder;
 	auto send1 = builder.state ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - weight)
 				 .link (key1.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 	auto send2 = builder.state ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (send1->hash ())
+				 .previous (send1.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - weight * 2)
 				 .link (key2.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send1->hash ()))
+				 .work (*system.work.generate (send1.hash ()))
 				 .build ();
 	auto open1 = builder.state ()
 				 .account (key1.pub)
 				 .previous (0)
 				 .representative (key1.pub)
 				 .balance (weight)
-				 .link (send1->hash ())
+				 .link (send1.hash ())
 				 .sign (key1.prv, key1.pub)
 				 .work (*system.work.generate (key1.pub))
 				 .build ();
@@ -229,7 +229,7 @@ TEST (online_reps, observe_slow)
 				 .previous (0)
 				 .representative (key2.pub)
 				 .balance (weight)
-				 .link (send2->hash ())
+				 .link (send2.hash ())
 				 .sign (key2.prv, key2.pub)
 				 .work (*system.work.generate (key2.pub))
 				 .build ();
@@ -241,26 +241,26 @@ TEST (online_reps, observe_slow)
 	// Add a block that we can vote on
 	auto send_dummy = builder.state ()
 					  .account (nano::dev::genesis_key.pub)
-					  .previous (send2->hash ())
+					  .previous (send2.hash ())
 					  .representative (nano::dev::genesis_key.pub)
 					  .balance (nano::dev::constants.genesis_amount - weight * 2 - nano::nano_ratio)
 					  .link (nano::keypair{}.pub)
 					  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-					  .work (*system.work.generate (send2->hash ()))
+					  .work (*system.work.generate (send2.hash ()))
 					  .build ();
 	ASSERT_TRUE (nano::test::process (node, { send_dummy }));
 
 	// Wait for election for the block to be activated
 	std::shared_ptr<nano::election> election;
-	ASSERT_TIMELY (5s, election = node.active.election (send_dummy->qualified_root ()));
-	ASSERT_TRUE (election->contains (send_dummy->hash ()));
+	ASSERT_TIMELY (5s, election = node.active.election (send_dummy.qualified_root ()));
+	ASSERT_TRUE (election->contains (send_dummy.hash ()));
 
 	// Issue vote from a fast rep
 	auto vote_fast = nano::test::make_final_vote (key1, { send_dummy });
 	node.vote_processor.vote_blocking (vote_fast, nano::test::fake_channel (node));
 
 	ASSERT_TIMELY (5s, election->confirmed ());
-	ASSERT_TIMELY (5s, !node.active.active (send_dummy->qualified_root ())); // No longer present in AEC
+	ASSERT_TIMELY (5s, !node.active.active (send_dummy.qualified_root ())); // No longer present in AEC
 	ASSERT_TIMELY_EQ (5s, node.online_reps.online (), weight);
 
 	// Issue vote from a slow rep
@@ -286,19 +286,19 @@ TEST (online_reps, weight_change_recalculation)
 	nano::block_builder builder;
 	auto send1 = builder.state ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - initial_weight)
 				 .link (key1.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 	auto open1 = builder.state ()
 				 .account (key1.pub)
 				 .previous (0)
 				 .representative (key1.pub)
 				 .balance (initial_weight)
-				 .link (send1->hash ())
+				 .link (send1.hash ())
 				 .sign (key1.prv, key1.pub)
 				 .work (*system.work.generate (key1.pub))
 				 .build ();
@@ -311,19 +311,19 @@ TEST (online_reps, weight_change_recalculation)
 	// Create additional weight delegation to the same representative
 	auto send2 = builder.state ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (send1->hash ())
+				 .previous (send1.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - initial_weight - additional_weight)
 				 .link (key2.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send1->hash ()))
+				 .work (*system.work.generate (send1.hash ()))
 				 .build ();
 	auto open2 = builder.state ()
 				 .account (key2.pub)
 				 .previous (0)
 				 .representative (key1.pub) // Delegate to key1
 				 .balance (additional_weight)
-				 .link (send2->hash ())
+				 .link (send2.hash ())
 				 .sign (key2.prv, key2.pub)
 				 .work (*system.work.generate (key2.pub))
 				 .build ();

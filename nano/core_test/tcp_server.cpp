@@ -198,7 +198,7 @@ TEST (tcp_server, handshake_self_connection_rejected)
 	response.node_id = node->node_id.pub; // Use our own node ID
 	response.v2 = nano::messages::node_id_handshake::response_payload::v2_payload{
 		nano::random_pool::generate<nano::uint256_union> (), // salt
-		node->network_params.ledger.genesis->hash () // genesis
+		node->network_params.ledger.genesis.hash () // genesis
 	};
 	response.sign (query.cookie, node->node_id); // Sign with our own key
 

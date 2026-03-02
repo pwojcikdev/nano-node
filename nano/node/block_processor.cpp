@@ -124,11 +124,6 @@ bool nano::block_processor::add (nano::raw_block const & block, block_source con
 	return add_impl ({ block, source, std::move (callback) }, channel);
 }
 
-bool nano::block_processor::add (std::shared_ptr<nano::block> const & block, block_source const source, std::shared_ptr<nano::transport::channel> const & channel, std::function<void (nano::block_status)> callback)
-{
-	return add (nano::to_raw (*block), source, channel, std::move (callback));
-}
-
 std::optional<nano::block_result> nano::block_processor::add_blocking (nano::raw_block const & block, block_source const source)
 {
 	stats.inc (nano::stat::type::block_processor, nano::stat::detail::process_blocking);
@@ -152,22 +147,12 @@ std::optional<nano::block_result> nano::block_processor::add_blocking (nano::raw
 	return std::nullopt;
 }
 
-std::optional<nano::block_result> nano::block_processor::add_blocking (std::shared_ptr<nano::block> const & block, block_source const source)
-{
-	return add_blocking (nano::to_raw (*block), source);
-}
-
 void nano::block_processor::force (nano::raw_block const & block)
 {
 	stats.inc (nano::stat::type::block_processor, nano::stat::detail::force);
 	logger.debug (nano::log::type::block_processor, "Forcing block: {}", block.hash ().to_string ());
 
 	add_impl ({ block, block_source::forced });
-}
-
-void nano::block_processor::force (std::shared_ptr<nano::block> const & block)
-{
-	force (nano::to_raw (*block));
 }
 
 bool nano::block_processor::add_impl (nano::block_context ctx, std::shared_ptr<nano::transport::channel> const & channel)

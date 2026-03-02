@@ -322,8 +322,8 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	logger.info (nano::log::type::node, "Work peers: {}", config.work_peers.size ());
 	logger.info (nano::log::type::node, "Node ID: {}", node_id.pub.to_node_id ());
 	logger.info (nano::log::type::node, "Number of buckets: {}", bucketing.size ());
-	logger.info (nano::log::type::node, "Genesis block: {}", config.network_params.ledger.genesis->hash ().to_string ());
-	logger.info (nano::log::type::node, "Genesis account: {}", config.network_params.ledger.genesis->account ().to_account ());
+	logger.info (nano::log::type::node, "Genesis block: {}", config.network_params.ledger.genesis.hash ().to_string ());
+	logger.info (nano::log::type::node, "Genesis account: {}", config.network_params.ledger.genesis.account ().to_account ());
 
 	if (!work_generation_enabled ())
 	{
@@ -337,7 +337,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 		burst_ratio);
 	}
 
-	if (!block_or_pruned_exists (config.network_params.ledger.genesis->hash ()))
+	if (!block_or_pruned_exists (config.network_params.ledger.genesis.hash ()))
 	{
 		logger.critical (nano::log::type::node, "Genesis block not found. This commonly indicates a configuration issue, check that the --network or --data_path command line arguments are correct, and also the ledger backend node config option. If using a read-only CLI command a ledger must already exist, start the node with --daemon first.");
 
@@ -489,7 +489,7 @@ void nano::node::inbound (const nano::messages::message & message, const std::sh
 	message_processor.process (message, channel);
 }
 
-void nano::node::process_active (std::shared_ptr<nano::block> const & incoming)
+void nano::node::process_active (nano::raw_block const & incoming)
 {
 	block_processor.add (incoming);
 }
@@ -499,25 +499,25 @@ void nano::node::process_active (std::shared_ptr<nano::vote> const & vote)
 	vote_processor.vote (vote, loopback_channel, nano::vote_source::live);
 }
 
-[[nodiscard]] nano::block_status nano::node::process (secure::write_transaction const & transaction, std::shared_ptr<nano::block> block)
+[[nodiscard]] nano::block_status nano::node::process (secure::write_transaction const & transaction, nano::raw_block const & block)
 {
-	auto status = ledger.process (transaction, block);
-	logger.debug (nano::log::type::node, "Directly processed block: {} (status: {})", block->hash (), to_string (status));
-	return status;
+	auto result = ledger.process (transaction, block);
+	logger.debug (nano::log::type::node, "Directly processed block: {} (status: {})", block.hash (), to_string (result.code));
+	return result.code;
 }
 
-nano::block_status nano::node::process (std::shared_ptr<nano::block> block)
+nano::block_status nano::node::process (nano::raw_block const & block)
 {
 	auto const transaction = ledger.tx_begin_write (nano::store::writer::node);
 	return process (transaction, block);
 }
 
-std::optional<nano::block_result> nano::node::process_local (std::shared_ptr<nano::block> const & block_a)
+std::optional<nano::block_result> nano::node::process_local (nano::raw_block const & block_a)
 {
 	return block_processor.add_blocking (block_a, nano::block_source::local);
 }
 
-void nano::node::process_local_async (std::shared_ptr<nano::block> const & block_a)
+void nano::node::process_local_async (nano::raw_block const & block_a)
 {
 	block_processor.add (block_a, nano::block_source::local);
 }
@@ -918,7 +918,7 @@ nano::messages::telemetry_data nano::node::local_telemetry () const
 	telemetry_data.protocol_version = network_params.network.protocol_version;
 	telemetry_data.uptime = std::chrono::duration_cast<std::chrono::seconds> (std::chrono::steady_clock::now () - startup_time).count ();
 	telemetry_data.unchecked_count = unchecked.count ();
-	telemetry_data.genesis_block = network_params.ledger.genesis->hash ();
+	telemetry_data.genesis_block = network_params.ledger.genesis.hash ();
 	telemetry_data.peer_count = nano::narrow_cast<decltype (telemetry_data.peer_count)> (network.size ());
 	telemetry_data.account_count = ledger.account_count ();
 	telemetry_data.major_version = nano::get_major_node_version ();

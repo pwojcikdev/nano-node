@@ -48,10 +48,10 @@ bool nano::epoch_upgrader::start (nano::raw_key const & prv_a, nano::epoch epoch
 void nano::epoch_upgrader::upgrade_impl (nano::raw_key const & prv_a, nano::epoch epoch_a, uint64_t count_limit, uint64_t threads)
 {
 	nano::thread_role::set (nano::thread_role::name::epoch_upgrader);
-	auto upgrader_process = [this] (std::atomic<uint64_t> & counter, std::shared_ptr<nano::block> const & epoch, uint64_t difficulty, nano::public_key const & signer_a, nano::root const & root_a, nano::account const & account_a) {
-		epoch->block_work_set (node.work_generate_blocking (nano::work_version::work_1, root_a, difficulty).value_or (0));
-		bool valid_signature (!nano::validate_message (signer_a, epoch->hash (), epoch->block_signature ()));
-		bool valid_work (node.network_params.work.difficulty (*epoch) >= difficulty);
+	auto upgrader_process = [this] (std::atomic<uint64_t> & counter, nano::raw_block epoch, uint64_t difficulty, nano::public_key const & signer_a, nano::root const & root_a, nano::account const & account_a) {
+		epoch.set_work (node.work_generate_blocking (nano::work_version::work_1, root_a, difficulty).value_or (0));
+		bool valid_signature (!nano::validate_message (signer_a, epoch.hash (), epoch.block_signature ()));
+		bool valid_work (node.network_params.work.difficulty (epoch) >= difficulty);
 		nano::block_status result (nano::block_status::old);
 		if (valid_signature && valid_work)
 		{
@@ -144,15 +144,15 @@ void nano::epoch_upgrader::upgrade_impl (nano::raw_key const & prv_a, nano::epoc
 					++attempts;
 					auto difficulty (node.network_params.work.threshold (nano::work_version::work_1, nano::block_details (epoch_a, false, false, true)));
 					nano::root const & root (info->head);
-					std::shared_ptr<nano::block> epoch = builder.state ()
-														 .account (account)
-														 .previous (info->head)
-														 .representative (info->representative)
-														 .balance (info->balance)
-														 .link (link)
-														 .sign (raw_key, signer)
-														 .work (0)
-														 .build ();
+					auto epoch = builder.state ()
+								 .account (account)
+								 .previous (info->head)
+								 .representative (info->representative)
+								 .balance (info->balance)
+								 .link (link)
+								 .sign (raw_key, signer)
+								 .work (0)
+								 .build ();
 					if (threads != 0)
 					{
 						{
@@ -224,7 +224,7 @@ void nano::epoch_upgrader::upgrade_impl (nano::raw_key const & prv_a, nano::epoc
 						auto difficulty (network_params.work.threshold (nano::work_version::work_1, nano::block_details (epoch_a, false, false, true)));
 						nano::root const & root (key.account);
 						nano::account const & account (key.account);
-						std::shared_ptr<nano::block> epoch = builder.state ()
+						auto epoch = builder.state ()
 															 .account (key.account)
 															 .previous (0)
 															 .representative (0)

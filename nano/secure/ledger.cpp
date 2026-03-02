@@ -80,7 +80,7 @@ void nano::ledger::initialize (nano::generate_cache_flags const & generate_cache
 	if (!is_initialized && store.get_mode () != nano::store::open_mode::read_only)
 	{
 		// Store was empty meaning we just created it, add the genesis block
-		logger.info (nano::log::type::ledger, "Initializing ledger with genesis block: {}", constants.genesis->hash ());
+		logger.info (nano::log::type::ledger, "Initializing ledger with genesis block: {}", constants.genesis.hash ());
 		auto const transaction = store.tx_begin_write ();
 		store.initialize (transaction, constants);
 	}
@@ -677,7 +677,7 @@ uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a
 {
 	uint64_t pruned_count (0);
 	nano::block_hash hash (hash_a);
-	while (!hash.is_zero () && hash != constants.genesis->hash ())
+	while (!hash.is_zero () && hash != constants.genesis.hash ())
 	{
 		auto block_l = any.block_get (transaction_a, hash);
 		if (block_l)

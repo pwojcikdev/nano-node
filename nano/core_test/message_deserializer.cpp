@@ -68,7 +68,7 @@ TEST (message_deserializer, exact_confirm_ack)
 				 .sign (nano::keypair ().prv, 4)
 				 .work (*system.work.generate (nano::root (1)))
 				 .build ();
-	auto vote (std::make_shared<nano::vote> (0, nano::keypair ().prv, 0, 0, std::vector<nano::block_hash>{ block->hash () }));
+	auto vote (std::make_shared<nano::vote> (0, nano::keypair ().prv, 0, 0, std::vector<nano::block_hash>{ block.hash () }));
 	nano::messages::confirm_ack message{ nano::dev::network_params.network, vote };
 
 	message_deserializer_success_checker<decltype (message)> (message);
@@ -87,7 +87,7 @@ TEST (message_deserializer, exact_confirm_req_hash)
 				 .work (*system.work.generate (nano::root (1)))
 				 .build ();
 	// This test differs from the previous `exact_confirm_req` because this tests the confirm_req created from the block hash.
-	nano::messages::confirm_req message{ nano::dev::network_params.network, block->hash (), block->root () };
+	nano::messages::confirm_req message{ nano::dev::network_params.network, block.hash (), block.root () };
 
 	message_deserializer_success_checker<decltype (message)> (message);
 }

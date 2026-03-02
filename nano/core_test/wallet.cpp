@@ -532,7 +532,7 @@ TEST (wallet, work)
 		uint64_t work (0);
 		if (!wallet->get_work (nano::dev::genesis_key.pub, work))
 		{
-			done = nano::dev::network_params.work.difficulty (nano::dev::genesis->work_version (), nano::dev::genesis->hash (), work) >= system.nodes[0]->default_difficulty (nano::dev::genesis->work_version ());
+			done = nano::dev::network_params.work.difficulty (nano::dev::genesis.work_version (), nano::dev::genesis.hash (), work) >= system.nodes[0]->default_difficulty (nano::dev::genesis.work_version ());
 		}
 		ASSERT_NO_ERROR (system.poll ());
 	}
@@ -814,7 +814,7 @@ TEST (wallet, change_seed)
 	wallet->insert_adhoc (nano::dev::genesis_key.prv, false);
 	auto block (wallet->send_action (nano::dev::genesis_key.pub, pub, 100));
 	ASSERT_NE (nullptr, block);
-	ASSERT_TIMELY (5s, nano::test::exists (*system.nodes[0], { block }));
+	ASSERT_TIMELY (5s, nano::test::exists (*system.nodes[0], { block->hash () }));
 	{
 		wallet->change_seed (seed1);
 		nano::raw_key seed2;
@@ -845,7 +845,7 @@ TEST (wallet, deterministic_restore)
 	wallet->insert_adhoc (nano::dev::genesis_key.prv, false);
 	auto block (wallet->send_action (nano::dev::genesis_key.pub, pub, 100));
 	ASSERT_NE (nullptr, block);
-	ASSERT_TIMELY (5s, nano::test::exists (*system.nodes[0], { block }));
+	ASSERT_TIMELY (5s, nano::test::exists (*system.nodes[0], { block->hash () }));
 	{
 		wallet->deterministic_restore ();
 		ASSERT_EQ (index + 1, wallet->get_deterministic_index ());
@@ -860,8 +860,8 @@ TEST (wallet, epoch_2_validation)
 	auto & wallet (*system.wallet (0));
 
 	// Upgrade the genesis account to epoch 2
-	ASSERT_NE (nullptr, system.upgrade_genesis_epoch (node, nano::epoch::epoch_1));
-	ASSERT_NE (nullptr, system.upgrade_genesis_epoch (node, nano::epoch::epoch_2));
+	ASSERT_TRUE (system.upgrade_genesis_epoch (node, nano::epoch::epoch_1));
+	ASSERT_TRUE (system.upgrade_genesis_epoch (node, nano::epoch::epoch_2));
 
 	wallet.insert_adhoc (nano::dev::genesis_key.prv, false);
 
@@ -908,7 +908,7 @@ TEST (wallet, epoch_2_receive_propagation)
 
 		// Upgrade the genesis account to epoch 1
 		auto epoch1 = system.upgrade_genesis_epoch (node, nano::epoch::epoch_1);
-		ASSERT_NE (nullptr, epoch1);
+		ASSERT_TRUE (epoch1);
 
 		nano::keypair key;
 		nano::state_block_builder builder;
@@ -923,7 +923,7 @@ TEST (wallet, epoch_2_receive_propagation)
 
 		// Upgrade the genesis account to epoch 2
 		auto epoch2 = system.upgrade_genesis_epoch (node, nano::epoch::epoch_2);
-		ASSERT_NE (nullptr, epoch2);
+		ASSERT_TRUE (epoch2);
 
 		// Send a block
 		auto send2 = wallet.send_action (nano::dev::genesis_key.pub, key.pub, amount, 1);
@@ -958,7 +958,7 @@ TEST (wallet, epoch_2_receive_unopened)
 
 		// Upgrade the genesis account to epoch 1
 		auto epoch1 = system.upgrade_genesis_epoch (node, nano::epoch::epoch_1);
-		ASSERT_NE (nullptr, epoch1);
+		ASSERT_TRUE (epoch1);
 
 		nano::keypair key;
 		nano::state_block_builder builder;
@@ -1032,12 +1032,12 @@ TEST (wallet, search_receivable)
 	nano::block_builder builder;
 	auto send = builder.state ()
 				.account (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.representative (nano::dev::genesis_key.pub)
 				.balance (nano::dev::constants.genesis_amount - node.config.receive_minimum.number ())
 				.link (nano::dev::genesis_key.pub)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send));
 
@@ -1045,7 +1045,7 @@ TEST (wallet, search_receivable)
 	ASSERT_TRUE (node.active.empty ());
 	ASSERT_FALSE (wallet.search_receivable ());
 	std::shared_ptr<nano::election> election;
-	ASSERT_TIMELY (5s, election = node.active.election (send->qualified_root ()));
+	ASSERT_TIMELY (5s, election = node.active.election (send.qualified_root ()));
 
 	// Erase the key so the confirmation does not trigger an automatic receive
 	wallet.remove_account (nano::dev::genesis_key.pub);
@@ -1053,7 +1053,7 @@ TEST (wallet, search_receivable)
 	// Now confirm the election
 	election->force_confirm ();
 
-	ASSERT_TIMELY (5s, node.block_confirmed (send->hash ()) && node.active.empty ());
+	ASSERT_TIMELY (5s, node.block_confirmed (send.hash ()) && node.active.empty ());
 
 	// Re-insert the key
 	wallet.insert_adhoc (nano::dev::genesis_key.prv);
@@ -1066,7 +1066,7 @@ TEST (wallet, search_receivable)
 	auto receive = node.block (receive_hash);
 	ASSERT_TRUE (receive);
 	ASSERT_EQ (receive->sideband ().height, 3);
-	ASSERT_EQ (send->hash (), receive->source ());
+	ASSERT_EQ (send.hash (), receive->source ());
 }
 
 TEST (wallet, receive_pruned)

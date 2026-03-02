@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/stats_sinks.hpp>
 #include <nano/lib/version.hpp>
@@ -560,7 +561,7 @@ public:
 	void open_block (nano::open_block const & block_a)
 	{
 		type = "Receive";
-		if (block_a.source_field ().value () != ledger.constants.genesis->account ().as_union ())
+		if (block_a.source_field ().value () != ledger.constants.genesis.account ().as_union ())
 		{
 			auto account_l = ledger.any.block_account (transaction, block_a.source_field ().value ());
 			auto amount_l = ledger.any.block_amount (transaction, block_a.hash ());
@@ -577,7 +578,7 @@ public:
 		}
 		else
 		{
-			account = ledger.constants.genesis->account ();
+			account = ledger.constants.genesis.account ();
 			amount = nano::dev::constants.genesis_amount;
 		}
 	}
@@ -2003,7 +2004,7 @@ nano_qt::block_entry::block_entry (nano_qt::wallet & wallet_a) :
 				this->status->setText ("");
 				if (!this->wallet.node.network_params.work.validate_entry (*block_l))
 				{
-					this->wallet.node.process_active (std::move (block_l));
+					this->wallet.node.process_active (nano::to_raw (*block_l));
 				}
 				else
 				{

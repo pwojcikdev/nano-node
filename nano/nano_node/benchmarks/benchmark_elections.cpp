@@ -12,6 +12,7 @@
 #include <nano/node/scheduler/component.hpp>
 #include <nano/node/scheduler/manual.hpp>
 #include <nano/secure/ledger.hpp>
+#include <nano/secure/ledger_set_any.hpp>
 
 #include <boost/asio/io_context.hpp>
 
@@ -78,7 +79,7 @@ public:
 	elections_benchmark (std::shared_ptr<nano::node> node_a, benchmark_config const & config_a);
 
 	void run ();
-	void run_iteration (std::deque<std::shared_ptr<nano::block>> & sends, std::deque<std::shared_ptr<nano::block>> & opens);
+	void run_iteration (std::deque<nano::raw_block> & sends, std::deque<nano::raw_block> & opens);
 	void print_statistics ();
 };
 
@@ -217,7 +218,7 @@ void elections_benchmark::run ()
 	print_statistics ();
 }
 
-void elections_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>> & sends, std::deque<std::shared_ptr<nano::block>> & opens)
+void elections_benchmark::run_iteration (std::deque<nano::raw_block> & sends, std::deque<nano::raw_block> & opens)
 {
 	auto const total_opens = opens.size ();
 
@@ -227,12 +228,12 @@ void elections_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>
 		auto transaction = node->ledger.tx_begin_write ();
 		for (auto const & send : sends)
 		{
-			auto result = node->ledger.process (transaction, send);
+			auto result = node->ledger.process (transaction, nano::to_legacy (send));
 			release_assert (result == nano::block_status::progress, to_string (result));
 
 			// Add to cementing set for direct cementing
-			auto cemented = node->ledger.cement (transaction, send->hash ());
-			release_assert (!cemented.empty () && cemented.back ().hash () == send->hash ());
+			auto cemented = node->ledger.cement (transaction, send.hash ());
+			release_assert (!cemented.empty () && cemented.back ().hash () == send.hash ());
 		}
 	}
 
@@ -242,7 +243,7 @@ void elections_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>
 		auto transaction = node->ledger.tx_begin_write ();
 		for (auto const & open : opens)
 		{
-			auto result = node->ledger.process (transaction, open);
+			auto result = node->ledger.process (transaction, nano::to_legacy (open));
 			release_assert (result == nano::block_status::progress, to_string (result));
 		}
 	}
@@ -255,9 +256,9 @@ void elections_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>
 		auto pending_confirmation_l = pending_confirmation.lock ();
 		for (auto const & open : opens)
 		{
-			pending_cementing_l->emplace (open->hash ());
-			pending_confirmation_l->emplace (open->hash ());
-			timings_l->emplace (open->hash (), block_timing{ now });
+			pending_cementing_l->emplace (open.hash ());
+			pending_confirmation_l->emplace (open.hash ());
+			timings_l->emplace (open.hash (), block_timing{ now });
 		}
 	}
 
@@ -265,10 +266,15 @@ void elections_benchmark::run_iteration (std::deque<std::shared_ptr<nano::block>
 
 	// Manually start elections for open blocks only
 	std::cout << fmt::format ("Starting elections manually for {} open blocks...\n", opens.size ());
-	for (auto const & open : opens)
 	{
-		// Use manual scheduler to start election
-		node->scheduler.manual.push (open);
+		auto transaction = node->ledger.tx_begin_read ();
+		for (auto const & open : opens)
+		{
+			// Fetch stored_block from ledger (scheduler.manual.push requires stored_block)
+			auto stored = node->ledger.any.block_get (transaction, open.hash ());
+			release_assert (stored.has_value (), "block not found in ledger");
+			node->scheduler.manual.push (*stored);
+		}
 	}
 
 	// Wait for all elections to complete and blocks to be cemented

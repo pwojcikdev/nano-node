@@ -42,7 +42,7 @@ nano::keypair & key3 ()
 	static nano::keypair result;
 	return result;
 }
-std::shared_ptr<nano::state_block> & blockzero ()
+nano::raw_block & blockzero ()
 {
 	nano::block_builder builder;
 	static auto result = builder
@@ -57,7 +57,7 @@ std::shared_ptr<nano::state_block> & blockzero ()
 						 .build ();
 	return result;
 }
-std::shared_ptr<nano::state_block> & block0 ()
+nano::raw_block & block0 ()
 {
 	nano::block_builder builder;
 	static auto result = builder
@@ -72,7 +72,7 @@ std::shared_ptr<nano::state_block> & block0 ()
 						 .build ();
 	return result;
 }
-std::shared_ptr<nano::state_block> & block1 ()
+nano::raw_block & block1 ()
 {
 	nano::block_builder builder;
 	static auto result = builder
@@ -87,7 +87,7 @@ std::shared_ptr<nano::state_block> & block1 ()
 						 .build ();
 	return result;
 }
-std::shared_ptr<nano::state_block> & block2 ()
+nano::raw_block & block2 ()
 {
 	nano::block_builder builder;
 	static auto result = builder
@@ -102,7 +102,7 @@ std::shared_ptr<nano::state_block> & block2 ()
 						 .build ();
 	return result;
 }
-std::shared_ptr<nano::state_block> & block3 ()
+nano::raw_block & block3 ()
 {
 	nano::block_builder builder;
 	static auto result = builder
@@ -130,17 +130,17 @@ TEST (election_scheduler, activate_one)
 	nano::state_block_builder builder;
 	auto send1 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 	node.ledger.process (node.ledger.tx_begin_write (), send1);
 	node.scheduler.priority.activate (node.ledger.tx_begin_read (), nano::dev::genesis_key.pub);
 	ASSERT_TIMELY (5s, node.scheduler.priority.empty ());
-	ASSERT_TIMELY (5s, node.active.election (send1->qualified_root ()));
+	ASSERT_TIMELY (5s, node.active.election (send1.qualified_root ()));
 }
 
 /*
@@ -175,8 +175,8 @@ TEST (election_scheduler, transition_optimistic_to_priority)
 
 	// Wait for optimistic election to start for last block
 	auto const & block = blocks.back ();
-	ASSERT_TIMELY (5s, node.vote_router.active (block->hash ()));
-	auto election = node.active.election (block->qualified_root ());
+	ASSERT_TIMELY (5s, node.vote_router.active (block.hash ()));
+	auto election = node.active.election (block.qualified_root ());
 	ASSERT_EQ (election->behavior (), nano::election_behavior::optimistic);
 	ASSERT_TIMELY_EQ (1s, 1, election->current_status ().status.vote_broadcast_count);
 
@@ -184,14 +184,15 @@ TEST (election_scheduler, transition_optimistic_to_priority)
 	nano::test::confirm (node.ledger, blocks.at (howmany_blocks - 1));
 
 	// Attempt to start priority election for second block
-	node.active.insert (*block, nano::election_behavior::priority);
+	auto stored = node.block (block.hash ());
+	node.active.insert (*stored, nano::election_behavior::priority);
 
 	// Verify priority transition
 	ASSERT_EQ (election->behavior (), nano::election_behavior::priority);
 	ASSERT_EQ (1, node.stats.count (nano::stat::type::active_elections, nano::stat::detail::transition_priority));
 	// Verify vote broadcast after transitioning
 	ASSERT_TIMELY_EQ (1s, 2, election->current_status ().status.vote_broadcast_count);
-	ASSERT_TRUE (node.active.active (*block));
+	ASSERT_TRUE (node.active.active (block.qualified_root ()));
 }
 
 /**
@@ -225,56 +226,56 @@ TEST (election_scheduler, no_vacancy)
 	// Activating accounts depends on confirmed dependencies. First, prepare 2 accounts
 	auto send = builder.make_block ()
 				.account (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.representative (nano::dev::genesis_key.pub)
 				.link (key.pub)
 				.balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send));
-	node.cementing_set.add (send->hash ());
+	node.cementing_set.add (send.hash ());
 
 	auto receive = builder.make_block ()
 				   .account (key.pub)
 				   .previous (0)
 				   .representative (key.pub)
-				   .link (send->hash ())
+				   .link (send.hash ())
 				   .balance (nano::Knano_ratio)
 				   .sign (key.prv, key.pub)
 				   .work (*system.work.generate (key.pub))
 				   .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (receive));
-	node.cementing_set.add (receive->hash ());
+	node.cementing_set.add (receive.hash ());
 
 	ASSERT_TIMELY (5s, nano::test::confirmed (node, { send, receive }));
 
 	// Second, process two eligible transactions
 	auto block1 = builder.make_block ()
 				  .account (nano::dev::genesis_key.pub)
-				  .previous (send->hash ())
+				  .previous (send.hash ())
 				  .representative (nano::dev::genesis_key.pub)
 				  .link (nano::dev::genesis_key.pub)
 				  .balance (nano::dev::constants.genesis_amount - 2 * nano::Knano_ratio)
 				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				  .work (*system.work.generate (send->hash ()))
+				  .work (*system.work.generate (send.hash ()))
 				  .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (block1));
 
 	// There is vacancy so it should be inserted
 	node.scheduler.priority.activate (node.ledger.tx_begin_read (), nano::dev::genesis_key.pub);
 	std::shared_ptr<nano::election> election{};
-	ASSERT_TIMELY (5s, (election = node.active.election (block1->qualified_root ())) != nullptr);
+	ASSERT_TIMELY (5s, (election = node.active.election (block1.qualified_root ())) != nullptr);
 	ASSERT_TIMELY_EQ (5s, node.scheduler.priority.size (), 0);
 
 	auto block2 = builder.make_block ()
 				  .account (key.pub)
-				  .previous (receive->hash ())
+				  .previous (receive.hash ())
 				  .representative (key.pub)
 				  .link (key.pub)
 				  .balance (0)
 				  .sign (key.prv, key.pub)
-				  .work (*system.work.generate (receive->hash ()))
+				  .work (*system.work.generate (receive.hash ()))
 				  .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (block2));
 
@@ -282,10 +283,10 @@ TEST (election_scheduler, no_vacancy)
 	node.scheduler.priority.activate (node.ledger.tx_begin_read (), key.pub);
 	ASSERT_TIMELY_EQ (5s, node.scheduler.priority.size (), 1);
 	ASSERT_ALWAYS_EQ (500ms, node.scheduler.priority.size (), 1);
-	ASSERT_EQ (node.active.election (block2->qualified_root ()), nullptr);
+	ASSERT_EQ (node.active.election (block2.qualified_root ()), nullptr);
 
 	// Election confirmed, next in queue should begin
 	election->force_confirm ();
-	ASSERT_TIMELY (5s, node.active.election (block2->qualified_root ()) != nullptr);
+	ASSERT_TIMELY (5s, node.active.election (block2.qualified_root ()) != nullptr);
 	ASSERT_TRUE (node.scheduler.priority.empty ());
 }

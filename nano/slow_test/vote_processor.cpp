@@ -28,7 +28,7 @@ TEST (vote_processor, producer_consumer)
 	auto producer = [&node, &channel, &number_of_votes] () -> void {
 		for (unsigned i = 0; i < number_of_votes; ++i)
 		{
-			auto vote = std::make_shared<nano::vote> (nano::dev::genesis_key.pub, nano::dev::genesis_key.prv, nano::vote::timestamp_min * (1 + i), 0, std::vector<nano::block_hash>{ nano::dev::genesis->hash () });
+			auto vote = std::make_shared<nano::vote> (nano::dev::genesis_key.pub, nano::dev::genesis_key.prv, nano::vote::timestamp_min * (1 + i), 0, std::vector<nano::block_hash>{ nano::dev::genesis.hash () });
 			node.vote_processor.vote (vote, channel);
 		}
 	};

@@ -25,8 +25,8 @@ TEST (work, one)
 				 .sign (nano::keypair ().prv, 3)
 				 .work (4)
 				 .build ();
-	block->block_work_set (*pool.generate (block->root ()));
-	ASSERT_LT (nano::dev::network_params.work.threshold_base (block->work_version ()), nano::dev::network_params.work.difficulty (*block));
+	block.set_work (*pool.generate (block.root ()));
+	ASSERT_LT (nano::dev::network_params.work.threshold_base (block.work_version ()), nano::dev::network_params.work.difficulty (block));
 }
 
 // create a work_pool with zero threads and check that pool.generate returns no result
@@ -50,9 +50,9 @@ TEST (work, validate)
 					  .sign (nano::keypair ().prv, 4)
 					  .work (6)
 					  .build ();
-	ASSERT_LT (nano::dev::network_params.work.difficulty (*send_block), nano::dev::network_params.work.threshold_base (send_block->work_version ()));
-	send_block->block_work_set (*pool.generate (send_block->root ()));
-	ASSERT_GE (nano::dev::network_params.work.difficulty (*send_block), nano::dev::network_params.work.threshold_base (send_block->work_version ()));
+	ASSERT_LT (nano::dev::network_params.work.difficulty (send_block), nano::dev::network_params.work.threshold_base (send_block.work_version ()));
+	send_block.set_work (*pool.generate (send_block.root ()));
+	ASSERT_GE (nano::dev::network_params.work.difficulty (send_block), nano::dev::network_params.work.threshold_base (send_block.work_version ()));
 }
 
 // repeatedly start and cancel a work calculation and check that the callback is eventually called

@@ -48,10 +48,10 @@ public:
 	void keepalive (std::string const &, uint16_t);
 	int store_version ();
 	void inbound (nano::messages::message const &, std::shared_ptr<nano::transport::channel> const &);
-	void process_active (std::shared_ptr<nano::block> const &);
+	void process_active (nano::raw_block const &);
 	void process_active (std::shared_ptr<nano::vote> const &);
-	std::optional<nano::block_result> process_local (std::shared_ptr<nano::block> const &);
-	void process_local_async (std::shared_ptr<nano::block> const &);
+	std::optional<nano::block_result> process_local (nano::raw_block const &);
+	void process_local_async (nano::raw_block const &);
 	void keepalive_preconfigured ();
 	std::optional<nano::stored_block> block (nano::block_hash const &);
 	bool block_or_pruned_exists (nano::block_hash const &) const;
@@ -230,8 +230,8 @@ public: // For tests only
 	std::optional<uint64_t> work_generate_blocking (nano::root const &);
 
 public: // Testing convenience functions
-	[[nodiscard]] nano::block_status process (std::shared_ptr<nano::block> block);
-	[[nodiscard]] nano::block_status process (secure::write_transaction const &, std::shared_ptr<nano::block> block);
+	[[nodiscard]] nano::block_status process (nano::raw_block const & block);
+	[[nodiscard]] nano::block_status process (secure::write_transaction const &, nano::raw_block const & block);
 	nano::block_hash latest (nano::account const &);
 	nano::uint128_t balance (nano::account const &);
 

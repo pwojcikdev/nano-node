@@ -1,4 +1,4 @@
-#include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/test_common/chains.hpp>
 
 using namespace std::chrono_literals;
@@ -8,7 +8,7 @@ nano::block_list_t nano::test::setup_chain (nano::test::system & system, nano::n
 	auto latest = node.latest (target.pub);
 	auto balance = node.balance (target.pub);
 
-	std::vector<std::shared_ptr<nano::block>> blocks;
+	std::vector<nano::raw_block> blocks;
 	for (int n = 0; n < count; ++n)
 	{
 		nano::keypair throwaway;
@@ -26,7 +26,7 @@ nano::block_list_t nano::test::setup_chain (nano::test::system & system, nano::n
 					.work (*system.work.generate (latest))
 					.build ();
 
-		latest = send->hash ();
+		latest = send.hash ();
 
 		blocks.push_back (send);
 	}
@@ -71,12 +71,12 @@ std::vector<std::pair<nano::account, nano::block_list_t>> nano::test::setup_chai
 					.previous (0)
 					.representative (key.pub)
 					.balance (block_count * 2)
-					.link (send->hash ())
+					.link (send.hash ())
 					.sign (key.prv, key.pub)
 					.work (*system.work.generate (key.pub))
 					.build ();
 
-		latest = send->hash ();
+		latest = send.hash ();
 
 		EXPECT_TRUE (nano::test::process (node, { send, open }));
 
@@ -99,7 +99,7 @@ std::vector<std::pair<nano::account, nano::block_list_t>> nano::test::setup_chai
 
 nano::block_list_t nano::test::setup_independent_blocks (nano::test::system & system, nano::node & node, int count, nano::keypair source)
 {
-	std::vector<std::shared_ptr<nano::block>> blocks;
+	std::vector<nano::raw_block> blocks;
 
 	auto latest = node.latest (source.pub);
 	auto balance = node.balance (source.pub);
@@ -121,7 +121,7 @@ nano::block_list_t nano::test::setup_independent_blocks (nano::test::system & sy
 					.work (*system.work.generate (latest))
 					.build ();
 
-		latest = send->hash ();
+		latest = send.hash ();
 
 		auto open = builder
 					.state ()
@@ -129,7 +129,7 @@ nano::block_list_t nano::test::setup_independent_blocks (nano::test::system & sy
 					.previous (0)
 					.representative (key.pub)
 					.balance (1)
-					.link (send->hash ())
+					.link (send.hash ())
 					.sign (key.prv, key.pub)
 					.work (*system.work.generate (key.pub))
 					.build ();
@@ -146,7 +146,7 @@ nano::block_list_t nano::test::setup_independent_blocks (nano::test::system & sy
 	return blocks;
 }
 
-std::pair<std::shared_ptr<nano::block>, std::shared_ptr<nano::block>> nano::test::setup_new_account (nano::test::system & system, nano::node & node, nano::uint128_t const amount, nano::keypair source, nano::keypair dest, nano::account dest_rep, bool force_confirm)
+std::pair<nano::raw_block, nano::raw_block> nano::test::setup_new_account (nano::test::system & system, nano::node & node, nano::uint128_t const amount, nano::keypair source, nano::keypair dest, nano::account dest_rep, bool force_confirm)
 {
 	auto latest = node.latest (source.pub);
 	auto balance = node.balance (source.pub);
@@ -168,7 +168,7 @@ std::pair<std::shared_ptr<nano::block>, std::shared_ptr<nano::block>> nano::test
 				.previous (0)
 				.representative (dest_rep)
 				.balance (amount)
-				.link (send->hash ())
+				.link (send.hash ())
 				.sign (dest.prv, dest.pub)
 				.work (*system.work.generate (dest.pub))
 				.build ();

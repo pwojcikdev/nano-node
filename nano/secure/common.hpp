@@ -4,6 +4,7 @@
 #include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/common.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/constants.hpp>
 #include <nano/lib/epochs.hpp>
@@ -77,7 +78,6 @@ class unchecked_info final
 public:
 	unchecked_info () = default;
 	unchecked_info (nano::raw_block const & block);
-	unchecked_info (std::shared_ptr<nano::block> const &); // Legacy constructor
 	void serialize (nano::stream &) const;
 	bool deserialize (nano::stream &);
 	nano::seconds_t modified () const;
@@ -162,11 +162,11 @@ public:
 	nano::account nano_beta_account;
 	nano::account nano_live_account;
 	nano::account nano_test_account;
-	std::shared_ptr<nano::block> nano_dev_genesis;
-	std::shared_ptr<nano::block> nano_beta_genesis;
-	std::shared_ptr<nano::block> nano_live_genesis;
-	std::shared_ptr<nano::block> nano_test_genesis;
-	std::shared_ptr<nano::block> genesis;
+	nano::stored_block nano_dev_genesis;
+	nano::stored_block nano_beta_genesis;
+	nano::stored_block nano_live_genesis;
+	nano::stored_block nano_test_genesis;
+	nano::stored_block genesis;
 	nano::uint128_t genesis_amount;
 	nano::account burn_account;
 	nano::epochs epochs;
@@ -177,7 +177,7 @@ namespace dev
 	extern nano::keypair genesis_key;
 	extern nano::network_params network_params;
 	extern nano::ledger_constants & constants;
-	extern std::shared_ptr<nano::block> & genesis;
+	extern nano::stored_block & genesis;
 }
 
 /** Constants which depend on random values (always used as singleton) */

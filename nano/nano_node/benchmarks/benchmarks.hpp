@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/node/node.hpp>
 #include <nano/secure/common.hpp>
 
@@ -79,13 +80,13 @@ public:
 	void setup_genesis_distribution (double distribution_percentage = 1.0);
 
 	// Generates random transfer pairs between accounts with no specific dependency structure
-	std::deque<std::shared_ptr<nano::block>> generate_random_transfers ();
+	std::deque<nano::raw_block> generate_random_transfers ();
 
 	// Generates blocks that are dependencies of a single root block (last in deque)
-	std::deque<std::shared_ptr<nano::block>> generate_dependent_chain ();
+	std::deque<nano::raw_block> generate_dependent_chain ();
 
 	// Generates independent blocks - returns sends and opens separately
-	std::pair<std::deque<std::shared_ptr<nano::block>>, std::deque<std::shared_ptr<nano::block>>> generate_independent_blocks ();
+	std::pair<std::deque<nano::raw_block>, std::deque<nano::raw_block>> generate_independent_blocks ();
 };
 
 // Benchmark entry points - individual implementations are in separate cpp files

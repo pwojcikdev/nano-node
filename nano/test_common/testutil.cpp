@@ -1,5 +1,5 @@
 #include <nano/crypto_lib/random_pool.hpp>
-#include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/election.hpp>
@@ -54,7 +54,7 @@ void nano::test::wait_peer_connections (nano::test::system & system_a)
 	wait_peer_count (false);
 }
 
-bool nano::test::process (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks)
+bool nano::test::process (nano::node & node, std::vector<nano::raw_block> blocks)
 {
 	auto const transaction = node.ledger.tx_begin_write ();
 	for (auto & block : blocks)
@@ -65,7 +65,7 @@ bool nano::test::process (nano::node & node, std::vector<std::shared_ptr<nano::b
 	return true;
 }
 
-bool nano::test::process_live (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks)
+bool nano::test::process_live (nano::node & node, std::vector<nano::raw_block> blocks)
 {
 	for (auto & block : blocks)
 	{
@@ -86,7 +86,7 @@ bool nano::test::confirmed (nano::node & node, std::vector<nano::block_hash> has
 	return true;
 }
 
-bool nano::test::confirmed (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks)
+bool nano::test::confirmed (nano::node & node, std::vector<nano::raw_block> const & blocks)
 {
 	return confirmed (node, blocks_to_hashes (blocks));
 }
@@ -103,27 +103,27 @@ bool nano::test::exists (nano::node & node, std::vector<nano::block_hash> hashes
 	return true;
 }
 
-bool nano::test::exists (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks)
+bool nano::test::exists (nano::node & node, std::vector<nano::raw_block> const & blocks)
 {
 	return exists (node, blocks_to_hashes (blocks));
 }
 
-void nano::test::confirm (nano::node & node, std::vector<std::shared_ptr<nano::block>> const blocks)
+void nano::test::confirm (nano::node & node, std::vector<nano::raw_block> const & blocks)
 {
 	confirm (node.ledger, blocks);
 }
 
-void nano::test::confirm (nano::ledger & ledger, std::vector<std::shared_ptr<nano::block>> const blocks)
+void nano::test::confirm (nano::ledger & ledger, std::vector<nano::raw_block> const & blocks)
 {
-	for (auto const block : blocks)
+	for (auto const & block : blocks)
 	{
 		confirm (ledger, block);
 	}
 }
 
-void nano::test::confirm (nano::ledger & ledger, std::shared_ptr<nano::block> const block)
+void nano::test::confirm (nano::ledger & ledger, nano::raw_block const & block)
 {
-	confirm (ledger, block->hash ());
+	confirm (ledger, block.hash ());
 }
 
 void nano::test::confirm (nano::ledger & ledger, nano::block_hash const & hash)
@@ -141,7 +141,7 @@ bool nano::test::block_or_pruned_all_exists (nano::node & node, std::vector<nano
 	});
 }
 
-bool nano::test::block_or_pruned_all_exists (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks)
+bool nano::test::block_or_pruned_all_exists (nano::node & node, std::vector<nano::raw_block> const & blocks)
 {
 	return block_or_pruned_all_exists (node, blocks_to_hashes (blocks));
 }
@@ -155,7 +155,7 @@ bool nano::test::block_or_pruned_none_exists (nano::node & node, std::vector<nan
 	});
 }
 
-bool nano::test::block_or_pruned_none_exists (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks)
+bool nano::test::block_or_pruned_none_exists (nano::node & node, std::vector<nano::raw_block> const & blocks)
 {
 	return block_or_pruned_none_exists (node, blocks_to_hashes (blocks));
 }
@@ -175,7 +175,7 @@ bool nano::test::activate (nano::node & node, std::vector<nano::block_hash> hash
 	return true;
 }
 
-bool nano::test::activate (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks)
+bool nano::test::activate (nano::node & node, std::vector<nano::raw_block> const & blocks)
 {
 	return activate (node, blocks_to_hashes (blocks));
 }
@@ -192,7 +192,7 @@ bool nano::test::active (nano::node & node, std::vector<nano::block_hash> hashes
 	return true;
 }
 
-bool nano::test::active (nano::node & node, std::vector<std::shared_ptr<nano::block>> blocks)
+bool nano::test::active (nano::node & node, std::vector<nano::raw_block> const & blocks)
 {
 	return active (node, blocks_to_hashes (blocks));
 }
@@ -202,11 +202,9 @@ std::shared_ptr<nano::vote> nano::test::make_vote (nano::keypair key, std::vecto
 	return std::make_shared<nano::vote> (key.pub, key.prv, timestamp, duration, hashes);
 }
 
-std::shared_ptr<nano::vote> nano::test::make_vote (nano::keypair key, std::vector<std::shared_ptr<nano::block>> blocks, uint64_t timestamp, uint8_t duration)
+std::shared_ptr<nano::vote> nano::test::make_vote (nano::keypair key, std::vector<nano::raw_block> const & blocks, uint64_t timestamp, uint8_t duration)
 {
-	std::vector<nano::block_hash> hashes;
-	std::transform (blocks.begin (), blocks.end (), std::back_inserter (hashes), [] (auto & block) { return block->hash (); });
-	return make_vote (key, hashes, timestamp, duration);
+	return make_vote (key, blocks_to_hashes (blocks), timestamp, duration);
 }
 
 std::shared_ptr<nano::vote> nano::test::make_final_vote (nano::keypair key, std::vector<nano::block_hash> hashes)
@@ -214,23 +212,16 @@ std::shared_ptr<nano::vote> nano::test::make_final_vote (nano::keypair key, std:
 	return make_vote (key, hashes, nano::vote::timestamp_max, nano::vote::duration_max);
 }
 
-std::shared_ptr<nano::vote> nano::test::make_final_vote (nano::keypair key, std::vector<std::shared_ptr<nano::block>> blocks)
+std::shared_ptr<nano::vote> nano::test::make_final_vote (nano::keypair key, std::vector<nano::raw_block> const & blocks)
 {
-	return make_vote (key, blocks, nano::vote::timestamp_max, nano::vote::duration_max);
+	return make_vote (key, blocks_to_hashes (blocks), nano::vote::timestamp_max, nano::vote::duration_max);
 }
 
-std::vector<nano::block_hash> nano::test::blocks_to_hashes (std::vector<std::shared_ptr<nano::block>> blocks)
+std::vector<nano::block_hash> nano::test::blocks_to_hashes (std::vector<nano::raw_block> const & blocks)
 {
 	std::vector<nano::block_hash> hashes;
-	std::transform (blocks.begin (), blocks.end (), std::back_inserter (hashes), [] (auto & block) { return block->hash (); });
+	std::transform (blocks.begin (), blocks.end (), std::back_inserter (hashes), [] (auto const & block) { return block.hash (); });
 	return hashes;
-}
-
-std::vector<std::shared_ptr<nano::block>> nano::test::clone (std::vector<std::shared_ptr<nano::block>> blocks)
-{
-	std::vector<std::shared_ptr<nano::block>> clones;
-	std::transform (blocks.begin (), blocks.end (), std::back_inserter (clones), [] (auto & block) { return block->clone (); });
-	return clones;
 }
 
 std::shared_ptr<nano::transport::channel> nano::test::fake_channel (nano::node & node, nano::account node_id)
@@ -288,7 +279,7 @@ bool nano::test::start_elections (nano::test::system & system, nano::node & node
 	return true;
 }
 
-bool nano::test::start_elections (nano::test::system & system, nano::node & node, std::vector<std::shared_ptr<nano::block>> const & blocks, bool const forced)
+bool nano::test::start_elections (nano::test::system & system, nano::node & node, std::vector<nano::raw_block> const & blocks, bool const forced)
 {
 	return start_elections (system, node, blocks_to_hashes (blocks), forced);
 }
@@ -354,18 +345,18 @@ void nano::test::print_all_blocks (const nano::store::ledger_store & store)
 	}
 }
 
-std::vector<std::shared_ptr<nano::block>> nano::test::all_blocks (nano::node & node)
+std::vector<nano::stored_block> nano::test::all_blocks (nano::node & node)
 {
 	auto transaction = node.store.tx_begin_read ();
-	std::vector<std::shared_ptr<nano::block>> result;
+	std::vector<nano::stored_block> result;
 	for (auto it = node.store.block.begin (transaction), end = node.store.block.end (transaction); it != end; ++it)
 	{
-		result.push_back (it->second.to_legacy ());
+		result.push_back (it->second);
 	}
 	return result;
 }
 
 nano::uint128_t nano::test::minimum_principal_weight ()
 {
-	return nano::dev::genesis->balance ().number () / nano::dev::network_params.network.principal_weight_factor;
+	return nano::dev::genesis.balance ().number () / nano::dev::network_params.network.principal_weight_factor;
 }

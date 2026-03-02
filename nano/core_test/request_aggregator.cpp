@@ -10,6 +10,7 @@
 #include <nano/node/transport/fake.hpp>
 #include <nano/node/transport/inproc.hpp>
 #include <nano/secure/ledger.hpp>
+#include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_cemented.hpp>
 #include <nano/test_common/network.hpp>
 #include <nano/test_common/system.hpp>
@@ -36,15 +37,15 @@ TEST (request_aggregator, one)
 	auto send1 = builder
 				 .state ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*node.work_generate_blocking (nano::dev::genesis->hash ()))
+				 .work (*node.work_generate_blocking (nano::dev::genesis.hash ()))
 				 .build ();
 
-	std::vector<std::pair<nano::block_hash, nano::root>> request{ { send1->hash (), send1->root () } };
+	std::vector<std::pair<nano::block_hash, nano::root>> request{ { send1.hash (), send1.root () } };
 
 	auto dummy_channel = nano::test::fake_channel (node);
 
@@ -54,7 +55,7 @@ TEST (request_aggregator, one)
 	ASSERT_TIMELY_EQ (3s, 1, node.stats.count (nano::stat::type::requests, nano::stat::detail::requests_unknown));
 
 	// Process and confirm
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1));
+	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1).code);
 	nano::test::confirm (node.ledger, send1);
 
 	// In the ledger but no vote generated yet
@@ -86,46 +87,46 @@ TEST (request_aggregator, one_update)
 	nano::keypair key1;
 	auto send1 = nano::state_block_builder ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 				 .link (nano::dev::genesis_key.pub)
 				 .link (key1.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*node.work_generate_blocking (nano::dev::genesis->hash ()))
+				 .work (*node.work_generate_blocking (nano::dev::genesis.hash ()))
 				 .build ();
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1));
+	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1).code);
 	nano::test::confirm (node.ledger, send1);
 	auto send2 = nano::state_block_builder ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (send1->hash ())
+				 .previous (send1.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - 2 * nano::Knano_ratio)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*node.work_generate_blocking (send1->hash ()))
+				 .work (*node.work_generate_blocking (send1.hash ()))
 				 .build ();
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send2));
+	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send2).code);
 	nano::test::confirm (node.ledger, send2);
 	auto receive1 = nano::state_block_builder ()
 					.account (key1.pub)
 					.previous (0)
 					.representative (nano::dev::genesis_key.pub)
 					.balance (nano::Knano_ratio)
-					.link (send1->hash ())
+					.link (send1.hash ())
 					.sign (key1.prv, key1.pub)
 					.work (*node.work_generate_blocking (key1.pub))
 					.build ();
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), receive1));
+	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), receive1).code);
 	nano::test::confirm (node.ledger, receive1);
 
 	auto dummy_channel = nano::test::fake_channel (node);
 
-	std::vector<std::pair<nano::block_hash, nano::root>> request1{ { send2->hash (), send2->root () } };
+	std::vector<std::pair<nano::block_hash, nano::root>> request1{ { send2.hash (), send2.root () } };
 	node.aggregator.request (request1, dummy_channel);
 
 	// Update the pool of requests with another hash
-	std::vector<std::pair<nano::block_hash, nano::root>> request2{ { receive1->hash (), receive1->root () } };
+	std::vector<std::pair<nano::block_hash, nano::root>> request2{ { receive1.hash (), receive1.root () } };
 	node.aggregator.request (request2, dummy_channel);
 
 	// In the ledger but no vote generated yet
@@ -155,41 +156,41 @@ TEST (request_aggregator, two)
 	nano::state_block_builder builder;
 	auto send1 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - 1)
 				 .link (key1.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*node.work_generate_blocking (nano::dev::genesis->hash ()))
+				 .work (*node.work_generate_blocking (nano::dev::genesis.hash ()))
 				 .build ();
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1));
+	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1).code);
 	nano::test::confirm (node.ledger, send1);
 	auto send2 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (send1->hash ())
+				 .previous (send1.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - 2)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*node.work_generate_blocking (send1->hash ()))
+				 .work (*node.work_generate_blocking (send1.hash ()))
 				 .build ();
 	auto receive1 = builder.make_block ()
 					.account (key1.pub)
 					.previous (0)
 					.representative (nano::dev::genesis_key.pub)
 					.balance (1)
-					.link (send1->hash ())
+					.link (send1.hash ())
 					.sign (key1.prv, key1.pub)
 					.work (*node.work_generate_blocking (key1.pub))
 					.build ();
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send2));
+	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send2).code);
 	nano::test::confirm (node.ledger, send2);
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), receive1));
+	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), receive1).code);
 	nano::test::confirm (node.ledger, receive1);
 
 	std::vector<std::pair<nano::block_hash, nano::root>> request;
-	request.emplace_back (send2->hash (), send2->root ());
-	request.emplace_back (receive1->hash (), receive1->root ());
+	request.emplace_back (send2.hash (), send2.root ());
+	request.emplace_back (receive1.hash (), receive1.root ());
 
 	auto dummy_channel = nano::test::fake_channel (node);
 
@@ -209,8 +210,8 @@ TEST (request_aggregator, two)
 	ASSERT_TIMELY_EQ (3s, 0, node.stats.count (nano::stat::type::requests, nano::stat::detail::requests_cannot_vote));
 	ASSERT_TIMELY_EQ (3s, 2, node.stats.count (nano::stat::type::message, nano::stat::detail::confirm_ack, nano::stat::dir::out));
 	// Make sure the cached vote is for both hashes
-	auto vote1 (node.history.votes (send2->root (), send2->hash ()));
-	auto vote2 (node.history.votes (receive1->root (), receive1->hash ()));
+	auto vote1 (node.history.votes (send2.root (), send2.hash ()));
+	auto vote2 (node.history.votes (receive1.root (), receive1.hash ()));
 	ASSERT_EQ (1, vote1.size ());
 	ASSERT_EQ (1, vote2.size ());
 	ASSERT_EQ (vote1.front (), vote2.front ());
@@ -231,21 +232,21 @@ TEST (request_aggregator, two_endpoints)
 	auto send1 = builder
 				 .state ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - 1)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*node1.work_generate_blocking (nano::dev::genesis->hash ()))
+				 .work (*node1.work_generate_blocking (nano::dev::genesis.hash ()))
 				 .build ();
-	ASSERT_EQ (nano::block_status::progress, node1.ledger.process (node1.ledger.tx_begin_write (), send1));
+	ASSERT_EQ (nano::block_status::progress, node1.ledger.process (node1.ledger.tx_begin_write (), send1).code);
 	nano::test::confirm (node1.ledger, send1);
 
 	auto dummy_channel1 = std::make_shared<nano::transport::inproc::channel> (node1, node1);
 	auto dummy_channel2 = std::make_shared<nano::transport::inproc::channel> (node2, node2);
 	ASSERT_NE (nano::transport::map_endpoint_to_v6 (dummy_channel1->get_remote_endpoint ()), nano::transport::map_endpoint_to_v6 (dummy_channel2->get_remote_endpoint ()));
 
-	std::vector<std::pair<nano::block_hash, nano::root>> request{ { send1->hash (), send1->root () } };
+	std::vector<std::pair<nano::block_hash, nano::root>> request{ { send1.hash (), send1.root () } };
 
 	// For the first request, aggregator should generate a new vote
 	node1.aggregator.request (request, dummy_channel1);
@@ -284,8 +285,8 @@ TEST (request_aggregator, split)
 	auto & node (*system.add_node (node_config, node_flags));
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	std::vector<std::pair<nano::block_hash, nano::root>> request;
-	std::vector<std::shared_ptr<nano::block>> blocks;
-	auto previous = nano::dev::genesis->hash ();
+	std::vector<nano::raw_block> blocks;
+	auto previous = nano::dev::genesis.hash ();
 	// Add max_vbh + 1 blocks and request votes for them
 	for (size_t i (0); i <= max_vbh; ++i)
 	{
@@ -301,14 +302,14 @@ TEST (request_aggregator, split)
 						  .work (*system.work.generate (previous))
 						  .build ());
 		auto const & block = blocks.back ();
-		previous = block->hash ();
-		ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), block));
-		request.emplace_back (block->hash (), block->root ());
+		previous = block.hash ();
+		ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), block).code);
+		request.emplace_back (block.hash (), block.root ());
 	}
 	{
 		// Confirm all blocks
 		auto tx = node.ledger.tx_begin_write ();
-		node.ledger.cement (tx, blocks.back ()->hash ());
+		node.ledger.cement (tx, blocks.back ().hash ());
 	}
 	ASSERT_TIMELY_EQ (5s, max_vbh + 2, node.ledger.cemented_count ());
 	ASSERT_EQ (max_vbh + 1, request.size ());
@@ -344,16 +345,16 @@ TEST (request_aggregator, channel_max_queue)
 	auto send1 = builder
 				 .state ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*node.work_generate_blocking (nano::dev::genesis->hash ()))
+				 .work (*node.work_generate_blocking (nano::dev::genesis.hash ()))
 				 .build ();
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1));
+	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1).code);
 	std::vector<std::pair<nano::block_hash, nano::root>> request;
-	request.emplace_back (send1->hash (), send1->root ());
+	request.emplace_back (send1.hash (), send1.root ());
 
 	auto dummy_channel = nano::test::fake_channel (node);
 
@@ -374,16 +375,16 @@ TEST (request_aggregator, DISABLED_unique)
 	auto send1 = builder
 				 .state ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*node.work_generate_blocking (nano::dev::genesis->hash ()))
+				 .work (*node.work_generate_blocking (nano::dev::genesis.hash ()))
 				 .build ();
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1));
+	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1).code);
 	std::vector<std::pair<nano::block_hash, nano::root>> request;
-	request.emplace_back (send1->hash (), send1->root ());
+	request.emplace_back (send1.hash (), send1.root ());
 
 	auto dummy_channel = nano::test::fake_channel (node);
 
@@ -405,30 +406,33 @@ TEST (request_aggregator, cannot_vote)
 	nano::state_block_builder builder;
 	auto send1 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - 1)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 	auto send2 = builder.make_block ()
-				 .from (*send1)
-				 .previous (send1->hash ())
-				 .balance (send1->balance_field ().value ().number () - 1)
+				 .from (send1)
+				 .previous (send1.hash ())
+				 .balance (send1.balance_field ().value ().number () - 1)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send1->hash ()))
+				 .work (*system.work.generate (send1.hash ()))
 				 .build ();
 	ASSERT_EQ (nano::block_status::progress, node.process (send1));
 	ASSERT_EQ (nano::block_status::progress, node.process (send2));
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	ASSERT_FALSE (node.ledger.dependencies_cemented (node.ledger.tx_begin_read (), *send2));
+	{
+		auto tx = node.ledger.tx_begin_read ();
+		ASSERT_FALSE (node.ledger.dependencies_cemented (tx, *node.ledger.any.block_get (tx, send2.hash ())));
+	}
 
 	std::vector<std::pair<nano::block_hash, nano::root>> request;
 	// Correct hash, correct root
-	request.emplace_back (send2->hash (), send2->root ());
+	request.emplace_back (send2.hash (), send2.root ());
 	// Incorrect hash, correct root
-	request.emplace_back (1, send2->root ());
+	request.emplace_back (1, send2.root ());
 
 	auto dummy_channel = nano::test::fake_channel (node);
 
@@ -442,8 +446,8 @@ TEST (request_aggregator, cannot_vote)
 	ASSERT_EQ (0, node.stats.count (nano::stat::type::message, nano::stat::detail::confirm_ack, nano::stat::dir::out));
 
 	// With an ongoing election
-	node.start_election (*node.block (send2->hash ()));
-	ASSERT_TIMELY (5s, node.active.election (send2->qualified_root ()));
+	node.start_election (*node.block (send2.hash ()));
+	ASSERT_TIMELY (5s, node.active.election (send2.qualified_root ()));
 
 	node.aggregator.request (request, dummy_channel);
 	ASSERT_TIMELY (3s, node.aggregator.empty ());
@@ -514,21 +518,21 @@ TEST (request_aggregator, forked_open)
 	nano::keypair key;
 	nano::block_builder builder;
 	auto send0 = builder.send ()
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .destination (key.pub)
 				 .balance (nano::dev::constants.genesis_amount - 500)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 	auto open0 = builder.open ()
-				 .source (send0->hash ())
+				 .source (send0.hash ())
 				 .representative (1)
 				 .account (key.pub)
 				 .sign (key.prv, key.pub)
 				 .work (*system.work.generate (key.pub))
 				 .build ();
 	auto open1 = builder.open ()
-				 .source (send0->hash ())
+				 .source (send0.hash ())
 				 .representative (2)
 				 .account (key.pub)
 				 .sign (key.prv, key.pub)
@@ -542,14 +546,14 @@ TEST (request_aggregator, forked_open)
 	auto future = observe_confirm_ack (channel);
 
 	// Request vote for the wrong fork
-	std::vector<std::pair<nano::block_hash, nano::root>> request{ { open1->hash (), open1->root () } };
+	std::vector<std::pair<nano::block_hash, nano::root>> request{ { open1.hash (), open1.root () } };
 	ASSERT_TRUE (node.aggregator.request (request, channel));
 
 	ASSERT_EQ (future.wait_for (5s), std::future_status::ready);
 
 	auto ack = future.get ();
 	ASSERT_EQ (ack.vote->hashes.size (), 1);
-	ASSERT_EQ (ack.vote->hashes[0], open0->hash ()); // Vote for the correct fork alternative
+	ASSERT_EQ (ack.vote->hashes[0], open0.hash ()); // Vote for the correct fork alternative
 	ASSERT_EQ (ack.vote->account, nano::dev::genesis_key.pub);
 }
 
@@ -577,12 +581,12 @@ TEST (request_aggregator, epoch_conflict)
 	// Create initial chain: send -> open -> change
 	auto send = builder.make_block ()
 				.account (nano::dev::genesis_key.pub)
-				.previous (nano::dev::genesis->hash ())
+				.previous (nano::dev::genesis.hash ())
 				.representative (nano::dev::genesis_key.pub)
 				.balance (nano::dev::constants.genesis_amount - 1)
 				.link (key.pub)
 				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.work (*system.work.generate (nano::dev::genesis.hash ()))
 				.build ();
 
 	auto open = builder.make_block ()
@@ -590,7 +594,7 @@ TEST (request_aggregator, epoch_conflict)
 				.previous (0)
 				.representative (key.pub)
 				.balance (1)
-				.link (send->hash ())
+				.link (send.hash ())
 				.sign (key.prv, key.pub)
 				.work (*system.work.generate (key.pub))
 				.build ();
@@ -598,46 +602,46 @@ TEST (request_aggregator, epoch_conflict)
 	// Change block root is the open block hash, qualified root: {open, open}
 	auto change = builder.make_block ()
 				  .account (key.pub)
-				  .previous (open->hash ())
+				  .previous (open.hash ())
 				  .representative (key.pub)
 				  .balance (1)
 				  .link (0)
 				  .sign (key.prv, key.pub)
-				  .work (*system.work.generate (open->hash ()))
+				  .work (*system.work.generate (open.hash ()))
 				  .build ();
 
 	// Pending entry is needed first to process the epoch open block
 	auto pending = builder.make_block ()
 				   .account (nano::dev::genesis_key.pub)
-				   .previous (send->hash ())
+				   .previous (send.hash ())
 				   .representative (nano::dev::genesis_key.pub)
 				   .balance (nano::dev::constants.genesis_amount - 2)
-				   .link (change->root ().as_account ())
+				   .link (change.root ().as_account ())
 				   .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				   .work (*system.work.generate (send->hash ()))
+				   .work (*system.work.generate (send.hash ()))
 				   .build ();
 
 	// Create conflicting epoch block with the same root as the change block, qualified root: {open, 0}
 	// This block is intentionally not processed immediately so the node doesn't know about it
 	auto epoch_open = builder.make_block ()
-					  .account (change->root ().as_account ())
+					  .account (change.root ().as_account ())
 					  .previous (0)
 					  .representative (0)
 					  .balance (0)
 					  .link (node.ledger.epoch_link (nano::epoch::epoch_1))
 					  .sign (epoch_signer.prv, epoch_signer.pub)
-					  .work (*system.work.generate (open->hash ()))
+					  .work (*system.work.generate (open.hash ()))
 					  .build ();
 
 	// Process and confirm the initial chain with the change block
 	nano::test::process (node, { send, open, change });
 	nano::test::confirm (node, { change });
-	ASSERT_TIMELY (5s, node.block_confirmed (change->hash ()));
+	ASSERT_TIMELY (5s, node.block_confirmed (change.hash ()));
 
 	auto channel = nano::test::test_channel (node);
 
 	// Request vote for the conflicting epoch block
-	std::vector<std::pair<nano::block_hash, nano::root>> request{ { epoch_open->hash (), epoch_open->root () } };
+	std::vector<std::pair<nano::block_hash, nano::root>> request{ { epoch_open.hash (), epoch_open.root () } };
 	auto future1 = observe_confirm_ack (channel);
 	ASSERT_TRUE (node.aggregator.request (request, channel));
 
@@ -645,7 +649,7 @@ TEST (request_aggregator, epoch_conflict)
 
 	auto ack1 = future1.get ();
 	ASSERT_EQ (ack1.vote->hashes.size (), 1);
-	ASSERT_EQ (ack1.vote->hashes[0], change->hash ()); // Vote for the correct alternative (change block)
+	ASSERT_EQ (ack1.vote->hashes[0], change.hash ()); // Vote for the correct alternative (change block)
 	ASSERT_EQ (ack1.vote->account, nano::dev::genesis_key.pub);
 
 	// Process the conflicting epoch block
@@ -664,7 +668,7 @@ TEST (request_aggregator, epoch_conflict)
 
 	auto ack2 = future2.get ();
 	ASSERT_EQ (ack2.vote->hashes.size (), 1);
-	ASSERT_EQ (ack2.vote->hashes[0], epoch_open->hash ()); // Vote for the epoch block
+	ASSERT_EQ (ack2.vote->hashes[0], epoch_open.hash ()); // Vote for the epoch block
 	ASSERT_EQ (ack2.vote->account, nano::dev::genesis_key.pub);
 }
 
@@ -683,46 +687,46 @@ TEST (request_aggregator, cemented_no_spacing)
 	nano::state_block_builder builder;
 	auto send1 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
+				 .previous (nano::dev::genesis.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - 1)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
+				 .work (*system.work.generate (nano::dev::genesis.hash ()))
 				 .build ();
 
 	auto send2 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (send1->hash ())
+				 .previous (send1.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - 2)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send1->hash ()))
+				 .work (*system.work.generate (send1.hash ()))
 				 .build ();
 
 	auto send3 = builder.make_block ()
 				 .account (nano::dev::genesis_key.pub)
-				 .previous (send2->hash ())
+				 .previous (send2.hash ())
 				 .representative (nano::dev::genesis_key.pub)
 				 .balance (nano::dev::constants.genesis_amount - 3)
 				 .link (nano::dev::genesis_key.pub)
 				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (send2->hash ()))
+				 .work (*system.work.generate (send2.hash ()))
 				 .build ();
 
 	// Process and confirm all blocks in the chain
 	nano::test::process (node, { send1, send2, send3 });
 	nano::test::confirm (node, { send1, send2, send3 });
-	ASSERT_TRUE (node.block_confirmed (send3->hash ()));
+	ASSERT_TRUE (node.block_confirmed (send3.hash ()));
 
 	auto channel = nano::test::test_channel (node);
 
 	// Request votes for blocks at different positions in the chain
 	std::vector<std::pair<nano::block_hash, nano::root>> request{
-		{ send1->hash (), send1->root () },
-		{ send2->hash (), send2->root () },
-		{ send3->hash (), send3->root () }
+		{ send1.hash (), send1.root () },
+		{ send2.hash (), send2.root () },
+		{ send3.hash (), send3.root () }
 	};
 
 	// Request votes for all blocks
@@ -745,9 +749,9 @@ TEST (request_aggregator, cemented_no_spacing)
 	}
 
 	// Verify we got votes for all three blocks
-	ASSERT_TRUE (voted_hashes.find (send1->hash ()) != voted_hashes.end ());
-	ASSERT_TRUE (voted_hashes.find (send2->hash ()) != voted_hashes.end ());
-	ASSERT_TRUE (voted_hashes.find (send3->hash ()) != voted_hashes.end ());
+	ASSERT_TRUE (voted_hashes.find (send1.hash ()) != voted_hashes.end ());
+	ASSERT_TRUE (voted_hashes.find (send2.hash ()) != voted_hashes.end ());
+	ASSERT_TRUE (voted_hashes.find (send3.hash ()) != voted_hashes.end ());
 }
 
 TEST (request_aggregator, disabled)
@@ -758,7 +762,7 @@ TEST (request_aggregator, disabled)
 	auto & node = *system.add_node (config);
 
 	std::vector<std::pair<nano::block_hash, nano::root>> request;
-	request.emplace_back (nano::dev::genesis->hash (), nano::dev::genesis->root ());
+	request.emplace_back (nano::dev::genesis.hash (), nano::dev::genesis.root ());
 
 	auto channel = nano::test::fake_channel (node);
 

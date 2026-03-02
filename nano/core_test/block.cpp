@@ -1,5 +1,6 @@
 #include <nano/lib/block_uniquer.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/lib/work_version.hpp>
 #include <nano/messages/messages.hpp>
@@ -40,10 +41,12 @@ TEST (transaction_block, empty)
 				 .sign (key1.prv, key1.pub)
 				 .work (2)
 				 .build ();
-	auto hash (block->hash ());
-	ASSERT_FALSE (nano::validate_message (key1.pub, hash, block->signature));
-	block->signature.bytes[32] ^= 0x1;
-	ASSERT_TRUE (nano::validate_message (key1.pub, hash, block->signature));
+	auto hash (block.hash ());
+	ASSERT_FALSE (nano::validate_message (key1.pub, hash, block.block_signature ()));
+	auto send = block.as_send ().value ();
+	send.signature.bytes[32] ^= 0x1;
+	auto modified = nano::raw_block{ send };
+	ASSERT_TRUE (nano::validate_message (key1.pub, hash, modified.block_signature ()));
 }
 
 TEST (block, send_serialize)
@@ -60,7 +63,7 @@ TEST (block, send_serialize)
 	std::vector<uint8_t> bytes;
 	{
 		nano::vectorstream stream1 (bytes);
-		block1->serialize (stream1);
+		block1.serialize (stream1);
 	}
 	auto data (bytes.data ());
 	auto size (bytes.size ());
@@ -70,7 +73,7 @@ TEST (block, send_serialize)
 	bool error (false);
 	nano::send_block block2 (error, stream2);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 }
 
 TEST (block, send_serialize_json)
@@ -85,7 +88,7 @@ TEST (block, send_serialize_json)
 				  .work (5)
 				  .build ();
 	std::string string1;
-	block1->serialize_json (string1);
+	block1.serialize_json (string1);
 	ASSERT_NE (0, string1.size ());
 	boost::property_tree::ptree tree1;
 	std::stringstream istream (string1);
@@ -93,7 +96,7 @@ TEST (block, send_serialize_json)
 	bool error (false);
 	nano::send_block block2 (error, tree1);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 }
 
 TEST (block, receive_serialize)
@@ -110,13 +113,13 @@ TEST (block, receive_serialize)
 	std::vector<uint8_t> bytes;
 	{
 		nano::vectorstream stream1 (bytes);
-		block1->serialize (stream1);
+		block1.serialize (stream1);
 	}
 	nano::bufferstream stream2 (bytes.data (), bytes.size ());
 	bool error (false);
 	nano::receive_block block2 (error, stream2);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 }
 
 TEST (block, receive_serialize_json)
@@ -130,7 +133,7 @@ TEST (block, receive_serialize_json)
 				  .work (4)
 				  .build ();
 	std::string string1;
-	block1->serialize_json (string1);
+	block1.serialize_json (string1);
 	ASSERT_NE (0, string1.size ());
 	boost::property_tree::ptree tree1;
 	std::stringstream istream (string1);
@@ -138,7 +141,7 @@ TEST (block, receive_serialize_json)
 	bool error (false);
 	nano::receive_block block2 (error, tree1);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 }
 
 TEST (block, open_serialize_json)
@@ -153,7 +156,7 @@ TEST (block, open_serialize_json)
 				  .work (0)
 				  .build ();
 	std::string string1;
-	block1->serialize_json (string1);
+	block1.serialize_json (string1);
 	ASSERT_NE (0, string1.size ());
 	boost::property_tree::ptree tree1;
 	std::stringstream istream (string1);
@@ -161,7 +164,7 @@ TEST (block, open_serialize_json)
 	bool error (false);
 	nano::open_block block2 (error, tree1);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 }
 
 TEST (block, change_serialize_json)
@@ -175,7 +178,7 @@ TEST (block, change_serialize_json)
 				  .work (4)
 				  .build ();
 	std::string string1;
-	block1->serialize_json (string1);
+	block1.serialize_json (string1);
 	ASSERT_NE (0, string1.size ());
 	boost::property_tree::ptree tree1;
 	std::stringstream istream (string1);
@@ -183,7 +186,7 @@ TEST (block, change_serialize_json)
 	bool error (false);
 	nano::change_block block2 (error, tree1);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 }
 
 TEST (send_block, deserialize)
@@ -197,18 +200,18 @@ TEST (send_block, deserialize)
 				  .sign (nano::keypair ().prv, 4)
 				  .work (5)
 				  .build ();
-	ASSERT_EQ (block1->hash (), block1->hash ());
+	ASSERT_EQ (block1.hash (), block1.hash ());
 	std::vector<uint8_t> bytes;
 	{
 		nano::vectorstream stream1 (bytes);
-		block1->serialize (stream1);
+		block1.serialize (stream1);
 	}
 	ASSERT_EQ (nano::send_block::size, bytes.size ());
 	nano::bufferstream stream2 (bytes.data (), bytes.size ());
 	bool error (false);
 	nano::send_block block2 (error, stream2);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 }
 
 TEST (receive_block, deserialize)
@@ -221,20 +224,22 @@ TEST (receive_block, deserialize)
 				  .sign (nano::keypair ().prv, 3)
 				  .work (4)
 				  .build ();
-	ASSERT_EQ (block1->hash (), block1->hash ());
-	block1->hashables.previous = 2;
-	block1->hashables.source = 4;
+	ASSERT_EQ (block1.hash (), block1.hash ());
+	auto recv = block1.as_receive ().value ();
+	recv.hashables.previous = 2;
+	recv.hashables.source = 4;
+	block1 = nano::raw_block{ recv };
 	std::vector<uint8_t> bytes;
 	{
 		nano::vectorstream stream1 (bytes);
-		block1->serialize (stream1);
+		block1.serialize (stream1);
 	}
 	ASSERT_EQ (nano::receive_block::size, bytes.size ());
 	nano::bufferstream stream2 (bytes.data (), bytes.size ());
 	bool error (false);
 	nano::receive_block block2 (error, stream2);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 }
 
 TEST (open_block, deserialize)
@@ -248,18 +253,18 @@ TEST (open_block, deserialize)
 				  .sign (nano::keypair ().prv, 0)
 				  .work (0)
 				  .build ();
-	ASSERT_EQ (block1->hash (), block1->hash ());
+	ASSERT_EQ (block1.hash (), block1.hash ());
 	std::vector<uint8_t> bytes;
 	{
 		nano::vectorstream stream (bytes);
-		block1->serialize (stream);
+		block1.serialize (stream);
 	}
 	ASSERT_EQ (nano::open_block::size, bytes.size ());
 	nano::bufferstream stream (bytes.data (), bytes.size ());
 	bool error (false);
 	nano::open_block block2 (error, stream);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 }
 
 TEST (change_block, deserialize)
@@ -272,11 +277,11 @@ TEST (change_block, deserialize)
 				  .sign (nano::keypair ().prv, 4)
 				  .work (5)
 				  .build ();
-	ASSERT_EQ (block1->hash (), block1->hash ());
+	ASSERT_EQ (block1.hash (), block1.hash ());
 	std::vector<uint8_t> bytes;
 	{
 		nano::vectorstream stream1 (bytes);
-		block1->serialize (stream1);
+		block1.serialize (stream1);
 	}
 	ASSERT_EQ (nano::change_block::size, bytes.size ());
 	auto data (bytes.data ());
@@ -287,7 +292,7 @@ TEST (change_block, deserialize)
 	bool error (false);
 	nano::change_block block2 (error, stream2);
 	ASSERT_FALSE (error);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 }
 
 TEST (frontier_req, serialization)
@@ -350,7 +355,8 @@ TEST (block, difficulty)
 				 .sign (nano::keypair ().prv, 4)
 				 .work (5)
 				 .build ();
-	ASSERT_EQ (nano::dev::network_params.work.difficulty (*block), nano::dev::network_params.work.difficulty (block->work_version (), block->root (), block->block_work ()));
+	auto difficulty = nano::dev::network_params.work.difficulty (block.work_version (), block.root (), block.block_work ());
+	ASSERT_EQ (difficulty, nano::dev::network_params.work.difficulty (block.work_version (), block.root (), block.block_work ()));
 }
 
 TEST (state_block, serialization)
@@ -367,15 +373,16 @@ TEST (state_block, serialization)
 				  .sign (key1.prv, key1.pub)
 				  .work (5)
 				  .build ();
-	ASSERT_EQ (key1.pub, block1->hashables.account);
-	ASSERT_EQ (nano::block_hash (1), block1->previous ());
-	ASSERT_EQ (key2.pub, block1->hashables.representative);
-	ASSERT_EQ (nano::amount (2), block1->hashables.balance);
-	ASSERT_EQ (nano::uint256_union (4), block1->hashables.link);
+	auto state1 = block1.as_state ().value ();
+	ASSERT_EQ (key1.pub, state1.hashables.account);
+	ASSERT_EQ (nano::block_hash (1), block1.previous ());
+	ASSERT_EQ (key2.pub, state1.hashables.representative);
+	ASSERT_EQ (nano::amount (2), state1.hashables.balance);
+	ASSERT_EQ (nano::uint256_union (4), state1.hashables.link);
 	std::vector<uint8_t> bytes;
 	{
 		nano::vectorstream stream (bytes);
-		block1->serialize (stream);
+		block1.serialize (stream);
 	}
 	ASSERT_EQ (0x5, bytes[215]); // Ensure work is serialized big-endian
 	ASSERT_EQ (nano::state_block::size, bytes.size ());
@@ -383,7 +390,7 @@ TEST (state_block, serialization)
 	nano::bufferstream stream (bytes.data (), bytes.size ());
 	nano::state_block block2 (error1, stream);
 	ASSERT_FALSE (error1);
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 	block2.hashables.account.clear ();
 	block2.hashables.previous.clear ();
 	block2.hashables.representative.clear ();
@@ -393,16 +400,16 @@ TEST (state_block, serialization)
 	block2.work = 0;
 	nano::bufferstream stream2 (bytes.data (), bytes.size ());
 	ASSERT_FALSE (block2.deserialize (stream2));
-	ASSERT_EQ (*block1, block2);
+	ASSERT_EQ (block1, nano::to_raw (block2));
 	std::string json;
-	block1->serialize_json (json);
+	block1.serialize_json (json);
 	std::stringstream body (json);
 	boost::property_tree::ptree tree;
 	boost::property_tree::read_json (body, tree);
 	bool error2 (false);
 	nano::state_block block3 (error2, tree);
 	ASSERT_FALSE (error2);
-	ASSERT_EQ (*block1, block3);
+	ASSERT_EQ (block1, nano::to_raw (block3));
 	block3.hashables.account.clear ();
 	block3.hashables.previous.clear ();
 	block3.hashables.representative.clear ();
@@ -411,7 +418,7 @@ TEST (state_block, serialization)
 	block3.signature.clear ();
 	block3.work = 0;
 	ASSERT_FALSE (block3.deserialize_json (tree));
-	ASSERT_EQ (*block1, block3);
+	ASSERT_EQ (block1, nano::to_raw (block3));
 }
 
 TEST (state_block, hashing)
@@ -427,38 +434,40 @@ TEST (state_block, hashing)
 				 .sign (key.prv, key.pub)
 				 .work (0)
 				 .build ();
-	auto hash (block->hash ());
-	ASSERT_EQ (hash, block->hash ()); // check cache works
-	block->hashables.account.bytes[0] ^= 0x1;
-	block->refresh ();
-	ASSERT_NE (hash, block->hash ());
-	block->hashables.account.bytes[0] ^= 0x1;
-	block->refresh ();
-	ASSERT_EQ (hash, block->hash ());
-	block->hashables.previous.bytes[0] ^= 0x1;
-	block->refresh ();
-	ASSERT_NE (hash, block->hash ());
-	block->hashables.previous.bytes[0] ^= 0x1;
-	block->refresh ();
-	ASSERT_EQ (hash, block->hash ());
-	block->hashables.representative.bytes[0] ^= 0x1;
-	block->refresh ();
-	ASSERT_NE (hash, block->hash ());
-	block->hashables.representative.bytes[0] ^= 0x1;
-	block->refresh ();
-	ASSERT_EQ (hash, block->hash ());
-	block->hashables.balance.bytes[0] ^= 0x1;
-	block->refresh ();
-	ASSERT_NE (hash, block->hash ());
-	block->hashables.balance.bytes[0] ^= 0x1;
-	block->refresh ();
-	ASSERT_EQ (hash, block->hash ());
-	block->hashables.link.bytes[0] ^= 0x1;
-	block->refresh ();
-	ASSERT_NE (hash, block->hash ());
-	block->hashables.link.bytes[0] ^= 0x1;
-	block->refresh ();
-	ASSERT_EQ (hash, block->hash ());
+	auto hash (block.hash ());
+	ASSERT_EQ (hash, block.hash ()); // check cache works
+
+	// Helper to modify a state hashable field and rebuild
+	auto modify_and_check = [&] (auto modifier) {
+		auto state = block.as_state ().value ();
+		modifier (state);
+		block = nano::raw_block{ state };
+	};
+
+	modify_and_check ([&] (nano::raw_state_block & s) { s.hashables.account.bytes[0] ^= 0x1; });
+	ASSERT_NE (hash, block.hash ());
+	modify_and_check ([&] (nano::raw_state_block & s) { s.hashables.account.bytes[0] ^= 0x1; });
+	ASSERT_EQ (hash, block.hash ());
+
+	modify_and_check ([&] (nano::raw_state_block & s) { s.hashables.previous.bytes[0] ^= 0x1; });
+	ASSERT_NE (hash, block.hash ());
+	modify_and_check ([&] (nano::raw_state_block & s) { s.hashables.previous.bytes[0] ^= 0x1; });
+	ASSERT_EQ (hash, block.hash ());
+
+	modify_and_check ([&] (nano::raw_state_block & s) { s.hashables.representative.bytes[0] ^= 0x1; });
+	ASSERT_NE (hash, block.hash ());
+	modify_and_check ([&] (nano::raw_state_block & s) { s.hashables.representative.bytes[0] ^= 0x1; });
+	ASSERT_EQ (hash, block.hash ());
+
+	modify_and_check ([&] (nano::raw_state_block & s) { s.hashables.balance.bytes[0] ^= 0x1; });
+	ASSERT_NE (hash, block.hash ());
+	modify_and_check ([&] (nano::raw_state_block & s) { s.hashables.balance.bytes[0] ^= 0x1; });
+	ASSERT_EQ (hash, block.hash ());
+
+	modify_and_check ([&] (nano::raw_state_block & s) { s.hashables.link.bytes[0] ^= 0x1; });
+	ASSERT_NE (hash, block.hash ());
+	modify_and_check ([&] (nano::raw_state_block & s) { s.hashables.link.bytes[0] ^= 0x1; });
+	ASSERT_EQ (hash, block.hash ());
 }
 
 TEST (blocks, work_version)
@@ -480,19 +489,20 @@ TEST (block_uniquer, single)
 {
 	nano::keypair key;
 	nano::state_block_builder builder;
-	auto block1 = builder
-				  .account (0)
-				  .previous (0)
-				  .representative (0)
-				  .balance (0)
-				  .link (0)
-				  .sign (key.prv, key.pub)
-				  .work (0)
-				  .build ();
-	auto block2 (std::make_shared<nano::state_block> (*block1));
-	ASSERT_NE (block1, block2);
-	ASSERT_EQ (*block1, *block2);
-	std::weak_ptr<nano::state_block> block3 (block2);
+	auto raw_block = builder
+					 .account (0)
+					 .previous (0)
+					 .representative (0)
+					 .balance (0)
+					 .link (0)
+					 .sign (key.prv, key.pub)
+					 .work (0)
+					 .build ();
+	auto block1 = nano::to_legacy (raw_block);
+	auto block2 = nano::to_legacy (raw_block);
+	ASSERT_NE (block1, block2); // different shared_ptrs
+	ASSERT_EQ (*block1, *block2); // same content
+	std::weak_ptr<nano::block> block3 (block2);
 	ASSERT_NE (nullptr, block3.lock ());
 	nano::block_uniquer uniquer;
 	auto block4 (uniquer.unique (block1));
@@ -507,26 +517,28 @@ TEST (block_uniquer, cleanup)
 {
 	nano::keypair key;
 	nano::state_block_builder builder;
-	auto block1 = builder
-				  .account (0)
-				  .previous (0)
-				  .representative (0)
-				  .balance (0)
-				  .link (0)
-				  .sign (key.prv, key.pub)
-				  .work (0)
-				  .build ();
-	auto block2 = builder
-				  .make_block ()
-				  .account (0)
-				  .previous (0)
-				  .representative (0)
-				  .balance (0)
-				  .link (0)
-				  .sign (key.prv, key.pub)
-				  .work (1)
-				  .build ();
+	auto raw_block1 = builder
+					  .account (0)
+					  .previous (0)
+					  .representative (0)
+					  .balance (0)
+					  .link (0)
+					  .sign (key.prv, key.pub)
+					  .work (0)
+					  .build ();
+	auto raw_block2 = builder
+					  .make_block ()
+					  .account (0)
+					  .previous (0)
+					  .representative (0)
+					  .balance (0)
+					  .link (0)
+					  .sign (key.prv, key.pub)
+					  .work (1)
+					  .build ();
 
+	auto block1 = nano::to_legacy (raw_block1);
+	auto block2 = nano::to_legacy (raw_block2);
 	nano::block_uniquer uniquer;
 	auto block3 = uniquer.unique (block1);
 	auto block4 = uniquer.unique (block2);
@@ -550,13 +562,14 @@ TEST (block_builder, from)
 				 .representative_address ("xrb_1stofnrxuz3cai7ze75o174bpm7scwj9jn3nxsn8ntzg784jf1gzn1jjdkou")
 				 .link_hex ("E16DD58C1EFA8B521545B0A74375AA994D9FC43828A4266D75ECF57F07A7EE86")
 				 .build (ec);
-	ASSERT_EQ (block->hash ().to_string (), "2D243F8F92CDD0AD94A1D456A6B15F3BE7A6FCBD98D4C5831D06D15C818CD81F");
+	ASSERT_EQ (block.hash ().to_string (), "2D243F8F92CDD0AD94A1D456A6B15F3BE7A6FCBD98D4C5831D06D15C818CD81F");
 
-	auto block2 = builder.state ().from (*block).build (ec);
-	ASSERT_EQ (block2->hash ().to_string (), "2D243F8F92CDD0AD94A1D456A6B15F3BE7A6FCBD98D4C5831D06D15C818CD81F");
+	auto legacy = std::dynamic_pointer_cast<nano::state_block> (nano::to_legacy (block));
+	auto block2 = builder.state ().from (*legacy).build (ec);
+	ASSERT_EQ (block2.hash ().to_string (), "2D243F8F92CDD0AD94A1D456A6B15F3BE7A6FCBD98D4C5831D06D15C818CD81F");
 
-	auto block3 = builder.state ().from (*block).sign_zero ().work (0).build (ec);
-	ASSERT_EQ (block3->hash ().to_string (), "2D243F8F92CDD0AD94A1D456A6B15F3BE7A6FCBD98D4C5831D06D15C818CD81F");
+	auto block3 = builder.state ().from (*legacy).sign_zero ().work (0).build (ec);
+	ASSERT_EQ (block3.hash ().to_string (), "2D243F8F92CDD0AD94A1D456A6B15F3BE7A6FCBD98D4C5831D06D15C818CD81F");
 }
 
 TEST (block_builder, zeroed_state_block)
@@ -575,8 +588,8 @@ TEST (block_builder, zeroed_state_block)
 							 .work (0)
 							 .build ();
 	auto zero_block_build = builder.state ().zero ().sign (key.prv, key.pub).build ();
-	ASSERT_EQ (zero_block_manual->hash (), zero_block_build->hash ());
-	ASSERT_FALSE (nano::validate_message (key.pub, zero_block_build->hash (), zero_block_build->signature));
+	ASSERT_EQ (zero_block_manual.hash (), zero_block_build.hash ());
+	ASSERT_FALSE (nano::validate_message (key.pub, zero_block_build.hash (), zero_block_build.block_signature ()));
 }
 
 TEST (block_builder, state)
@@ -592,10 +605,10 @@ TEST (block_builder, state)
 				 .representative_address ("xrb_1stofnrxuz3cai7ze75o174bpm7scwj9jn3nxsn8ntzg784jf1gzn1jjdkou")
 				 .link_hex ("E16DD58C1EFA8B521545B0A74375AA994D9FC43828A4266D75ECF57F07A7EE86")
 				 .build (ec);
-	ASSERT_EQ (block->hash ().to_string (), "2D243F8F92CDD0AD94A1D456A6B15F3BE7A6FCBD98D4C5831D06D15C818CD81F");
-	ASSERT_FALSE (block->source_field ());
-	ASSERT_FALSE (block->destination_field ());
-	ASSERT_EQ (block->link_field ().value ().to_string (), "E16DD58C1EFA8B521545B0A74375AA994D9FC43828A4266D75ECF57F07A7EE86");
+	ASSERT_EQ (block.hash ().to_string (), "2D243F8F92CDD0AD94A1D456A6B15F3BE7A6FCBD98D4C5831D06D15C818CD81F");
+	ASSERT_FALSE (block.source_field ());
+	ASSERT_FALSE (block.destination_field ());
+	ASSERT_EQ (block.link_field ().value ().to_string (), "E16DD58C1EFA8B521545B0A74375AA994D9FC43828A4266D75ECF57F07A7EE86");
 }
 
 TEST (block_builder, state_missing_rep)
@@ -637,8 +650,8 @@ TEST (block_builder, state_equality)
 				  .build (ec);
 
 	ASSERT_NO_ERROR (ec);
-	ASSERT_EQ (block1.hash (), block2->hash ());
-	ASSERT_EQ (block1.work, block2->work);
+	ASSERT_EQ (block1.hash (), block2.hash ());
+	ASSERT_EQ (block1.work, block2.block_work ());
 }
 
 TEST (block_builder, state_errors)
@@ -665,10 +678,10 @@ TEST (block_builder, open)
 				 .representative_address ("xrb_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3")
 				 .source_hex ("E89208DD038FBB269987689621D52292AE9C35941A7484756ECCED92A65093BA")
 				 .build (ec);
-	ASSERT_EQ (block->hash ().to_string (), "991CF190094C00F0B68E2E5F75F6BEE95A2E0BD93CEAA4A6734DB9F19B728948");
-	ASSERT_EQ (block->source_field ().value ().to_string (), "E89208DD038FBB269987689621D52292AE9C35941A7484756ECCED92A65093BA");
-	ASSERT_FALSE (block->destination_field ());
-	ASSERT_FALSE (block->link_field ());
+	ASSERT_EQ (block.hash ().to_string (), "991CF190094C00F0B68E2E5F75F6BEE95A2E0BD93CEAA4A6734DB9F19B728948");
+	ASSERT_EQ (block.source_field ().value ().to_string (), "E89208DD038FBB269987689621D52292AE9C35941A7484756ECCED92A65093BA");
+	ASSERT_FALSE (block.destination_field ());
+	ASSERT_FALSE (block.link_field ());
 }
 
 TEST (block_builder, open_equality)
@@ -691,8 +704,8 @@ TEST (block_builder, open_equality)
 				  .build (ec);
 
 	ASSERT_NO_ERROR (ec);
-	ASSERT_EQ (block1.hash (), block2->hash ());
-	ASSERT_EQ (block1.work, block2->work);
+	ASSERT_EQ (block1.hash (), block2.hash ());
+	ASSERT_EQ (block1.work, block2.block_work ());
 }
 
 TEST (block_builder, change)
@@ -704,10 +717,10 @@ TEST (block_builder, change)
 				 .representative_address ("xrb_3rropjiqfxpmrrkooej4qtmm1pueu36f9ghinpho4esfdor8785a455d16nf")
 				 .previous_hex ("088EE46429CA936F76C4EAA20B97F6D33E5D872971433EE0C1311BCB98764456")
 				 .build (ec);
-	ASSERT_EQ (block->hash ().to_string (), "13552AC3928E93B5C6C215F61879358E248D4A5246B8B3D1EEC5A566EDCEE077");
-	ASSERT_FALSE (block->source_field ());
-	ASSERT_FALSE (block->destination_field ());
-	ASSERT_FALSE (block->link_field ());
+	ASSERT_EQ (block.hash ().to_string (), "13552AC3928E93B5C6C215F61879358E248D4A5246B8B3D1EEC5A566EDCEE077");
+	ASSERT_FALSE (block.source_field ());
+	ASSERT_FALSE (block.destination_field ());
+	ASSERT_FALSE (block.link_field ());
 }
 
 TEST (block_builder, change_equality)
@@ -729,8 +742,8 @@ TEST (block_builder, change_equality)
 				  .build (ec);
 
 	ASSERT_NO_ERROR (ec);
-	ASSERT_EQ (block1.hash (), block2->hash ());
-	ASSERT_EQ (block1.work, block2->work);
+	ASSERT_EQ (block1.hash (), block2.hash ());
+	ASSERT_EQ (block1.work, block2.block_work ());
 }
 
 TEST (block_builder, send)
@@ -743,10 +756,10 @@ TEST (block_builder, send)
 				 .previous_hex ("F685856D73A488894F7F3A62BC3A88E17E985F9969629FF3FDD4A0D4FD823F24")
 				 .balance_hex ("00F035A9C7D818E7C34148C524FFFFEE")
 				 .build (ec);
-	ASSERT_EQ (block->hash ().to_string (), "4560E7B1F3735D082700CFC2852F5D1F378F7418FD24CEF1AD45AB69316F15CD");
-	ASSERT_FALSE (block->source_field ());
-	ASSERT_EQ (block->destination_field ().value ().to_account (), "nano_1gys8r4crpxhp94n4uho5cshaho81na6454qni5gu9n53gksoyy1wcd4udyb");
-	ASSERT_FALSE (block->link_field ());
+	ASSERT_EQ (block.hash ().to_string (), "4560E7B1F3735D082700CFC2852F5D1F378F7418FD24CEF1AD45AB69316F15CD");
+	ASSERT_FALSE (block.source_field ());
+	ASSERT_EQ (block.destination_field ().value ().to_account (), "nano_1gys8r4crpxhp94n4uho5cshaho81na6454qni5gu9n53gksoyy1wcd4udyb");
+	ASSERT_FALSE (block.link_field ());
 }
 
 TEST (block_builder, send_equality)
@@ -769,8 +782,8 @@ TEST (block_builder, send_equality)
 				  .build (ec);
 
 	ASSERT_NO_ERROR (ec);
-	ASSERT_EQ (block1.hash (), block2->hash ());
-	ASSERT_EQ (block1.work, block2->work);
+	ASSERT_EQ (block1.hash (), block2.hash ());
+	ASSERT_EQ (block1.work, block2.block_work ());
 }
 
 TEST (block_builder, receive_equality)
@@ -792,8 +805,8 @@ TEST (block_builder, receive_equality)
 				  .build (ec);
 
 	ASSERT_NO_ERROR (ec);
-	ASSERT_EQ (block1.hash (), block2->hash ());
-	ASSERT_EQ (block1.work, block2->work);
+	ASSERT_EQ (block1.hash (), block2.hash ());
+	ASSERT_EQ (block1.work, block2.block_work ());
 }
 
 TEST (block_builder, receive)
@@ -805,8 +818,8 @@ TEST (block_builder, receive)
 				 .previous_hex ("59660153194CAC5DAC08509D87970BF86F6AEA943025E2A7ED7460930594950E")
 				 .source_hex ("7B2B0A29C1B235FDF9B4DEF2984BB3573BD1A52D28246396FBB3E4C5FE662135")
 				 .build (ec);
-	ASSERT_EQ (block->hash ().to_string (), "6C004BF911D9CF2ED75CF6EC45E795122AD5D093FF5A83EDFBA43EC4A3EDC722");
-	ASSERT_EQ (block->source_field ().value ().to_string (), "7B2B0A29C1B235FDF9B4DEF2984BB3573BD1A52D28246396FBB3E4C5FE662135");
-	ASSERT_FALSE (block->destination_field ());
-	ASSERT_FALSE (block->link_field ());
+	ASSERT_EQ (block.hash ().to_string (), "6C004BF911D9CF2ED75CF6EC45E795122AD5D093FF5A83EDFBA43EC4A3EDC722");
+	ASSERT_EQ (block.source_field ().value ().to_string (), "7B2B0A29C1B235FDF9B4DEF2984BB3573BD1A52D28246396FBB3E4C5FE662135");
+	ASSERT_FALSE (block.destination_field ());
+	ASSERT_FALSE (block.link_field ());
 }
