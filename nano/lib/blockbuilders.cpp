@@ -1,6 +1,4 @@
 #include <nano/lib/blockbuilders.hpp>
-#include <nano/lib/blocks.hpp>
-#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/errors.hpp>
 #include <nano/lib/utility.hpp>
 
@@ -208,41 +206,23 @@ nano::state_block_builder & nano::state_block_builder::make_block ()
 	return *this;
 }
 
-nano::state_block_builder & nano::state_block_builder::from (nano::state_block const & other_block)
-{
-	block->work = other_block.work;
-	build_state |= build_flags::work_present;
-	block->signature = other_block.signature;
-	build_state |= build_flags::signature_present;
-	block->hashables.account = other_block.hashables.account;
-	build_state |= build_flags::account_present;
-	block->hashables.balance = other_block.hashables.balance;
-	build_state |= build_flags::balance_present;
-	block->hashables.link = other_block.hashables.link;
-	build_state |= build_flags::link_present;
-	block->hashables.previous = other_block.hashables.previous;
-	build_state |= build_flags::previous_present;
-	block->hashables.representative = other_block.hashables.representative;
-	build_state |= build_flags::representative_present;
-	return *this;
-}
-
 nano::state_block_builder & nano::state_block_builder::from (nano::raw_block const & other_block)
 {
 	debug_assert (other_block.type () == nano::block_type::state);
-	block->work = other_block.block_work ();
+	auto raw = other_block.as_state ().value ();
+	block->work = raw.work;
 	build_state |= build_flags::work_present;
-	block->signature = other_block.block_signature ();
+	block->signature = raw.signature;
 	build_state |= build_flags::signature_present;
-	block->hashables.account = other_block.account_field ().value ();
+	block->hashables.account = raw.hashables.account;
 	build_state |= build_flags::account_present;
-	block->hashables.balance = other_block.balance_field ().value ();
+	block->hashables.balance = raw.hashables.balance;
 	build_state |= build_flags::balance_present;
-	block->hashables.link = other_block.link_field ().value ();
+	block->hashables.link = raw.hashables.link;
 	build_state |= build_flags::link_present;
-	block->hashables.previous = other_block.previous ();
+	block->hashables.previous = raw.hashables.previous;
 	build_state |= build_flags::previous_present;
-	block->hashables.representative = other_block.representative_field ().value ();
+	block->hashables.representative = raw.hashables.representative;
 	build_state |= build_flags::representative_present;
 	return *this;
 }
@@ -537,33 +517,19 @@ nano::send_block_builder::send_block_builder ()
 	make_block ();
 }
 
-nano::send_block_builder & nano::send_block_builder::from (nano::send_block const & other_block)
-{
-	block->work = other_block.work;
-	build_state |= build_flags::work_present;
-	block->signature = other_block.signature;
-	build_state |= build_flags::signature_present;
-	block->hashables.balance = other_block.hashables.balance;
-	build_state |= build_flags::balance_present;
-	block->hashables.destination = other_block.hashables.destination;
-	build_state |= build_flags::link_present;
-	block->hashables.previous = other_block.hashables.previous;
-	build_state |= build_flags::previous_present;
-	return *this;
-}
-
 nano::send_block_builder & nano::send_block_builder::from (nano::raw_block const & other_block)
 {
 	debug_assert (other_block.type () == nano::block_type::send);
-	block->work = other_block.block_work ();
+	auto raw = other_block.as_send ().value ();
+	block->work = raw.work;
 	build_state |= build_flags::work_present;
-	block->signature = other_block.block_signature ();
+	block->signature = raw.signature;
 	build_state |= build_flags::signature_present;
-	block->hashables.balance = other_block.balance_field ().value ();
+	block->hashables.balance = raw.hashables.balance;
 	build_state |= build_flags::balance_present;
-	block->hashables.destination = other_block.destination_field ().value ();
+	block->hashables.destination = raw.hashables.destination;
 	build_state |= build_flags::link_present;
-	block->hashables.previous = other_block.previous ();
+	block->hashables.previous = raw.hashables.previous;
 	build_state |= build_flags::previous_present;
 	return *this;
 }
@@ -714,7 +680,7 @@ nano::raw_block nano::abstract_builder<BLOCKTYPE, BUILDER>::build ()
 		static_cast<BUILDER *> (this)->validate ();
 	}
 	debug_assert (!ec);
-	auto result = nano::to_raw (*block);
+	nano::raw_block result{ *block };
 	block.reset ();
 	return result;
 }
@@ -727,7 +693,7 @@ nano::raw_block nano::abstract_builder<BLOCKTYPE, BUILDER>::build (std::error_co
 		static_cast<BUILDER *> (this)->validate ();
 	}
 	ec = this->ec;
-	auto result = nano::to_raw (*block);
+	nano::raw_block result{ *block };
 	block.reset ();
 	return result;
 }
@@ -759,14 +725,14 @@ nano::abstract_builder<BLOCKTYPE, BUILDER> & nano::abstract_builder<BLOCKTYPE, B
 template <typename BLOCKTYPE, typename BUILDER>
 void nano::abstract_builder<BLOCKTYPE, BUILDER>::construct_block ()
 {
-	block = std::make_unique<BLOCKTYPE> ();
+	block.emplace ();
 	ec.clear ();
 	build_state = 0;
 }
 
 // Explicit instantiations
-template class nano::abstract_builder<nano::open_block, nano::open_block_builder>;
-template class nano::abstract_builder<nano::send_block, nano::send_block_builder>;
-template class nano::abstract_builder<nano::receive_block, nano::receive_block_builder>;
-template class nano::abstract_builder<nano::change_block, nano::change_block_builder>;
-template class nano::abstract_builder<nano::state_block, nano::state_block_builder>;
+template class nano::abstract_builder<nano::raw_open_block, nano::open_block_builder>;
+template class nano::abstract_builder<nano::raw_send_block, nano::send_block_builder>;
+template class nano::abstract_builder<nano::raw_receive_block, nano::receive_block_builder>;
+template class nano::abstract_builder<nano::raw_change_block, nano::change_block_builder>;
+template class nano::abstract_builder<nano::raw_state_block, nano::state_block_builder>;

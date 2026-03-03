@@ -1,36 +1,9 @@
-#include <nano/lib/blocks.hpp>
 #include <nano/lib/stored_block.hpp>
-
-#include <boost/property_tree/json_parser.hpp>
 
 nano::stored_block::stored_block (nano::raw_block raw, nano::block_sideband sideband) :
 	raw_m{ std::move (raw) },
 	sideband_m{ std::move (sideband) }
 {
-}
-
-nano::stored_block::stored_block (nano::block const & legacy) :
-	raw_m{ nano::to_raw (legacy) },
-	sideband_m{ legacy.sideband () }
-{
-}
-
-nano::stored_block::stored_block (std::shared_ptr<nano::block> const & legacy) :
-	stored_block (*legacy)
-{
-	debug_assert (legacy != nullptr);
-}
-
-std::shared_ptr<nano::block> nano::stored_block::to_legacy () const
-{
-	auto result = nano::to_legacy (raw_m);
-	result->sideband_set (sideband_m);
-	return result;
-}
-
-nano::stored_block::operator std::shared_ptr<nano::block> () const
-{
-	return to_legacy ();
 }
 
 nano::block_hash const & nano::stored_block::hash () const
@@ -267,16 +240,14 @@ nano::raw_block const & nano::stored_block::raw () const
 	return raw_m;
 }
 
-void nano::stored_block::serialize_json (std::string & string_a, bool single_line) const
+void nano::stored_block::serialize_json (std::string & string_a) const
 {
-	auto legacy = to_legacy ();
-	legacy->serialize_json (string_a, single_line);
+	raw_m.serialize_json (string_a);
 }
 
 void nano::stored_block::serialize_json (boost::property_tree::ptree & tree) const
 {
-	auto legacy = to_legacy ();
-	legacy->serialize_json (tree);
+	raw_m.serialize_json (tree);
 }
 
 std::string nano::stored_block::to_json () const
@@ -287,11 +258,6 @@ std::string nano::stored_block::to_json () const
 }
 
 bool nano::stored_block::operator== (stored_block const & other) const
-{
-	return hash () == other.hash ();
-}
-
-bool nano::stored_block::operator== (nano::block const & other) const
 {
 	return hash () == other.hash ();
 }

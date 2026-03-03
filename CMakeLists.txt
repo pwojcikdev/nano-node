@@ -102,7 +102,6 @@ set_property(
            active
            block_arrival
            block_processor
-           block_uniquer
            dropped_elections,
            election_winner_details
            gap_cache

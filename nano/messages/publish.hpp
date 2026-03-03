@@ -23,7 +23,6 @@ class publish final : public message
 public:
 	publish (bool &, nano::stream &, message_header const &, nano::network_filter::digest_t const & digest = 0);
 	publish (nano::network_constants const & constants, nano::raw_block const &, bool is_originator = false);
-	publish (nano::network_constants const & constants, std::shared_ptr<nano::block> const &, bool is_originator = false);
 
 	void serialize (nano::stream &) const override;
 	bool deserialize (nano::stream &);

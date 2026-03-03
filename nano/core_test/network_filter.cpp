@@ -1,5 +1,4 @@
 #include <nano/lib/blocks.hpp>
-#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/network_filter.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/messages/messages.hpp>
@@ -35,16 +34,15 @@ TEST (network_filter, unit)
 		ASSERT_FALSE (error);
 
 		// This validates nano::messages::message_header::size
-		ASSERT_EQ (bytes->size (), nano::block::size (block_a.type ()) + header.size);
+		ASSERT_EQ (bytes->size (), nano::block_size (block_a.type ()) + header.size);
 
 		// Now filter the rest of the stream
 		bool duplicate (filter.apply (bytes->data (), bytes->size () - header.size));
 		ASSERT_EQ (expect_duplicate_a, duplicate);
 
 		// Make sure the stream was rewinded correctly
-		auto block (nano::deserialize_block (stream, header.block_type ()));
-		ASSERT_NE (nullptr, block);
-		ASSERT_EQ (nano::to_raw (*block), block_a);
+		auto block = nano::deserialize_raw_block (stream, header.block_type ());
+		ASSERT_EQ (block, block_a);
 	};
 	one_block (nano::dev::genesis.raw (), false);
 	for (int i = 0; i < 10; ++i)
@@ -101,7 +99,7 @@ TEST (network_filter, many)
 		ASSERT_FALSE (error);
 
 		// This validates nano::messages::message_header::size
-		auto block_size = nano::block::size (block.type ());
+		auto block_size = nano::block_size (block.type ());
 		ASSERT_EQ (bytes->size (), block_size + header.size);
 
 		// Now filter the rest of the stream
@@ -111,9 +109,8 @@ TEST (network_filter, many)
 		ASSERT_FALSE (error);
 
 		// Make sure the stream was rewinded correctly
-		auto deserialized_block (nano::deserialize_block (stream, header.block_type ()));
-		ASSERT_NE (nullptr, deserialized_block);
-		ASSERT_EQ (block, nano::to_raw (*deserialized_block));
+		auto deserialized_block = nano::deserialize_raw_block (stream, header.block_type ());
+		ASSERT_EQ (block, deserialized_block);
 	}
 }
 

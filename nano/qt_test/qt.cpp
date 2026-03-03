@@ -1,3 +1,4 @@
+#include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/work_version.hpp>
 #include <nano/node/make_store.hpp>
@@ -325,10 +326,18 @@ TEST (wallet, DISABLED_process_block)
 	QTest::mouseClick (wallet->show_advanced, Qt::LeftButton);
 	QTest::mouseClick (wallet->advanced.enter_block, Qt::LeftButton);
 	ASSERT_EQ (wallet->block_entry.window, wallet->main_stack->currentWidget ());
-	nano::send_block send (latest, key1.pub, 0, nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, *system.work.generate (latest));
+	nano::block_builder builder;
+	auto send = builder
+				.send ()
+				.previous (latest)
+				.destination (key1.pub)
+				.balance (0)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (latest))
+				.build ();
 	std::string previous = send.previous ().to_string ();
 	std::string balance = send.balance_field ().value ().to_string ();
-	std::string signature = send.signature.to_string ();
+	std::string signature = send.block_signature ().to_string ();
 	std::string block_json;
 	send.serialize_json (block_json);
 	block_json.erase (std::remove (block_json.begin (), block_json.end (), '\n'), block_json.end ());
@@ -369,11 +378,9 @@ TEST (wallet, create_send)
 	boost::property_tree::ptree tree1;
 	std::stringstream istream (json);
 	boost::property_tree::read_json (istream, tree1);
-	bool error (false);
-	auto send = std::make_shared<nano::state_block> (error, tree1);
-	ASSERT_FALSE (error);
-	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (nano::to_raw (*send)));
-	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (nano::to_raw (*send)));
+	auto send = nano::deserialize_raw_block_json (tree1);
+	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (send));
+	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (send));
 }
 
 TEST (wallet, create_open_receive)
@@ -403,11 +410,9 @@ TEST (wallet, create_open_receive)
 	boost::property_tree::ptree tree1;
 	std::stringstream istream1 (json1);
 	boost::property_tree::read_json (istream1, tree1);
-	bool error (false);
-	auto open = std::make_shared<nano::state_block> (error, tree1);
-	ASSERT_FALSE (error);
-	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (nano::to_raw (*open)));
-	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (nano::to_raw (*open)));
+	auto open = nano::deserialize_raw_block_json (tree1);
+	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (open));
+	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (open));
 	wallet->block_creation.block->clear ();
 	wallet->block_creation.source->clear ();
 	wallet->block_creation.receive->click ();
@@ -418,11 +423,9 @@ TEST (wallet, create_open_receive)
 	boost::property_tree::ptree tree2;
 	std::stringstream istream2 (json2);
 	boost::property_tree::read_json (istream2, tree2);
-	bool error2 (false);
-	auto receive = std::make_shared<nano::state_block> (error2, tree2);
-	ASSERT_FALSE (error2);
-	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (nano::to_raw (*receive)));
-	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (nano::to_raw (*receive)));
+	auto receive = nano::deserialize_raw_block_json (tree2);
+	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (receive));
+	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (receive));
 }
 
 TEST (wallet, create_change)
@@ -446,11 +449,9 @@ TEST (wallet, create_change)
 	boost::property_tree::ptree tree1;
 	std::stringstream istream (json);
 	boost::property_tree::read_json (istream, tree1);
-	bool error (false);
-	auto change = std::make_shared<nano::state_block> (error, tree1);
-	ASSERT_FALSE (error);
-	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (nano::to_raw (*change)));
-	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (nano::to_raw (*change)));
+	auto change = nano::deserialize_raw_block_json (tree1);
+	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (change));
+	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (change));
 }
 
 TEST (history, short_text)
@@ -468,13 +469,30 @@ TEST (history, short_text)
 	{
 		auto transaction (ledger.tx_begin_write ());
 		nano::keypair key;
+		nano::block_builder builder;
 		auto latest (ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
-		auto send = std::make_shared<nano::send_block> (latest, nano::dev::genesis_key.pub, 0, nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, *system.work.generate (latest));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send));
-		auto receive = std::make_shared<nano::receive_block> (send->hash (), send->hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, *system.work.generate (send->hash ()));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, receive));
-		auto change = std::make_shared<nano::change_block> (receive->hash (), key.pub, nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, *system.work.generate (receive->hash ()));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, change));
+		auto send = builder.send ()
+					.previous (latest)
+					.destination (nano::dev::genesis_key.pub)
+					.balance (nano::amount (0))
+					.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					.work (*system.work.generate (latest))
+					.build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send).code);
+		auto receive = builder.receive ()
+					   .previous (send.hash ())
+					   .source (send.hash ())
+					   .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					   .work (*system.work.generate (send.hash ()))
+					   .build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, receive).code);
+		auto change = builder.change ()
+					  .previous (receive.hash ())
+					  .representative (key.pub)
+					  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					  .work (*system.work.generate (receive.hash ()))
+					  .build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, change).code);
 	}
 	nano_qt::history history (ledger, nano::dev::genesis_key.pub, *wallet);
 	history.refresh ();
@@ -502,20 +520,44 @@ TEST (history, pruned_source)
 	ledger.pruning = true;
 	nano::block_hash next_pruning;
 	// Basic pruning for legacy blocks. Previous block is pruned, source is pruned
+	nano::block_builder builder;
 	{
 		auto transaction = ledger.tx_begin_write ();
 		auto latest (ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
-		auto send1 = std::make_shared<nano::send_block> (latest, nano::dev::genesis_key.pub, nano::dev::constants.genesis_amount - 100, nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, *system.work.generate (latest));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send1));
-		auto send2 = std::make_shared<nano::send_block> (send1->hash (), key.pub, nano::dev::constants.genesis_amount - 200, nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, *system.work.generate (send1->hash ()));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send2));
-		auto receive1 = std::make_shared<nano::receive_block> (send2->hash (), send1->hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, *system.work.generate (send2->hash ()));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, receive1));
-		auto open = std::make_shared<nano::open_block> (send2->hash (), key.pub, key.pub, key.prv, key.pub, *system.work.generate (key.pub));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, open));
-		ledger.cement (transaction, send1->hash ());
-		ASSERT_EQ (1, ledger.pruning_action (transaction, send1->hash (), 2));
-		next_pruning = send2->hash ();
+		auto send1 = builder.send ()
+					 .previous (latest)
+					 .destination (nano::dev::genesis_key.pub)
+					 .balance (nano::dev::constants.genesis_amount - 100)
+					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					 .work (*system.work.generate (latest))
+					 .build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send1).code);
+		auto send2 = builder.send ()
+					 .previous (send1.hash ())
+					 .destination (key.pub)
+					 .balance (nano::dev::constants.genesis_amount - 200)
+					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					 .work (*system.work.generate (send1.hash ()))
+					 .build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send2).code);
+		auto receive1 = builder.receive ()
+						.previous (send2.hash ())
+						.source (send1.hash ())
+						.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+						.work (*system.work.generate (send2.hash ()))
+						.build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, receive1).code);
+		auto open = builder.open ()
+					.source (send2.hash ())
+					.representative (key.pub)
+					.account (key.pub)
+					.sign (key.prv, key.pub)
+					.work (*system.work.generate (key.pub))
+					.build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, open).code);
+		ledger.cement (transaction, send1.hash ());
+		ASSERT_EQ (1, ledger.pruning_action (transaction, send1.hash (), 2));
+		next_pruning = send2.hash ();
 	}
 	// Set rendering ration to raw units
 	ASSERT_NE (wallet->rendering_ratio, nano::raw_ratio);
@@ -582,11 +624,27 @@ TEST (history, pruned_source)
 	{
 		auto transaction = ledger.tx_begin_write ();
 		auto latest (ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
-		auto send3 = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, latest, nano::dev::genesis_key.pub, nano::dev::constants.genesis_amount - 200, key.pub, nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, *system.work.generate (latest));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send3));
+		auto send3 = builder.state ()
+					 .account (nano::dev::genesis_key.pub)
+					 .previous (latest)
+					 .representative (nano::dev::genesis_key.pub)
+					 .balance (nano::dev::constants.genesis_amount - 200)
+					 .link (key.pub)
+					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					 .work (*system.work.generate (latest))
+					 .build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send3).code);
 		auto latest_key (ledger.any.account_head (transaction, key.pub));
-		auto receive2 = std::make_shared<nano::state_block> (key.pub, latest_key, key.pub, 200, send3->hash (), key.prv, key.pub, *system.work.generate (latest_key));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, receive2));
+		auto receive2 = builder.state ()
+						.account (key.pub)
+						.previous (latest_key)
+						.representative (key.pub)
+						.balance (nano::amount (200))
+						.link (send3.hash ())
+						.sign (key.prv, key.pub)
+						.work (*system.work.generate (latest_key))
+						.build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, receive2).code);
 		ledger.cement (transaction, latest);
 		ASSERT_EQ (1, ledger.pruning_action (transaction, latest, 2));
 		ledger.cement (transaction, latest_key);
@@ -617,8 +675,16 @@ TEST (history, pruned_source)
 	{
 		auto transaction = ledger.tx_begin_write ();
 		auto latest (ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
-		auto change = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, latest, key.pub, nano::dev::constants.genesis_amount - 200, 0, nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, *system.work.generate (latest));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, change));
+		auto change = builder.state ()
+					  .account (nano::dev::genesis_key.pub)
+					  .previous (latest)
+					  .representative (key.pub)
+					  .balance (nano::dev::constants.genesis_amount - 200)
+					  .link (nano::link (0))
+					  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					  .work (*system.work.generate (latest))
+					  .build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, change).code);
 		ledger.cement (transaction, latest);
 		ASSERT_EQ (1, ledger.pruning_action (transaction, latest, 2));
 	}
@@ -649,10 +715,26 @@ TEST (history, pruned_source)
 	{
 		auto transaction = ledger.tx_begin_write ();
 		auto latest_key (ledger.any.account_head (transaction, key.pub));
-		auto send4 = std::make_shared<nano::state_block> (key.pub, latest_key, key.pub, 100, key2.pub, key.prv, key.pub, *system.work.generate (latest_key));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send4));
-		auto open2 = std::make_shared<nano::state_block> (key2.pub, 0, key2.pub, 100, send4->hash (), key2.prv, key2.pub, *system.work.generate (key2.pub));
-		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, open2));
+		auto send4 = builder.state ()
+					 .account (key.pub)
+					 .previous (latest_key)
+					 .representative (key.pub)
+					 .balance (nano::amount (100))
+					 .link (key2.pub)
+					 .sign (key.prv, key.pub)
+					 .work (*system.work.generate (latest_key))
+					 .build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, send4).code);
+		auto open2 = builder.state ()
+					 .account (key2.pub)
+					 .previous (nano::block_hash (0))
+					 .representative (key2.pub)
+					 .balance (nano::amount (100))
+					 .link (send4.hash ())
+					 .sign (key2.prv, key2.pub)
+					 .work (*system.work.generate (key2.pub))
+					 .build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, open2).code);
 		ledger.cement (transaction, latest_key);
 		ASSERT_EQ (1, ledger.pruning_action (transaction, latest_key, 2));
 	}
@@ -777,9 +859,16 @@ TEST (wallet, republish)
 	{
 		auto transaction = node1.ledger.tx_begin_write ();
 		auto latest (node1.ledger.any.account_head (transaction, nano::dev::genesis_key.pub));
-		auto block = std::make_shared<nano::send_block> (latest, key.pub, 0, nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, *system.work.generate (latest));
-		hash = block->hash ();
-		ASSERT_EQ (nano::block_status::progress, node1.ledger.process (transaction, block));
+		nano::block_builder builder;
+		auto block = builder.send ()
+					 .previous (latest)
+					 .destination (key.pub)
+					 .balance (nano::amount (0))
+					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					 .work (*system.work.generate (latest))
+					 .build ();
+		hash = block.hash ();
+		ASSERT_EQ (nano::block_status::progress, node1.ledger.process (transaction, block).code);
 	}
 
 	// Ensure node2 does not have the block initially
@@ -983,11 +1072,9 @@ TEST (wallet, epoch_2_validation)
 		boost::property_tree::ptree tree1;
 		std::stringstream istream (json);
 		boost::property_tree::read_json (istream, tree1);
-		bool error (false);
-		auto block = std::make_shared<nano::state_block> (error, tree1);
-		EXPECT_FALSE (error);
-		EXPECT_EQ (nano::block_status::progress, node->process (nano::to_raw (*block)));
-		return block->hash ();
+		auto block = nano::deserialize_raw_block_json (tree1);
+		EXPECT_EQ (nano::block_status::progress, node->process (block));
+		return block.hash ();
 	};
 
 	auto do_send = [&] (nano::public_key const & destination) -> nano::block_hash {

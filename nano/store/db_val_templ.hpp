@@ -1,7 +1,6 @@
 #pragma once
 
 #include <nano/lib/blocks.hpp>
-#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/memory.hpp>
 #include <nano/lib/stored_block.hpp>
 #include <nano/lib/stream.hpp>
@@ -93,16 +92,6 @@ inline db_val::db_val (nano::endpoint_key const & value) :
 	span_view{ reinterpret_cast<uint8_t const *> (&value), sizeof (value) }
 {
 	static_assert (std::is_standard_layout<nano::endpoint_key>::value, "Standard layout is required");
-}
-
-inline db_val::db_val (std::shared_ptr<nano::block> const & block) :
-	buffer{ std::make_shared<std::vector<uint8_t>> () }
-{
-	{
-		nano::vectorstream stream{ *buffer };
-		nano::serialize_block (stream, *block);
-	}
-	convert_buffer_to_value ();
 }
 
 // Conversion operator implementations
@@ -198,13 +187,6 @@ inline db_val::operator nano::endpoint_key () const
 	return result;
 }
 
-inline db_val::operator std::shared_ptr<nano::block> () const
-{
-	nano::bufferstream stream{ span_view.data (), span_view.size () };
-	std::shared_ptr<nano::block> result{ nano::deserialize_block (stream) };
-	return result;
-}
-
 inline db_val::operator nano::amount () const
 {
 	return read_as_bytes<nano::amount> ();
@@ -257,41 +239,6 @@ inline db_val::operator std::nullptr_t () const
 inline db_val::operator nano::no_value () const
 {
 	return no_value::dummy;
-}
-
-template <typename Block>
-inline auto db_val::convert_to_block () const -> std::shared_ptr<Block>
-{
-	nano::bufferstream stream{ span_view.data (), span_view.size () };
-	auto error{ false };
-	auto result{ nano::make_shared<Block> (error, stream) };
-	debug_assert (!error);
-	return result;
-}
-
-inline db_val::operator std::shared_ptr<nano::send_block> () const
-{
-	return convert_to_block<nano::send_block> ();
-}
-
-inline db_val::operator std::shared_ptr<nano::receive_block> () const
-{
-	return convert_to_block<nano::receive_block> ();
-}
-
-inline db_val::operator std::shared_ptr<nano::open_block> () const
-{
-	return convert_to_block<nano::open_block> ();
-}
-
-inline db_val::operator std::shared_ptr<nano::change_block> () const
-{
-	return convert_to_block<nano::change_block> ();
-}
-
-inline db_val::operator std::shared_ptr<nano::state_block> () const
-{
-	return convert_to_block<nano::state_block> ();
 }
 
 // Member function implementations

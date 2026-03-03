@@ -13,22 +13,6 @@ block_view::block_view (nano::store::backend & backend_a, nano::store::ledger::s
 {
 }
 
-void block_view::put (nano::store::write_transaction const & txn, nano::block_hash const & hash, nano::block const & block)
-{
-	std::vector<uint8_t> vector;
-	{
-		nano::vectorstream stream{ vector };
-		nano::serialize_block (stream, block);
-		block.sideband ().serialize (stream, block.type ());
-	}
-	raw_put (txn, vector, hash);
-	if (!block.previous ().is_zero ())
-	{
-		successor_store.put (txn, block.previous (), hash);
-	}
-	debug_assert (block.previous ().is_zero () || successor_store.get (txn, block.previous ()) == hash);
-}
-
 void block_view::put (nano::store::write_transaction const & txn, nano::block_hash const & hash, nano::raw_block const & block, nano::block_sideband const & sideband)
 {
 	std::vector<uint8_t> vector;

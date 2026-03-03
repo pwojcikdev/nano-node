@@ -382,12 +382,12 @@ int main (int argc, char * const * argv)
 					nano::uint128_t balance (std::numeric_limits<nano::uint128_t>::max ());
 					nano::block_builder block_builder;
 					auto genesis_block = block_builder.open ()
-						.source (reinterpret_cast<nano::block_hash const &> (genesis.pub))
-						.representative (genesis.pub)
-						.account (genesis.pub)
-						.sign (genesis.prv, genesis.pub)
-						.work (*work.generate (nano::work_version::work_1, genesis.pub, network_params.work.epoch_1))
-						.build ();
+										 .source (reinterpret_cast<nano::block_hash const &> (genesis.pub))
+										 .representative (genesis.pub)
+										 .account (genesis.pub)
+										 .sign (genesis.prv, genesis.pub)
+										 .work (*work.generate (nano::work_version::work_1, genesis.pub, network_params.work.epoch_1))
+										 .build ();
 					std::string genesis_block_json;
 					genesis_block.serialize_json (genesis_block_json);
 					std::cout << genesis_block_json;
@@ -402,12 +402,12 @@ int main (int argc, char * const * argv)
 							debug_assert (balance > weekly_distribution);
 							balance = balance < (weekly_distribution * 2) ? 0 : balance - weekly_distribution;
 							auto send = block_builder.send ()
-								.previous (previous)
-								.destination (landing.pub)
-								.balance (balance)
-								.sign (genesis.prv, genesis.pub)
-								.work (*work.generate (nano::work_version::work_1, previous, network_params.work.epoch_1))
-								.build ();
+										.previous (previous)
+										.destination (landing.pub)
+										.balance (balance)
+										.sign (genesis.prv, genesis.pub)
+										.work (*work.generate (nano::work_version::work_1, previous, network_params.work.epoch_1))
+										.build ();
 							previous = send.hash ();
 							std::string send_json;
 							send.serialize_json (send_json);
@@ -545,7 +545,7 @@ int main (int argc, char * const * argv)
 			}
 
 			nano::work_pool work{ network_params.network, std::numeric_limits<unsigned>::max (), pow_rate_limiter };
-			nano::change_block block (0, 0, nano::keypair ().prv, 0, 0);
+			nano::raw_change_block block{};
 			if (!result)
 			{
 				std::cerr << boost::str (boost::format ("Starting generation profiling. Difficulty: %1$#x (%2%x from base difficulty %3$#x)\n") % difficulty % nano::to_string (nano::difficulty::to_multiplier (difficulty, nano::work_thresholds::publish_full.base), 4) % nano::work_thresholds::publish_full.base);
@@ -553,7 +553,7 @@ int main (int argc, char * const * argv)
 				{
 					block.hashables.previous.qwords[0] += 1;
 					auto begin1 (std::chrono::high_resolution_clock::now ());
-					block.block_work_set (*work.generate (nano::work_version::work_1, block.root (), difficulty));
+					block.work = *work.generate (nano::work_version::work_1, block.root (), difficulty);
 					auto end1 (std::chrono::high_resolution_clock::now ());
 					std::cerr << boost::str (boost::format ("%|1$ 12d|\n") % std::chrono::duration_cast<std::chrono::microseconds> (end1 - begin1).count ());
 				}
@@ -670,13 +670,13 @@ int main (int argc, char * const * argv)
 								};
 							}
 							nano::work_pool work_pool{ network_params.network, 0, std::chrono::nanoseconds (0), opencl_work_func };
-							nano::change_block block (0, 0, nano::keypair ().prv, 0, 0);
+							nano::raw_change_block block{};
 							std::cerr << boost::str (boost::format ("Starting OpenCL generation profiling. Platform: %1%. Device: %2%. Threads: %3%. Difficulty: %4$#x (%5%x from base difficulty %6$#x)\n") % platform % device % threads % difficulty % nano::to_string (nano::difficulty::to_multiplier (difficulty, nano::work_thresholds::publish_full.base), 4) % nano::work_thresholds::publish_full.base);
 							for (uint64_t i (0); true; ++i)
 							{
 								block.hashables.previous.qwords[0] += 1;
 								auto begin1 (std::chrono::high_resolution_clock::now ());
-								block.block_work_set (*work_pool.generate (nano::work_version::work_1, block.root (), difficulty));
+								block.work = *work_pool.generate (nano::work_version::work_1, block.root (), difficulty);
 								auto end1 (std::chrono::high_resolution_clock::now ());
 								std::cerr << boost::str (boost::format ("%|1$ 12d|\n") % std::chrono::duration_cast<std::chrono::microseconds> (end1 - begin1).count ());
 							}
@@ -1869,7 +1869,7 @@ int main (int argc, char * const * argv)
 							{
 								std::cout << boost::str (boost::format ("%1% blocks retrieved") % count) << std::endl;
 							}
-							
+
 							node.node->block_processor.add (block->raw ());
 							if (block->type () == nano::block_type::state && block->previous ().is_zero () && source_node->ledger.is_epoch_link (block->link_field ().value ()))
 							{

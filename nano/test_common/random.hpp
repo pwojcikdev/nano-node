@@ -13,5 +13,5 @@ nano::block_hash random_hash ();
 nano::account random_account ();
 nano::qualified_root random_qualified_root ();
 nano::amount random_amount ();
-std::shared_ptr<nano::block> random_block ();
+nano::raw_block random_block ();
 }

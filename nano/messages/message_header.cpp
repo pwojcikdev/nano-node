@@ -223,7 +223,7 @@ std::size_t message_header::payload_length_bytes () const
 		}
 		case message_type::publish:
 		{
-			return nano::block::size (block_type ());
+			return nano::block_size (block_type ());
 		}
 		case message_type::confirm_ack:
 		{

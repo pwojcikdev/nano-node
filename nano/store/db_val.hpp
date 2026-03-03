@@ -11,7 +11,6 @@ namespace nano
 {
 class account_info;
 class account_info_v22;
-class block;
 class pending_info;
 class pending_key;
 class stored_block;
@@ -57,7 +56,6 @@ public:
 	db_val (nano::confirmation_height_info const &);
 	db_val (nano::block_info const &);
 	db_val (nano::endpoint_key const &);
-	db_val (std::shared_ptr<nano::block> const &);
 
 	explicit operator uint64_t () const;
 	explicit operator nano::uint128_union () const;
@@ -71,7 +69,6 @@ public:
 	explicit operator nano::confirmation_height_info () const;
 	explicit operator nano::block_info () const;
 	explicit operator nano::endpoint_key () const;
-	explicit operator std::shared_ptr<nano::block> () const;
 	explicit operator nano::amount () const;
 	explicit operator nano::block_hash () const;
 	explicit operator nano::public_key () const;
@@ -81,20 +78,11 @@ public:
 	explicit operator std::nullptr_t () const;
 	explicit operator nano::no_value () const;
 
-	template <typename Block>
-	auto convert_to_block () const -> std::shared_ptr<Block>;
-
 	template <typename T>
 	T convert_to () const
 	{
 		return static_cast<T> (*this);
 	}
-
-	explicit operator std::shared_ptr<nano::send_block> () const;
-	explicit operator std::shared_ptr<nano::receive_block> () const;
-	explicit operator std::shared_ptr<nano::open_block> () const;
-	explicit operator std::shared_ptr<nano::change_block> () const;
-	explicit operator std::shared_ptr<nano::state_block> () const;
 
 	auto data () const noexcept -> void *
 	{

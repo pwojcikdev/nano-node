@@ -393,11 +393,6 @@ bool nano::active_elections::erase (nano::qualified_root const & root)
 	}
 }
 
-bool nano::active_elections::erase (nano::block const & block)
-{
-	return erase (block.qualified_root ());
-}
-
 bool nano::active_elections::erase (nano::stored_block const & block)
 {
 	return erase (block.qualified_root ());
@@ -743,11 +738,6 @@ bool nano::active_elections::active (nano::qualified_root const & root_a) const
 {
 	nano::lock_guard<nano::mutex> lock{ mutex };
 	return index.exists (root_a);
-}
-
-bool nano::active_elections::active (nano::block const & block_a) const
-{
-	return active (block_a.qualified_root ());
 }
 
 bool nano::active_elections::active (nano::stored_block const & block_a) const

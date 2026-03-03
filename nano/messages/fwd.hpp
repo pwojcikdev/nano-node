@@ -32,6 +32,5 @@ class asc_pull_ack;
 
 namespace nano
 {
-using block_uniquer = nano::uniquer<nano::uint256_union, nano::block>;
 using vote_uniquer = nano::uniquer<nano::block_hash, nano::vote>;
 }

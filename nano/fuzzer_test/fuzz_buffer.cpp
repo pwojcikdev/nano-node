@@ -68,7 +68,7 @@ void fuzz_message_parser (uint8_t const * Data, size_t Size)
 	}
 
 	fuzz_visitor visitor;
-	nano::messages::message_parser parser (node0->network.filter, node0->block_uniquer, node0->vote_uniquer, visitor, node0->work);
+	nano::messages::message_parser parser (node0->network.filter, node0->vote_uniquer, visitor, node0->work);
 	parser.deserialize_buffer (Data, Size);
 }
 

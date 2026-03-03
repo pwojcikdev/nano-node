@@ -253,8 +253,6 @@ char const * nano::mutex_identifier (mutexes mutex)
 			return "active";
 		case mutexes::block_processor:
 			return "block_processor";
-		case mutexes::block_uniquer:
-			return "block_uniquer";
 		case mutexes::blockstore_cache:
 			return "blockstore_cache";
 		case mutexes::election_winner_details:

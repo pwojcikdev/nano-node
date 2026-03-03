@@ -204,7 +204,7 @@ TEST (vote_uniquer, cleanup)
 	vote2.reset ();
 	vote4.reset ();
 	ASSERT_EQ (2, uniquer.size ());
-	std::this_thread::sleep_for (nano::block_uniquer::cleanup_cutoff);
+	std::this_thread::sleep_for (nano::vote_uniquer::cleanup_cutoff);
 	auto vote5 = uniquer.unique (vote1);
 	ASSERT_EQ (1, uniquer.size ());
 }

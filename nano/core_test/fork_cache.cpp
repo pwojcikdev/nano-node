@@ -8,6 +8,22 @@
 
 #include <map>
 
+namespace
+{
+nano::raw_block make_block (nano::account const & account, nano::block_hash const & previous, nano::account const & representative, nano::amount const & balance, nano::link const & link, nano::raw_key const & prv, nano::public_key const & pub)
+{
+	return nano::state_block_builder ()
+		   .account (account)
+		   .previous (previous)
+		   .representative (representative)
+		   .balance (balance)
+		   .link (link)
+		   .sign (prv, pub)
+		   .work (0)
+		   .build ();
+}
+}
+
 TEST (fork_cache, construction)
 {
 	nano::test::system system;
@@ -26,16 +42,16 @@ TEST (fork_cache, one)
 	nano::fork_cache_config cfg;
 	nano::fork_cache fork_cache{ cfg, system.stats };
 
-	auto block = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
-	nano::qualified_root root = block->qualified_root ();
+	auto block = make_block (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
+	nano::qualified_root root = block.qualified_root ();
 
-	fork_cache.put (nano::to_raw (*block));
+	fork_cache.put (block);
 	ASSERT_EQ (1, fork_cache.size ());
 	ASSERT_TRUE (fork_cache.contains (root));
 
 	auto blocks = fork_cache.get (root);
 	ASSERT_EQ (1, blocks.size ());
-	ASSERT_EQ (nano::to_raw (*block), blocks.front ());
+	ASSERT_EQ (block, blocks.front ());
 }
 
 /*
@@ -48,17 +64,17 @@ TEST (fork_cache, multiple_forks)
 	nano::fork_cache fork_cache{ cfg, system.stats };
 
 	// Create several blocks with the same qualified root (same previous and account)
-	auto block1 = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
-	auto block2 = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio * 2, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
-	auto block3 = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio * 3, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
+	auto block1 = make_block (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
+	auto block2 = make_block (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio * 2, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
+	auto block3 = make_block (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio * 3, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
 
-	nano::qualified_root root = block1->qualified_root ();
-	ASSERT_EQ (root, block2->qualified_root ());
-	ASSERT_EQ (root, block3->qualified_root ());
+	nano::qualified_root root = block1.qualified_root ();
+	ASSERT_EQ (root, block2.qualified_root ());
+	ASSERT_EQ (root, block3.qualified_root ());
 
-	fork_cache.put (nano::to_raw (*block1));
-	fork_cache.put (nano::to_raw (*block2));
-	fork_cache.put (nano::to_raw (*block3));
+	fork_cache.put (block1);
+	fork_cache.put (block2);
+	fork_cache.put (block3);
 
 	ASSERT_EQ (1, fork_cache.size ()); // Only one root in the cache
 	ASSERT_TRUE (fork_cache.contains (root));
@@ -67,9 +83,9 @@ TEST (fork_cache, multiple_forks)
 	ASSERT_EQ (3, blocks.size ());
 
 	// Check if all blocks are present
-	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block1)) != blocks.end ());
-	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block2)) != blocks.end ());
-	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block3)) != blocks.end ());
+	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), block1) != blocks.end ());
+	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), block2) != blocks.end ());
+	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), block3) != blocks.end ());
 }
 
 /*
@@ -82,26 +98,26 @@ TEST (fork_cache, multiple_roots)
 	nano::fork_cache fork_cache{ cfg, system.stats };
 
 	// Create blocks with different roots
-	auto block1 = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::test::random_hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
+	auto block1 = make_block (nano::dev::genesis_key.pub, nano::test::random_hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
 
 	nano::keypair key2;
-	auto block2 = std::make_shared<nano::state_block> (key2.pub, nano::test::random_hash (), key2.pub, nano::Knano_ratio, nano::test::random_hash (), key2.prv, key2.pub, 0);
+	auto block2 = make_block (key2.pub, nano::test::random_hash (), key2.pub, nano::Knano_ratio, nano::test::random_hash (), key2.prv, key2.pub);
 
 	nano::keypair key3;
-	auto block3 = std::make_shared<nano::state_block> (key3.pub, nano::test::random_hash (), key3.pub, nano::Knano_ratio, nano::test::random_hash (), key3.prv, key3.pub, 0);
+	auto block3 = make_block (key3.pub, nano::test::random_hash (), key3.pub, nano::Knano_ratio, nano::test::random_hash (), key3.prv, key3.pub);
 
-	nano::qualified_root root1 = block1->qualified_root ();
-	nano::qualified_root root2 = block2->qualified_root ();
-	nano::qualified_root root3 = block3->qualified_root ();
+	nano::qualified_root root1 = block1.qualified_root ();
+	nano::qualified_root root2 = block2.qualified_root ();
+	nano::qualified_root root3 = block3.qualified_root ();
 
 	// Make sure roots are different
 	ASSERT_NE (root1, root2);
 	ASSERT_NE (root1, root3);
 	ASSERT_NE (root2, root3);
 
-	fork_cache.put (nano::to_raw (*block1));
-	fork_cache.put (nano::to_raw (*block2));
-	fork_cache.put (nano::to_raw (*block3));
+	fork_cache.put (block1);
+	fork_cache.put (block2);
+	fork_cache.put (block3);
 
 	ASSERT_EQ (3, fork_cache.size ());
 	ASSERT_TRUE (fork_cache.contains (root1));
@@ -110,15 +126,15 @@ TEST (fork_cache, multiple_roots)
 
 	auto blocks1 = fork_cache.get (root1);
 	ASSERT_EQ (1, blocks1.size ());
-	ASSERT_EQ (nano::to_raw (*block1), blocks1.front ());
+	ASSERT_EQ (block1, blocks1.front ());
 
 	auto blocks2 = fork_cache.get (root2);
 	ASSERT_EQ (1, blocks2.size ());
-	ASSERT_EQ (nano::to_raw (*block2), blocks2.front ());
+	ASSERT_EQ (block2, blocks2.front ());
 
 	auto blocks3 = fork_cache.get (root3);
 	ASSERT_EQ (1, blocks3.size ());
-	ASSERT_EQ (nano::to_raw (*block3), blocks3.front ());
+	ASSERT_EQ (block3, blocks3.front ());
 }
 
 /*
@@ -130,24 +146,24 @@ TEST (fork_cache, duplicate_block)
 	nano::fork_cache_config cfg;
 	nano::fork_cache fork_cache{ cfg, system.stats };
 
-	auto block = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
-	nano::qualified_root root = block->qualified_root ();
+	auto block = make_block (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
+	nano::qualified_root root = block.qualified_root ();
 
 	// Insert the same block twice
-	fork_cache.put (nano::to_raw (*block));
+	fork_cache.put (block);
 	ASSERT_EQ (1, fork_cache.size ());
 	ASSERT_EQ (1, fork_cache.get (root).size ());
 
 	// Check the stats for insert count
 	ASSERT_EQ (1, system.stats.count (nano::stat::type::fork_cache, nano::stat::detail::insert));
 
-	fork_cache.put (nano::to_raw (*block));
+	fork_cache.put (block);
 	ASSERT_EQ (1, fork_cache.size ());
 
 	// Block should only be added once to the deque
 	auto blocks = fork_cache.get (root);
 	ASSERT_EQ (1, blocks.size ());
-	ASSERT_EQ (nano::to_raw (*block), blocks.front ());
+	ASSERT_EQ (block, blocks.front ());
 }
 
 /*
@@ -161,25 +177,25 @@ TEST (fork_cache, overfill_per_root)
 	nano::fork_cache fork_cache{ cfg, system.stats };
 
 	// Create several blocks with the same qualified root
-	auto block1 = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
-	auto block2 = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio * 2, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
-	auto block3 = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio * 3, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
+	auto block1 = make_block (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
+	auto block2 = make_block (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio * 2, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
+	auto block3 = make_block (nano::dev::genesis_key.pub, nano::dev::genesis.hash (), nano::dev::genesis_key.pub, nano::Knano_ratio * 3, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
 
-	nano::qualified_root root = block1->qualified_root ();
+	nano::qualified_root root = block1.qualified_root ();
 
 	// Insert all three blocks
-	fork_cache.put (nano::to_raw (*block1));
-	fork_cache.put (nano::to_raw (*block2));
-	fork_cache.put (nano::to_raw (*block3));
+	fork_cache.put (block1);
+	fork_cache.put (block2);
+	fork_cache.put (block3);
 
 	ASSERT_EQ (1, fork_cache.size ());
 	auto blocks = fork_cache.get (root);
 	ASSERT_EQ (2, blocks.size ()); // Only 2 blocks should be kept
 
 	// The oldest block (block1) should have been removed
-	ASSERT_FALSE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block1)) != blocks.end ());
-	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block2)) != blocks.end ());
-	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), nano::to_raw (*block3)) != blocks.end ());
+	ASSERT_FALSE (std::find (blocks.begin (), blocks.end (), block1) != blocks.end ());
+	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), block2) != blocks.end ());
+	ASSERT_TRUE (std::find (blocks.begin (), blocks.end (), block3) != blocks.end ());
 }
 
 /*
@@ -193,17 +209,17 @@ TEST (fork_cache, overfill_total)
 	nano::fork_cache fork_cache{ cfg, system.stats };
 
 	// Create blocks with different roots
-	auto block1 = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, nano::test::random_hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
+	auto block1 = make_block (nano::dev::genesis_key.pub, nano::test::random_hash (), nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
 
 	nano::keypair key2;
-	auto block2 = std::make_shared<nano::state_block> (key2.pub, nano::test::random_hash (), key2.pub, nano::Knano_ratio, nano::test::random_hash (), key2.prv, key2.pub, 0);
+	auto block2 = make_block (key2.pub, nano::test::random_hash (), key2.pub, nano::Knano_ratio, nano::test::random_hash (), key2.prv, key2.pub);
 
 	nano::keypair key3;
-	auto block3 = std::make_shared<nano::state_block> (key3.pub, nano::test::random_hash (), key3.pub, nano::Knano_ratio, nano::test::random_hash (), key3.prv, key3.pub, 0);
+	auto block3 = make_block (key3.pub, nano::test::random_hash (), key3.pub, nano::Knano_ratio, nano::test::random_hash (), key3.prv, key3.pub);
 
-	nano::qualified_root root1 = block1->qualified_root ();
-	nano::qualified_root root2 = block2->qualified_root ();
-	nano::qualified_root root3 = block3->qualified_root ();
+	nano::qualified_root root1 = block1.qualified_root ();
+	nano::qualified_root root2 = block2.qualified_root ();
+	nano::qualified_root root3 = block3.qualified_root ();
 
 	// Make sure roots are different
 	ASSERT_NE (root1, root2);
@@ -211,9 +227,9 @@ TEST (fork_cache, overfill_total)
 	ASSERT_NE (root2, root3);
 
 	// Insert all three blocks
-	fork_cache.put (nano::to_raw (*block1));
-	fork_cache.put (nano::to_raw (*block2));
-	fork_cache.put (nano::to_raw (*block3));
+	fork_cache.put (block1);
+	fork_cache.put (block2);
+	fork_cache.put (block3);
 
 	ASSERT_EQ (2, fork_cache.size ()); // Only 2 roots should be kept
 
@@ -236,26 +252,26 @@ TEST (fork_cache, complex_scenario)
 
 	// Create multiple blocks for first root
 	auto const previous1 = nano::test::random_hash ();
-	auto block1a = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, previous1, nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
-	auto block1b = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, previous1, nano::dev::genesis_key.pub, nano::Knano_ratio * 2, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
-	auto block1c = std::make_shared<nano::state_block> (nano::dev::genesis_key.pub, previous1, nano::dev::genesis_key.pub, nano::Knano_ratio * 3, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub, 0);
+	auto block1a = make_block (nano::dev::genesis_key.pub, previous1, nano::dev::genesis_key.pub, nano::Knano_ratio, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
+	auto block1b = make_block (nano::dev::genesis_key.pub, previous1, nano::dev::genesis_key.pub, nano::Knano_ratio * 2, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
+	auto block1c = make_block (nano::dev::genesis_key.pub, previous1, nano::dev::genesis_key.pub, nano::Knano_ratio * 3, nano::test::random_hash (), nano::dev::genesis_key.prv, nano::dev::genesis_key.pub);
 
-	nano::qualified_root root1 = block1a->qualified_root ();
+	nano::qualified_root root1 = block1a.qualified_root ();
 
 	// Create blocks for second root
 	auto const previous2 = nano::test::random_hash ();
 	nano::keypair key2;
-	auto block2a = std::make_shared<nano::state_block> (key2.pub, previous2, key2.pub, nano::Knano_ratio, nano::test::random_hash (), key2.prv, key2.pub, 0);
-	auto block2b = std::make_shared<nano::state_block> (key2.pub, previous2, key2.pub, nano::Knano_ratio * 2, nano::test::random_hash (), key2.prv, key2.pub, 0);
+	auto block2a = make_block (key2.pub, previous2, key2.pub, nano::Knano_ratio, nano::test::random_hash (), key2.prv, key2.pub);
+	auto block2b = make_block (key2.pub, previous2, key2.pub, nano::Knano_ratio * 2, nano::test::random_hash (), key2.prv, key2.pub);
 
-	nano::qualified_root root2 = block2a->qualified_root ();
+	nano::qualified_root root2 = block2a.qualified_root ();
 
 	// Create block for third root
 	nano::keypair key3;
 	auto const previous3 = nano::test::random_hash ();
-	auto block3 = std::make_shared<nano::state_block> (key3.pub, previous3, key3.pub, nano::Knano_ratio, nano::test::random_hash (), key3.prv, key3.pub, 0);
+	auto block3 = make_block (key3.pub, previous3, key3.pub, nano::Knano_ratio, nano::test::random_hash (), key3.prv, key3.pub);
 
-	nano::qualified_root root3 = block3->qualified_root ();
+	nano::qualified_root root3 = block3.qualified_root ();
 
 	// Make sure roots are different
 	ASSERT_NE (root1, root2);
@@ -263,21 +279,21 @@ TEST (fork_cache, complex_scenario)
 	ASSERT_NE (root2, root3);
 
 	// Insert blocks for first root
-	fork_cache.put (nano::to_raw (*block1a));
-	fork_cache.put (nano::to_raw (*block1b));
-	fork_cache.put (nano::to_raw (*block1c));
+	fork_cache.put (block1a);
+	fork_cache.put (block1b);
+	fork_cache.put (block1c);
 
 	// First root should have max_forks_per_root=2 blocks, with the oldest dropped
 	ASSERT_EQ (1, fork_cache.size ());
 	auto blocks1 = fork_cache.get (root1);
 	ASSERT_EQ (2, blocks1.size ());
-	ASSERT_FALSE (std::find (blocks1.begin (), blocks1.end (), nano::to_raw (*block1a)) != blocks1.end ()); // Oldest should be dropped
-	ASSERT_TRUE (std::find (blocks1.begin (), blocks1.end (), nano::to_raw (*block1b)) != blocks1.end ());
-	ASSERT_TRUE (std::find (blocks1.begin (), blocks1.end (), nano::to_raw (*block1c)) != blocks1.end ());
+	ASSERT_FALSE (std::find (blocks1.begin (), blocks1.end (), block1a) != blocks1.end ()); // Oldest should be dropped
+	ASSERT_TRUE (std::find (blocks1.begin (), blocks1.end (), block1b) != blocks1.end ());
+	ASSERT_TRUE (std::find (blocks1.begin (), blocks1.end (), block1c) != blocks1.end ());
 
 	// Insert blocks for second root
-	fork_cache.put (nano::to_raw (*block2a));
-	fork_cache.put (nano::to_raw (*block2b));
+	fork_cache.put (block2a);
+	fork_cache.put (block2b);
 
 	// Still within max_size=2, so both roots should be present
 	ASSERT_EQ (2, fork_cache.size ());
@@ -288,7 +304,7 @@ TEST (fork_cache, complex_scenario)
 	ASSERT_EQ (2, blocks2.size ());
 
 	// Insert block for third root
-	fork_cache.put (nano::to_raw (*block3));
+	fork_cache.put (block3);
 
 	// Should exceed max_size, oldest root (root1) should be dropped
 	ASSERT_EQ (2, fork_cache.size ());

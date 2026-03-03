@@ -1,4 +1,5 @@
 #include <nano/crypto_lib/random_pool.hpp>
+#include <nano/lib/blockbuilders.hpp>
 #include <nano/test_common/random.hpp>
 
 nano::hash_or_account nano::test::random_hash_or_account ()
@@ -30,17 +31,18 @@ nano::amount nano::test::random_amount ()
 	return result;
 }
 
-std::shared_ptr<nano::block> nano::test::random_block ()
+nano::raw_block nano::test::random_block ()
 {
 	nano::keypair key;
-	auto block = std::make_shared<nano::state_block> (
-	nano::test::random_account (),
-	nano::test::random_hash (),
-	nano::test::random_account (),
-	nano::test::random_amount (),
-	nano::test::random_hash (),
-	key.prv,
-	key.pub,
-	0);
-	return block;
+	nano::block_builder builder;
+	return builder
+	.state ()
+	.account (nano::test::random_account ())
+	.previous (nano::test::random_hash ())
+	.representative (nano::test::random_account ())
+	.balance (nano::test::random_amount ())
+	.link (nano::test::random_hash ())
+	.sign (key.prv, key.pub)
+	.work (0)
+	.build ();
 }

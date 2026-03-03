@@ -3,7 +3,6 @@
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
-#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/jsonconfig.hpp>
 #include <nano/lib/rpcconfig.hpp>
 #include <nano/lib/thread_runner.hpp>
@@ -3948,9 +3947,7 @@ TEST (rpc, json_block_input)
 	request.add_child ("block", json);
 	auto response (wait_response (system, rpc_ctx, request, 10s));
 
-	bool json_error{ false };
-	nano::state_block block (json_error, response.get_child ("block"));
-	ASSERT_FALSE (json_error);
+	auto block = nano::deserialize_raw_block_json (response.get_child ("block"));
 
 	ASSERT_FALSE (nano::validate_message (key.pub, send.hash (), block.block_signature ()));
 	ASSERT_NE (block.block_signature (), send.block_signature ());
@@ -3982,9 +3979,8 @@ TEST (rpc, json_block_output)
 	auto response (wait_response (system, rpc_ctx, request));
 
 	// Make sure contents contains a valid JSON subtree instread of stringified json
-	bool json_error{ false };
-	nano::send_block send_from_json (json_error, response.get_child ("contents"));
-	ASSERT_FALSE (json_error);
+	auto send_from_json = nano::deserialize_raw_block_json (response.get_child ("contents"));
+	ASSERT_EQ (nano::block_type::send, send_from_json.type ());
 }
 
 TEST (rpc, blocks_info)
@@ -4311,10 +4307,10 @@ TEST (rpc, block_info_pruning)
 	ASSERT_EQ (nano::dev::genesis_key.pub.to_account (), account_text);
 	boost::optional<std::string> amount (response2.get_optional<std::string> ("amount"));
 	ASSERT_FALSE (amount.is_initialized ()); // Cannot calculate amount
-	bool json_error{ false };
-	nano::receive_block receive_from_json (json_error, response2.get_child ("contents"));
-	ASSERT_FALSE (json_error);
-	ASSERT_EQ (nano::to_legacy (receive1)->full_hash (), receive_from_json.full_hash ());
+	auto receive_from_json = nano::deserialize_raw_block_json (response2.get_child ("contents"));
+	ASSERT_EQ (receive1.hash (), receive_from_json.hash ());
+	ASSERT_EQ (receive1.block_signature (), receive_from_json.block_signature ());
+	ASSERT_EQ (receive1.block_work (), receive_from_json.block_work ());
 	std::string balance_text (response2.get<std::string> ("balance"));
 	ASSERT_EQ (nano::dev::constants.genesis_amount.convert_to<std::string> (), balance_text);
 	ASSERT_TRUE (response2.get<bool> ("confirmed"));
@@ -4629,8 +4625,8 @@ TEST (rpc, block_create)
 	boost::property_tree::ptree block_l;
 	std::stringstream block_stream (send_text);
 	boost::property_tree::read_json (block_stream, block_l);
-	auto send_block (nano::deserialize_block_json (block_l));
-	ASSERT_EQ (send.hash (), send_block->hash ());
+	auto send_block (nano::deserialize_raw_block_json (block_l));
+	ASSERT_EQ (send.hash (), send_block.hash ());
 	ASSERT_EQ (nano::block_status::progress, node1->process (send));
 	boost::property_tree::ptree request1;
 	request1.put ("action", "block_create");
@@ -4646,8 +4642,8 @@ TEST (rpc, block_create)
 	auto open_text (response1.get<std::string> ("block"));
 	std::stringstream block_stream1 (open_text);
 	boost::property_tree::read_json (block_stream1, block_l);
-	auto open_block (nano::deserialize_block_json (block_l));
-	ASSERT_EQ (open.hash (), open_block->hash ());
+	auto open_block (nano::deserialize_raw_block_json (block_l));
+	ASSERT_EQ (open.hash (), open_block.hash ());
 	ASSERT_EQ (nano::block_status::progress, node1->process (open));
 	request1.put ("representative", key.pub.to_account ());
 	auto response2 (wait_response (system, rpc_ctx, request1));
@@ -4669,8 +4665,8 @@ TEST (rpc, block_create)
 	auto change_text (response4.get<std::string> ("block"));
 	std::stringstream block_stream4 (change_text);
 	boost::property_tree::read_json (block_stream4, block_l);
-	auto change_block (nano::deserialize_block_json (block_l));
-	ASSERT_EQ (change.hash (), change_block->hash ());
+	auto change_block (nano::deserialize_raw_block_json (block_l));
+	ASSERT_EQ (change.hash (), change_block.hash ());
 	ASSERT_EQ (nano::block_status::progress, node1->process (change));
 	auto send2 = builder
 				 .send ()
@@ -4694,9 +4690,9 @@ TEST (rpc, block_create)
 	auto receive_text (response5.get<std::string> ("block"));
 	std::stringstream block_stream5 (change_text);
 	boost::property_tree::read_json (block_stream5, block_l);
-	auto receive_block (nano::deserialize_block_json (block_l));
-	ASSERT_EQ (receive_hash, receive_block->hash ().to_string ());
-	node1->process_active (nano::to_raw (*receive_block));
+	auto receive_block (nano::deserialize_raw_block_json (block_l));
+	ASSERT_EQ (receive_hash, receive_block.hash ().to_string ());
+	node1->process_active (receive_block);
 	latest = node1->latest (key.pub);
 	ASSERT_EQ (receive_hash, latest.to_string ());
 }
@@ -4724,11 +4720,10 @@ TEST (rpc, block_create_state)
 	std::stringstream block_stream (state_text);
 	boost::property_tree::ptree block_l;
 	boost::property_tree::read_json (block_stream, block_l);
-	auto state_block (nano::deserialize_block_json (block_l));
-	ASSERT_NE (nullptr, state_block);
-	ASSERT_EQ (nano::block_type::state, state_block->type ());
-	ASSERT_EQ (state_hash, state_block->hash ().to_string ());
-	auto process_result (node->process (nano::to_raw (*state_block)));
+	auto state_block (nano::deserialize_raw_block_json (block_l));
+	ASSERT_EQ (nano::block_type::state, state_block.type ());
+	ASSERT_EQ (state_hash, state_block.hash ().to_string ());
+	auto process_result (node->process (state_block));
 	ASSERT_EQ (nano::block_status::progress, process_result);
 }
 
@@ -4757,16 +4752,15 @@ TEST (rpc, block_create_state_open)
 	std::stringstream block_stream (state_text);
 	boost::property_tree::ptree block_l;
 	boost::property_tree::read_json (block_stream, block_l);
-	auto state_block (nano::deserialize_block_json (block_l));
-	ASSERT_NE (nullptr, state_block);
-	ASSERT_EQ (nano::block_type::state, state_block->type ());
-	ASSERT_EQ (state_hash, state_block->hash ().to_string ());
-	auto difficulty (nano::dev::network_params.work.difficulty (*state_block));
-	ASSERT_GT (difficulty, nano::dev::network_params.work.threshold (state_block->work_version (), nano::block_details (nano::epoch::epoch_0, false, true, false)));
+	auto state_block (nano::deserialize_raw_block_json (block_l));
+	ASSERT_EQ (nano::block_type::state, state_block.type ());
+	ASSERT_EQ (state_hash, state_block.hash ().to_string ());
+	auto difficulty (nano::dev::network_params.work.difficulty (state_block));
+	ASSERT_GT (difficulty, nano::dev::network_params.work.threshold (state_block.work_version (), nano::block_details (nano::epoch::epoch_0, false, true, false)));
 	ASSERT_TRUE (node->latest (key.pub).is_zero ());
-	auto process_result (node->process (nano::to_raw (*state_block)));
+	auto process_result (node->process (state_block));
 	ASSERT_EQ (nano::block_status::progress, process_result);
-	auto stored = node->ledger.any.block_get (node->ledger.tx_begin_read (), state_block->hash ());
+	auto stored = node->ledger.any.block_get (node->ledger.tx_begin_read (), state_block.hash ());
 	ASSERT_TRUE (stored);
 	ASSERT_EQ (stored->sideband ().details.epoch, nano::epoch::epoch_0);
 	ASSERT_TRUE (stored->is_receive ());
@@ -4806,9 +4800,8 @@ TEST (rpc, block_create_state_request_work)
 		boost::property_tree::ptree block_l;
 		std::stringstream block_stream (response.get<std::string> ("block"));
 		boost::property_tree::read_json (block_stream, block_l);
-		auto block (nano::deserialize_block_json (block_l));
-		ASSERT_NE (nullptr, block);
-		ASSERT_GE (nano::dev::network_params.work.difficulty (*block), node->default_difficulty (nano::work_version::work_1));
+		auto block (nano::deserialize_raw_block_json (block_l));
+		ASSERT_GE (nano::dev::network_params.work.difficulty (block), node->default_difficulty (nano::work_version::work_1));
 	}
 }
 
@@ -4838,16 +4831,15 @@ TEST (rpc, block_create_open_epoch_v2)
 	std::stringstream block_stream (state_text);
 	boost::property_tree::ptree block_l;
 	boost::property_tree::read_json (block_stream, block_l);
-	auto state_block (nano::deserialize_block_json (block_l));
-	ASSERT_NE (nullptr, state_block);
-	ASSERT_EQ (nano::block_type::state, state_block->type ());
-	ASSERT_EQ (state_hash, state_block->hash ().to_string ());
-	auto difficulty (nano::dev::network_params.work.difficulty (*state_block));
-	ASSERT_GT (difficulty, nano::dev::network_params.work.threshold (state_block->work_version (), nano::block_details (nano::epoch::epoch_2, false, true, false)));
+	auto state_block (nano::deserialize_raw_block_json (block_l));
+	ASSERT_EQ (nano::block_type::state, state_block.type ());
+	ASSERT_EQ (state_hash, state_block.hash ().to_string ());
+	auto difficulty (nano::dev::network_params.work.difficulty (state_block));
+	ASSERT_GT (difficulty, nano::dev::network_params.work.threshold (state_block.work_version (), nano::block_details (nano::epoch::epoch_2, false, true, false)));
 	ASSERT_TRUE (node->latest (key.pub).is_zero ());
-	auto process_result (node->process (nano::to_raw (*state_block)));
+	auto process_result (node->process (state_block));
 	ASSERT_EQ (nano::block_status::progress, process_result);
-	auto stored = node->ledger.any.block_get (node->ledger.tx_begin_read (), state_block->hash ());
+	auto stored = node->ledger.any.block_get (node->ledger.tx_begin_read (), state_block.hash ());
 	ASSERT_TRUE (stored);
 	ASSERT_EQ (stored->sideband ().details.epoch, nano::epoch::epoch_2);
 	ASSERT_TRUE (stored->is_receive ());
@@ -4893,15 +4885,14 @@ TEST (rpc, block_create_receive_epoch_v2)
 	std::stringstream block_stream (state_text);
 	boost::property_tree::ptree block_l;
 	boost::property_tree::read_json (block_stream, block_l);
-	auto state_block (nano::deserialize_block_json (block_l));
-	ASSERT_NE (nullptr, state_block);
-	ASSERT_EQ (nano::block_type::state, state_block->type ());
-	ASSERT_EQ (state_hash, state_block->hash ().to_string ());
-	auto difficulty (nano::dev::network_params.work.difficulty (*state_block));
-	ASSERT_GT (difficulty, nano::dev::network_params.work.threshold (state_block->work_version (), nano::block_details (nano::epoch::epoch_2, false, true, false)));
-	auto process_result (node->process (nano::to_raw (*state_block)));
+	auto state_block (nano::deserialize_raw_block_json (block_l));
+	ASSERT_EQ (nano::block_type::state, state_block.type ());
+	ASSERT_EQ (state_hash, state_block.hash ().to_string ());
+	auto difficulty (nano::dev::network_params.work.difficulty (state_block));
+	ASSERT_GT (difficulty, nano::dev::network_params.work.threshold (state_block.work_version (), nano::block_details (nano::epoch::epoch_2, false, true, false)));
+	auto process_result (node->process (state_block));
 	ASSERT_EQ (nano::block_status::progress, process_result);
-	auto stored = node->ledger.any.block_get (node->ledger.tx_begin_read (), state_block->hash ());
+	auto stored = node->ledger.any.block_get (node->ledger.tx_begin_read (), state_block.hash ());
 	ASSERT_TRUE (stored);
 	ASSERT_EQ (stored->sideband ().details.epoch, nano::epoch::epoch_2);
 	ASSERT_TRUE (stored->is_receive ());
@@ -4946,15 +4937,14 @@ TEST (rpc, block_create_send_epoch_v2)
 	std::stringstream block_stream (state_text);
 	boost::property_tree::ptree block_l;
 	boost::property_tree::read_json (block_stream, block_l);
-	auto state_block (nano::deserialize_block_json (block_l));
-	ASSERT_NE (nullptr, state_block);
-	ASSERT_EQ (nano::block_type::state, state_block->type ());
-	ASSERT_EQ (state_hash, state_block->hash ().to_string ());
-	auto difficulty (nano::dev::network_params.work.difficulty (*state_block));
-	ASSERT_GT (difficulty, nano::dev::network_params.work.threshold (state_block->work_version (), nano::block_details (nano::epoch::epoch_2, true, false, false)));
-	auto process_result (node->process (nano::to_raw (*state_block)));
+	auto state_block (nano::deserialize_raw_block_json (block_l));
+	ASSERT_EQ (nano::block_type::state, state_block.type ());
+	ASSERT_EQ (state_hash, state_block.hash ().to_string ());
+	auto difficulty (nano::dev::network_params.work.difficulty (state_block));
+	ASSERT_GT (difficulty, nano::dev::network_params.work.threshold (state_block.work_version (), nano::block_details (nano::epoch::epoch_2, true, false, false)));
+	auto process_result (node->process (state_block));
 	ASSERT_EQ (nano::block_status::progress, process_result);
-	auto stored = node->ledger.any.block_get (node->ledger.tx_begin_read (), state_block->hash ());
+	auto stored = node->ledger.any.block_get (node->ledger.tx_begin_read (), state_block.hash ());
 	ASSERT_TRUE (stored);
 	ASSERT_EQ (stored->sideband ().details.epoch, nano::epoch::epoch_2);
 	ASSERT_TRUE (stored->is_send ());
@@ -5750,10 +5740,10 @@ TEST (rpc, sign_block)
 	boost::property_tree::ptree block_l;
 	std::stringstream block_stream (contents);
 	boost::property_tree::read_json (block_stream, block_l);
-	auto block (nano::deserialize_block_json (block_l));
-	ASSERT_FALSE (nano::validate_message (key.pub, send.hash (), block->block_signature ()));
-	ASSERT_NE (block->block_signature (), send.block_signature ());
-	ASSERT_EQ (block->hash (), send.hash ());
+	auto block (nano::deserialize_raw_block_json (block_l));
+	ASSERT_FALSE (nano::validate_message (key.pub, send.hash (), block.block_signature ()));
+	ASSERT_NE (block.block_signature (), send.block_signature ());
+	ASSERT_EQ (block.hash (), send.hash ());
 }
 
 TEST (rpc, memory_stats)

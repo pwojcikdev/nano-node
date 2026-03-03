@@ -1,5 +1,4 @@
 #include <nano/lib/blocks.hpp>
-#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
@@ -25,7 +24,8 @@ namespace
 {
 struct migration_test_data
 {
-	std::vector<std::shared_ptr<nano::block>> blocks;
+	std::vector<nano::raw_block> blocks;
+	std::vector<nano::block_sideband> sidebands;
 	std::map<nano::account, nano::account_info> accounts;
 	std::map<nano::pending_key, nano::pending_info> pending;
 	std::map<nano::account, nano::uint128_t> rep_weights;
@@ -56,26 +56,25 @@ migration_test_data populate_ledger_for_migration (nano::store::ledger_store & s
 	auto previous = nano::dev::genesis.hash ();
 	for (size_t i = 0; i < num_blocks; ++i)
 	{
-		auto raw = nano::state_block_builder ()
-				   .account (nano::dev::genesis_key.pub)
-				   .previous (previous)
-				   .representative (nano::dev::genesis_key.pub)
-				   .balance (nano::dev::constants.genesis_amount - (i + 1) * 1000)
-				   .link (nano::account (i + 1))
-				   .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				   .work (*pool.generate (previous))
-				   .build ();
-		auto block = nano::to_legacy (raw);
-		data.blocks.push_back (block);
-		previous = block->hash ();
+		auto block = nano::state_block_builder ()
+					 .account (nano::dev::genesis_key.pub)
+					 .previous (previous)
+					 .representative (nano::dev::genesis_key.pub)
+					 .balance (nano::dev::constants.genesis_amount - (i + 1) * 1000)
+					 .link (nano::account (i + 1))
+					 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					 .work (*pool.generate (previous))
+					 .build ();
+		previous = block.hash ();
+		data.blocks.push_back (std::move (block));
 	}
 
 	// Populate accounts
 	for (size_t i = 0; i < num_accounts; ++i)
 	{
 		nano::account acc{ i + 1 };
-		nano::account_info info{ data.blocks[0]->hash (), nano::dev::genesis_key.pub,
-			data.blocks[0]->hash (), 1000, nano::seconds_since_epoch (),
+		nano::account_info info{ data.blocks[0].hash (), nano::dev::genesis_key.pub,
+			data.blocks[0].hash (), 1000, nano::seconds_since_epoch (),
 			1, nano::epoch::epoch_0 };
 		data.accounts[acc] = info;
 	}
@@ -83,7 +82,7 @@ migration_test_data populate_ledger_for_migration (nano::store::ledger_store & s
 	// Populate pending
 	for (size_t i = 0; i < num_pending; ++i)
 	{
-		nano::pending_key key{ nano::account (i + 1), data.blocks[i]->hash () };
+		nano::pending_key key{ nano::account (i + 1), data.blocks[i].hash () };
 		nano::pending_info info{ nano::dev::genesis_key.pub, 1000, nano::epoch::epoch_0 };
 		data.pending[key] = info;
 	}
@@ -119,7 +118,7 @@ migration_test_data populate_ledger_for_migration (nano::store::ledger_store & s
 	for (size_t i = 0; i < num_confirmation_heights; ++i)
 	{
 		nano::account acc{ i + 1 };
-		data.confirmation_heights[acc] = { i + 1, data.blocks[i % data.blocks.size ()]->hash () };
+		data.confirmation_heights[acc] = { i + 1, data.blocks[i % data.blocks.size ()].hash () };
 	}
 
 	// Populate final_votes
@@ -135,12 +134,14 @@ migration_test_data populate_ledger_for_migration (nano::store::ledger_store & s
 
 		for (size_t i = 0; i < data.blocks.size (); ++i)
 		{
-			data.blocks[i]->sideband_set (nano::block_sideband{
-			nano::dev::genesis_key.pub, 0,
-			nano::dev::constants.genesis_amount - (i + 1) * 1000,
-			i + 2, nano::seconds_since_epoch (), nano::epoch::epoch_0,
-			false, false, false, nano::epoch::epoch_0 });
-			store.block.put (tx, data.blocks[i]->hash (), *data.blocks[i]);
+			nano::block_sideband sideband{
+				nano::dev::genesis_key.pub, 0,
+				nano::dev::constants.genesis_amount - (i + 1) * 1000,
+				i + 2, nano::seconds_since_epoch (), nano::epoch::epoch_0,
+				false, false, false, nano::epoch::epoch_0
+			};
+			data.sidebands.push_back (sideband);
+			store.block.put (tx, data.blocks[i].hash (), data.blocks[i], sideband);
 		}
 
 		for (auto const & [acc, info] : data.accounts)
@@ -223,11 +224,12 @@ TEST (migrations, lmdb_to_rocksdb)
 	}
 
 	// Verify blocks data
-	for (auto const & block : expected.blocks)
+	for (size_t i = 0; i < expected.blocks.size (); ++i)
 	{
-		auto retrieved = rocksdb_store.block.get (txn, block->hash ());
-		ASSERT_TRUE (retrieved) << "Block missing: " << block->hash ().to_string ();
-		ASSERT_EQ (*block, *retrieved);
+		auto const & block = expected.blocks[i];
+		auto retrieved = rocksdb_store.block.get (txn, block.hash ());
+		ASSERT_TRUE (retrieved) << "Block missing: " << block.hash ().to_string ();
+		ASSERT_EQ (block.hash (), retrieved->hash ());
 	}
 
 	// Verify accounts data

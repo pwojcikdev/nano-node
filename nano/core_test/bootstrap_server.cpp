@@ -1,5 +1,4 @@
 #include <nano/lib/blocks.hpp>
-#include <nano/lib/blocks_raw.hpp>
 #include <nano/node/transport/fake.hpp>
 #include <nano/test_common/chains.hpp>
 #include <nano/test_common/random.hpp>
@@ -10,7 +9,6 @@
 
 #include <iterator>
 #include <map>
-#include <type_traits>
 
 using namespace std::chrono_literals;
 
@@ -50,19 +48,11 @@ private:
 };
 
 /**
- * Helper to get hash from either raw_block or shared_ptr<block>
+ * Helper to get hash from a block
  */
-template <typename T>
-nano::block_hash get_hash (T const & block)
+nano::block_hash get_hash (nano::raw_block const & block)
 {
-	if constexpr (std::is_same_v<std::decay_t<T>, nano::raw_block>)
-	{
-		return block.hash ();
-	}
-	else
-	{
-		return block->hash ();
-	}
+	return block.hash ();
 }
 
 /**

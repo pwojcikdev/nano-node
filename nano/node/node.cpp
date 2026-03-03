@@ -162,8 +162,6 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	rep_tiers{ *rep_tiers_impl },
 	history_impl{ std::make_unique<nano::local_vote_history> (config.network_params.voting) },
 	history{ *history_impl },
-	block_uniquer_impl{ std::make_unique<nano::block_uniquer> () },
-	block_uniquer{ *block_uniquer_impl },
 	vote_uniquer_impl{ std::make_unique<nano::vote_uniquer> () },
 	vote_uniquer{ *vote_uniquer_impl },
 	vote_cache_impl{ std::make_unique<nano::vote_cache> (config.vote_cache, stats) },
@@ -770,16 +768,6 @@ bool nano::node::work_generation_enabled (std::vector<std::pair<std::string, uin
 	return !peers_a.empty () || local_work_generation_enabled ();
 }
 
-std::optional<uint64_t> nano::node::work_generate_blocking (nano::block & block_a, uint64_t difficulty_a)
-{
-	auto opt_work_l (work_generate_blocking (block_a.work_version (), block_a.root (), difficulty_a, block_a.account_field ()));
-	if (opt_work_l.has_value ())
-	{
-		block_a.block_work_set (opt_work_l.value ());
-	}
-	return opt_work_l;
-}
-
 void nano::node::work_generate (nano::work_version const version_a, nano::root const & root_a, uint64_t difficulty_a, std::function<void (std::optional<uint64_t>)> callback_a, std::optional<nano::account> const & account_a, bool secondary_work_peers_a)
 {
 	auto const & peers_l (secondary_work_peers_a ? config.secondary_work_peers : config.work_peers);
@@ -799,12 +787,6 @@ std::optional<uint64_t> nano::node::work_generate_blocking (nano::work_version c
 	},
 	account_a);
 	return promise.get_future ().get ();
-}
-
-std::optional<uint64_t> nano::node::work_generate_blocking (nano::block & block_a)
-{
-	debug_assert (network_params.network.is_dev_network ());
-	return work_generate_blocking (block_a, default_difficulty (nano::work_version::work_1));
 }
 
 std::optional<uint64_t> nano::node::work_generate_blocking (nano::root const & root_a)
@@ -974,7 +956,6 @@ nano::container_info nano::node::container_info () const
 	info.add ("block_processor", block_processor.container_info ());
 	info.add ("online_reps", online_reps.container_info ());
 	info.add ("history", history.container_info ());
-	info.add ("block_uniquer", block_uniquer.container_info ());
 	info.add ("vote_uniquer", vote_uniquer.container_info ());
 	info.add ("cementing_set", cementing_set.container_info ());
 	info.add ("distributed_work", distributed_work.container_info ());

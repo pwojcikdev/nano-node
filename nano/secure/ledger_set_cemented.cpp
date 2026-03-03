@@ -61,16 +61,6 @@ bool nano::ledger_set_cemented::block_exists (secure::transaction const & transa
 	return block_get (transaction, hash).has_value ();
 }
 
-bool nano::ledger_set_cemented::block_exists (secure::transaction const & transaction, nano::block const & block) const
-{
-	auto info = ledger.store.confirmation_height.get (transaction, block.account ());
-	if (!info)
-	{
-		return false;
-	}
-	return block.sideband ().height <= info.value ().height;
-}
-
 bool nano::ledger_set_cemented::block_exists (secure::transaction const & transaction, nano::stored_block const & block) const
 {
 	auto info = ledger.store.confirmation_height.get (transaction, block.account ());

@@ -1,19 +1,10 @@
 #pragma once
 
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/numbers.hpp>
 
-#include <memory>
+#include <optional>
 #include <system_error>
-
-namespace nano
-{
-class change_block;
-class send_block;
-class state_block;
-class open_block;
-class receive_block;
-class raw_block;
-}
 
 namespace nano
 {
@@ -50,6 +41,7 @@ inline uint8_t operator|= (uint8_t & a, nano::build_flags b)
 /**
  * Base type for block builder implementations. We employ static polymorphism
  * to pass validation through subtypes without incurring the vtable cost.
+ * BLOCKTYPE is a raw block type (raw_state_block, raw_send_block, etc.)
  */
 template <typename BLOCKTYPE, typename BUILDER>
 class abstract_builder
@@ -72,8 +64,8 @@ protected:
 	/** Create a new block and resets the internal builder state */
 	void construct_block ();
 
-	/** The block we're building. Clients can convert this to shared_ptr as needed. */
-	std::unique_ptr<BLOCKTYPE> block;
+	/** The raw block we're building. */
+	std::optional<BLOCKTYPE> block;
 
 	/**
 	 * Set if any builder functions fail. This will be output via the build(std::error_code) function,
@@ -89,13 +81,11 @@ protected:
 };
 
 /** Builder for state blocks */
-class state_block_builder : public abstract_builder<nano::state_block, state_block_builder>
+class state_block_builder : public abstract_builder<nano::raw_state_block, state_block_builder>
 {
 public:
 	/** Creates a state block builder by calling make_block() */
 	state_block_builder ();
-	/** Initialize from an existing block */
-	state_block_builder & from (nano::state_block const & block);
 	/** Initialize from a raw_block (must be state type) */
 	state_block_builder & from (nano::raw_block const & block);
 	/** Creates a new block with fields, signature and work set to sentinel values. All fields must be set or zeroed for build() to succeed. */
@@ -138,7 +128,7 @@ private:
 };
 
 /** Builder for open blocks */
-class open_block_builder : public abstract_builder<nano::open_block, open_block_builder>
+class open_block_builder : public abstract_builder<nano::raw_open_block, open_block_builder>
 {
 public:
 	/** Creates an open block builder by calling make_block() */
@@ -171,7 +161,7 @@ private:
 };
 
 /** Builder for change blocks */
-class change_block_builder : public abstract_builder<nano::change_block, change_block_builder>
+class change_block_builder : public abstract_builder<nano::raw_change_block, change_block_builder>
 {
 public:
 	/** Create a change block builder by calling make_block() */
@@ -198,13 +188,11 @@ private:
 };
 
 /** Builder for send blocks */
-class send_block_builder : public abstract_builder<nano::send_block, send_block_builder>
+class send_block_builder : public abstract_builder<nano::raw_send_block, send_block_builder>
 {
 public:
 	/** Creates a send block builder by calling make_block() */
 	send_block_builder ();
-	/** Initialize from an existing block */
-	send_block_builder & from (nano::send_block const & block);
 	/** Initialize from a raw_block (must be send type) */
 	send_block_builder & from (nano::raw_block const & block);
 	/** Creates a new block with fields, signature and work set to sentinel values. All fields must be set or zeroed for build() to succeed. */
@@ -235,7 +223,7 @@ private:
 };
 
 /** Builder for receive blocks */
-class receive_block_builder : public abstract_builder<nano::receive_block, receive_block_builder>
+class receive_block_builder : public abstract_builder<nano::raw_receive_block, receive_block_builder>
 {
 public:
 	/** Creates a receive block by calling make_block() */

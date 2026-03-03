@@ -21,7 +21,6 @@ public:
 public:
 	block_view (nano::store::backend &, nano::store::ledger::successor_view &);
 
-	void put (nano::store::write_transaction const &, nano::block_hash const &, nano::block const &);
 	void put (nano::store::write_transaction const &, nano::block_hash const &, nano::raw_block const &, nano::block_sideband const &);
 	void raw_put (nano::store::write_transaction const &, std::vector<uint8_t> const & data, nano::block_hash const &);
 	std::optional<nano::stored_block> get (nano::store::transaction const &, nano::block_hash const &) const;

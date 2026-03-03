@@ -85,7 +85,6 @@ public:
 	bool trigger (nano::qualified_root const &);
 
 	/// Is the root of this block in the roots container
-	bool active (nano::block const &) const;
 	bool active (nano::stored_block const &) const;
 	bool active (nano::qualified_root const &) const;
 
@@ -94,7 +93,6 @@ public:
 	/// Returns a list of elections sorted by difficulty
 	std::vector<std::shared_ptr<nano::election>> list_active (std::size_t max_count = std::numeric_limits<std::size_t>::max ());
 
-	bool erase (nano::block const &);
 	bool erase (nano::stored_block const &);
 	bool erase (nano::qualified_root const &);
 

@@ -47,9 +47,7 @@ public:
 	double normalized_multiplier (double multiplier, uint64_t threshold) const;
 	double denormalized_multiplier (double multiplier, uint64_t threshold) const;
 	uint64_t difficulty (nano::work_version, nano::root const & root, uint64_t work) const;
-	uint64_t difficulty (nano::block const & block) const;
 	bool validate_entry (nano::work_version, nano::root const & root, uint64_t work) const;
-	bool validate_entry (nano::block const & block) const;
 
 	// Template overloads for raw block types (raw_send_block, raw_receive_block, etc. and raw_block)
 	uint64_t difficulty (auto const & block) const

@@ -18,7 +18,6 @@
 
 namespace nano
 {
-class block;
 class channel;
 class confirmation_solicitor;
 enum class election_behavior;

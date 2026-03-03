@@ -5,18 +5,13 @@
 
 #include <boost/property_tree/ptree_fwd.hpp>
 
-#include <memory>
 #include <optional>
 
 namespace nano
 {
-class block;
-
 /**
  * A value-type block that combines raw_block (transmitted data) with block_sideband (ledger metadata).
  * Sideband is always present. This is the type returned by ledger accessors for blocks stored in the ledger.
- *
- * Provides implicit conversion to shared_ptr<block> for backward compatibility with legacy code.
  */
 class stored_block
 {
@@ -26,12 +21,6 @@ class stored_block
 public:
 	stored_block () = default;
 	stored_block (nano::raw_block raw, nano::block_sideband sideband);
-	stored_block (nano::block const & legacy);
-	stored_block (std::shared_ptr<nano::block> const & legacy);
-
-	// Conversion to legacy shared_ptr<block> (for backward compat)
-	std::shared_ptr<nano::block> to_legacy () const;
-	operator std::shared_ptr<nano::block> () const;
 
 	// Core accessors (delegated to raw_block)
 	nano::block_hash const & hash () const;
@@ -73,13 +62,12 @@ public:
 	// Raw access
 	nano::raw_block const & raw () const;
 
-	// Serialization (delegates to legacy for now)
-	void serialize_json (std::string &, bool single_line = false) const;
+	// Serialization
+	void serialize_json (std::string &) const;
 	void serialize_json (boost::property_tree::ptree &) const;
 	std::string to_json () const;
 
 	// Comparison
 	bool operator== (stored_block const &) const;
-	bool operator== (nano::block const &) const;
 };
 }

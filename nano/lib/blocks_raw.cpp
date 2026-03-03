@@ -1,12 +1,14 @@
 #include <nano/crypto/blake2/blake2.h>
 #include <nano/lib/block_type.hpp>
-#include <nano/lib/blocks.hpp>
 #include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/stream.hpp>
 
 #include <boost/endian/conversion.hpp>
+#include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
+
+#include <sstream>
 
 /*
  * raw_send_block
@@ -596,12 +598,65 @@ void nano::raw_block::serialize (nano::stream & stream) const
 
 void nano::raw_block::serialize_json (std::string & string_a) const
 {
-	nano::to_legacy (*this)->serialize_json (string_a);
+	boost::property_tree::ptree tree;
+	serialize_json (tree);
+	std::stringstream ostream;
+	boost::property_tree::write_json (ostream, tree);
+	string_a = ostream.str ();
 }
 
 void nano::raw_block::serialize_json (boost::property_tree::ptree & tree_a) const
 {
-	nano::to_legacy (*this)->serialize_json (tree_a);
+	std::visit ([&tree_a] (auto const & block) {
+		using T = std::decay_t<decltype (block)>;
+		if constexpr (std::is_same_v<T, nano::raw_send_block>)
+		{
+			tree_a.put ("type", "send");
+			tree_a.put ("previous", block.hashables.previous.to_string ());
+			tree_a.put ("destination", block.hashables.destination.to_account ());
+			tree_a.put ("balance", block.hashables.balance.to_string ());
+			tree_a.put ("work", nano::to_string_hex (block.work));
+			tree_a.put ("signature", block.signature.to_string ());
+		}
+		else if constexpr (std::is_same_v<T, nano::raw_receive_block>)
+		{
+			tree_a.put ("type", "receive");
+			tree_a.put ("previous", block.hashables.previous.to_string ());
+			tree_a.put ("source", block.hashables.source.to_string ());
+			tree_a.put ("work", nano::to_string_hex (block.work));
+			tree_a.put ("signature", block.signature.to_string ());
+		}
+		else if constexpr (std::is_same_v<T, nano::raw_open_block>)
+		{
+			tree_a.put ("type", "open");
+			tree_a.put ("source", block.hashables.source.to_string ());
+			tree_a.put ("representative", block.hashables.representative.to_account ());
+			tree_a.put ("account", block.hashables.account.to_account ());
+			tree_a.put ("work", nano::to_string_hex (block.work));
+			tree_a.put ("signature", block.signature.to_string ());
+		}
+		else if constexpr (std::is_same_v<T, nano::raw_change_block>)
+		{
+			tree_a.put ("type", "change");
+			tree_a.put ("previous", block.hashables.previous.to_string ());
+			tree_a.put ("representative", block.hashables.representative.to_account ());
+			tree_a.put ("work", nano::to_string_hex (block.work));
+			tree_a.put ("signature", block.signature.to_string ());
+		}
+		else if constexpr (std::is_same_v<T, nano::raw_state_block>)
+		{
+			tree_a.put ("type", "state");
+			tree_a.put ("account", block.hashables.account.to_account ());
+			tree_a.put ("previous", block.hashables.previous.to_string ());
+			tree_a.put ("representative", block.hashables.representative.to_account ());
+			tree_a.put ("balance", block.hashables.balance.to_string_dec ());
+			tree_a.put ("link", block.hashables.link.to_string ());
+			tree_a.put ("link_as_account", block.hashables.link.to_account ());
+			tree_a.put ("signature", block.signature.to_string ());
+			tree_a.put ("work", nano::to_string_hex (block.work));
+		}
+	},
+	data_m);
 }
 
 nano::raw_block_variant const & nano::raw_block::variant () const
@@ -673,92 +728,6 @@ nano::block_hash nano::raw_block::generate_hash () const
 	status = blake2b_final (&hash_l, result.bytes.data (), sizeof (result.bytes));
 	debug_assert (status == 0);
 	return result;
-}
-
-/*
- * Conversion bridges
- */
-
-nano::raw_block nano::to_raw (nano::block const & legacy)
-{
-	switch (legacy.type ())
-	{
-		case nano::block_type::send:
-		{
-			auto const & b = static_cast<nano::send_block const &> (legacy);
-			return nano::raw_block{ raw_send_block{ b.hashables, b.signature, b.work } };
-		}
-		case nano::block_type::receive:
-		{
-			auto const & b = static_cast<nano::receive_block const &> (legacy);
-			return nano::raw_block{ raw_receive_block{ b.hashables, b.signature, b.work } };
-		}
-		case nano::block_type::open:
-		{
-			auto const & b = static_cast<nano::open_block const &> (legacy);
-			return nano::raw_block{ raw_open_block{ b.hashables, b.signature, b.work } };
-		}
-		case nano::block_type::change:
-		{
-			auto const & b = static_cast<nano::change_block const &> (legacy);
-			return nano::raw_block{ raw_change_block{ b.hashables, b.signature, b.work } };
-		}
-		case nano::block_type::state:
-		{
-			auto const & b = static_cast<nano::state_block const &> (legacy);
-			return nano::raw_block{ raw_state_block{ b.hashables, b.signature, b.work } };
-		}
-		default:
-			release_assert (false, "invalid block type in to_raw");
-	}
-}
-
-std::shared_ptr<nano::block> nano::to_legacy (nano::raw_block const & raw)
-{
-	return std::visit ([] (auto const & block) -> std::shared_ptr<nano::block> {
-		using T = std::decay_t<decltype (block)>;
-		if constexpr (std::is_same_v<T, nano::raw_send_block>)
-		{
-			auto legacy = std::make_shared<nano::send_block> ();
-			legacy->hashables = block.hashables;
-			legacy->signature = block.signature;
-			legacy->work = block.work;
-			return legacy;
-		}
-		else if constexpr (std::is_same_v<T, nano::raw_receive_block>)
-		{
-			auto legacy = std::make_shared<nano::receive_block> ();
-			legacy->hashables = block.hashables;
-			legacy->signature = block.signature;
-			legacy->work = block.work;
-			return legacy;
-		}
-		else if constexpr (std::is_same_v<T, nano::raw_open_block>)
-		{
-			auto legacy = std::make_shared<nano::open_block> ();
-			legacy->hashables = block.hashables;
-			legacy->signature = block.signature;
-			legacy->work = block.work;
-			return legacy;
-		}
-		else if constexpr (std::is_same_v<T, nano::raw_change_block>)
-		{
-			auto legacy = std::make_shared<nano::change_block> ();
-			legacy->hashables = block.hashables;
-			legacy->signature = block.signature;
-			legacy->work = block.work;
-			return legacy;
-		}
-		else if constexpr (std::is_same_v<T, nano::raw_state_block>)
-		{
-			auto legacy = std::make_shared<nano::state_block> ();
-			legacy->hashables = block.hashables;
-			legacy->signature = block.signature;
-			legacy->work = block.work;
-			return legacy;
-		}
-	},
-	raw.variant ());
 }
 
 nano::raw_block nano::deserialize_raw_block (nano::stream & stream)
@@ -914,5 +883,25 @@ nano::raw_block nano::deserialize_raw_block_json (boost::property_tree::ptree co
 	else
 	{
 		throw std::runtime_error ("Unknown block type: " + type_str);
+	}
+}
+
+std::size_t nano::block_size (nano::block_type type)
+{
+	switch (type)
+	{
+		case nano::block_type::send:
+			return nano::raw_send_block::size;
+		case nano::block_type::receive:
+			return nano::raw_receive_block::size;
+		case nano::block_type::open:
+			return nano::raw_open_block::size;
+		case nano::block_type::change:
+			return nano::raw_change_block::size;
+		case nano::block_type::state:
+			return nano::raw_state_block::size;
+		default:
+			debug_assert (false);
+			return 0;
 	}
 }

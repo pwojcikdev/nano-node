@@ -21,6 +21,7 @@ struct raw_send_block
 	uint64_t work{};
 
 	static constexpr nano::block_type block_type_v = nano::block_type::send;
+	static constexpr std::size_t size = nano::send_hashables::size + sizeof (signature) + sizeof (work);
 
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &);
@@ -46,6 +47,7 @@ struct raw_receive_block
 	uint64_t work{};
 
 	static constexpr nano::block_type block_type_v = nano::block_type::receive;
+	static constexpr std::size_t size = nano::receive_hashables::size + sizeof (signature) + sizeof (work);
 
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &);
@@ -70,6 +72,7 @@ struct raw_open_block
 	uint64_t work{};
 
 	static constexpr nano::block_type block_type_v = nano::block_type::open;
+	static constexpr std::size_t size = nano::open_hashables::size + sizeof (signature) + sizeof (work);
 
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &);
@@ -95,6 +98,7 @@ struct raw_change_block
 	uint64_t work{};
 
 	static constexpr nano::block_type block_type_v = nano::block_type::change;
+	static constexpr std::size_t size = nano::change_hashables::size + sizeof (signature) + sizeof (work);
 
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &);
@@ -119,6 +123,7 @@ struct raw_state_block
 	uint64_t work{};
 
 	static constexpr nano::block_type block_type_v = nano::block_type::state;
+	static constexpr std::size_t size = nano::state_hashables::size + sizeof (signature) + sizeof (work);
 
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &);
@@ -228,10 +233,6 @@ private:
 	nano::block_hash generate_hash () const;
 };
 
-// Conversion bridges
-nano::raw_block to_raw (nano::block const & legacy);
-std::shared_ptr<nano::block> to_legacy (nano::raw_block const & raw);
-
 // Serialization with type prefix
 nano::raw_block deserialize_raw_block (nano::stream &);
 // Deserialization with pre-read type (for store layer where type is already parsed)
@@ -240,4 +241,7 @@ void serialize_raw_block (nano::stream &, nano::raw_block const &);
 
 // JSON deserialization
 nano::raw_block deserialize_raw_block_json (boost::property_tree::ptree const &);
+
+/** Returns the wire size of a block given its type */
+std::size_t block_size (nano::block_type type);
 }

@@ -1,5 +1,4 @@
 #include <nano/lib/blocks.hpp>
-#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/object_stream.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/messages/message_visitor.hpp>
@@ -23,11 +22,6 @@ publish::publish (nano::network_constants const & constants, nano::raw_block con
 {
 	header.block_type_set (block.type ());
 	header.flag_set (originator_flag, is_originator_a);
-}
-
-publish::publish (nano::network_constants const & constants, std::shared_ptr<nano::block> const & block_a, bool is_originator_a) :
-	publish (constants, nano::to_raw (*block_a), is_originator_a)
-{
 }
 
 void publish::serialize (nano::stream & stream_a) const

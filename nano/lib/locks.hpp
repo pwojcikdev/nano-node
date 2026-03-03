@@ -21,7 +21,6 @@ enum class mutexes
 {
 	active,
 	block_processor,
-	block_uniquer,
 	blockstore_cache,
 	election_winner_details,
 	gap_cache,

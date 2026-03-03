@@ -1,6 +1,5 @@
 #pragma once
 
-#include <nano/lib/block_uniquer.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
@@ -66,7 +65,6 @@ public:
 	bool local_work_generation_enabled () const;
 	bool work_generation_enabled () const;
 	bool work_generation_enabled (std::vector<std::pair<std::string, uint16_t>> const &) const;
-	std::optional<uint64_t> work_generate_blocking (nano::block &, uint64_t);
 	std::optional<uint64_t> work_generate_blocking (nano::work_version const, nano::root const &, uint64_t, std::optional<nano::account> const & = std::nullopt);
 	void work_generate (nano::work_version const, nano::root const &, uint64_t, std::function<void (std::optional<uint64_t>)>, std::optional<nano::account> const & = std::nullopt, bool const = false);
 	void add_initial_peers ();
@@ -168,8 +166,6 @@ public:
 	nano::rep_tiers & rep_tiers;
 	std::unique_ptr<nano::local_vote_history> history_impl;
 	nano::local_vote_history & history;
-	std::unique_ptr<nano::block_uniquer> block_uniquer_impl;
-	nano::block_uniquer & block_uniquer;
 	std::unique_ptr<nano::vote_uniquer> vote_uniquer_impl;
 	nano::vote_uniquer & vote_uniquer;
 	std::unique_ptr<nano::vote_cache> vote_cache_impl;
@@ -225,7 +221,6 @@ public:
 
 public: // For tests only
 	const unsigned node_seq;
-	std::optional<uint64_t> work_generate_blocking (nano::block &);
 	std::optional<uint64_t> work_generate_blocking (nano::root const &, uint64_t);
 	std::optional<uint64_t> work_generate_blocking (nano::root const &);
 

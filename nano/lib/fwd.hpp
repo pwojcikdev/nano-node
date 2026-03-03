@@ -27,17 +27,14 @@ class signature;
 class qualified_root;
 using account = public_key;
 
-class block;
 class block_details;
 class raw_block;
 class stored_block;
-class block_visitor;
 class container_info;
 class error;
 class jsonconfig;
 class keypair;
 class logger;
-class mutable_block_visitor;
 class network_constants;
 class object_stream;
 class stats;

@@ -1,5 +1,5 @@
 #include <nano/lib/blocks.hpp>
-#include <nano/lib/blocks_raw.hpp>
+#include <nano/lib/blocks.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -574,7 +574,7 @@ TEST (network, duplicate_detection)
 	nano::node_flags node_flags;
 	auto & node0 = *system.add_node (node_flags);
 	auto & node1 = *system.add_node (node_flags);
-	nano::messages::publish publish{ nano::dev::network_params.network, nano::dev::genesis };
+	nano::messages::publish publish{ nano::dev::network_params.network, nano::dev::genesis.raw () };
 
 	ASSERT_EQ (0, node1.stats.count (nano::stat::type::filter, nano::stat::detail::duplicate_publish_message));
 
@@ -595,7 +595,7 @@ TEST (network, duplicate_revert_publish)
 	nano::node_config node_config = system.default_config ();
 	node_config.block_processor.max_peer_queue = 0;
 	auto & node (*system.add_node (node_config));
-	nano::messages::publish publish{ nano::dev::network_params.network, nano::dev::genesis };
+	nano::messages::publish publish{ nano::dev::network_params.network, nano::dev::genesis.raw () };
 	std::vector<uint8_t> bytes = message_payload_to_bytes (publish);
 	// Add to the blocks filter
 	// Should be cleared when dropping due to a full block processor, as long as the message has the optional digest attached
@@ -706,7 +706,7 @@ TEST (network, expire_duplicate_filter)
 TEST (network, DISABLED_bandwidth_limiter_4_messages)
 {
 	nano::test::system system;
-	nano::messages::publish message{ nano::dev::network_params.network, nano::dev::genesis };
+	nano::messages::publish message{ nano::dev::network_params.network, nano::dev::genesis.raw () };
 	auto message_size = message.to_bytes ()->size ();
 	auto message_limit = 4; // must be multiple of the number of channels
 	nano::node_config node_config = system.default_config ();
@@ -736,7 +736,7 @@ TEST (network, DISABLED_bandwidth_limiter_4_messages)
 TEST (network, DISABLED_bandwidth_limiter_2_messages)
 {
 	nano::test::system system;
-	nano::messages::publish message{ nano::dev::network_params.network, nano::dev::genesis };
+	nano::messages::publish message{ nano::dev::network_params.network, nano::dev::genesis.raw () };
 	auto message_size = message.to_bytes ()->size ();
 	auto message_limit = 2; // must be multiple of the number of channels
 	nano::node_config node_config = system.default_config ();
@@ -756,7 +756,7 @@ TEST (network, DISABLED_bandwidth_limiter_2_messages)
 TEST (network, bandwidth_limiter_with_burst)
 {
 	nano::test::system system;
-	nano::messages::publish message{ nano::dev::network_params.network, nano::dev::genesis };
+	nano::messages::publish message{ nano::dev::network_params.network, nano::dev::genesis.raw () };
 	auto message_size = message.to_bytes ()->size ();
 	auto message_limit = 2; // must be multiple of the number of channels
 	nano::node_config node_config = system.default_config ();

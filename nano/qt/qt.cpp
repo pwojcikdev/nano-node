@@ -1,8 +1,8 @@
+#include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
-#include <nano/lib/blocks_raw.hpp>
-#include <nano/lib/stored_block.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/stats_sinks.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/version.hpp>
 #include <nano/node/election_status.hpp>
 #include <nano/node/vote_with_weight_info.hpp>
@@ -2007,25 +2007,17 @@ nano_qt::block_entry::block_entry (nano_qt::wallet & wallet_a) :
 			boost::property_tree::ptree tree;
 			std::stringstream istream (string);
 			boost::property_tree::read_json (istream, tree);
-			auto block_l (nano::deserialize_block_json (tree));
-			if (block_l != nullptr)
+			auto block_l = nano::deserialize_raw_block_json (tree);
+			show_label_ok (*status);
+			this->status->setText ("");
+			if (!this->wallet.node.network_params.work.validate_entry (block_l))
 			{
-				show_label_ok (*status);
-				this->status->setText ("");
-				if (!this->wallet.node.network_params.work.validate_entry (*block_l))
-				{
-					this->wallet.node.process_active (nano::to_raw (*block_l));
-				}
-				else
-				{
-					show_label_error (*status);
-					this->status->setText ("Invalid work");
-				}
+				this->wallet.node.process_active (block_l);
 			}
 			else
 			{
 				show_label_error (*status);
-				this->status->setText ("Unable to parse block");
+				this->status->setText ("Invalid work");
 			}
 		}
 		catch (std::runtime_error const &)
@@ -2245,13 +2237,25 @@ void nano_qt::block_creation::create_send ()
 						auto error (wallet.node.store.account.get (block_transaction, account_l, info));
 						(void)error;
 						debug_assert (!error);
-						nano::state_block send (account_l, info.head, info.representative, balance - amount_l.number (), destination_l, key, account_l, 0);
+						nano::block_builder builder;
+						auto send = builder
+									.state ()
+									.account (account_l)
+									.previous (info.head)
+									.representative (info.representative)
+									.balance (balance - amount_l.number ())
+									.link (destination_l)
+									.sign (key, account_l)
+									.work (0)
+									.build ();
 						nano::block_details details;
 						details.is_send = true;
 						details.epoch = info.epoch ();
 						auto const required_difficulty{ wallet.node.network_params.work.threshold (send.work_version (), details) };
-						if (wallet.node.work_generate_blocking (send, required_difficulty).has_value ())
+						auto work_opt = wallet.node.work_generate_blocking (send.root (), required_difficulty);
+						if (work_opt.has_value ())
 						{
+							send.set_work (work_opt.value ());
 							std::string block_l;
 							send.serialize_json (block_l);
 							block->setPlainText (QString (block_l.c_str ()));
@@ -2327,13 +2331,25 @@ void nano_qt::block_creation::create_receive ()
 						auto error (wallet.wallet_m->fetch_prv (pending_key.account, key));
 						if (!error)
 						{
-							nano::state_block receive (pending_key.account, info.head, info.representative, info.balance.number () + pending.value ().amount.number (), source_l, key, pending_key.account, 0);
+							nano::block_builder builder;
+							auto receive = builder
+										   .state ()
+										   .account (pending_key.account)
+										   .previous (info.head)
+										   .representative (info.representative)
+										   .balance (info.balance.number () + pending.value ().amount.number ())
+										   .link (source_l)
+										   .sign (key, pending_key.account)
+										   .work (0)
+										   .build ();
 							nano::block_details details;
 							details.is_receive = true;
 							details.epoch = std::max (info.epoch (), pending.value ().epoch);
 							auto required_difficulty{ wallet.node.network_params.work.threshold (receive.work_version (), details) };
-							if (wallet.node.work_generate_blocking (receive, required_difficulty).has_value ())
+							auto work_opt = wallet.node.work_generate_blocking (receive.root (), required_difficulty);
+							if (work_opt.has_value ())
 							{
+								receive.set_work (work_opt.value ());
 								std::string block_l;
 								receive.serialize_json (block_l);
 								block->setPlainText (QString (block_l.c_str ()));
@@ -2410,12 +2426,24 @@ void nano_qt::block_creation::create_change ()
 				auto error (wallet.wallet_m->fetch_prv (account_l, key));
 				if (!error)
 				{
-					nano::state_block change (account_l, info.head, representative_l, info.balance, 0, key, account_l, 0);
+					nano::block_builder builder;
+					auto change = builder
+								  .state ()
+								  .account (account_l)
+								  .previous (info.head)
+								  .representative (representative_l)
+								  .balance (info.balance)
+								  .link (0)
+								  .sign (key, account_l)
+								  .work (0)
+								  .build ();
 					nano::block_details details;
 					details.epoch = info.epoch ();
 					auto const required_difficulty{ wallet.node.network_params.work.threshold (change.work_version (), details) };
-					if (wallet.node.work_generate_blocking (change, required_difficulty).has_value ())
+					auto work_opt = wallet.node.work_generate_blocking (change.root (), required_difficulty);
+					if (work_opt.has_value ())
 					{
+						change.set_work (work_opt.value ());
 						std::string block_l;
 						change.serialize_json (block_l);
 						block->setPlainText (QString (block_l.c_str ()));
@@ -2489,13 +2517,25 @@ void nano_qt::block_creation::create_open ()
 							auto error (wallet.wallet_m->fetch_prv (pending_key.account, key));
 							if (!error)
 							{
-								nano::state_block open (pending_key.account, 0, representative_l, pending.value ().amount, source_l, key, pending_key.account, 0);
+								nano::block_builder builder;
+								auto open = builder
+											.state ()
+											.account (pending_key.account)
+											.previous (0)
+											.representative (representative_l)
+											.balance (pending.value ().amount)
+											.link (source_l)
+											.sign (key, pending_key.account)
+											.work (0)
+											.build ();
 								nano::block_details details;
 								details.is_receive = true;
 								details.epoch = pending.value ().epoch;
 								auto const required_difficulty{ wallet.node.network_params.work.threshold (open.work_version (), details) };
-								if (wallet.node.work_generate_blocking (open, required_difficulty).has_value ())
+								auto work_opt = wallet.node.work_generate_blocking (open.root (), required_difficulty);
+								if (work_opt.has_value ())
 								{
+									open.set_work (work_opt.value ());
 									std::string block_l;
 									open.serialize_json (block_l);
 									block->setPlainText (QString (block_l.c_str ()));
