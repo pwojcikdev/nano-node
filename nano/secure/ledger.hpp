@@ -59,7 +59,7 @@ public:
 	nano::uint128_t weight (nano::account const &) const;
 	/* Returns the exact vote weight for the given representative by doing a database lookup */
 	nano::uint128_t weight_exact (secure::transaction const &, nano::account const &) const;
-	std::shared_ptr<nano::block> forked_block (secure::transaction const &, nano::block const &);
+	std::optional<nano::stored_block> forked_block (secure::transaction const &, nano::raw_block const &);
 	nano::root latest_root (secure::transaction const &, nano::account const &);
 	nano::block_hash representative_block (secure::transaction const &, nano::block_hash const &);
 	std::string block_text (char const *);
@@ -76,21 +76,20 @@ public:
 	};
 
 	process_result process (secure::write_transaction const &, nano::raw_block const & block);
-	nano::block_status process (secure::write_transaction const &, std::shared_ptr<nano::block> block);
 
 	bool rollback (secure::write_transaction const &, nano::block_hash const &, std::deque<nano::stored_block> & rollback_list, size_t depth = 0, size_t max_depth = nano::ledger_max_rollback_depth ());
 	bool rollback (secure::write_transaction const &, nano::block_hash const &);
 	void update_account (secure::write_transaction const &, nano::account const &, nano::account_info const &, nano::account_info const &);
 	uint64_t pruning_action (secure::write_transaction &, nano::block_hash const &, uint64_t const);
 	bool is_epoch_link (nano::link const &) const;
-	std::shared_ptr<nano::block> find_receive_block_by_send_hash (secure::transaction const &, nano::account const & destination, nano::block_hash const & send_block_hash);
+	std::optional<nano::stored_block> find_receive_block_by_send_hash (secure::transaction const &, nano::account const & destination, nano::block_hash const & send_block_hash);
 	std::optional<nano::account> linked_account (secure::transaction const &, nano::stored_block const &);
 	nano::account const & epoch_signer (nano::link const &) const;
 	nano::link const & epoch_link (nano::epoch) const;
 	bool bootstrap_height_reached () const;
 	std::unordered_map<nano::account, nano::uint128_t> rep_weights_snapshot () const;
 
-	static nano::epoch version (nano::block const & block);
+	static nano::epoch version (nano::stored_block const & block);
 	nano::epoch version (secure::transaction const &, nano::block_hash const & hash) const;
 
 	/**
@@ -140,7 +139,7 @@ public:
 
 private:
 	void initialize (nano::generate_cache_flags const &);
-	void cement_one (secure::write_transaction &, nano::block const & block);
+	void cement_one (secure::write_transaction &, nano::stored_block const & block);
 
 	std::unique_ptr<ledger_set_any> any_impl;
 	std::unique_ptr<ledger_set_cemented> cemented_impl;

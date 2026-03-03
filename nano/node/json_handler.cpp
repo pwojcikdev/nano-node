@@ -287,10 +287,10 @@ nano::amount nano::json_handler::amount_impl ()
 	return result;
 }
 
-std::shared_ptr<nano::block> nano::json_handler::block_impl (bool signature_work_required)
+std::optional<nano::raw_block> nano::json_handler::block_impl (bool signature_work_required)
 {
 	bool const json_block_l = request.get<bool> ("json_block", false);
-	std::shared_ptr<nano::block> result{ nullptr };
+	std::optional<nano::raw_block> result;
 	if (!ec)
 	{
 		boost::property_tree::ptree block_l;
@@ -318,8 +318,11 @@ std::shared_ptr<nano::block> nano::json_handler::block_impl (bool signature_work
 				block_l.put ("signature", "0");
 				block_l.put ("work", "0");
 			}
-			result = nano::deserialize_block_json (block_l);
-			if (result == nullptr)
+			try
+			{
+				result = nano::deserialize_raw_block_json (block_l);
+			}
+			catch (...)
 			{
 				ec = nano::error_blocks::invalid_block;
 			}
@@ -384,7 +387,7 @@ uint64_t nano::json_handler::difficulty_optional_impl (nano::work_version const 
 	return difficulty;
 }
 
-uint64_t nano::json_handler::difficulty_ledger (nano::block const & block_a)
+uint64_t nano::json_handler::difficulty_ledger (nano::raw_block const & block_a)
 {
 	nano::block_details details (nano::epoch::epoch_0, false, false, false);
 	bool details_found (false);
@@ -1390,7 +1393,7 @@ void nano::json_handler::blocks_info ()
 							}
 							if (receive_hash)
 							{
-								std::shared_ptr<nano::block> receive_block = node.ledger.find_receive_block_by_send_hash (transaction, block->destination (), hash);
+								auto receive_block = node.ledger.find_receive_block_by_send_hash (transaction, block->destination (), hash);
 								std::string receive_hash = receive_block ? receive_block->hash ().to_string () : nano::block_hash (0).to_string ();
 								entry.put ("receive_hash", receive_hash);
 							}
@@ -1603,7 +1606,7 @@ void nano::json_handler::block_create ()
 	{
 		auto rpc_l (shared_from_this ());
 		// Serializes the block contents to the RPC response
-		auto block_response_put_l = [rpc_l, this] (nano::block const & block_a) {
+		auto block_response_put_l = [rpc_l, this] (nano::raw_block const & block_a) {
 			boost::property_tree::ptree response_l;
 			response_l.put ("hash", block_a.hash ().to_string ());
 			response_l.put ("difficulty", nano::to_string_hex (rpc_l->node.network_params.work.difficulty (block_a)));
@@ -1625,24 +1628,17 @@ void nano::json_handler::block_create ()
 			rpc_l->response (ostream.str ());
 		};
 		// Wrapper from argument to lambda capture, to extend the block's scope
-		auto get_callback_l = [rpc_l, block_response_put_l] (std::shared_ptr<nano::block> const & block_a) {
+		auto get_callback_l = [rpc_l, block_response_put_l] (nano::raw_block block_a) {
 			// Callback upon work generation success or failure
-			return [block_a, rpc_l, block_response_put_l] (std::optional<uint64_t> const & work_a) {
-				if (block_a != nullptr)
+			return [block_a = std::move (block_a), rpc_l, block_response_put_l] (std::optional<uint64_t> const & work_a) mutable {
+				if (work_a.has_value ())
 				{
-					if (work_a.has_value ())
-					{
-						block_a->block_work_set (*work_a);
-						block_response_put_l (*block_a);
-					}
-					else
-					{
-						rpc_l->ec = nano::error_common::failure_work_generation;
-					}
+					block_a.set_work (*work_a);
+					block_response_put_l (block_a);
 				}
 				else
 				{
-					rpc_l->ec = nano::error_common::generic;
+					rpc_l->ec = nano::error_common::failure_work_generation;
 				}
 				if (rpc_l->ec)
 				{
@@ -1786,21 +1782,19 @@ void nano::json_handler::block_create ()
 			}
 			if (!ec && (!ec_build || ec_build == nano::error_common::missing_work))
 			{
-				// Convert to legacy for work generation and response callbacks
-				auto block_l = nano::to_legacy (*block_raw);
 				if (work == 0)
 				{
 					// Difficulty calculation
 					if (request.count ("difficulty") == 0)
 					{
-						difficulty_l = difficulty_ledger (*block_l);
+						difficulty_l = difficulty_ledger (*block_raw);
 					}
-					node.work_generate (work_version, root_l, difficulty_l, get_callback_l (block_l), nano::account (pub));
+					node.work_generate (work_version, root_l, difficulty_l, get_callback_l (*block_raw), nano::account (pub));
 				}
 				else
 				{
-					block_l->block_work_set (work);
-					block_response_put_l (*block_l);
+					block_raw->set_work (work);
+					block_response_put_l (*block_raw);
 				}
 			}
 		}
@@ -3220,18 +3214,18 @@ void nano::json_handler::process ()
 			std::string subtype_text (rpc_l->request.get<std::string> ("subtype", ""));
 			if (!subtype_text.empty ())
 			{
-				std::shared_ptr<nano::state_block> block_state (std::static_pointer_cast<nano::state_block> (block));
+				auto state = block->as_state ();
 				auto transaction = rpc_l->node.ledger.tx_begin_read ();
-				if (!block_state->hashables.previous.is_zero () && !rpc_l->node.ledger.any.block_exists (transaction, block_state->hashables.previous))
+				if (!state->hashables.previous.is_zero () && !rpc_l->node.ledger.any.block_exists (transaction, state->hashables.previous))
 				{
 					rpc_l->ec = nano::error_process::gap_previous;
 				}
 				else
 				{
-					auto balance (rpc_l->node.ledger.any.account_balance (transaction, block_state->hashables.account).value_or (0).number ());
+					auto balance (rpc_l->node.ledger.any.account_balance (transaction, state->hashables.account).value_or (0).number ());
 					if (subtype_text == "send")
 					{
-						if (balance <= block_state->hashables.balance.number ())
+						if (balance <= state->hashables.balance.number ())
 						{
 							rpc_l->ec = nano::error_rpc::invalid_subtype_balance;
 						}
@@ -3239,7 +3233,7 @@ void nano::json_handler::process ()
 					}
 					else if (subtype_text == "receive")
 					{
-						if (balance > block_state->hashables.balance.number ())
+						if (balance > state->hashables.balance.number ())
 						{
 							rpc_l->ec = nano::error_rpc::invalid_subtype_balance;
 						}
@@ -3247,29 +3241,29 @@ void nano::json_handler::process ()
 					}
 					else if (subtype_text == "open")
 					{
-						if (!block_state->hashables.previous.is_zero ())
+						if (!state->hashables.previous.is_zero ())
 						{
 							rpc_l->ec = nano::error_rpc::invalid_subtype_previous;
 						}
 					}
 					else if (subtype_text == "change")
 					{
-						if (balance != block_state->hashables.balance.number ())
+						if (balance != state->hashables.balance.number ())
 						{
 							rpc_l->ec = nano::error_rpc::invalid_subtype_balance;
 						}
-						else if (block_state->hashables.previous.is_zero ())
+						else if (state->hashables.previous.is_zero ())
 						{
 							rpc_l->ec = nano::error_rpc::invalid_subtype_previous;
 						}
 					}
 					else if (subtype_text == "epoch")
 					{
-						if (balance != block_state->hashables.balance.number ())
+						if (balance != state->hashables.balance.number ())
 						{
 							rpc_l->ec = nano::error_rpc::invalid_subtype_balance;
 						}
-						else if (!rpc_l->node.ledger.is_epoch_link (block_state->hashables.link))
+						else if (!rpc_l->node.ledger.is_epoch_link (state->hashables.link))
 						{
 							rpc_l->ec = nano::error_rpc::invalid_subtype_epoch_link;
 						}
@@ -3283,7 +3277,7 @@ void nano::json_handler::process ()
 		}
 		if (!rpc_l->ec)
 		{
-			auto raw = nano::to_raw (*block);
+			auto & raw = *block;
 			if (!rpc_l->node.network_params.work.validate_entry (raw))
 			{
 				if (!is_async)
@@ -3865,11 +3859,11 @@ void nano::json_handler::sign ()
 		hash = hash_impl ();
 	}
 	// Retrieving block
-	std::shared_ptr<nano::block> block;
+	std::optional<nano::raw_block> block;
 	if (!ec && request.count ("block"))
 	{
 		block = block_impl (true);
-		if (block != nullptr)
+		if (block)
 		{
 			hash = block->hash ();
 		}
@@ -3881,7 +3875,7 @@ void nano::json_handler::sign ()
 		ec = nano::error_blocks::invalid_block;
 	}
 	// Hash is initialized without config permission
-	else if (!ec && !hash.is_zero () && block == nullptr && !node_rpc_config.enable_sign_hash)
+	else if (!ec && !hash.is_zero () && !block && !node_rpc_config.enable_sign_hash)
 	{
 		ec = nano::error_rpc::sign_hash_disabled;
 	}
@@ -3924,9 +3918,9 @@ void nano::json_handler::sign ()
 			nano::public_key pub (nano::pub_key (prv));
 			nano::signature signature (nano::sign_message (prv, pub, hash));
 			response_l.put ("signature", signature.to_string ());
-			if (block != nullptr)
+			if (block)
 			{
-				block->signature_set (signature);
+				block->set_signature (signature);
 
 				if (json_block_l)
 				{
@@ -5003,11 +4997,11 @@ void nano::json_handler::work_generate ()
 			ec = nano::error_rpc::difficulty_limit;
 		}
 		// Retrieving optional block
-		std::shared_ptr<nano::block> block;
+		std::optional<nano::raw_block> block;
 		if (!ec && request.count ("block"))
 		{
 			block = block_impl (true);
-			if (block != nullptr)
+			if (block)
 			{
 				if (hash != block->root ().as_block_hash ())
 				{

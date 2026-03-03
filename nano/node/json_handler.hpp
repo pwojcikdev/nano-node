@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/ipc/flatbuffers_handler.hpp>
@@ -8,6 +9,7 @@
 #include <boost/property_tree/ptree.hpp>
 
 #include <functional>
+#include <optional>
 #include <string>
 
 namespace nano::secure
@@ -164,7 +166,7 @@ public:
 	nano::account account_impl (std::string = "", std::error_code = nano::error_common::bad_account_number);
 	nano::account_info account_info_impl (secure::transaction const &, nano::account const &);
 	nano::amount amount_impl ();
-	std::shared_ptr<nano::block> block_impl (bool = true);
+	std::optional<nano::raw_block> block_impl (bool = true);
 	nano::block_hash hash_impl (std::string = "hash");
 	nano::amount threshold_optional_impl ();
 	uint64_t work_optional_impl ();
@@ -172,7 +174,7 @@ public:
 	uint64_t count_optional_impl (uint64_t = std::numeric_limits<uint64_t>::max ());
 	uint64_t offset_optional_impl (uint64_t = 0);
 	uint64_t difficulty_optional_impl (nano::work_version const);
-	uint64_t difficulty_ledger (nano::block const &);
+	uint64_t difficulty_ledger (nano::raw_block const &);
 	double multiplier_optional_impl (nano::work_version const, uint64_t &);
 	nano::work_version work_version_optional_impl (nano::work_version const default_a);
 	bool enable_sign_hash{ false };

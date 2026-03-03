@@ -1,6 +1,5 @@
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/block_type.hpp>
-#include <nano/lib/blocks.hpp>
 #include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/bounded_dfs.hpp>
 #include <nano/lib/files.hpp>
@@ -297,48 +296,36 @@ std::deque<nano::stored_block> nano::ledger::cement (secure::write_transaction &
 {
 	std::deque<nano::stored_block> result;
 
-	auto start_block_opt = any.block_get (transaction, target_hash);
-	release_assert (start_block_opt, "attempting to cement a non-existent block", target_hash.to_string ());
-	auto start_block = start_block_opt->to_legacy ();
+	release_assert (any.block_exists (transaction, target_hash), "attempting to cement a non-existent block", target_hash.to_string ());
 
-	auto is_resolved = [&] (std::shared_ptr<nano::block> const & block) {
+	auto is_resolved = [&] (nano::block_hash const & hash) {
+		if (hash.is_zero ())
+		{
+			return true; // Zero hash means no dependency
+		}
+		return cemented.block_exists_or_pruned (transaction, hash);
+	};
+
+	auto get_dependencies = [&] (nano::block_hash const & hash) -> std::array<nano::block_hash, 2> {
+		auto block = any.block_get (transaction, hash);
 		if (block)
 		{
-			return cemented.block_exists (transaction, *block);
+			return block->dependencies ();
 		}
-		return true; // Pruned, must have been cemented
+		// If the block doesn't exist, it must be pruned
+		debug_assert (any.block_pruned (transaction, hash), "missing dependency block", hash.to_string ());
+		return { nano::block_hash{ 0 }, nano::block_hash{ 0 } };
 	};
 
-	auto get_dependencies = [&] (std::shared_ptr<nano::block> const & block) {
-		auto dep_hashes = block->dependencies ();
-		std::array<std::shared_ptr<nano::block>, dep_hashes.size ()> deps{};
-		for (size_t i = 0; i < dep_hashes.size (); ++i)
-		{
-			auto const & dep_hash = dep_hashes[i];
-			if (!dep_hash.is_zero ())
-			{
-				auto dep_block = any.block_get (transaction, dep_hash);
-				if (dep_block)
-				{
-					deps[i] = *dep_block;
-				}
-				else
-				{
-					// If the block doesn't exist, it must be pruned
-					debug_assert (any.block_pruned (transaction, dep_hash), "missing dependency block", dep_hash.to_string ());
-				}
-				// nullptr will be filtered by is_resolved
-			}
-		}
-		return deps;
-	};
+	auto resolve = [&] (nano::block_hash const & hash) -> bool {
+		auto block = any.block_get (transaction, hash);
+		release_assert (block);
 
-	auto resolve = [&] (std::shared_ptr<nano::block> const & block) -> bool {
 		// We must only cement blocks that have their dependencies cemented
 		debug_assert (dependencies_cemented (transaction, *block));
 		cement_one (transaction, *block);
 
-		result.emplace_back (*block);
+		result.push_back (*block);
 
 		// Refresh the transaction to avoid long-running transactions
 		// Ensure that the block wasn't rolled back during the refresh
@@ -356,7 +343,7 @@ std::deque<nano::stored_block> nano::ledger::cement (secure::write_transaction &
 	};
 
 	// Walk the dependency tree depth-first, cementing blocks bottom-up, newly cemented blocks are collected in result
-	auto dfs_result = nano::bounded_dfs (start_block, max_blocks, is_resolved, get_dependencies, resolve);
+	auto dfs_result = nano::bounded_dfs (target_hash, max_blocks, is_resolved, get_dependencies, resolve);
 	debug_assert (dfs_result.resolved == result.size ());
 
 	stats.inc (nano::stat::type::ledger, dfs_result.overflow ? nano::stat::detail::cementing_overflow : nano::stat::detail::cementing);
@@ -365,7 +352,7 @@ std::deque<nano::stored_block> nano::ledger::cement (secure::write_transaction &
 	return result;
 }
 
-void nano::ledger::cement_one (secure::write_transaction & transaction, nano::block const & block)
+void nano::ledger::cement_one (secure::write_transaction & transaction, nano::stored_block const & block)
 {
 	debug_assert ((!store.confirmation_height.get (transaction, block.account ()) && block.sideband ().height == 1) || store.confirmation_height.get (transaction, block.account ()).value ().height + 1 == block.sideband ().height);
 	confirmation_height_info info{ block.sideband ().height, block.hash () };
@@ -387,17 +374,6 @@ auto nano::ledger::process (secure::write_transaction const & transaction, nano:
 		++cache.block_count;
 	}
 	return { processor.result, processor.stored };
-}
-
-nano::block_status nano::ledger::process (secure::write_transaction const & transaction, std::shared_ptr<nano::block> block)
-{
-	auto result = process (transaction, nano::to_raw (*block));
-	if (result.code == nano::block_status::progress)
-	{
-		release_assert (result.stored);
-		block->sideband_set (result.stored->sideband ());
-	}
-	return result.code;
 }
 
 nano::block_hash nano::ledger::representative_block (secure::transaction const & transaction, nano::block_hash const & hash)
@@ -574,7 +550,7 @@ bool nano::ledger::is_epoch_link (nano::link const & link_a) const
  *  The send block hash is not checked in any way, it is assumed to be correct.
  * @return Return the receive block on success and null on failure
  */
-std::shared_ptr<nano::block> nano::ledger::find_receive_block_by_send_hash (secure::transaction const & transaction, nano::account const & destination, nano::block_hash const & send_block_hash)
+std::optional<nano::stored_block> nano::ledger::find_receive_block_by_send_hash (secure::transaction const & transaction, nano::account const & destination, nano::block_hash const & send_block_hash)
 {
 	debug_assert (send_block_hash != 0);
 
@@ -582,7 +558,7 @@ std::shared_ptr<nano::block> nano::ledger::find_receive_block_by_send_hash (secu
 	nano::confirmation_height_info info;
 	if (store.confirmation_height.get (transaction, destination, info))
 	{
-		return nullptr;
+		return std::nullopt;
 	}
 	auto possible_receive_block = any.block_get (transaction, info.frontier);
 
@@ -592,13 +568,13 @@ std::shared_ptr<nano::block> nano::ledger::find_receive_block_by_send_hash (secu
 		if (possible_receive_block->is_receive () && send_block_hash == possible_receive_block->source ())
 		{
 			// we have a match
-			return *possible_receive_block;
+			return possible_receive_block;
 		}
 
 		possible_receive_block = any.block_get (transaction, possible_receive_block->previous ());
 	}
 
-	return nullptr;
+	return std::nullopt;
 }
 
 std::optional<nano::account> nano::ledger::linked_account (secure::transaction const & transaction, nano::stored_block const & block)
@@ -648,7 +624,7 @@ void nano::ledger::update_account (secure::write_transaction const & transaction
 	}
 }
 
-std::shared_ptr<nano::block> nano::ledger::forked_block (secure::transaction const & transaction_a, nano::block const & block_a)
+std::optional<nano::stored_block> nano::ledger::forked_block (secure::transaction const & transaction_a, nano::raw_block const & block_a)
 {
 	debug_assert (!any.block_exists (transaction_a, block_a.hash ()));
 	auto root (block_a.root ());
@@ -661,7 +637,7 @@ std::shared_ptr<nano::block> nano::ledger::forked_block (secure::transaction con
 		auto fork_block = any.block_get (transaction_a, successor.value ());
 		if (fork_block)
 		{
-			return *fork_block;
+			return fork_block;
 		}
 	}
 
@@ -670,7 +646,7 @@ std::shared_ptr<nano::block> nano::ledger::forked_block (secure::transaction con
 	release_assert (info);
 	auto fork = any.block_get (transaction_a, info->open_block);
 	release_assert (fork);
-	return *fork;
+	return fork;
 }
 
 uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a, nano::block_hash const & hash_a, uint64_t const batch_size_a)
@@ -721,13 +697,9 @@ auto nano::ledger::block_priority (nano::secure::transaction const & transaction
 	return { priority_balance, priority_timestamp };
 }
 
-nano::epoch nano::ledger::version (nano::block const & block)
+nano::epoch nano::ledger::version (nano::stored_block const & block)
 {
-	if (block.type () == nano::block_type::state)
-	{
-		return block.sideband ().details.epoch;
-	}
-	return nano::epoch::epoch_0;
+	return block.epoch ();
 }
 
 nano::epoch nano::ledger::version (secure::transaction const & transaction, nano::block_hash const & hash) const
