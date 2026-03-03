@@ -7,12 +7,12 @@
 namespace nano
 {
 class amount;
-class block;
-class send_block;
-class receive_block;
-class change_block;
-class open_block;
-class state_block;
+class raw_block;
+struct raw_state_block;
+struct raw_send_block;
+struct raw_receive_block;
+struct raw_open_block;
+struct raw_change_block;
 namespace ipc
 {
 	/**
@@ -21,12 +21,12 @@ namespace ipc
 	class flatbuffers_builder
 	{
 	public:
-		static nanoapi::BlockUnion block_to_union (nano::block const & block_a, nano::amount const & amount_a, bool is_state_send_a = false, bool is_state_epoch_a = false);
-		static std::unique_ptr<nanoapi::BlockStateT> from (nano::state_block const & block_a, nano::amount const & amount_a, bool is_state_send_a, bool is_state_epoch_a);
-		static std::unique_ptr<nanoapi::BlockSendT> from (nano::send_block const & block_a);
-		static std::unique_ptr<nanoapi::BlockReceiveT> from (nano::receive_block const & block_a);
-		static std::unique_ptr<nanoapi::BlockOpenT> from (nano::open_block const & block_a);
-		static std::unique_ptr<nanoapi::BlockChangeT> from (nano::change_block const & block_a);
+		static nanoapi::BlockUnion block_to_union (nano::raw_block const & block_a, nano::amount const & amount_a, bool is_state_send_a = false, bool is_state_epoch_a = false);
+		static std::unique_ptr<nanoapi::BlockStateT> from (nano::raw_state_block const & block_a, nano::amount const & amount_a, bool is_state_send_a, bool is_state_epoch_a);
+		static std::unique_ptr<nanoapi::BlockSendT> from (nano::raw_send_block const & block_a);
+		static std::unique_ptr<nanoapi::BlockReceiveT> from (nano::raw_receive_block const & block_a);
+		static std::unique_ptr<nanoapi::BlockOpenT> from (nano::raw_open_block const & block_a);
+		static std::unique_ptr<nanoapi::BlockChangeT> from (nano::raw_change_block const & block_a);
 	};
 }
 }

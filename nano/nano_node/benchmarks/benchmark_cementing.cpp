@@ -196,8 +196,8 @@ void cementing_benchmark::run_iteration (std::deque<nano::raw_block> & blocks)
 		auto transaction = node->ledger.tx_begin_write ();
 		for (auto const & block : blocks)
 		{
-			auto result = node->ledger.process (transaction, nano::to_legacy (block));
-			release_assert (result == nano::block_status::progress, to_string (result));
+			auto result = node->ledger.process (transaction, block);
+			release_assert (result.code == nano::block_status::progress, to_string (result.code));
 		}
 	}
 

@@ -228,8 +228,8 @@ void elections_benchmark::run_iteration (std::deque<nano::raw_block> & sends, st
 		auto transaction = node->ledger.tx_begin_write ();
 		for (auto const & send : sends)
 		{
-			auto result = node->ledger.process (transaction, nano::to_legacy (send));
-			release_assert (result == nano::block_status::progress, to_string (result));
+			auto result = node->ledger.process (transaction, send);
+			release_assert (result.code == nano::block_status::progress, to_string (result.code));
 
 			// Add to cementing set for direct cementing
 			auto cemented = node->ledger.cement (transaction, send.hash ());
@@ -243,8 +243,8 @@ void elections_benchmark::run_iteration (std::deque<nano::raw_block> & sends, st
 		auto transaction = node->ledger.tx_begin_write ();
 		for (auto const & open : opens)
 		{
-			auto result = node->ledger.process (transaction, nano::to_legacy (open));
-			release_assert (result == nano::block_status::progress, to_string (result));
+			auto result = node->ledger.process (transaction, open);
+			release_assert (result.code == nano::block_status::progress, to_string (result.code));
 		}
 	}
 

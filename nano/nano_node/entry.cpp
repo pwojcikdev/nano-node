@@ -1473,34 +1473,32 @@ int main (int argc, char * const * argv)
 				auto hash (info.open_block);
 				nano::block_hash calculated_hash (0);
 				auto block_opt = node->ledger.any.block_get (transaction, hash); // Block data
-				std::shared_ptr<nano::block> block = block_opt ? block_opt->to_legacy () : nullptr;
 				uint64_t height (0);
 				if (node->ledger.pruning && confirmation_height_info.height != 0)
 				{
 					hash = confirmation_height_info.frontier;
 					block_opt = node->ledger.any.block_get (transaction, hash);
-					block = block_opt ? block_opt->to_legacy () : nullptr;
 					// Iteration until pruned block
 					bool pruned_block (false);
-					while (!pruned_block && !block->previous ().is_zero ())
+					while (!pruned_block && !block_opt->previous ().is_zero ())
 					{
-						auto previous_block_opt = node->ledger.any.block_get (transaction, block->previous ());
+						auto previous_block_opt = node->ledger.any.block_get (transaction, block_opt->previous ());
 						if (previous_block_opt)
 						{
 							hash = previous_block_opt->hash ();
-							block = *previous_block_opt;
+							block_opt = std::move (previous_block_opt);
 						}
 						else
 						{
 							pruned_block = true;
-							if (!node->store.pruned.exists (transaction, block->previous ()))
+							if (!node->store.pruned.exists (transaction, block_opt->previous ()))
 							{
-								print_error_message (boost::str (boost::format ("Pruned previous block does not exist %1%\n") % block->previous ().to_string ()));
+								print_error_message (boost::str (boost::format ("Pruned previous block does not exist %1%\n") % block_opt->previous ().to_string ()));
 							}
 						}
 					}
-					calculated_hash = block->previous ();
-					height = block->sideband ().height - 1;
+					calculated_hash = block_opt->previous ();
+					height = block_opt->sideband ().height - 1;
 					if (!node->ledger.any.block_exists_or_pruned (transaction, info.open_block))
 					{
 						print_error_message (boost::str (boost::format ("Open block does not exist %1%\n") % info.open_block.to_string ()));
@@ -1508,14 +1506,14 @@ int main (int argc, char * const * argv)
 				}
 				uint64_t previous_timestamp (0);
 				nano::account calculated_representative{};
-				while (!hash.is_zero () && block != nullptr)
+				while (!hash.is_zero () && block_opt)
 				{
 					++block_count;
-					auto const & sideband (block->sideband ());
+					auto const & sideband (block_opt->sideband ());
 					// Check for state & open blocks if account field is correct
-					if (block->type () == nano::block_type::open || block->type () == nano::block_type::state)
+					if (block_opt->type () == nano::block_type::open || block_opt->type () == nano::block_type::state)
 					{
-						if (block->account () != account)
+						if (block_opt->account () != account)
 						{
 							print_error_message (boost::str (boost::format ("Incorrect account field for block %1%\n") % hash.to_string ()));
 						}
@@ -1526,44 +1524,45 @@ int main (int argc, char * const * argv)
 						print_error_message (boost::str (boost::format ("Incorrect sideband account for block %1%\n") % hash.to_string ()));
 					}
 					// Check if previous field is correct
-					if (calculated_hash != block->previous ())
+					if (calculated_hash != block_opt->previous ())
 					{
 						print_error_message (boost::str (boost::format ("Incorrect previous field for block %1%\n") % hash.to_string ()));
 					}
 					// Check if previous & type for open blocks are correct
-					if (height == 0 && !block->previous ().is_zero ())
+					if (height == 0 && !block_opt->previous ().is_zero ())
 					{
 						print_error_message (boost::str (boost::format ("Incorrect previous for open block %1%\n") % hash.to_string ()));
 					}
-					if (height == 0 && block->type () != nano::block_type::open && block->type () != nano::block_type::state)
+					if (height == 0 && block_opt->type () != nano::block_type::open && block_opt->type () != nano::block_type::state)
 					{
 						print_error_message (boost::str (boost::format ("Incorrect type for open block %1%\n") % hash.to_string ()));
 					}
 					// Check if block data is correct (calculating hash)
-					calculated_hash = block->hash ();
+					calculated_hash = block_opt->hash ();
 					if (calculated_hash != hash)
 					{
 						print_error_message (boost::str (boost::format ("Invalid data inside block %1% calculated hash: %2%\n") % hash.to_string () % calculated_hash.to_string ()));
 					}
 					// Check if block signature is correct
-					if (validate_message (account, hash, block->block_signature ()))
+					if (validate_message (account, hash, block_opt->block_signature ()))
 					{
 						bool invalid (true);
 						// Epoch blocks
-						if (block->type () == nano::block_type::state)
+						if (block_opt->type () == nano::block_type::state)
 						{
-							auto & state_block (static_cast<nano::state_block &> (*block.get ()));
+							auto state_block = block_opt->raw ().as_state ();
+							release_assert (state_block.has_value ());
 							nano::amount prev_balance (0);
 							bool error_or_pruned (false);
-							if (!state_block.previous ().is_zero ())
+							if (!state_block->previous_field ().is_zero ())
 							{
-								prev_balance = node->ledger.any.block_balance (transaction, state_block.previous ()).value_or (0);
+								prev_balance = node->ledger.any.block_balance (transaction, state_block->previous_field ()).value_or (0);
 							}
-							if (node->ledger.is_epoch_link (state_block.link_field ().value ()))
+							if (node->ledger.is_epoch_link (state_block->link_field ()))
 							{
-								if ((state_block.balance_field ().value () == prev_balance && !error_or_pruned) || (node->ledger.pruning && error_or_pruned && block->sideband ().details.is_epoch))
+								if ((state_block->balance_field () == prev_balance && !error_or_pruned) || (node->ledger.pruning && error_or_pruned && block_opt->sideband ().details.is_epoch))
 								{
-									invalid = validate_message (node->ledger.epoch_signer (block->link_field ().value ()), hash, block->block_signature ());
+									invalid = validate_message (node->ledger.epoch_signer (block_opt->link_field ().value ()), hash, block_opt->block_signature ());
 								}
 							}
 						}
@@ -1574,29 +1573,29 @@ int main (int argc, char * const * argv)
 					}
 					// Validate block details set in the sideband
 					bool block_details_error = false;
-					if (block->type () != nano::block_type::state)
+					if (block_opt->type () != nano::block_type::state)
 					{
 						// Not state
 						block_details_error = sideband.details.is_send || sideband.details.is_receive || sideband.details.is_epoch;
 					}
 					else
 					{
-						auto prev_balance = node->ledger.any.block_balance (transaction, block->previous ());
+						auto prev_balance = node->ledger.any.block_balance (transaction, block_opt->previous ());
 						if (!node->ledger.pruning || prev_balance)
 						{
-							if (block->balance () < prev_balance.value ())
+							if (block_opt->balance () < prev_balance.value ())
 							{
 								// State send
 								block_details_error = !sideband.details.is_send || sideband.details.is_receive || sideband.details.is_epoch;
 							}
 							else
 							{
-								if (block->is_change ())
+								if (block_opt->is_change ())
 								{
 									// State change
 									block_details_error = sideband.details.is_send || sideband.details.is_receive || sideband.details.is_epoch;
 								}
-								else if (block->balance () == prev_balance.value () && node->ledger.is_epoch_link (block->link_field ().value ()))
+								else if (block_opt->balance () == prev_balance.value () && node->ledger.is_epoch_link (block_opt->link_field ().value ()))
 								{
 									// State epoch
 									block_details_error = !sideband.details.is_epoch || sideband.details.is_send || sideband.details.is_receive;
@@ -1605,13 +1604,13 @@ int main (int argc, char * const * argv)
 								{
 									// State receive
 									block_details_error = !sideband.details.is_receive || sideband.details.is_send || sideband.details.is_epoch;
-									block_details_error |= !node->ledger.any.block_exists_or_pruned (transaction, block->source ());
+									block_details_error |= !node->ledger.any.block_exists_or_pruned (transaction, block_opt->source ());
 								}
 							}
 						}
-						else if (!node->store.pruned.exists (transaction, block->previous ()))
+						else if (!node->store.pruned.exists (transaction, block_opt->previous ()))
 						{
-							print_error_message (boost::str (boost::format ("Previous pruned block does not exist %1%\n") % block->previous ().to_string ()));
+							print_error_message (boost::str (boost::format ("Previous pruned block does not exist %1%\n") % block_opt->previous ().to_string ()));
 						}
 					}
 					if (block_details_error)
@@ -1619,17 +1618,17 @@ int main (int argc, char * const * argv)
 						print_error_message (boost::str (boost::format ("Incorrect sideband block details for block %1%\n") % hash.to_string ()));
 					}
 					// Check link epoch version
-					if (sideband.details.is_receive && (!node->ledger.pruning || !node->store.pruned.exists (transaction, block->source ())))
+					if (sideband.details.is_receive && (!node->ledger.pruning || !node->store.pruned.exists (transaction, block_opt->source ())))
 					{
-						if (sideband.source_epoch != node->ledger.version (*block))
+						if (sideband.source_epoch != block_opt->epoch ())
 						{
 							print_error_message (boost::str (boost::format ("Incorrect source epoch for block %1%\n") % hash.to_string ()));
 						}
 					}
 					// Check if block work value is correct
-					if (node->network_params.work.difficulty (*block) < node->network_params.work.threshold (block->work_version (), block->sideband ().details))
+					if (node->network_params.work.difficulty (block_opt->raw ()) < node->network_params.work.threshold (block_opt->work_version (), block_opt->sideband ().details))
 					{
-						print_error_message (boost::str (boost::format ("Invalid work for block %1% value: %2%\n") % hash.to_string () % nano::to_string_hex (block->block_work ())));
+						print_error_message (boost::str (boost::format ("Invalid work for block %1% value: %2%\n") % hash.to_string () % nano::to_string_hex (block_opt->block_work ())));
 					}
 					// Check if sideband height is correct
 					++height;
@@ -1644,9 +1643,9 @@ int main (int argc, char * const * argv)
 					}
 					previous_timestamp = sideband.timestamp;
 					// Calculate representative block
-					if (block->type () == nano::block_type::open || block->type () == nano::block_type::change || block->type () == nano::block_type::state)
+					if (block_opt->type () == nano::block_type::open || block_opt->type () == nano::block_type::change || block_opt->type () == nano::block_type::state)
 					{
-						calculated_representative = block->representative_field ().value ();
+						calculated_representative = block_opt->representative_field ().value ();
 					}
 					// Retrieving successor block hash
 					hash = node->ledger.any.block_successor (transaction, hash).value_or (0);
@@ -1654,11 +1653,10 @@ int main (int argc, char * const * argv)
 					if (!hash.is_zero ())
 					{
 						block_opt = node->ledger.any.block_get (transaction, hash);
-						block = block_opt ? block_opt->to_legacy () : nullptr;
 					}
 				}
 				// Check if required block exists
-				if (!hash.is_zero () && !block)
+				if (!hash.is_zero () && !block_opt)
 				{
 					print_error_message (boost::str (boost::format ("Required block in account %1% chain was not found in ledger: %2%\n") % account.to_account () % hash.to_string ()));
 				}

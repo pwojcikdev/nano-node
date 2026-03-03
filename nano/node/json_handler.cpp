@@ -1,6 +1,7 @@
 #include <nano/lib/block_type.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/blocks_raw.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/json_error_response.hpp>
 #include <nano/lib/jsonconfig.hpp>
@@ -851,8 +852,8 @@ void nano::json_handler::account_representative_set ()
 				auto response_a (rpc_l->response);
 				auto response_data (std::make_shared<boost::property_tree::ptree> (rpc_l->response_l));
 				wallet->change_async (
-				account, representative, [response_a, response_data] (std::shared_ptr<nano::block> const & block) {
-					if (block != nullptr)
+				account, representative, [response_a, response_data] (std::optional<nano::raw_block> const & block) {
+					if (block)
 					{
 						response_data->put ("block", block->hash ().to_string ());
 						std::stringstream ostream;
@@ -2426,205 +2427,198 @@ void nano::json_handler::account_count ()
 
 namespace
 {
-class history_visitor : public nano::block_visitor
+void populate_history_entry (nano::json_handler & handler, bool raw, nano::secure::transaction & transaction,
+	boost::property_tree::ptree & tree, nano::block_hash const & hash,
+	std::vector<nano::public_key> const & accounts_filter, nano::stored_block const & block)
 {
-public:
-	history_visitor (nano::json_handler & handler_a, bool raw_a, nano::secure::transaction & transaction_a, boost::property_tree::ptree & tree_a, nano::block_hash const & hash_a, std::vector<nano::public_key> const & accounts_filter_a) :
-		handler (handler_a),
-		raw (raw_a),
-		transaction (transaction_a),
-		tree (tree_a),
-		hash (hash_a),
-		accounts_filter (accounts_filter_a)
-	{
-	}
-	virtual ~history_visitor () = default;
-	void send_block (nano::send_block const & block_a)
-	{
-		if (should_ignore_account (block_a.destination_field ().value ()))
+	auto should_ignore_account = [&accounts_filter] (nano::public_key const & account) {
+		if (!accounts_filter.empty ())
 		{
-			return;
-		}
-		tree.put ("type", "send");
-		auto account (block_a.destination_field ().value ().to_account ());
-		tree.put ("account", account);
-		auto amount = handler.node.ledger.any.block_amount (transaction, hash);
-		if (amount)
-		{
-			tree.put ("amount", amount.value ().number ().convert_to<std::string> ());
-		}
-		if (raw)
-		{
-			tree.put ("destination", account);
-			tree.put ("balance", block_a.balance_field ().value ().to_string_dec ());
-			tree.put ("previous", block_a.previous ().to_string ());
-		}
-	}
-	void receive_block (nano::receive_block const & block_a)
-	{
-		tree.put ("type", "receive");
-		auto amount = handler.node.ledger.any.block_amount (transaction, hash);
-		if (amount)
-		{
-			auto source_account = handler.node.ledger.any.block_account (transaction, block_a.source_field ().value ());
-			if (source_account)
+			if (std::find (accounts_filter.begin (), accounts_filter.end (), account) == accounts_filter.end ())
 			{
-				tree.put ("account", source_account.value ().to_account ());
+				return true;
 			}
-			tree.put ("amount", amount.value ().number ().convert_to<std::string> ());
 		}
-		if (raw)
-		{
-			tree.put ("source", block_a.source_field ().value ().to_string ());
-			tree.put ("previous", block_a.previous ().to_string ());
-		}
-	}
-	void open_block (nano::open_block const & block_a)
+		return false;
+	};
+
+	switch (block.type ())
 	{
-		if (raw)
+		case nano::block_type::send:
 		{
-			tree.put ("type", "open");
-			tree.put ("representative", block_a.representative_field ().value ().to_account ());
-			tree.put ("source", block_a.source_field ().value ().to_string ());
-			tree.put ("opened", block_a.account_field ().value ().to_account ());
-		}
-		else
-		{
-			// Report opens as a receive
-			tree.put ("type", "receive");
-		}
-		if (block_a.source_field ().value () != handler.node.ledger.constants.genesis.account ().as_union ())
-		{
-			bool error_or_pruned (false);
+			if (should_ignore_account (block.destination_field ().value ()))
+			{
+				return;
+			}
+			tree.put ("type", "send");
+			auto account (block.destination_field ().value ().to_account ());
+			tree.put ("account", account);
 			auto amount = handler.node.ledger.any.block_amount (transaction, hash);
 			if (amount)
 			{
-				auto source_account = handler.node.ledger.any.block_account (transaction, block_a.source_field ().value ());
+				tree.put ("amount", amount.value ().number ().convert_to<std::string> ());
+			}
+			if (raw)
+			{
+				tree.put ("destination", account);
+				tree.put ("balance", block.balance_field ().value ().to_string_dec ());
+				tree.put ("previous", block.previous ().to_string ());
+			}
+			break;
+		}
+		case nano::block_type::receive:
+		{
+			tree.put ("type", "receive");
+			auto amount = handler.node.ledger.any.block_amount (transaction, hash);
+			if (amount)
+			{
+				auto source_account = handler.node.ledger.any.block_account (transaction, block.source_field ().value ());
 				if (source_account)
 				{
 					tree.put ("account", source_account.value ().to_account ());
 				}
 				tree.put ("amount", amount.value ().number ().convert_to<std::string> ());
 			}
-		}
-		else
-		{
-			tree.put ("account", handler.node.ledger.constants.genesis.account ().to_account ());
-			tree.put ("amount", nano::dev::constants.genesis_amount.convert_to<std::string> ());
-		}
-	}
-	void change_block (nano::change_block const & block_a)
-	{
-		if (raw && accounts_filter.empty ())
-		{
-			tree.put ("type", "change");
-			tree.put ("representative", block_a.representative_field ().value ().to_account ());
-			tree.put ("previous", block_a.previous ().to_string ());
-		}
-	}
-	void state_block (nano::state_block const & block_a)
-	{
-		if (raw)
-		{
-			tree.put ("type", "state");
-			tree.put ("representative", block_a.representative_field ().value ().to_account ());
-			tree.put ("link", block_a.link_field ().value ().to_string ());
-			tree.put ("balance", block_a.balance_field ().value ().to_string_dec ());
-			tree.put ("previous", block_a.previous ().to_string ());
-		}
-		auto balance (block_a.balance_field ().value ().number ());
-		auto previous_balance_raw = handler.node.ledger.any.block_balance (transaction, block_a.previous ());
-		auto previous_balance = previous_balance_raw.value_or (0);
-		if (!block_a.previous ().is_zero () && !previous_balance_raw.has_value ())
-		{
-			// If previous hash is non-zero and we can't query the balance, e.g. it's pruned, we can't determine the block type
 			if (raw)
 			{
-				tree.put ("subtype", "unknown");
+				tree.put ("source", block.source_field ().value ().to_string ());
+				tree.put ("previous", block.previous ().to_string ());
+			}
+			break;
+		}
+		case nano::block_type::open:
+		{
+			if (raw)
+			{
+				tree.put ("type", "open");
+				tree.put ("representative", block.representative_field ().value ().to_account ());
+				tree.put ("source", block.source_field ().value ().to_string ());
+				tree.put ("opened", block.account_field ().value ().to_account ());
 			}
 			else
 			{
-				tree.put ("type", "unknown");
+				// Report opens as a receive
+				tree.put ("type", "receive");
 			}
-		}
-		else if (balance < previous_balance.number ())
-		{
-			if (should_ignore_account (block_a.link_field ().value ().as_account ()))
+			if (block.source_field ().value () != handler.node.ledger.constants.genesis.account ().as_union ())
 			{
-				tree.clear ();
-				return;
-			}
-			if (raw)
-			{
-				tree.put ("subtype", "send");
-			}
-			else
-			{
-				tree.put ("type", "send");
-			}
-			tree.put ("account", block_a.link_field ().value ().to_account ());
-			tree.put ("amount", (previous_balance.number () - balance).convert_to<std::string> ());
-		}
-		else
-		{
-			if (block_a.link_field ().value ().is_zero ())
-			{
-				if (raw && accounts_filter.empty ())
+				auto amount = handler.node.ledger.any.block_amount (transaction, hash);
+				if (amount)
 				{
-					tree.put ("subtype", "change");
-				}
-			}
-			else if (balance == previous_balance && handler.node.ledger.is_epoch_link (block_a.link_field ().value ()))
-			{
-				if (raw && accounts_filter.empty ())
-				{
-					tree.put ("subtype", "epoch");
-					tree.put ("account", handler.node.ledger.epoch_signer (block_a.link_field ().value ()).to_account ());
+					auto source_account = handler.node.ledger.any.block_account (transaction, block.source_field ().value ());
+					if (source_account)
+					{
+						tree.put ("account", source_account.value ().to_account ());
+					}
+					tree.put ("amount", amount.value ().number ().convert_to<std::string> ());
 				}
 			}
 			else
 			{
-				auto source_account = handler.node.ledger.any.block_account (transaction, block_a.link_field ().value ().as_block_hash ());
-				if (source_account && should_ignore_account (source_account.value ()))
+				tree.put ("account", handler.node.ledger.constants.genesis.account ().to_account ());
+				tree.put ("amount", nano::dev::constants.genesis_amount.convert_to<std::string> ());
+			}
+			break;
+		}
+		case nano::block_type::change:
+		{
+			if (raw && accounts_filter.empty ())
+			{
+				tree.put ("type", "change");
+				tree.put ("representative", block.representative_field ().value ().to_account ());
+				tree.put ("previous", block.previous ().to_string ());
+			}
+			break;
+		}
+		case nano::block_type::state:
+		{
+			if (raw)
+			{
+				tree.put ("type", "state");
+				tree.put ("representative", block.representative_field ().value ().to_account ());
+				tree.put ("link", block.link_field ().value ().to_string ());
+				tree.put ("balance", block.balance_field ().value ().to_string_dec ());
+				tree.put ("previous", block.previous ().to_string ());
+			}
+			auto balance (block.balance_field ().value ().number ());
+			auto previous_balance_raw = handler.node.ledger.any.block_balance (transaction, block.previous ());
+			auto previous_balance = previous_balance_raw.value_or (0);
+			if (!block.previous ().is_zero () && !previous_balance_raw.has_value ())
+			{
+				// If previous hash is non-zero and we can't query the balance, e.g. it's pruned, we can't determine the block type
+				if (raw)
+				{
+					tree.put ("subtype", "unknown");
+				}
+				else
+				{
+					tree.put ("type", "unknown");
+				}
+			}
+			else if (balance < previous_balance.number ())
+			{
+				if (should_ignore_account (block.link_field ().value ().as_account ()))
 				{
 					tree.clear ();
 					return;
 				}
 				if (raw)
 				{
-					tree.put ("subtype", "receive");
+					tree.put ("subtype", "send");
 				}
 				else
 				{
-					tree.put ("type", "receive");
+					tree.put ("type", "send");
 				}
-				if (source_account)
-				{
-					tree.put ("account", source_account.value ().to_account ());
-				}
-				tree.put ("amount", (balance - previous_balance.number ()).convert_to<std::string> ());
+				tree.put ("account", block.link_field ().value ().to_account ());
+				tree.put ("amount", (previous_balance.number () - balance).convert_to<std::string> ());
 			}
-		}
-	}
-	bool should_ignore_account (nano::public_key const & account)
-	{
-		bool ignore (false);
-		if (!accounts_filter.empty ())
-		{
-			if (std::find (accounts_filter.begin (), accounts_filter.end (), account) == accounts_filter.end ())
+			else
 			{
-				ignore = true;
+				if (block.link_field ().value ().is_zero ())
+				{
+					if (raw && accounts_filter.empty ())
+					{
+						tree.put ("subtype", "change");
+					}
+				}
+				else if (balance == previous_balance && handler.node.ledger.is_epoch_link (block.link_field ().value ()))
+				{
+					if (raw && accounts_filter.empty ())
+					{
+						tree.put ("subtype", "epoch");
+						tree.put ("account", handler.node.ledger.epoch_signer (block.link_field ().value ()).to_account ());
+					}
+				}
+				else
+				{
+					auto source_account = handler.node.ledger.any.block_account (transaction, block.link_field ().value ().as_block_hash ());
+					if (source_account && should_ignore_account (source_account.value ()))
+					{
+						tree.clear ();
+						return;
+					}
+					if (raw)
+					{
+						tree.put ("subtype", "receive");
+					}
+					else
+					{
+						tree.put ("type", "receive");
+					}
+					if (source_account)
+					{
+						tree.put ("account", source_account.value ().to_account ());
+					}
+					tree.put ("amount", (balance - previous_balance.number ()).convert_to<std::string> ());
+				}
 			}
+			break;
 		}
-		return ignore;
+		default:
+			break;
 	}
-	nano::json_handler & handler;
-	bool raw;
-	nano::secure::transaction & transaction;
-	boost::property_tree::ptree & tree;
-	nano::block_hash const & hash;
-	std::vector<nano::public_key> const & accounts_filter;
-};
+}
 }
 
 void nano::json_handler::account_history ()
@@ -2706,8 +2700,7 @@ void nano::json_handler::account_history ()
 			else
 			{
 				boost::property_tree::ptree entry;
-				history_visitor visitor (*this, output_raw, transaction, entry, hash, accounts_to_filter);
-				block->to_legacy ()->visit (visitor);
+				populate_history_entry (*this, output_raw, transaction, entry, hash, accounts_to_filter, *block);
 				if (!entry.empty ())
 				{
 					if (include_linked_account)
@@ -3482,8 +3475,8 @@ void nano::json_handler::receive ()
 						bool generate_work (work == 0); // Disable work generation if "work" option is provided
 						auto response_a (response);
 						wallet->receive_async (
-						hash, representative, nano::dev::constants.genesis_amount, account, [response_a] (std::shared_ptr<nano::block> const & block_a) {
-							if (block_a != nullptr)
+						hash, representative, nano::dev::constants.genesis_amount, account, [response_a] (std::optional<nano::raw_block> const & block_a) {
+							if (block_a)
 							{
 								boost::property_tree::ptree response_l;
 								response_l.put ("block", block_a->hash ().to_string ());
@@ -3830,8 +3823,8 @@ void nano::json_handler::send ()
 			auto response_a (response);
 			auto response_data (std::make_shared<boost::property_tree::ptree> (response_l));
 			wallet->send_async (
-			source, destination, amount.number (), [balance, amount, response_a, response_data] (std::shared_ptr<nano::block> const & block_a) {
-				if (block_a != nullptr)
+			source, destination, amount.number (), [balance, amount, response_a, response_data] (std::optional<nano::raw_block> const & block_a) {
+				if (block_a)
 				{
 					response_data->put ("block", block_a->hash ().to_string ());
 					std::stringstream ostream;
@@ -4675,8 +4668,7 @@ void nano::json_handler::wallet_history ()
 					{
 						boost::property_tree::ptree entry;
 						std::vector<nano::public_key> no_filter;
-						history_visitor visitor (*this, false, block_transaction, entry, hash, no_filter);
-						block->to_legacy ()->visit (visitor);
+						populate_history_entry (*this, false, block_transaction, entry, hash, no_filter, *block);
 						if (!entry.empty ())
 						{
 							entry.put ("block_account", account.to_account ());
@@ -4904,7 +4896,7 @@ void nano::json_handler::wallet_representative_set ()
 				for (auto & account : accounts)
 				{
 					wallet->change_async (
-					account, representative, [] (std::shared_ptr<nano::block> const &) {}, 0, false);
+					account, representative, [] (std::optional<nano::raw_block> const &) {}, 0, false);
 				}
 			}
 		}

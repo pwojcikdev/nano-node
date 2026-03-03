@@ -292,12 +292,12 @@ TEST (active_elections, DISABLED_keep_local)
 	auto const send4 = wallet.send_action (nano::dev::genesis_key.pub, key4.pub, node.config.receive_minimum.number ());
 	auto const send5 = wallet.send_action (nano::dev::genesis_key.pub, key5.pub, node.config.receive_minimum.number ());
 	auto const send6 = wallet.send_action (nano::dev::genesis_key.pub, key6.pub, node.config.receive_minimum.number ());
-	ASSERT_NE (nullptr, send1);
-	ASSERT_NE (nullptr, send2);
-	ASSERT_NE (nullptr, send3);
-	ASSERT_NE (nullptr, send4);
-	ASSERT_NE (nullptr, send5);
-	ASSERT_NE (nullptr, send6);
+	ASSERT_TRUE (send1);
+	ASSERT_TRUE (send2);
+	ASSERT_TRUE (send3);
+	ASSERT_TRUE (send4);
+	ASSERT_TRUE (send5);
+	ASSERT_TRUE (send6);
 
 	// force-confirm blocks
 	nano::test::confirm (node.ledger, send6->hash ());
@@ -1109,7 +1109,7 @@ TEST (active_elections, confirmation_consistency)
 	for (unsigned i = 0; i < 10; ++i)
 	{
 		auto block (system.wallet (0)->send_action (nano::dev::genesis_key.pub, nano::public_key (), node.config.receive_minimum.number ()));
-		ASSERT_NE (nullptr, block);
+		ASSERT_TRUE (block);
 		ASSERT_TIMELY (5s, node.block_confirmed (block->hash ()));
 		ASSERT_NO_ERROR (system.poll_until_true (1s, [&node, &block, i] {
 			EXPECT_EQ (i + 1, node.active.recently_confirmed.size ());

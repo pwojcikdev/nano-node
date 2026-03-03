@@ -125,7 +125,7 @@ TEST (node, send_unkeyed)
 	nano::keypair key2;
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	system.wallet (0)->store.password.value_set (nano::keypair ().prv);
-	ASSERT_EQ (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, system.nodes[0]->config.receive_minimum.number ()));
+	ASSERT_FALSE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, system.nodes[0]->config.receive_minimum.number ()));
 }
 
 TEST (node, send_self)
@@ -134,7 +134,7 @@ TEST (node, send_self)
 	nano::keypair key2;
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	system.wallet (0)->insert_adhoc (key2.prv);
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, system.nodes[0]->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, system.nodes[0]->config.receive_minimum.number ()));
 	ASSERT_TIMELY (10s, !system.nodes[0]->balance (key2.pub).is_zero ());
 	ASSERT_EQ (std::numeric_limits<nano::uint128_t>::max () - system.nodes[0]->config.receive_minimum.number (), system.nodes[0]->balance (nano::dev::genesis_key.pub));
 }
@@ -145,7 +145,7 @@ TEST (node, send_single)
 	nano::keypair key2;
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	system.wallet (1)->insert_adhoc (key2.prv);
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, system.nodes[0]->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, system.nodes[0]->config.receive_minimum.number ()));
 	ASSERT_EQ (std::numeric_limits<nano::uint128_t>::max () - system.nodes[0]->config.receive_minimum.number (), system.nodes[0]->balance (nano::dev::genesis_key.pub));
 	ASSERT_TRUE (system.nodes[0]->balance (key2.pub).is_zero ());
 	ASSERT_TIMELY (10s, !system.nodes[0]->balance (key2.pub).is_zero ());
@@ -157,7 +157,7 @@ TEST (node, send_single_observing_peer)
 	nano::keypair key2;
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	system.wallet (1)->insert_adhoc (key2.prv);
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, system.nodes[0]->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, system.nodes[0]->config.receive_minimum.number ()));
 	ASSERT_EQ (std::numeric_limits<nano::uint128_t>::max () - system.nodes[0]->config.receive_minimum.number (), system.nodes[0]->balance (nano::dev::genesis_key.pub));
 	ASSERT_TRUE (system.nodes[0]->balance (key2.pub).is_zero ());
 	ASSERT_TIMELY (10s, std::all_of (system.nodes.begin (), system.nodes.end (), [&] (std::shared_ptr<nano::node> const & node_a) { return !node_a->balance (key2.pub).is_zero (); }));
@@ -272,7 +272,7 @@ TEST (node, auto_bootstrap)
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	system.wallet (0)->insert_adhoc (key2.prv);
 	auto send1 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node0->config.receive_minimum.number ()));
-	ASSERT_NE (nullptr, send1);
+	ASSERT_TRUE (send1);
 	ASSERT_TIMELY_EQ (10s, node0->balance (key2.pub), node0->config.receive_minimum.number ());
 	auto node1 (std::make_shared<nano::node> (system.io_ctx, system.get_available_port (), nano::unique_path (), system.work, node_flags));
 	node1->start ();
@@ -299,7 +299,7 @@ TEST (node, auto_bootstrap_reverse)
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	system.wallet (0)->insert_adhoc (key2.prv);
 	auto node1 (std::make_shared<nano::node> (system.io_ctx, system.get_available_port (), nano::unique_path (), system.work, node_flags));
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node0->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node0->config.receive_minimum.number ()));
 	node1->start ();
 	system.nodes.push_back (node1);
 	ASSERT_NE (nullptr, nano::test::establish_tcp (system, *node0, node1->network.endpoint ()));
@@ -322,7 +322,7 @@ TEST (node, search_receivable)
 	auto node (system.nodes[0]);
 	nano::keypair key2;
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
 	system.wallet (0)->insert_adhoc (key2.prv);
 	ASSERT_FALSE (system.wallet (0)->search_receivable ());
 	ASSERT_TIMELY (10s, !node->balance (key2.pub).is_zero ());
@@ -334,8 +334,8 @@ TEST (node, search_receivable_same)
 	auto node (system.nodes[0]);
 	nano::keypair key2;
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
 	system.wallet (0)->insert_adhoc (key2.prv);
 	ASSERT_FALSE (system.wallet (0)->search_receivable ());
 	ASSERT_TIMELY_EQ (10s, node->balance (key2.pub), 2 * node->config.receive_minimum.number ());
@@ -349,10 +349,10 @@ TEST (node, search_receivable_multiple)
 	nano::keypair key3;
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	system.wallet (0)->insert_adhoc (key3.prv);
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key3.pub, node->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key3.pub, node->config.receive_minimum.number ()));
 	ASSERT_TIMELY (10s, !node->balance (key3.pub).is_zero ());
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (key3.pub, key2.pub, node->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (key3.pub, key2.pub, node->config.receive_minimum.number ()));
 	system.wallet (0)->insert_adhoc (key2.prv);
 	ASSERT_FALSE (system.wallet (0)->search_receivable ());
 	ASSERT_TIMELY_EQ (10s, node->balance (key2.pub), 2 * node->config.receive_minimum.number ());
@@ -368,11 +368,11 @@ TEST (node, search_receivable_confirmed)
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 
 	auto send1 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
-	ASSERT_NE (nullptr, send1);
+	ASSERT_TRUE (send1);
 	ASSERT_TIMELY (5s, nano::test::confirmed (*node, { send1->hash () }));
 
 	auto send2 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
-	ASSERT_NE (nullptr, send2);
+	ASSERT_TRUE (send2);
 	ASSERT_TIMELY (5s, nano::test::confirmed (*node, { send2->hash () }));
 
 	system.wallet (0)->remove_account (nano::dev::genesis_key.pub);
@@ -398,9 +398,9 @@ TEST (node, search_receivable_pruned)
 	nano::keypair key2;
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	auto send1 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node2->config.receive_minimum.number ()));
-	ASSERT_NE (nullptr, send1);
+	ASSERT_TRUE (send1);
 	auto send2 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node2->config.receive_minimum.number ()));
-	ASSERT_NE (nullptr, send2);
+	ASSERT_TRUE (send2);
 
 	// Confirmation
 	ASSERT_TIMELY (10s, node1->active.empty () && node2->active.empty ());
@@ -430,7 +430,7 @@ TEST (node, unlock_search)
 	nano::uint128_t balance (node->balance (nano::dev::genesis_key.pub));
 	system.wallet (0)->rekey ("");
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node->config.receive_minimum.number ()));
 	ASSERT_TIMELY (10s, node->balance (nano::dev::genesis_key.pub) != balance);
 	ASSERT_TIMELY (10s, node->active.empty ());
 	system.wallet (0)->insert_adhoc (key2.prv);
@@ -1064,7 +1064,7 @@ TEST (node, fork_no_vote_quorum)
 	auto key1 (system.wallet (1)->deterministic_insert ());
 	system.wallet (1)->set_representative (key1);
 	auto block (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key1, node1.config.receive_minimum.number ()));
-	ASSERT_NE (nullptr, block);
+	ASSERT_TRUE (block);
 	ASSERT_TIMELY (30s, node3.balance (key1) == node1.config.receive_minimum.number () && node2.balance (key1) == node1.config.receive_minimum.number () && node1.balance (key1) == node1.config.receive_minimum.number ());
 	ASSERT_EQ (node1.config.receive_minimum.number (), node1.weight (key1));
 	ASSERT_EQ (node1.config.receive_minimum.number (), node2.weight (key1));
@@ -1134,10 +1134,10 @@ TEST (node, DISABLED_fork_pre_confirm)
 	system.wallet (2)->insert_adhoc (key2.prv);
 	system.wallet (2)->set_representative (key2.pub);
 	auto block0 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key1.pub, nano::dev::constants.genesis_amount / 3));
-	ASSERT_NE (nullptr, block0);
+	ASSERT_TRUE (block0);
 	ASSERT_TIMELY (30s, node0.balance (key1.pub) != 0);
 	auto block1 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, nano::dev::constants.genesis_amount / 3));
-	ASSERT_NE (nullptr, block1);
+	ASSERT_TRUE (block1);
 	ASSERT_TIMELY (30s, node0.balance (key2.pub) != 0);
 	nano::keypair key3;
 	nano::keypair key4;
@@ -1661,7 +1661,7 @@ TEST (node, send_callback)
 	node0.config.callback_address = "localhost";
 	node0.config.callback_port = 8010;
 	node0.config.callback_target = "/";
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node0.config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, node0.config.receive_minimum.number ()));
 	ASSERT_TIMELY (10s, node0.balance (key2.pub).is_zero ());
 	ASSERT_EQ (std::numeric_limits<nano::uint128_t>::max () - node0.config.receive_minimum.number (), node0.balance (nano::dev::genesis_key.pub));
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/blocks_raw.hpp>
 #include <nano/lib/lmdbconfig.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
@@ -15,6 +16,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <unordered_set>
 
@@ -188,18 +190,18 @@ public:
 	bool fetch_prv (nano::account const & pub, nano::raw_key & result) const;
 
 	// Block actions
-	std::shared_ptr<nano::block> change_action (nano::account const & source, nano::account const & representative, uint64_t work = 0, bool generate_work = true);
-	std::shared_ptr<nano::block> receive_action (nano::block_hash const & send_hash, nano::account const & representative, nano::uint128_union const & amount, nano::account const & account, uint64_t work = 0, bool generate_work = true);
-	std::shared_ptr<nano::block> send_action (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, uint64_t work = 0, bool generate_work = true, boost::optional<std::string> id = {});
-	bool action_complete (std::shared_ptr<nano::block> const & block, nano::account const & account, bool generate_work, nano::block_details const & details);
+	std::optional<nano::raw_block> change_action (nano::account const & source, nano::account const & representative, uint64_t work = 0, bool generate_work = true);
+	std::optional<nano::raw_block> receive_action (nano::block_hash const & send_hash, nano::account const & representative, nano::uint128_union const & amount, nano::account const & account, uint64_t work = 0, bool generate_work = true);
+	std::optional<nano::raw_block> send_action (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, uint64_t work = 0, bool generate_work = true, boost::optional<std::string> id = {});
+	bool action_complete (nano::raw_block & block, nano::account const & account, bool generate_work, nano::block_details const & details);
 
 	// Sync/async block operations
 	bool change_sync (nano::account const & source, nano::account const & representative);
-	void change_async (nano::account const & source, nano::account const & representative, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true);
+	void change_async (nano::account const & source, nano::account const & representative, std::function<void (std::optional<nano::raw_block> const &)> const & action, uint64_t work = 0, bool generate_work = true);
 	bool receive_sync (nano::stored_block const & block, nano::account const & representative, nano::uint128_t const & amount);
-	void receive_async (nano::block_hash const & hash, nano::account const & representative, nano::uint128_t const & amount, nano::account const & account, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true);
+	void receive_async (nano::block_hash const & hash, nano::account const & representative, nano::uint128_t const & amount, nano::account const & account, std::function<void (std::optional<nano::raw_block> const &)> const & action, uint64_t work = 0, bool generate_work = true);
 	nano::block_hash send_sync (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount);
-	void send_async (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true, boost::optional<std::string> id = {});
+	void send_async (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, std::function<void (std::optional<nano::raw_block> const &)> const & action, uint64_t work = 0, bool generate_work = true, boost::optional<std::string> id = {});
 
 	// Work cache
 	void work_cache_blocking (nano::account const & account, nano::root const & root);

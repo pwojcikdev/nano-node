@@ -1,5 +1,6 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/blocks_raw.hpp>
+#include <nano/lib/stored_block.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/stats_sinks.hpp>
 #include <nano/lib/version.hpp>
@@ -512,166 +513,176 @@ nano_qt::history::history (nano::ledger & ledger_a, nano::account const & accoun
 
 namespace
 {
-class short_text_visitor : public nano::block_visitor
+struct short_text_result
 {
-public:
-	short_text_visitor (nano::secure::transaction const & transaction_a, nano::ledger & ledger_a) :
-		transaction (transaction_a),
-		ledger (ledger_a)
+	std::string type;
+	nano::uint128_t amount{ 0 };
+	nano::account account{ 0 };
+};
+
+short_text_result get_short_text (nano::secure::transaction const & transaction, nano::ledger & ledger, nano::stored_block const & block)
+{
+	short_text_result result;
+
+	switch (block.type ())
 	{
-	}
-	void send_block (nano::send_block const & block_a)
-	{
-		type = "Send";
-		account = block_a.destination_field ().value ();
-		auto amount_l = ledger.any.block_amount (transaction, block_a.hash ());
-		if (!amount_l)
+		case nano::block_type::send:
 		{
-			type = "Send (pruned)";
-			amount = 0;
+			result.type = "Send";
+			result.account = block.destination_field ().value ();
+			auto amount_l = ledger.any.block_amount (transaction, block.hash ());
+			if (!amount_l)
+			{
+				result.type = "Send (pruned)";
+				result.amount = 0;
+			}
+			else
+			{
+				result.amount = amount_l.value ().number ();
+			}
+			break;
 		}
-		else
+		case nano::block_type::receive:
 		{
-			amount = amount_l.value ().number ();
-		}
-	}
-	void receive_block (nano::receive_block const & block_a)
-	{
-		type = "Receive";
-		auto account_l = ledger.any.block_account (transaction, block_a.source_field ().value ());
-		auto amount_l = ledger.any.block_amount (transaction, block_a.hash ());
-		if (!account_l)
-		{
-			type = "Receive (pruned source)";
-		}
-		else
-		{
-			account = account_l.value ();
-		}
-		if (!amount_l)
-		{
-			type = "Receive (pruned)";
-			amount = 0;
-		}
-		else
-		{
-			amount = amount_l.value ().number ();
-		}
-	}
-	void open_block (nano::open_block const & block_a)
-	{
-		type = "Receive";
-		if (block_a.source_field ().value () != ledger.constants.genesis.account ().as_union ())
-		{
-			auto account_l = ledger.any.block_account (transaction, block_a.source_field ().value ());
-			auto amount_l = ledger.any.block_amount (transaction, block_a.hash ());
+			result.type = "Receive";
+			auto account_l = ledger.any.block_account (transaction, block.source_field ().value ());
+			auto amount_l = ledger.any.block_amount (transaction, block.hash ());
 			if (!account_l)
 			{
-				type = "Receive (pruned source)";
+				result.type = "Receive (pruned source)";
 			}
 			else
 			{
-				account = account_l.value ();
+				result.account = account_l.value ();
 			}
-			debug_assert (amount_l);
-			amount = amount_l.value ().number ();
-		}
-		else
-		{
-			account = ledger.constants.genesis.account ();
-			amount = nano::dev::constants.genesis_amount;
-		}
-	}
-	void change_block (nano::change_block const & block_a)
-	{
-		type = "Change";
-		amount = 0;
-		account = block_a.representative_field ().value ();
-	}
-	void state_block (nano::state_block const & block_a)
-	{
-		auto balance (block_a.balance_field ().value ().number ());
-		auto previous_balance = ledger.any.block_balance (transaction, block_a.previous ());
-		// Error to receive previous block balance means that previous block was pruned from the ledger
-		if ((!previous_balance || balance < previous_balance.value ().number ()) && block_a.sideband ().details.is_send)
-		{
-			type = "Send";
-			account = block_a.link_field ().value ().as_account ();
-			if (!previous_balance)
+			if (!amount_l)
 			{
-				type = "Send (pruned)";
-				amount = 0;
+				result.type = "Receive (pruned)";
+				result.amount = 0;
 			}
 			else
 			{
-				amount = previous_balance.value ().number () - balance;
+				result.amount = amount_l.value ().number ();
 			}
+			break;
 		}
-		else if (block_a.link_field ().value ().is_zero () && !block_a.sideband ().details.is_send)
+		case nano::block_type::open:
 		{
-			debug_assert (!block_a.sideband ().details.is_receive && !block_a.sideband ().details.is_epoch);
-			type = "Change";
-			account = block_a.representative_field ().value ();
-			amount = 0;
-			if (!previous_balance)
+			result.type = "Receive";
+			if (block.source_field ().value () != ledger.constants.genesis.account ().as_union ())
 			{
-				type = "Change (pruned)";
-			}
-			else
-			{
-				debug_assert (balance == previous_balance);
-			}
-		}
-		else if (ledger.is_epoch_link (block_a.link_field ().value ()) && block_a.sideband ().details.is_epoch)
-		{
-			debug_assert (!previous_balance || balance == previous_balance);
-			type = "Epoch";
-			amount = 0;
-			if (!previous_balance && !block_a.previous ().is_zero ())
-			{
-				// Epoch block with previous balance error is pruned only if it isn't open block for an account
-				type = "Epoch (pruned)";
-			}
-			account = ledger.epoch_signer (block_a.link_field ().value ());
-		}
-		else
-		{
-			debug_assert (block_a.sideband ().details.is_receive);
-			type = "Receive";
-			auto account_l = ledger.any.block_account (transaction, block_a.link_field ().value ().as_block_hash ());
-			if (!account_l)
-			{
-				type = "Receive (pruned source)";
-			}
-			else
-			{
-				account = account_l.value ();
-			}
-			if (!previous_balance)
-			{
-				if (!block_a.previous ().is_zero ())
+				auto account_l = ledger.any.block_account (transaction, block.source_field ().value ());
+				auto amount_l = ledger.any.block_amount (transaction, block.hash ());
+				if (!account_l)
 				{
-					// Receive block with previous balance error is pruned only if it isn't open block for an account
-					type = "Receive (pruned)";
-					amount = 0;
+					result.type = "Receive (pruned source)";
 				}
 				else
 				{
-					amount = balance;
+					result.account = account_l.value ();
 				}
+				debug_assert (amount_l);
+				result.amount = amount_l.value ().number ();
 			}
 			else
 			{
-				amount = balance - previous_balance.value ().number ();
+				result.account = ledger.constants.genesis.account ();
+				result.amount = nano::dev::constants.genesis_amount;
 			}
+			break;
 		}
+		case nano::block_type::change:
+		{
+			result.type = "Change";
+			result.amount = 0;
+			result.account = block.representative_field ().value ();
+			break;
+		}
+		case nano::block_type::state:
+		{
+			auto balance (block.balance_field ().value ().number ());
+			auto previous_balance = ledger.any.block_balance (transaction, block.previous ());
+			// Error to receive previous block balance means that previous block was pruned from the ledger
+			if ((!previous_balance || balance < previous_balance.value ().number ()) && block.sideband ().details.is_send)
+			{
+				result.type = "Send";
+				result.account = block.link_field ().value ().as_account ();
+				if (!previous_balance)
+				{
+					result.type = "Send (pruned)";
+					result.amount = 0;
+				}
+				else
+				{
+					result.amount = previous_balance.value ().number () - balance;
+				}
+			}
+			else if (block.link_field ().value ().is_zero () && !block.sideband ().details.is_send)
+			{
+				debug_assert (!block.sideband ().details.is_receive && !block.sideband ().details.is_epoch);
+				result.type = "Change";
+				result.account = block.representative_field ().value ();
+				result.amount = 0;
+				if (!previous_balance)
+				{
+					result.type = "Change (pruned)";
+				}
+				else
+				{
+					debug_assert (balance == previous_balance);
+				}
+			}
+			else if (ledger.is_epoch_link (block.link_field ().value ()) && block.sideband ().details.is_epoch)
+			{
+				debug_assert (!previous_balance || balance == previous_balance);
+				result.type = "Epoch";
+				result.amount = 0;
+				if (!previous_balance && !block.previous ().is_zero ())
+				{
+					// Epoch block with previous balance error is pruned only if it isn't open block for an account
+					result.type = "Epoch (pruned)";
+				}
+				result.account = ledger.epoch_signer (block.link_field ().value ());
+			}
+			else
+			{
+				debug_assert (block.sideband ().details.is_receive);
+				result.type = "Receive";
+				auto account_l = ledger.any.block_account (transaction, block.link_field ().value ().as_block_hash ());
+				if (!account_l)
+				{
+					result.type = "Receive (pruned source)";
+				}
+				else
+				{
+					result.account = account_l.value ();
+				}
+				if (!previous_balance)
+				{
+					if (!block.previous ().is_zero ())
+					{
+						// Receive block with previous balance error is pruned only if it isn't open block for an account
+						result.type = "Receive (pruned)";
+						result.amount = 0;
+					}
+					else
+					{
+						result.amount = balance;
+					}
+				}
+				else
+				{
+					result.amount = balance - previous_balance.value ().number ();
+				}
+			}
+			break;
+		}
+		default:
+			break;
 	}
-	nano::secure::transaction const & transaction;
-	nano::ledger & ledger;
-	std::string type;
-	nano::uint128_t amount;
-	nano::account account{ 0 };
-};
+
+	return result;
+}
 }
 
 void nano_qt::history::refresh ()
@@ -679,17 +690,16 @@ void nano_qt::history::refresh ()
 	auto transaction = ledger.tx_begin_read ();
 	model->removeRows (0, model->rowCount ());
 	auto hash (ledger.any.account_head (transaction, account));
-	short_text_visitor visitor (transaction, ledger);
 	for (auto i (0), n (tx_count->value ()); i < n && !hash.is_zero (); ++i)
 	{
 		QList<QStandardItem *> items;
 		auto block (ledger.any.block_get (transaction, hash));
 		if (block)
 		{
-			block->to_legacy ()->visit (visitor);
-			items.push_back (new QStandardItem (QString (visitor.type.c_str ())));
-			items.push_back (new QStandardItem (QString (visitor.account.to_account ().c_str ())));
-			auto balanceItem = new QStandardItem (QString (wallet.format_balance (visitor.amount).c_str ()));
+			auto result = get_short_text (transaction, ledger, *block);
+			items.push_back (new QStandardItem (QString (result.type.c_str ())));
+			items.push_back (new QStandardItem (QString (result.account.to_account ().c_str ())));
+			auto balanceItem = new QStandardItem (QString (wallet.format_balance (result.amount).c_str ()));
 			balanceItem->setData (Qt::AlignRight, Qt::TextAlignmentRole);
 			items.push_back (balanceItem);
 			items.push_back (new QStandardItem (QString (hash.to_string ().c_str ())));
@@ -1242,10 +1252,10 @@ void nano_qt::wallet::start ()
 							this_l->node.workers.post ([this_w, account_l, actual] () {
 								if (auto this_l = this_w.lock ())
 								{
-									this_l->wallet_m->send_async (this_l->account, account_l, actual, [this_w] (std::shared_ptr<nano::block> const & block_a) {
+									this_l->wallet_m->send_async (this_l->account, account_l, actual, [this_w] (std::optional<nano::raw_block> const & block_a) {
 										if (auto this_l = this_w.lock ())
 										{
-											auto succeeded (block_a != nullptr);
+											auto succeeded (block_a.has_value ());
 											this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w, succeeded] () {
 												if (auto this_l = this_w.lock ())
 												{

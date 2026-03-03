@@ -215,8 +215,8 @@ TEST (wallet, multithreaded_send_async)
 			threads.push_back (boost::thread ([wallet_l, &key, num_of_threads, num_of_sends] () {
 				for (auto i (0); i < num_of_sends; ++i)
 				{
-					wallet_l->send_async (nano::dev::genesis_key.pub, key.pub, 1000, [] (std::shared_ptr<nano::block> const & block_a) {
-						ASSERT_FALSE (block_a == nullptr);
+					wallet_l->send_async (nano::dev::genesis_key.pub, key.pub, 1000, [] (std::optional<nano::raw_block> const & block_a) {
+						ASSERT_TRUE (block_a);
 						ASSERT_FALSE (block_a->hash ().is_zero ());
 					});
 				}
@@ -1921,15 +1921,15 @@ TEST (node, aggressive_flooding)
 
 	// Send a large amount to create a principal representative in each node
 	auto large_amount = (nano::dev::constants.genesis_amount / 2) / nodes_wallets.size ();
-	std::vector<std::shared_ptr<nano::block>> genesis_blocks;
+	std::vector<nano::raw_block> genesis_blocks;
 	for (auto & node_wallet : nodes_wallets)
 	{
 		nano::keypair keypair;
 		node_wallet.second->set_representative (keypair.pub);
 		node_wallet.second->insert_adhoc (keypair.prv);
 		auto block (wallet1.send_action (nano::dev::genesis_key.pub, keypair.pub, large_amount));
-		ASSERT_NE (nullptr, block);
-		genesis_blocks.push_back (block);
+		ASSERT_TRUE (block);
+		genesis_blocks.push_back (*block);
 	}
 
 	// Ensure all nodes have the full genesis chain
@@ -1937,15 +1937,15 @@ TEST (node, aggressive_flooding)
 	{
 		for (auto const & block : genesis_blocks)
 		{
-			auto process_result (node_wallet.first->process (nano::to_raw (*block)));
+			auto process_result (node_wallet.first->process (block));
 			ASSERT_TRUE (nano::block_status::progress == process_result || nano::block_status::old == process_result);
 		}
 		ASSERT_EQ (node1.latest (nano::dev::genesis_key.pub), node_wallet.first->latest (nano::dev::genesis_key.pub));
-		ASSERT_EQ (genesis_blocks.back ()->hash (), node_wallet.first->latest (nano::dev::genesis_key.pub));
+		ASSERT_EQ (genesis_blocks.back ().hash (), node_wallet.first->latest (nano::dev::genesis_key.pub));
 		// Confirm blocks for rep crawler & receiving
-		nano::test::confirm (node_wallet.first->ledger, genesis_blocks.back ()->hash ());
+		nano::test::confirm (node_wallet.first->ledger, genesis_blocks.back ().hash ());
 	}
-	nano::test::confirm (node1.ledger, genesis_blocks.back ()->hash ());
+	nano::test::confirm (node1.ledger, genesis_blocks.back ().hash ());
 
 	// Wait until all genesis blocks are received
 	auto all_received = [&nodes_wallets] () {
@@ -2003,7 +2003,7 @@ TEST (node, send_single_many_peers)
 	nano::keypair key2;
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	system.wallet (1)->insert_adhoc (key2.prv);
-	ASSERT_NE (nullptr, system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, system.nodes[0]->config.receive_minimum.number ()));
+	ASSERT_TRUE (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key2.pub, system.nodes[0]->config.receive_minimum.number ()));
 	ASSERT_EQ (std::numeric_limits<nano::uint128_t>::max () - system.nodes[0]->config.receive_minimum.number (), system.nodes[0]->balance (nano::dev::genesis_key.pub));
 	ASSERT_TRUE (system.nodes[0]->balance (key2.pub).is_zero ());
 	ASSERT_TIMELY (3.5min, std::all_of (system.nodes.begin (), system.nodes.end (), [&] (std::shared_ptr<nano::node> const & node_a) { return !node_a->balance (key2.pub).is_zero (); }));
@@ -2131,7 +2131,7 @@ TEST (system, block_sequence)
 	}
 	nano::keypair key;
 	auto start = std::chrono::system_clock::now ();
-	std::deque<std::shared_ptr<nano::block>> blocks;
+	std::deque<nano::raw_block> blocks;
 	for (auto i = 0; i < block_count; ++i)
 	{
 		if ((i % 1000) == 0)
@@ -2139,8 +2139,8 @@ TEST (system, block_sequence)
 			std::cerr << "Block: " << std::to_string (i) << " ms: " << std::to_string (std::chrono::duration_cast<std::chrono::milliseconds> (std::chrono::system_clock::now () - start).count ()) << "\n";
 		}
 		auto block = wallet->send_action (nano::dev::genesis_key.pub, key.pub, 1);
-		debug_assert (block != nullptr);
-		blocks.push_back (block);
+		debug_assert (block.has_value ());
+		blocks.push_back (*block);
 	}
 	auto done = false;
 	std::chrono::system_clock::time_point last;
@@ -2168,7 +2168,7 @@ TEST (system, block_sequence)
 			std::cerr << message << std::endl;
 			last = std::chrono::system_clock::now ();
 		}
-		done = std::all_of (system.nodes.begin (), system.nodes.end (), [&blocks] (std::shared_ptr<nano::node> node) { return node->block_confirmed (blocks.back ()->hash ()); });
+		done = std::all_of (system.nodes.begin (), system.nodes.end (), [&blocks] (std::shared_ptr<nano::node> node) { return node->block_confirmed (blocks.back ().hash ()); });
 		system.poll ();
 	}
 }
