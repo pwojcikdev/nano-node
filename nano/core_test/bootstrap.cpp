@@ -3,7 +3,7 @@
 #include <nano/lib/stats.hpp>
 #include <nano/lib/tomlconfig.hpp>
 #include <nano/node/bootstrap/bootstrap_service.hpp>
-#include <nano/node/bootstrap/database_scan.hpp>
+#include <nano/node/bootstrap/database_scan_index.hpp>
 #include <nano/node/make_store.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
@@ -35,7 +35,7 @@ TEST (account_sets, construction)
 {
 	nano::test::system system;
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 }
 
 TEST (account_sets, empty_blocked)
@@ -44,7 +44,7 @@ TEST (account_sets, empty_blocked)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	ASSERT_FALSE (sets.blocked (account));
 }
 
@@ -54,7 +54,7 @@ TEST (account_sets, block)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	sets.priority_up (account);
 	sets.block (account, random_hash ());
 	ASSERT_TRUE (sets.blocked (account));
@@ -66,7 +66,7 @@ TEST (account_sets, unblock)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	auto hash = random_hash ();
 	sets.priority_up (account);
 	sets.block (account, hash);
@@ -81,7 +81,7 @@ TEST (account_sets, priority_base)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	ASSERT_EQ (0.0, sets.priority (account));
 }
 
@@ -91,7 +91,7 @@ TEST (account_sets, priority_blocked)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	sets.block (account, random_hash ());
 	ASSERT_EQ (0.0, sets.priority (account));
 }
@@ -102,14 +102,14 @@ TEST (account_sets, priority_unblock)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	sets.priority_up (account);
-	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets::priority_initial);
+	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets_index::priority_initial);
 	auto hash = random_hash ();
 	sets.block (account, hash);
 	ASSERT_EQ (0.0, sets.priority (account));
 	sets.unblock (account, hash);
-	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets::priority_initial);
+	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets_index::priority_initial);
 }
 
 TEST (account_sets, priority_up_down)
@@ -118,11 +118,11 @@ TEST (account_sets, priority_up_down)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	sets.priority_up (account);
-	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets::priority_initial);
+	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets_index::priority_initial);
 	sets.priority_down (account);
-	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets::priority_initial / nano::bootstrap::account_sets::priority_divide);
+	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets_index::priority_initial / nano::bootstrap::account_sets_index::priority_divide);
 }
 
 TEST (account_sets, priority_down_empty)
@@ -131,7 +131,7 @@ TEST (account_sets, priority_down_empty)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	sets.priority_down (account);
 	ASSERT_EQ (0.0, sets.priority (account));
 }
@@ -142,9 +142,9 @@ TEST (account_sets, priority_down_saturate)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	sets.priority_up (account);
-	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets::priority_initial);
+	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets_index::priority_initial);
 	for (int n = 0; n < 1000; ++n)
 	{
 		sets.priority_down (account);
@@ -158,7 +158,7 @@ TEST (account_sets, priority_set)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	sets.priority_set (account, 10.0);
 	ASSERT_EQ (sets.priority (account), 10.0);
 }
@@ -170,12 +170,12 @@ TEST (account_sets, saturate_priority)
 
 	nano::account account{ 1 };
 	nano::account_sets_config config;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 	for (int n = 0; n < 1000; ++n)
 	{
 		sets.priority_up (account);
 	}
-	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets::priority_max);
+	ASSERT_EQ (sets.priority (account), nano::bootstrap::account_sets_index::priority_max);
 }
 
 TEST (account_sets, decay_blocking)
@@ -185,7 +185,7 @@ TEST (account_sets, decay_blocking)
 	nano::test::system system;
 	nano::account_sets_config config;
 	config.blocking_decay = 1s;
-	nano::bootstrap::account_sets sets{ config, system.stats };
+	nano::bootstrap::account_sets_index sets{ config, system.stats };
 
 	// Test empty set
 	ASSERT_EQ (0, sets.decay_blocking ());

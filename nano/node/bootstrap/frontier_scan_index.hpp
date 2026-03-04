@@ -23,10 +23,10 @@ namespace nano::bootstrap
  * Frontier scan divides the account space into ranges and scans each range for outdated frontiers in parallel.
  * This class is used to track the progress of each range.
  */
-class frontier_scan
+class frontier_scan_index
 {
 public:
-	frontier_scan (frontier_scan_config const &, nano::stats &);
+	frontier_scan_index (frontier_scan_config const &, nano::stats &);
 
 	nano::account next ();
 	bool process (nano::account start, std::deque<std::pair<nano::account, nano::block_hash>> const & response);

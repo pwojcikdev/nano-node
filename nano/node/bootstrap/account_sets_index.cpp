@@ -1,6 +1,6 @@
 #include <nano/lib/stats.hpp>
 #include <nano/lib/utility.hpp>
-#include <nano/node/bootstrap/account_sets.hpp>
+#include <nano/node/bootstrap/account_sets_index.hpp>
 #include <nano/node/bootstrap/bootstrap_config.hpp>
 
 #include <boost/range/iterator_range.hpp>
@@ -10,22 +10,24 @@
 #include <vector>
 
 /*
- * account_sets
+ * account_sets_index
  */
 
-nano::bootstrap::account_sets::account_sets (nano::account_sets_config const & config_a, nano::stats & stats_a) :
+namespace nano::bootstrap
+{
+account_sets_index::account_sets_index (account_sets_config const & config_a, nano::stats & stats_a) :
 	config{ config_a },
 	stats{ stats_a }
 {
 }
 
-void nano::bootstrap::account_sets::reset ()
+void account_sets_index::reset ()
 {
 	priorities.clear ();
 	blocking.clear ();
 }
 
-void nano::bootstrap::account_sets::priority_up (nano::account const & account)
+void account_sets_index::priority_up (nano::account const & account)
 {
 	if (account.is_zero ())
 	{
@@ -39,14 +41,14 @@ void nano::bootstrap::account_sets::priority_up (nano::account const & account)
 		if (auto it = priorities.get<tag_account> ().find (account); it != priorities.get<tag_account> ().end ())
 		{
 			priorities.get<tag_account> ().modify (it, [] (auto & val) {
-				val.priority = std::min ((val.priority + account_sets::priority_increase), account_sets::priority_max);
+				val.priority = std::min ((val.priority + account_sets_index::priority_increase), account_sets_index::priority_max);
 				val.fails = 0;
 			});
 		}
 		else
 		{
 			stats.inc (nano::stat::type::bootstrap_account_sets, nano::stat::detail::priority_insert);
-			priorities.get<tag_account> ().insert ({ account, account_sets::priority_initial });
+			priorities.get<tag_account> ().insert ({ account, account_sets_index::priority_initial });
 			trim_overflow ();
 		}
 	}
@@ -56,7 +58,7 @@ void nano::bootstrap::account_sets::priority_up (nano::account const & account)
 	}
 }
 
-void nano::bootstrap::account_sets::priority_down (nano::account const & account)
+void account_sets_index::priority_down (nano::account const & account)
 {
 	if (account.is_zero ())
 	{
@@ -67,9 +69,9 @@ void nano::bootstrap::account_sets::priority_down (nano::account const & account
 	{
 		stats.inc (nano::stat::type::bootstrap_account_sets, nano::stat::detail::deprioritize);
 
-		auto priority = it->priority / account_sets::priority_divide;
+		auto priority = it->priority / account_sets_index::priority_divide;
 
-		if (it->fails >= account_sets::max_fails || it->fails >= it->priority || priority <= account_sets::priority_cutoff)
+		if (it->fails >= account_sets_index::max_fails || it->fails >= it->priority || priority <= account_sets_index::priority_cutoff)
 		{
 			stats.inc (nano::stat::type::bootstrap_account_sets, nano::stat::detail::erase_by_threshold);
 			priorities.get<tag_account> ().erase (it);
@@ -88,7 +90,7 @@ void nano::bootstrap::account_sets::priority_down (nano::account const & account
 	}
 }
 
-void nano::bootstrap::account_sets::priority_set (nano::account const & account, double priority)
+void account_sets_index::priority_set (nano::account const & account, double priority)
 {
 	if (account.is_zero ())
 	{
@@ -110,7 +112,7 @@ void nano::bootstrap::account_sets::priority_set (nano::account const & account,
 	}
 }
 
-void nano::bootstrap::account_sets::priority_erase (nano::account const & account)
+void account_sets_index::priority_erase (nano::account const & account)
 {
 	if (account.is_zero ())
 	{
@@ -123,7 +125,7 @@ void nano::bootstrap::account_sets::priority_erase (nano::account const & accoun
 	}
 }
 
-void nano::bootstrap::account_sets::block (nano::account const & account, nano::block_hash const & dependency, std::chrono::steady_clock::time_point now)
+void account_sets_index::block (nano::account const & account, nano::block_hash const & dependency, std::chrono::steady_clock::time_point now)
 {
 	debug_assert (!account.is_zero ());
 
@@ -143,7 +145,7 @@ void nano::bootstrap::account_sets::block (nano::account const & account, nano::
 	}
 }
 
-void nano::bootstrap::account_sets::unblock (nano::account const & account, std::optional<nano::block_hash> const & hash)
+void account_sets_index::unblock (nano::account const & account, std::optional<nano::block_hash> const & hash)
 {
 	if (account.is_zero ())
 	{
@@ -158,7 +160,7 @@ void nano::bootstrap::account_sets::unblock (nano::account const & account, std:
 		stats.inc (nano::stat::type::bootstrap_account_sets, nano::stat::detail::priority_unblocked);
 
 		debug_assert (priorities.get<tag_account> ().count (account) == 0);
-		priorities.get<tag_account> ().insert ({ account, account_sets::priority_initial });
+		priorities.get<tag_account> ().insert ({ account, account_sets_index::priority_initial });
 		blocking.get<tag_account> ().erase (account);
 		trim_overflow ();
 	}
@@ -168,7 +170,7 @@ void nano::bootstrap::account_sets::unblock (nano::account const & account, std:
 	}
 }
 
-void nano::bootstrap::account_sets::timestamp_set (const nano::account & account)
+void account_sets_index::timestamp_set (const nano::account & account)
 {
 	debug_assert (!account.is_zero ());
 
@@ -181,7 +183,7 @@ void nano::bootstrap::account_sets::timestamp_set (const nano::account & account
 	}
 }
 
-void nano::bootstrap::account_sets::timestamp_reset (const nano::account & account)
+void account_sets_index::timestamp_reset (const nano::account & account)
 {
 	debug_assert (!account.is_zero ());
 
@@ -194,7 +196,7 @@ void nano::bootstrap::account_sets::timestamp_reset (const nano::account & accou
 	}
 }
 
-void nano::bootstrap::account_sets::dependency_update (nano::block_hash const & hash, nano::account const & dependency_account)
+void account_sets_index::dependency_update (nano::block_hash const & hash, nano::account const & dependency_account)
 {
 	debug_assert (!dependency_account.is_zero ());
 
@@ -223,7 +225,7 @@ void nano::bootstrap::account_sets::dependency_update (nano::block_hash const & 
 	}
 }
 
-void nano::bootstrap::account_sets::trim_overflow ()
+void account_sets_index::trim_overflow ()
 {
 	while (!priorities.empty () && priorities.size () > config.priorities_max)
 	{
@@ -239,7 +241,7 @@ void nano::bootstrap::account_sets::trim_overflow ()
 	}
 }
 
-auto nano::bootstrap::account_sets::next_priority (std::function<bool (nano::account const &)> const & filter) -> priority_result
+auto account_sets_index::next_priority (std::function<bool (nano::account const &)> const & filter) -> priority_result
 {
 	if (priorities.empty ())
 	{
@@ -268,7 +270,7 @@ auto nano::bootstrap::account_sets::next_priority (std::function<bool (nano::acc
 	return {};
 }
 
-nano::block_hash nano::bootstrap::account_sets::next_blocking (std::function<bool (nano::block_hash const &)> const & filter)
+nano::block_hash account_sets_index::next_blocking (std::function<bool (nano::block_hash const &)> const & filter)
 {
 	if (blocking.empty ())
 	{
@@ -290,7 +292,7 @@ nano::block_hash nano::bootstrap::account_sets::next_blocking (std::function<boo
 	return { 0 };
 }
 
-void nano::bootstrap::account_sets::sync_dependencies ()
+void account_sets_index::sync_dependencies ()
 {
 	stats.inc (nano::stat::type::bootstrap_account_sets, nano::stat::detail::sync_dependencies);
 
@@ -317,7 +319,7 @@ void nano::bootstrap::account_sets::sync_dependencies ()
 	trim_overflow ();
 }
 
-size_t nano::bootstrap::account_sets::decay_blocking (std::chrono::steady_clock::time_point now)
+size_t account_sets_index::decay_blocking (std::chrono::steady_clock::time_point now)
 {
 	stats.inc (nano::stat::type::bootstrap_account_sets, nano::stat::detail::decay_blocking);
 
@@ -343,37 +345,37 @@ size_t nano::bootstrap::account_sets::decay_blocking (std::chrono::steady_clock:
 	return result;
 }
 
-bool nano::bootstrap::account_sets::blocked (nano::account const & account) const
+bool account_sets_index::blocked (nano::account const & account) const
 {
 	return blocking.get<tag_account> ().contains (account);
 }
 
-bool nano::bootstrap::account_sets::prioritized (nano::account const & account) const
+bool account_sets_index::prioritized (nano::account const & account) const
 {
 	return priorities.get<tag_account> ().contains (account);
 }
 
-std::size_t nano::bootstrap::account_sets::priority_size () const
+std::size_t account_sets_index::priority_size () const
 {
 	return priorities.size ();
 }
 
-std::size_t nano::bootstrap::account_sets::blocked_size () const
+std::size_t account_sets_index::blocked_size () const
 {
 	return blocking.size ();
 }
 
-bool nano::bootstrap::account_sets::priority_half_full () const
+bool account_sets_index::priority_half_full () const
 {
 	return priorities.size () > config.priorities_max / 2;
 }
 
-bool nano::bootstrap::account_sets::blocked_half_full () const
+bool account_sets_index::blocked_half_full () const
 {
 	return blocking.size () > config.blocking_max / 2;
 }
 
-double nano::bootstrap::account_sets::priority (nano::account const & account) const
+double account_sets_index::priority (nano::account const & account) const
 {
 	if (!blocked (account))
 	{
@@ -385,12 +387,12 @@ double nano::bootstrap::account_sets::priority (nano::account const & account) c
 	return 0.0;
 }
 
-auto nano::bootstrap::account_sets::info () const -> nano::bootstrap::account_sets::info_t
+auto account_sets_index::info () const -> account_sets_index::info_t
 {
 	return { blocking, priorities };
 }
 
-nano::container_info nano::bootstrap::account_sets::container_info () const
+nano::container_info account_sets_index::container_info () const
 {
 	// Count blocking entries with their dependency account unknown
 	auto blocking_unknown = blocking.get<tag_dependency_account> ().count (nano::account{ 0 });
@@ -400,4 +402,5 @@ nano::container_info nano::bootstrap::account_sets::container_info () const
 	info.put ("blocking", blocking);
 	info.put ("blocking_unknown", blocking_unknown);
 	return info;
+}
 }

@@ -1,9 +1,11 @@
-#include <nano/node/bootstrap/frontier_scan.hpp>
+#include <nano/node/bootstrap/frontier_scan_index.hpp>
 
 #include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/multiprecision/cpp_int.hpp>
 
-nano::bootstrap::frontier_scan::frontier_scan (frontier_scan_config const & config_a, nano::stats & stats_a) :
+namespace nano::bootstrap
+{
+frontier_scan_index::frontier_scan_index (frontier_scan_config const & config_a, nano::stats & stats_a) :
 	config{ config_a },
 	stats{ stats_a }
 {
@@ -23,7 +25,7 @@ nano::bootstrap::frontier_scan::frontier_scan (frontier_scan_config const & conf
 	release_assert (!heads.empty ());
 }
 
-void nano::bootstrap::frontier_scan::reset ()
+void frontier_scan_index::reset ()
 {
 	for (auto it = heads.begin (); it != heads.end (); ++it)
 	{
@@ -33,7 +35,7 @@ void nano::bootstrap::frontier_scan::reset ()
 	}
 }
 
-nano::account nano::bootstrap::frontier_scan::next ()
+nano::account frontier_scan_index::next ()
 {
 	auto const cutoff = std::chrono::steady_clock::now () - config.cooldown;
 
@@ -64,7 +66,7 @@ nano::account nano::bootstrap::frontier_scan::next ()
 	return { 0 };
 }
 
-bool nano::bootstrap::frontier_scan::process (nano::account start, std::deque<std::pair<nano::account, nano::block_hash>> const & response)
+bool frontier_scan_index::process (nano::account start, std::deque<std::pair<nano::account, nano::block_hash>> const & response)
 {
 	debug_assert (std::all_of (response.begin (), response.end (), [&] (auto const & pair) { return pair.first.number () >= start.number (); }));
 
@@ -134,7 +136,7 @@ bool nano::bootstrap::frontier_scan::process (nano::account start, std::deque<st
 	return done;
 }
 
-nano::container_info nano::bootstrap::frontier_scan::container_info () const
+nano::container_info frontier_scan_index::container_info () const
 {
 	auto collect_progress = [&] () {
 		nano::container_info info;
@@ -195,4 +197,5 @@ nano::container_info nano::bootstrap::frontier_scan::container_info () const
 	info.add ("responses", collect_responses ());
 	info.add ("processed", collect_processed ());
 	return info;
+}
 }

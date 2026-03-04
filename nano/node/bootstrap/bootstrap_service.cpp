@@ -416,7 +416,7 @@ size_t nano::bootstrap_service::count_tags (nano::block_hash const & hash, query
 	return std::count_if (begin, end, [source] (auto const & tag) { return tag.source == source; });
 }
 
-nano::bootstrap::account_sets::priority_result nano::bootstrap_service::next_priority ()
+nano::bootstrap::account_sets_index::priority_result nano::bootstrap_service::next_priority ()
 {
 	debug_assert (!mutex.try_lock ());
 
@@ -431,9 +431,9 @@ nano::bootstrap::account_sets::priority_result nano::bootstrap_service::next_pri
 	return next;
 }
 
-nano::bootstrap::account_sets::priority_result nano::bootstrap_service::wait_priority ()
+nano::bootstrap::account_sets_index::priority_result nano::bootstrap_service::wait_priority ()
 {
-	nano::bootstrap::account_sets::priority_result result{};
+	nano::bootstrap::account_sets_index::priority_result result{};
 	wait ([this, &result] () {
 		debug_assert (!mutex.try_lock ());
 		result = next_priority ();
@@ -973,7 +973,7 @@ bool nano::bootstrap_service::process (const nano::messages::asc_pull_ack::accou
 
 	// Prioritize account containing the dependency
 	accounts.dependency_update (tag.hash, response.account);
-	accounts.priority_set (response.account, nano::bootstrap::account_sets::priority_cutoff); // Use the lowest possible priority here
+	accounts.priority_set (response.account, nano::bootstrap::account_sets_index::priority_cutoff); // Use the lowest possible priority here
 
 	return true; // OK, no way to verify the response
 }
@@ -1116,7 +1116,7 @@ void nano::bootstrap_service::process_frontiers (std::deque<std::pair<nano::acco
 	for (auto const & account : result)
 	{
 		// Use the lowest possible priority here
-		accounts.priority_set (account, nano::bootstrap::account_sets::priority_cutoff);
+		accounts.priority_set (account, nano::bootstrap::account_sets_index::priority_cutoff);
 	}
 }
 
@@ -1208,7 +1208,7 @@ auto nano::bootstrap_service::verify (nano::messages::asc_pull_ack::frontiers_pa
 	return verify_result::ok;
 }
 
-auto nano::bootstrap_service::info () const -> nano::bootstrap::account_sets::info_t
+auto nano::bootstrap_service::info () const -> nano::bootstrap::account_sets_index::info_t
 {
 	nano::lock_guard<nano::mutex> lock{ mutex };
 	return accounts.info ();

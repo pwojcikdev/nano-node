@@ -7,11 +7,11 @@
 #include <nano/lib/random.hpp>
 #include <nano/lib/rate_limiting.hpp>
 #include <nano/lib/thread_pool.hpp>
-#include <nano/node/bootstrap/account_sets.hpp>
+#include <nano/node/bootstrap/account_sets_index.hpp>
 #include <nano/node/bootstrap/bootstrap_config.hpp>
 #include <nano/node/bootstrap/common.hpp>
-#include <nano/node/bootstrap/database_scan.hpp>
-#include <nano/node/bootstrap/frontier_scan.hpp>
+#include <nano/node/bootstrap/database_scan_index.hpp>
+#include <nano/node/bootstrap/frontier_scan_index.hpp>
 #include <nano/node/bootstrap/peer_scoring.hpp>
 #include <nano/node/bootstrap/throttle.hpp>
 #include <nano/node/fwd.hpp>
@@ -58,7 +58,7 @@ public:
 	bool prioritized (nano::account const &) const;
 	bool blocked (nano::account const &) const;
 
-	nano::bootstrap::account_sets::info_t info () const;
+	nano::bootstrap::account_sets_index::info_t info () const;
 
 	struct status_result
 	{
@@ -136,7 +136,7 @@ private:
 	/* Waits for a channel that is not full */
 	std::shared_ptr<nano::transport::channel> wait_channel ();
 	/* Waits until a suitable account outside of cooldown period is available */
-	using priority_result = nano::bootstrap::account_sets::priority_result;
+	using priority_result = nano::bootstrap::account_sets_index::priority_result;
 	priority_result next_priority ();
 	priority_result wait_priority ();
 	/* Gets the next account from the database */
@@ -183,11 +183,11 @@ private:
 	std::size_t compute_throttle_size () const;
 
 private:
-	nano::bootstrap::account_sets accounts;
-	nano::bootstrap::database_scan database_scan;
+	nano::bootstrap::account_sets_index accounts;
+	nano::bootstrap::database_scan_index database_scan;
 	nano::bootstrap::throttle throttle;
 	nano::bootstrap::peer_scoring scoring;
-	nano::bootstrap::frontier_scan frontiers;
+	nano::bootstrap::frontier_scan_index frontiers;
 
 	// clang-format off
 	class tag_sequenced {};

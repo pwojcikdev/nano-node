@@ -3,7 +3,7 @@
 #include <nano/lib/stats.hpp>
 #include <nano/lib/tomlconfig.hpp>
 #include <nano/node/bootstrap/bootstrap_service.hpp>
-#include <nano/node/bootstrap/frontier_scan.hpp>
+#include <nano/node/bootstrap/frontier_scan_index.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -19,7 +19,7 @@ struct test_context
 {
 	nano::stats stats;
 	nano::frontier_scan_config config;
-	nano::bootstrap::frontier_scan frontier_scan;
+	nano::bootstrap::frontier_scan_index frontier_scan;
 
 	explicit test_context (nano::frontier_scan_config config_a = {}) :
 		stats{ nano::default_logger () },

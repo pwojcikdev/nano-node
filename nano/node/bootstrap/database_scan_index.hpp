@@ -29,10 +29,10 @@ struct pending_database_scanner
 	size_t completed{ 0 };
 };
 
-class database_scan
+class database_scan_index
 {
 public:
-	explicit database_scan (nano::ledger &);
+	explicit database_scan_index (nano::ledger &);
 
 	nano::account next (std::function<bool (nano::account const &)> const & filter);
 

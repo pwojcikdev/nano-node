@@ -33,8 +33,8 @@ add_library(
   bucketing.cpp
   bounded_backlog.hpp
   bounded_backlog.cpp
-  bootstrap/account_sets.hpp
-  bootstrap/account_sets.cpp
+  bootstrap/account_sets_index.hpp
+  bootstrap/account_sets_index.cpp
   bootstrap/bootstrap_config.hpp
   bootstrap/bootstrap_config.cpp
   bootstrap/bootstrap_server.hpp
@@ -44,10 +44,10 @@ add_library(
   bootstrap/common.hpp
   bootstrap/throttle.hpp
   bootstrap/throttle.cpp
-  bootstrap/database_scan.hpp
-  bootstrap/database_scan.cpp
-  bootstrap/frontier_scan.hpp
-  bootstrap/frontier_scan.cpp
+  bootstrap/database_scan_index.hpp
+  bootstrap/database_scan_index.cpp
+  bootstrap/frontier_scan_index.hpp
+  bootstrap/frontier_scan_index.cpp
   bootstrap/peer_scoring.hpp
   bootstrap/peer_scoring.cpp
   cli.hpp

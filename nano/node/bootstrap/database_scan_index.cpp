@@ -1,23 +1,25 @@
 #include <nano/lib/utility.hpp>
-#include <nano/node/bootstrap/database_scan.hpp>
+#include <nano/node/bootstrap/database_scan_index.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/pending.hpp>
 
+namespace nano::bootstrap
+{
 /*
- * database_scan
+ * database_scan_index
  */
 
-nano::bootstrap::database_scan::database_scan (nano::ledger & ledger_a) :
+database_scan_index::database_scan_index (nano::ledger & ledger_a) :
 	ledger{ ledger_a },
 	account_scanner{ ledger },
 	pending_scanner{ ledger }
 {
 }
 
-void nano::bootstrap::database_scan::reset ()
+void database_scan_index::reset ()
 {
 	queue.clear ();
 
@@ -28,7 +30,7 @@ void nano::bootstrap::database_scan::reset ()
 	pending_scanner.completed = 0;
 }
 
-nano::account nano::bootstrap::database_scan::next (std::function<bool (nano::account const &)> const & filter)
+nano::account database_scan_index::next (std::function<bool (nano::account const &)> const & filter)
 {
 	if (queue.empty ())
 	{
@@ -49,7 +51,7 @@ nano::account nano::bootstrap::database_scan::next (std::function<bool (nano::ac
 	return { 0 };
 }
 
-void nano::bootstrap::database_scan::fill ()
+void database_scan_index::fill ()
 {
 	auto transaction = ledger.store.tx_begin_read ();
 
@@ -60,12 +62,12 @@ void nano::bootstrap::database_scan::fill ()
 	queue.insert (queue.end (), set2.begin (), set2.end ());
 }
 
-bool nano::bootstrap::database_scan::warmed_up () const
+bool database_scan_index::warmed_up () const
 {
 	return account_scanner.completed > 0 && pending_scanner.completed > 0;
 }
 
-nano::container_info nano::bootstrap::database_scan::container_info () const
+nano::container_info database_scan_index::container_info () const
 {
 	nano::container_info info;
 	info.put ("accounts_iterator", account_scanner.completed);
@@ -77,7 +79,7 @@ nano::container_info nano::bootstrap::database_scan::container_info () const
  * account_database_scanner
  */
 
-std::deque<nano::account> nano::bootstrap::account_database_scanner::next_batch (nano::store::transaction & transaction, size_t batch_size)
+std::deque<nano::account> account_database_scanner::next_batch (nano::store::transaction & transaction, size_t batch_size)
 {
 	std::deque<nano::account> result;
 
@@ -108,7 +110,7 @@ std::deque<nano::account> nano::bootstrap::account_database_scanner::next_batch 
  * pending_database_scanner
  */
 
-std::deque<nano::account> nano::bootstrap::pending_database_scanner::next_batch (nano::store::transaction & transaction, size_t batch_size)
+std::deque<nano::account> pending_database_scanner::next_batch (nano::store::transaction & transaction, size_t batch_size)
 {
 	std::deque<nano::account> result;
 
@@ -133,4 +135,5 @@ std::deque<nano::account> nano::bootstrap::pending_database_scanner::next_batch 
 	}
 
 	return result;
+}
 }

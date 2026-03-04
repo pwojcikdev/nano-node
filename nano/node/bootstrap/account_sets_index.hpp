@@ -21,7 +21,7 @@ namespace mi = boost::multi_index;
 namespace nano::bootstrap
 {
 /** This class tracks accounts various account sets which are shared among the multiple bootstrap threads */
-class account_sets
+class account_sets_index
 {
 public: // Constants
 	static double constexpr priority_initial = 2.0;
@@ -32,7 +32,7 @@ public: // Constants
 	static unsigned constexpr max_fails = 3;
 
 public:
-	account_sets (account_sets_config const &, nano::stats &);
+	account_sets_index (account_sets_config const &, nano::stats &);
 
 	void reset ();
 
