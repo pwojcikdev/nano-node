@@ -70,7 +70,7 @@ bool nano::telemetry::verify (const nano::messages::telemetry_ack & telemetry, c
 	}
 
 	// Check whether data is signed by node id presented in telemetry message
-	if (telemetry.data.validate_signature ()) // Returns false when signature OK
+	if (!telemetry.validate_signature ())
 	{
 		stats.inc (nano::stat::type::telemetry, nano::stat::detail::invalid_signature);
 		return false;
@@ -233,6 +233,7 @@ void nano::telemetry::broadcast (std::shared_ptr<nano::transport::channel> const
 	stats.inc (nano::stat::type::telemetry, nano::stat::detail::broadcast);
 
 	nano::messages::telemetry_ack message{ network_params.network, telemetry };
+	message.sign (node.node_id);
 	channel->send (message, nano::transport::traffic_type::telemetry);
 }
 

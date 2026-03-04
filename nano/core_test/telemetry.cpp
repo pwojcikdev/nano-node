@@ -10,8 +10,6 @@
 
 #include <boost/endian/conversion.hpp>
 
-#include <numeric>
-
 using namespace std::chrono_literals;
 
 TEST (telemetry, signatures)
@@ -28,32 +26,20 @@ TEST (telemetry, signatures)
 	data.confirmation_latency_ms = 500;
 	data.bootstrap_status = static_cast<uint8_t> (nano::messages::telemetry_bootstrap_status::synced);
 	data.timestamp = std::chrono::system_clock::time_point (100ms);
-	data.sign (node_id);
-	ASSERT_FALSE (data.validate_signature ());
-	auto signature = data.signature;
+
+	nano::messages::telemetry_ack ack{ nano::dev::network_params.network, data };
+	ack.sign (node_id);
+	ASSERT_TRUE (ack.validate_signature ());
+	auto signature = ack.signature;
+
 	// Check that the signature is different if changing a piece of data
 	data.maker = 2;
-	data.sign (node_id);
-	ASSERT_NE (data.signature, signature);
+	nano::messages::telemetry_ack ack2{ nano::dev::network_params.network, data };
+	ack2.sign (node_id);
+	ASSERT_NE (ack2.signature, signature);
 }
 
-TEST (telemetry, unknown_data)
-{
-	nano::keypair node_id;
-	nano::messages::telemetry_data data;
-	data.node_id = node_id.pub;
-	data.major_version = 20;
-	data.minor_version = 1;
-	data.patch_version = 5;
-	data.pre_release_version = 2;
-	data.maker = 1;
-	data.timestamp = std::chrono::system_clock::time_point (100ms);
-	data.unknown_data.push_back (1);
-	data.sign (node_id);
-	ASSERT_FALSE (data.validate_signature ());
-}
-
-// Old node (150-byte payload, size_v1) -> New node: signature must validate, new fields default to 0
+// Old node (v1 data payload) -> New node: signature must validate, new fields default to 0
 TEST (telemetry, backward_compat_v1_to_new)
 {
 	nano::keypair node_id;
@@ -66,49 +52,46 @@ TEST (telemetry, backward_compat_v1_to_new)
 	data.maker = 1;
 	data.timestamp = std::chrono::system_clock::time_point (100ms);
 	data.active_difficulty = 0xffffffc000000000;
+	data.version = nano::messages::telemetry_version::v1;
 
-	// Simulate old node: serialize with size_v1 (150 bytes, no database_backend)
-	std::vector<uint8_t> old_payload;
+	// Simulate old node: serialize v1 data fields only
+	std::vector<uint8_t> data_payload;
 	{
-		nano::vectorstream stream (old_payload);
-		nano::write (stream, data.signature);
-		nano::write (stream, data.node_id);
-		nano::write (stream, boost::endian::native_to_big (data.block_count));
-		nano::write (stream, boost::endian::native_to_big (data.cemented_count));
-		nano::write (stream, boost::endian::native_to_big (data.unchecked_count));
-		nano::write (stream, boost::endian::native_to_big (data.account_count));
-		nano::write (stream, boost::endian::native_to_big (data.bandwidth_cap));
-		nano::write (stream, boost::endian::native_to_big (data.peer_count));
-		nano::write (stream, data.protocol_version);
-		nano::write (stream, boost::endian::native_to_big (data.uptime));
-		nano::write (stream, data.genesis_block.bytes);
-		nano::write (stream, data.major_version);
-		nano::write (stream, data.minor_version);
-		nano::write (stream, data.patch_version);
-		nano::write (stream, data.pre_release_version);
-		nano::write (stream, data.maker);
-		nano::write (stream, boost::endian::native_to_big (std::chrono::duration_cast<std::chrono::milliseconds> (data.timestamp.time_since_epoch ()).count ()));
-		nano::write (stream, boost::endian::native_to_big (data.active_difficulty));
+		nano::vectorstream stream (data_payload);
+		data.serialize (stream);
+	}
+	ASSERT_EQ (data_payload.size (), nano::messages::telemetry_data::size_v1);
+
+	// Sign the data payload
+	auto sig = nano::sign_message (node_id.prv, node_id.pub, data_payload.data (), data_payload.size ());
+
+	// Build full wire payload: [signature][data]
+	std::vector<uint8_t> full_payload;
+	{
+		nano::vectorstream stream (full_payload);
+		nano::write (stream, sig);
+		nano::write (stream, data_payload);
 	}
 
-	// Sign using only old-format fields (without signature prefix)
-	std::vector<uint8_t> sign_bytes (old_payload.begin () + sizeof (nano::signature), old_payload.end ());
-	auto sig = nano::sign_message (node_id.prv, node_id.pub, sign_bytes.data (), sign_bytes.size ());
-	std::copy (sig.bytes.begin (), sig.bytes.end (), old_payload.begin ());
+	// Build a telemetry_ack header with the correct payload size
+	nano::messages::message_header hdr (nano::dev::network_params.network, nano::messages::message_type::telemetry_ack);
+	hdr.extensions &= ~nano::messages::message_header::telemetry_size_mask;
+	hdr.extensions |= std::bitset<16> (static_cast<unsigned long long> (full_payload.size ()));
 
-	nano::messages::telemetry_data received;
-	nano::bufferstream stream (old_payload.data (), old_payload.size ());
-	received.deserialize (stream, nano::messages::telemetry_data::size_v1);
+	bool error = false;
+	nano::bufferstream stream (full_payload.data (), full_payload.size ());
+	nano::messages::telemetry_ack received (error, stream, hdr);
 
-	ASSERT_EQ (received.version, nano::messages::telemetry_version::v1);
-	ASSERT_EQ (received.database_backend, 0);
-	ASSERT_EQ (received.confirmation_latency_ms, 0);
-	ASSERT_EQ (received.bootstrap_status, 0);
-	ASSERT_FALSE (received.validate_signature ());
-	ASSERT_EQ (received.node_id, node_id.pub);
+	ASSERT_FALSE (error);
+	ASSERT_EQ (received.data.version, nano::messages::telemetry_version::v1);
+	ASSERT_EQ (received.data.database_backend, 0);
+	ASSERT_EQ (received.data.confirmation_latency_ms, 0);
+	ASSERT_EQ (received.data.bootstrap_status, 0);
+	ASSERT_TRUE (received.validate_signature ());
+	ASSERT_EQ (received.data.node_id, node_id.pub);
 }
 
-// New node (156-byte payload) -> Old v1 node: extra 6 bytes go to unknown_data, signature validates
+// New node (v2 payload) -> Old node: extra bytes are ignored during deserialization, signature validates via raw bytes
 TEST (telemetry, forward_compat_new_to_old)
 {
 	nano::keypair node_id;
@@ -124,84 +107,36 @@ TEST (telemetry, forward_compat_new_to_old)
 	data.bootstrap_status = static_cast<uint8_t> (nano::messages::telemetry_bootstrap_status::synced);
 	data.timestamp = std::chrono::system_clock::time_point (100ms);
 	data.active_difficulty = 0xffffffc000000000;
-	data.sign (node_id);
-	ASSERT_FALSE (data.validate_signature ());
 
-	// Serialize the new-format data (156 bytes)
-	std::vector<uint8_t> payload;
-	{
-		nano::vectorstream stream (payload);
-		data.serialize (stream);
-	}
-	ASSERT_EQ (payload.size (), nano::messages::telemetry_data::size);
+	// Create and sign a telemetry_ack with v2 data
+	nano::messages::telemetry_ack ack{ nano::dev::network_params.network, data };
+	ack.sign (node_id);
+	ASSERT_TRUE (ack.validate_signature ());
 
-	// Simulate old v1 node deserializing: it only knows size_v1 as its latest_size
-	nano::messages::telemetry_data old_received;
-	uint16_t const old_latest_size = nano::messages::telemetry_data::size_v1;
+	// Serialize the full message
+	std::vector<uint8_t> message_bytes;
 	{
-		nano::bufferstream stream (payload.data (), payload.size ());
-		nano::read (stream, old_received.signature);
-		nano::read (stream, old_received.node_id);
-		nano::read (stream, old_received.block_count);
-		boost::endian::big_to_native_inplace (old_received.block_count);
-		nano::read (stream, old_received.cemented_count);
-		boost::endian::big_to_native_inplace (old_received.cemented_count);
-		nano::read (stream, old_received.unchecked_count);
-		boost::endian::big_to_native_inplace (old_received.unchecked_count);
-		nano::read (stream, old_received.account_count);
-		boost::endian::big_to_native_inplace (old_received.account_count);
-		nano::read (stream, old_received.bandwidth_cap);
-		boost::endian::big_to_native_inplace (old_received.bandwidth_cap);
-		nano::read (stream, old_received.peer_count);
-		boost::endian::big_to_native_inplace (old_received.peer_count);
-		nano::read (stream, old_received.protocol_version);
-		nano::read (stream, old_received.uptime);
-		boost::endian::big_to_native_inplace (old_received.uptime);
-		nano::read (stream, old_received.genesis_block.bytes);
-		nano::read (stream, old_received.major_version);
-		nano::read (stream, old_received.minor_version);
-		nano::read (stream, old_received.patch_version);
-		nano::read (stream, old_received.pre_release_version);
-		nano::read (stream, old_received.maker);
-		uint64_t timestamp_l;
-		nano::read (stream, timestamp_l);
-		boost::endian::big_to_native_inplace (timestamp_l);
-		old_received.timestamp = std::chrono::system_clock::time_point (std::chrono::milliseconds (timestamp_l));
-		nano::read (stream, old_received.active_difficulty);
-		boost::endian::big_to_native_inplace (old_received.active_difficulty);
-		// Old node doesn't know about database_backend or new fields
-		auto remaining = static_cast<uint16_t> (payload.size ()) - old_latest_size;
-		ASSERT_EQ (remaining, 6); // database_backend(1) + confirmation_latency_ms(4) + bootstrap_status(1)
-		nano::read (stream, old_received.unknown_data, remaining);
+		nano::vectorstream stream (message_bytes);
+		ack.serialize (stream);
 	}
 
-	ASSERT_EQ (old_received.database_backend, 0);
-	ASSERT_EQ (old_received.unknown_data.size (), 6);
+	// Deserialize — simulates any node receiving this message
+	auto header_size = nano::messages::message_header::size;
+	bool error = false;
+	nano::bufferstream header_stream (message_bytes.data (), header_size);
+	nano::messages::message_header hdr (error, header_stream);
+	ASSERT_FALSE (error);
 
-	// Old node's validate_signature: serialize known fields + unknown_data
-	std::vector<uint8_t> verify_bytes;
-	{
-		nano::vectorstream stream (verify_bytes);
-		nano::write (stream, old_received.node_id);
-		nano::write (stream, boost::endian::native_to_big (old_received.block_count));
-		nano::write (stream, boost::endian::native_to_big (old_received.cemented_count));
-		nano::write (stream, boost::endian::native_to_big (old_received.unchecked_count));
-		nano::write (stream, boost::endian::native_to_big (old_received.account_count));
-		nano::write (stream, boost::endian::native_to_big (old_received.bandwidth_cap));
-		nano::write (stream, boost::endian::native_to_big (old_received.peer_count));
-		nano::write (stream, old_received.protocol_version);
-		nano::write (stream, boost::endian::native_to_big (old_received.uptime));
-		nano::write (stream, old_received.genesis_block.bytes);
-		nano::write (stream, old_received.major_version);
-		nano::write (stream, old_received.minor_version);
-		nano::write (stream, old_received.patch_version);
-		nano::write (stream, old_received.pre_release_version);
-		nano::write (stream, old_received.maker);
-		nano::write (stream, boost::endian::native_to_big (std::chrono::duration_cast<std::chrono::milliseconds> (old_received.timestamp.time_since_epoch ()).count ()));
-		nano::write (stream, boost::endian::native_to_big (old_received.active_difficulty));
-		nano::write (stream, old_received.unknown_data);
-	}
-	ASSERT_FALSE (nano::validate_message (old_received.node_id, verify_bytes.data (), verify_bytes.size (), old_received.signature));
+	bool deser_error = false;
+	nano::bufferstream payload_stream (message_bytes.data () + header_size, message_bytes.size () - header_size);
+	nano::messages::telemetry_ack received (deser_error, payload_stream, hdr);
+
+	ASSERT_FALSE (deser_error);
+	// Signature validates against the raw payload bytes
+	ASSERT_TRUE (received.validate_signature ());
+	ASSERT_EQ (received.data.node_id, node_id.pub);
+	ASSERT_EQ (received.data.database_backend, static_cast<uint8_t> (nano::messages::telemetry_database_backend::lmdb));
+	ASSERT_EQ (received.data.confirmation_latency_ms, 250);
 }
 
 TEST (telemetry, no_peers)
@@ -346,9 +281,10 @@ TEST (telemetry, max_possible_size)
 	auto node_server = system.add_node (node_flags);
 
 	nano::messages::telemetry_data data;
-	data.unknown_data.resize (nano::messages::message_header::telemetry_size_mask.to_ulong () - nano::messages::telemetry_data::latest_size);
+	data.node_id = node_client->node_id.pub;
 
 	nano::messages::telemetry_ack message{ nano::dev::network_params.network, data };
+	message.sign (node_client->node_id);
 
 	auto channel = node_client->network.tcp_channels.find_node_id (node_server->get_node_id ());
 	ASSERT_NE (nullptr, channel);

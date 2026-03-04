@@ -132,8 +132,6 @@ TEST (message_deserializer, exact_telemetry_req)
 TEST (message_deserializer, exact_telemetry_ack)
 {
 	nano::messages::telemetry_data data;
-	data.unknown_data.push_back (0xFF);
-
 	nano::messages::telemetry_ack message{ nano::dev::network_params.network, data };
 	message_deserializer_success_checker<decltype (message)> (message);
 }

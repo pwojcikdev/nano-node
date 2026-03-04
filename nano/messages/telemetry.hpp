@@ -9,7 +9,7 @@
 
 #include <chrono>
 #include <cstdint>
-#include <vector>
+#include <vector> // used by telemetry_ack::payload_bytes
 
 namespace nano::messages
 {
@@ -33,7 +33,7 @@ enum class telemetry_bootstrap_status : uint8_t
 	synced = 2
 };
 
-// Tracks which set of fields are present in a telemetry payload.
+// Tracks which set of fields are present in a telemetry payload
 enum class telemetry_version : uint8_t
 {
 	v1 = 1,
@@ -44,8 +44,7 @@ telemetry_database_backend to_telemetry_database_backend (nano::database_backend
 
 class telemetry_data
 {
-public:
-	nano::signature signature{ 0 };
+public: // Payload
 	nano::account node_id{};
 	uint64_t block_count{ 0 };
 	uint64_t cemented_count{ 0 };
@@ -66,20 +65,22 @@ public:
 	uint8_t database_backend{ 0 };
 	uint32_t confirmation_latency_ms{ 0 };
 	uint8_t bootstrap_status{ 0 };
-	std::vector<uint8_t> unknown_data;
+
+public:
 	telemetry_version version{ telemetry_version::v2 };
 
+public:
 	void serialize (nano::stream &) const;
 	void deserialize (nano::stream &, uint16_t);
 	nano::error serialize_json (nano::jsonconfig &, bool) const;
 	nano::error deserialize_json (nano::jsonconfig &, bool);
-	void sign (nano::keypair const &);
-	bool validate_signature () const;
+
 	bool operator== (telemetry_data const &) const;
 	bool operator!= (telemetry_data const &) const;
 
-	// Size does not include unknown_data
-	static auto constexpr size_v1 = sizeof (signature) + sizeof (node_id) + sizeof (block_count) + sizeof (cemented_count) + sizeof (unchecked_count) + sizeof (account_count) + sizeof (bandwidth_cap) + sizeof (peer_count) + sizeof (protocol_version) + sizeof (uptime) + sizeof (genesis_block) + sizeof (major_version) + sizeof (minor_version) + sizeof (patch_version) + sizeof (pre_release_version) + sizeof (maker) + sizeof (uint64_t) + sizeof (active_difficulty);
+public:
+	// Size of data fields only (no signature)
+	static auto constexpr size_v1 = sizeof (node_id) + sizeof (block_count) + sizeof (cemented_count) + sizeof (unchecked_count) + sizeof (account_count) + sizeof (bandwidth_cap) + sizeof (peer_count) + sizeof (protocol_version) + sizeof (uptime) + sizeof (genesis_block) + sizeof (major_version) + sizeof (minor_version) + sizeof (patch_version) + sizeof (pre_release_version) + sizeof (maker) + sizeof (uint64_t) + sizeof (active_difficulty);
 	static auto constexpr size_v2 = size_v1 + sizeof (database_backend) + sizeof (confirmation_latency_ms) + sizeof (bootstrap_status);
 	static auto constexpr size = size_v2; // Current version size
 	static auto constexpr latest_size = size; // This needs to be updated for each new telemetry version
@@ -88,7 +89,6 @@ public:
 
 private:
 	static uint16_t size_for_version (telemetry_version ver);
-	void serialize_without_signature (nano::stream &) const;
 
 public: // Logging
 	void operator() (nano::object_stream &) const;
@@ -119,7 +119,16 @@ public:
 	uint16_t size () const;
 	bool is_empty_payload () const;
 	static uint16_t size (message_header const &);
+
+	void sign (nano::keypair const &);
+	bool validate_signature () const;
+
+	nano::signature signature{ 0 };
 	telemetry_data data;
+
+private:
+	// Raw payload bytes captured during deserialization (used for signature verification without re-serialization)
+	std::vector<uint8_t> payload_bytes;
 
 public: // Logging
 	void operator() (nano::object_stream &) const override;

@@ -29,7 +29,6 @@ void compare_telemetry_data_impl (const nano::messages::telemetry_data & data_a,
 	ASSERT_EQ (data_a.database_backend, data_b.database_backend);
 	ASSERT_EQ (data_a.confirmation_latency_ms, data_b.confirmation_latency_ms);
 	// bootstrap_status is not compared because it can change between telemetry snapshots
-	ASSERT_EQ (data_a.unknown_data, std::vector<uint8_t>{});
 	result = true;
 }
 }
@@ -45,14 +44,7 @@ namespace
 {
 void compare_telemetry_impl (const nano::messages::telemetry_data & data, nano::node const & node, bool & result)
 {
-	ASSERT_FALSE (data.validate_signature ());
 	ASSERT_EQ (data.node_id, node.node_id.pub);
-
-	// Signature should be different because uptime/timestamp will have changed.
-	nano::messages::telemetry_data data_l = data;
-	data_l.signature.clear ();
-	data_l.sign (node.node_id);
-	ASSERT_NE (data.signature, data_l.signature);
 
 	ASSERT_TRUE (nano::test::compare_telemetry_data (data, node.local_telemetry ()));
 

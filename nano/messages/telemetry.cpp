@@ -67,9 +67,10 @@ telemetry_ack::telemetry_ack (nano::network_constants const & constants, telemet
 	message (constants, message_type::telemetry_ack),
 	data (telemetry_data_a)
 {
-	debug_assert (telemetry_data_a.serialized_size () <= message_header::telemetry_size_mask.to_ulong ()); // Maximum size the mask allows
+	auto total_size = static_cast<unsigned long long> (sizeof (nano::signature) + telemetry_data_a.serialized_size ());
+	debug_assert (total_size <= message_header::telemetry_size_mask.to_ulong ()); // Maximum size the mask allows
 	header.extensions &= ~message_header::telemetry_size_mask;
-	header.extensions |= std::bitset<16> (static_cast<unsigned long long> (telemetry_data_a.serialized_size ()));
+	header.extensions |= std::bitset<16> (total_size);
 }
 
 void telemetry_ack::serialize (nano::stream & stream_a) const
@@ -77,6 +78,7 @@ void telemetry_ack::serialize (nano::stream & stream_a) const
 	header.serialize (stream_a);
 	if (!is_empty_payload ())
 	{
+		write (stream_a, signature);
 		data.serialize (stream_a);
 	}
 }
@@ -89,7 +91,22 @@ bool telemetry_ack::deserialize (nano::stream & stream_a)
 	{
 		if (!is_empty_payload ())
 		{
-			data.deserialize (stream_a, nano::narrow_cast<uint16_t> (header.extensions.to_ulong ()));
+			auto payload_size = nano::narrow_cast<uint16_t> (header.extensions.to_ulong ());
+			if (payload_size < sizeof (nano::signature))
+			{
+				return true; // Error: payload too small for signature
+			}
+
+			read (stream_a, signature);
+			auto data_size = static_cast<uint16_t> (payload_size - sizeof (nano::signature));
+
+			// Capture raw payload bytes for signature verification
+			payload_bytes.resize (data_size);
+			read (stream_a, payload_bytes, data_size);
+
+			// Deserialize data from captured bytes
+			nano::bufferstream data_stream (payload_bytes.data (), payload_bytes.size ());
+			data.deserialize (data_stream, data_size);
 		}
 	}
 	catch (std::runtime_error const &)
@@ -136,7 +153,6 @@ void telemetry_ack::operator() (nano::object_stream & obs) const
 
 void telemetry_data::deserialize (nano::stream & stream_a, uint16_t payload_length_a)
 {
-	read (stream_a, signature);
 	read (stream_a, node_id);
 	read (stream_a, block_count);
 	boost::endian::big_to_native_inplace (block_count);
@@ -164,8 +180,10 @@ void telemetry_data::deserialize (nano::stream & stream_a, uint16_t payload_leng
 	read (stream_a, timestamp_l);
 	boost::endian::big_to_native_inplace (timestamp_l);
 	timestamp = std::chrono::system_clock::time_point (std::chrono::milliseconds (timestamp_l));
+
 	read (stream_a, active_difficulty);
 	boost::endian::big_to_native_inplace (active_difficulty);
+
 	if (payload_length_a >= size_v2)
 	{
 		read (stream_a, database_backend);
@@ -178,14 +196,10 @@ void telemetry_data::deserialize (nano::stream & stream_a, uint16_t payload_leng
 	{
 		version = telemetry_version::v1;
 	}
-	auto known_size = size_for_version (version);
-	if (payload_length_a > known_size)
-	{
-		read (stream_a, unknown_data, payload_length_a - known_size);
-	}
+	// Any trailing bytes from newer versions are ignored
 }
 
-void telemetry_data::serialize_without_signature (nano::stream & stream_a) const
+void telemetry_data::serialize (nano::stream & stream_a) const
 {
 	// All values should be serialized in big endian
 	write (stream_a, node_id);
@@ -211,13 +225,6 @@ void telemetry_data::serialize_without_signature (nano::stream & stream_a) const
 		write (stream_a, boost::endian::native_to_big (confirmation_latency_ms));
 		write (stream_a, bootstrap_status);
 	}
-	write (stream_a, unknown_data);
-}
-
-void telemetry_data::serialize (nano::stream & stream_a) const
-{
-	write (stream_a, signature);
-	serialize_without_signature (stream_a);
 }
 
 nano::error telemetry_data::serialize_json (nano::jsonconfig & json, bool ignore_identification_metrics_a) const
@@ -248,7 +255,6 @@ nano::error telemetry_data::serialize_json (nano::jsonconfig & json, bool ignore
 	if (!ignore_identification_metrics_a)
 	{
 		json.put ("node_id", node_id.to_node_id ());
-		json.put ("signature", signature.to_string ());
 	}
 	return json.get_error ();
 }
@@ -257,16 +263,6 @@ nano::error telemetry_data::deserialize_json (nano::jsonconfig & json, bool igno
 {
 	if (!ignore_identification_metrics_a)
 	{
-		std::string signature_l;
-		json.get ("signature", signature_l);
-		if (!json.get_error ())
-		{
-			if (signature.decode_hex (signature_l))
-			{
-				json.get_error ().set ("Could not deserialize signature");
-			}
-		}
-
 		std::string node_id_l;
 		json.get ("node_id", node_id_l);
 		if (!json.get_error ())
@@ -321,7 +317,7 @@ nano::error telemetry_data::deserialize_json (nano::jsonconfig & json, bool igno
 
 bool telemetry_data::operator== (telemetry_data const & data_a) const
 {
-	return (signature == data_a.signature && node_id == data_a.node_id && block_count == data_a.block_count && cemented_count == data_a.cemented_count && unchecked_count == data_a.unchecked_count && account_count == data_a.account_count && bandwidth_cap == data_a.bandwidth_cap && uptime == data_a.uptime && peer_count == data_a.peer_count && protocol_version == data_a.protocol_version && genesis_block == data_a.genesis_block && major_version == data_a.major_version && minor_version == data_a.minor_version && patch_version == data_a.patch_version && pre_release_version == data_a.pre_release_version && maker == data_a.maker && timestamp == data_a.timestamp && active_difficulty == data_a.active_difficulty && version == data_a.version && database_backend == data_a.database_backend && confirmation_latency_ms == data_a.confirmation_latency_ms && bootstrap_status == data_a.bootstrap_status && unknown_data == data_a.unknown_data);
+	return (node_id == data_a.node_id && block_count == data_a.block_count && cemented_count == data_a.cemented_count && unchecked_count == data_a.unchecked_count && account_count == data_a.account_count && bandwidth_cap == data_a.bandwidth_cap && uptime == data_a.uptime && peer_count == data_a.peer_count && protocol_version == data_a.protocol_version && genesis_block == data_a.genesis_block && major_version == data_a.major_version && minor_version == data_a.minor_version && patch_version == data_a.patch_version && pre_release_version == data_a.pre_release_version && maker == data_a.maker && timestamp == data_a.timestamp && active_difficulty == data_a.active_difficulty && version == data_a.version && database_backend == data_a.database_backend && confirmation_latency_ms == data_a.confirmation_latency_ms && bootstrap_status == data_a.bootstrap_status);
 }
 
 bool telemetry_data::operator!= (telemetry_data const & data_a) const
@@ -329,32 +325,36 @@ bool telemetry_data::operator!= (telemetry_data const & data_a) const
 	return !(*this == data_a);
 }
 
-void telemetry_data::sign (nano::keypair const & node_id_a)
+uint16_t telemetry_data::serialized_size () const
 {
-	debug_assert (node_id == node_id_a.pub);
+	return size_for_version (version);
+}
+
+void telemetry_ack::sign (nano::keypair const & node_id_a)
+{
+	debug_assert (data.node_id == node_id_a.pub);
 	std::vector<uint8_t> bytes;
 	{
 		nano::vectorstream stream (bytes);
-		serialize_without_signature (stream);
+		data.serialize (stream);
 	}
-
 	signature = nano::sign_message (node_id_a.prv, node_id_a.pub, bytes.data (), bytes.size ());
 }
 
-bool telemetry_data::validate_signature () const
+bool telemetry_ack::validate_signature () const
 {
-	std::vector<uint8_t> bytes;
+	if (payload_bytes.empty ())
 	{
-		nano::vectorstream stream (bytes);
-		serialize_without_signature (stream);
+		// Locally created message — serialize data to get bytes
+		std::vector<uint8_t> bytes;
+		{
+			nano::vectorstream stream (bytes);
+			data.serialize (stream);
+		}
+		return !nano::validate_message (data.node_id, bytes.data (), bytes.size (), signature);
 	}
-
-	return nano::validate_message (node_id, bytes.data (), bytes.size (), signature);
-}
-
-uint16_t telemetry_data::serialized_size () const
-{
-	return size_for_version (version) + static_cast<uint16_t> (unknown_data.size ());
+	// Deserialized message — use raw payload bytes for verification
+	return !nano::validate_message (data.node_id, payload_bytes.data (), payload_bytes.size (), signature);
 }
 
 uint16_t telemetry_data::size_for_version (telemetry_version ver)
