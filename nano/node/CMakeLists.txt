@@ -42,6 +42,15 @@ add_library(
   bootstrap/bootstrap_service.hpp
   bootstrap/bootstrap_service.cpp
   bootstrap/common.hpp
+  bootstrap/common.cpp
+  bootstrap/database_strategy.hpp
+  bootstrap/database_strategy.cpp
+  bootstrap/dependency_strategy.hpp
+  bootstrap/dependency_strategy.cpp
+  bootstrap/frontier_strategy.hpp
+  bootstrap/frontier_strategy.cpp
+  bootstrap/priority_strategy.hpp
+  bootstrap/priority_strategy.cpp
   bootstrap/throttle.hpp
   bootstrap/throttle.cpp
   bootstrap/database_scan_index.hpp

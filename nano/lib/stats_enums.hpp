@@ -680,6 +680,10 @@ enum class detail
 	blocks_by_account,
 	account_info_by_hash,
 
+	// query_source
+	database,
+	dependencies,
+
 	// bounded backlog,
 	gathered_targets,
 	performing_rollbacks,

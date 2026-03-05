@@ -21,14 +21,29 @@
 #include <boost/multi_index/sequenced_index.hpp>
 #include <boost/multi_index_container.hpp>
 
+#include <any>
+#include <memory>
 #include <thread>
 
 namespace mi = boost::multi_index;
+
+namespace nano::bootstrap
+{
+class priority_strategy;
+class database_strategy;
+class dependency_strategy;
+class frontier_strategy;
+}
 
 namespace nano
 {
 class bootstrap_service
 {
+	friend class nano::bootstrap::priority_strategy;
+	friend class nano::bootstrap::database_strategy;
+	friend class nano::bootstrap::dependency_strategy;
+	friend class nano::bootstrap::frontier_strategy;
+
 public:
 	bootstrap_service (nano::node_config const &, nano::ledger &, nano::ledger_notifications &, nano::block_processor &, nano::network &, nano::stats &, nano::logger &);
 	~bootstrap_service ();
@@ -80,51 +95,41 @@ private: // Dependencies
 	nano::logger & logger;
 
 public: // Tag
-	enum class query_type
+	struct blocks_tag_payload
 	{
-		invalid = 0, // Default initialization
-		blocks_by_hash,
-		blocks_by_account,
-		account_info_by_hash,
-		frontiers,
+		nano::hash_or_account start{ 0 };
+		size_t count{ 0 };
 	};
 
-	enum class query_source
+	struct dependency_tag_payload
 	{
-		invalid,
-		priority,
-		database,
-		dependencies,
-		frontiers,
+		nano::block_hash start{ 0 };
+	};
+
+	struct frontier_tag_payload
+	{
+		nano::account start{ 0 };
 	};
 
 	struct async_tag
 	{
 		using id_t = nano::bootstrap::id_t;
 
-		query_type type{ query_type::invalid };
-		query_source source{ query_source::invalid };
-		nano::hash_or_account start{ 0 };
+		nano::bootstrap::query_type type{ nano::bootstrap::query_type::invalid };
+		nano::bootstrap::query_source source{ nano::bootstrap::query_source::invalid };
 		nano::account account{ 0 };
 		nano::block_hash hash{ 0 };
-		size_t count{ 0 };
 		std::chrono::steady_clock::time_point cutoff{};
 		std::chrono::steady_clock::time_point timestamp{ std::chrono::steady_clock::now () };
 		id_t id{ nano::bootstrap::generate_id () };
+
+		std::any payload; // Strategy-specific data (blocks_tag_payload, dependency_tag_payload, frontier_tag_payload)
 	};
 
 private:
 	/* Inspects a block that has been processed by the block processor */
 	void inspect (secure::transaction const &, nano::block_status const & result, nano::block const & block, nano::block_source);
 
-	void run_priorities ();
-	void run_one_priority ();
-	void run_database ();
-	void run_one_database (bool should_throttle);
-	void run_dependencies ();
-	void run_one_dependency ();
-	void run_frontiers ();
-	void run_one_frontier ();
 	void run_timeouts ();
 	void cleanup_and_sync ();
 
@@ -135,31 +140,15 @@ private:
 	void wait_block_processor () const;
 	/* Waits for a channel that is not full */
 	std::shared_ptr<nano::transport::channel> wait_channel ();
-	/* Waits until a suitable account outside of cooldown period is available */
-	using priority_result = nano::bootstrap::account_sets_index::priority_result;
-	priority_result next_priority ();
-	priority_result wait_priority ();
-	/* Gets the next account from the database */
-	nano::account next_database (bool should_throttle);
-	nano::account wait_database (bool should_throttle);
-	/* Waits for next available blocking block */
-	nano::block_hash next_blocking ();
-	nano::block_hash wait_blocking ();
-	/* Waits for next available frontier scan range */
-	nano::account wait_frontier ();
-
-	bool request (nano::account, size_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
-	bool request_info (nano::block_hash, std::shared_ptr<nano::transport::channel> const &, query_source);
-	bool request_frontiers (nano::account, std::shared_ptr<nano::transport::channel> const &, query_source);
-	bool send (std::shared_ptr<nano::transport::channel> const &, async_tag tag);
+	bool request (nano::account, size_t count, std::shared_ptr<nano::transport::channel> const &, nano::bootstrap::query_source);
+	bool send (std::shared_ptr<nano::transport::channel> const &, nano::messages::asc_pull_req message, async_tag tag);
 
 	bool process (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag);
 	bool process (nano::messages::asc_pull_ack::account_info_payload const & response, async_tag const & tag);
 	bool process (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag);
 	bool process (nano::messages::empty_payload const & response, async_tag const & tag);
 
-	void process_frontiers (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
-
+public:
 	enum class verify_result
 	{
 		ok,
@@ -167,6 +156,7 @@ private:
 		invalid,
 	};
 
+private:
 	/**
 	 * Verifies whether the received response is valid. Returns:
 	 * - invalid: when received blocks do not correspond to requested hash/account or they do not make a valid chain
@@ -174,15 +164,23 @@ private:
 	 * - ok: otherwise, if all checks pass
 	 */
 	verify_result verify (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag) const;
-	verify_result verify (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag) const;
 
-	size_t count_tags (nano::account const & account, query_source source) const;
-	size_t count_tags (nano::block_hash const & hash, query_source source) const;
+	size_t count_tags (nano::account const & account, nano::bootstrap::query_source source) const;
+	size_t count_tags (nano::block_hash const & hash, nano::bootstrap::query_source source) const;
 
 	// Calculates a lookback size based on the size of the ledger where larger ledgers have a larger sample count
 	std::size_t compute_throttle_size () const;
 
 private:
+	std::unique_ptr<nano::bootstrap::priority_strategy> priority_strat_impl;
+	nano::bootstrap::priority_strategy & priority_strat;
+	std::unique_ptr<nano::bootstrap::database_strategy> database_strat_impl;
+	nano::bootstrap::database_strategy & database_strat;
+	std::unique_ptr<nano::bootstrap::dependency_strategy> dependency_strat_impl;
+	nano::bootstrap::dependency_strategy & dependency_strat;
+	std::unique_ptr<nano::bootstrap::frontier_strategy> frontier_strat_impl;
+	nano::bootstrap::frontier_strategy & frontier_strat;
+
 	nano::bootstrap::account_sets_index accounts;
 	nano::bootstrap::database_scan_index database_scan;
 	nano::bootstrap::throttle throttle;
@@ -221,15 +219,9 @@ private:
 	bool stopped{ false };
 	mutable nano::mutex mutex;
 	mutable nano::condition_variable condition;
-	std::thread priorities_thread;
-	std::thread database_thread;
-	std::thread dependencies_thread;
-	std::thread frontiers_thread;
 	std::thread cleanup_thread;
 
 	nano::thread_pool workers;
 	nano::random_generator_mt rng;
 };
-
-nano::stat::detail to_stat_detail (bootstrap_service::query_type);
 }
