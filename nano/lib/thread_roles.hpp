@@ -46,6 +46,7 @@ enum class name
 	bootstrap,
 	bootstrap_database_scan,
 	bootstrap_dependency_walker,
+	bootstrap_dependency_sync,
 	bootstrap_frontier_scan,
 	bootstrap_cleanup,
 	bootstrap_worker,

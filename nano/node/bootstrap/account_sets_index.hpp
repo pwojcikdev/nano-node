@@ -55,7 +55,7 @@ public:
 	/**
 	 * Should be called periodically to reinsert missing dependencies into the priority set
 	 */
-	void sync_dependencies ();
+	std::size_t sync_dependencies ();
 
 	/**
 	 * Should be called periodically to remove old entries from the blocking set

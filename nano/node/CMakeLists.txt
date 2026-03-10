@@ -37,6 +37,8 @@ add_library(
   bootstrap/account_sets_index.cpp
   bootstrap/bootstrap_config.hpp
   bootstrap/bootstrap_config.cpp
+  bootstrap/bootstrap_context.hpp
+  bootstrap/bootstrap_context.cpp
   bootstrap/bootstrap_server.hpp
   bootstrap/bootstrap_server.cpp
   bootstrap/bootstrap_service.hpp

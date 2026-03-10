@@ -1,6 +1,6 @@
 #pragma once
 
-#include <nano/node/bootstrap/bootstrap_service.hpp>
+#include <nano/node/bootstrap/bootstrap_context.hpp>
 
 #include <thread>
 
@@ -9,7 +9,7 @@ namespace nano::bootstrap
 class database_strategy
 {
 public:
-	explicit database_strategy (nano::bootstrap_service & service);
+	explicit database_strategy (bootstrap_context & ctx);
 
 	void start ();
 	void stop ();
@@ -21,7 +21,7 @@ private:
 	nano::account next_database (bool should_throttle);
 	nano::account wait_database (bool should_throttle);
 
-	nano::bootstrap_service & service;
+	bootstrap_context & ctx;
 	std::thread thread;
 };
 }

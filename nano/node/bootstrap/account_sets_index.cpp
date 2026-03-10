@@ -292,9 +292,11 @@ nano::block_hash account_sets_index::next_blocking (std::function<bool (nano::bl
 	return { 0 };
 }
 
-void account_sets_index::sync_dependencies ()
+std::size_t account_sets_index::sync_dependencies ()
 {
 	stats.inc (nano::stat::type::bootstrap_account_sets, nano::stat::detail::sync_dependencies);
+
+	std::size_t synced = 0;
 
 	// Sample all accounts with a known dependency account (> account 0)
 	auto begin = blocking.get<tag_dependency_account> ().upper_bound (nano::account{ 0 });
@@ -313,10 +315,13 @@ void account_sets_index::sync_dependencies ()
 		{
 			stats.inc (nano::stat::type::bootstrap_account_sets, nano::stat::detail::dependency_synced);
 			priority_set (entry.dependency_account);
+			++synced;
 		}
 	}
 
 	trim_overflow ();
+
+	return synced;
 }
 
 size_t account_sets_index::decay_blocking (std::chrono::steady_clock::time_point now)
