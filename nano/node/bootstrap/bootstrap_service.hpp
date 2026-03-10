@@ -61,6 +61,7 @@ private: // Dependencies
 	nano::logger & logger;
 
 private:
-	std::unique_ptr<nano::bootstrap::bootstrap_context> ctx;
+	std::unique_ptr<nano::bootstrap::bootstrap_context> ctx_impl;
+	nano::bootstrap::bootstrap_context & ctx;
 };
 }

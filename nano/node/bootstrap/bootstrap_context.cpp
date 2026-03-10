@@ -6,6 +6,7 @@
 #include <nano/messages/common.hpp>
 #include <nano/node/block_processor.hpp>
 #include <nano/node/bootstrap/bootstrap_context.hpp>
+#include <nano/node/ledger_notifications.hpp>
 #include <nano/node/bootstrap/database_strategy.hpp>
 #include <nano/node/bootstrap/dependency_strategy.hpp>
 #include <nano/node/bootstrap/frontier_strategy.hpp>
@@ -24,10 +25,11 @@ using namespace std::chrono_literals;
 namespace nano::bootstrap
 {
 bootstrap_context::bootstrap_context (nano::node_config const & node_config_a, nano::ledger & ledger_a,
-nano::block_processor & block_processor_a, nano::network & network_a, nano::stats & stat_a, nano::logger & logger_a) :
+nano::ledger_notifications & ledger_notifications_a, nano::block_processor & block_processor_a, nano::network & network_a, nano::stats & stat_a, nano::logger & logger_a) :
 	config{ node_config_a.bootstrap },
 	network_constants{ node_config_a.network_params.network },
 	ledger{ ledger_a },
+	ledger_notifications{ ledger_notifications_a },
 	block_processor{ block_processor_a },
 	network{ network_a },
 	stats{ stat_a },
@@ -50,6 +52,31 @@ nano::block_processor & block_processor_a, nano::network & network_a, nano::stat
 	frontiers_limiter{ config.frontier_rate_limit },
 	workers{ 1, nano::thread_role::name::bootstrap_worker }
 {
+	// Inspect all processed blocks
+	ledger_notifications.blocks_processed.add ([this] (auto const & batch) {
+		{
+			nano::lock_guard<nano::mutex> lock{ mutex };
+
+			auto transaction = ledger.tx_begin_read ();
+			for (auto const & [result, block_context] : batch)
+			{
+				debug_assert (block_context.block != nullptr);
+				inspect (transaction, result, *block_context.block, block_context.source);
+			}
+		}
+		condition.notify_all ();
+	});
+
+	// Unblock rolled back accounts as the dependency is no longer valid
+	ledger_notifications.blocks_rolled_back.add ([this] (auto const & blocks, auto const & rollback_root) {
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		for (auto const & block : blocks)
+		{
+			debug_assert (block != nullptr);
+			accounts.unblock (block->account ());
+		}
+	});
+
 	accounts.priority_set (node_config_a.network_params.ledger.genesis->account_field ().value ());
 }
 

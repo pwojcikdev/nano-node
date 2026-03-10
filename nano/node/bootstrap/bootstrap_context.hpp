@@ -76,7 +76,7 @@ enum class verify_result
 class bootstrap_context
 {
 public:
-	bootstrap_context (nano::node_config const &, nano::ledger &, nano::block_processor &, nano::network &, nano::stats &, nano::logger &);
+	bootstrap_context (nano::node_config const &, nano::ledger &, nano::ledger_notifications &, nano::block_processor &, nano::network &, nano::stats &, nano::logger &);
 	~bootstrap_context ();
 
 	void start ();
@@ -125,6 +125,7 @@ public: // Dependencies
 	nano::bootstrap_config const & config;
 	nano::network_constants const & network_constants;
 	nano::ledger & ledger;
+	nano::ledger_notifications & ledger_notifications;
 	nano::block_processor & block_processor;
 	nano::network & network;
 	nano::stats & stats;
