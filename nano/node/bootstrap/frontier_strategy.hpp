@@ -1,6 +1,6 @@
 #pragma once
 
-#include <nano/node/bootstrap/bootstrap_service.hpp>
+#include <nano/node/bootstrap/bootstrap_context.hpp>
 
 #include <deque>
 #include <memory>
@@ -12,23 +12,23 @@ namespace nano::bootstrap
 class frontier_strategy
 {
 public:
-	explicit frontier_strategy (nano::bootstrap_service & service);
+	explicit frontier_strategy (bootstrap_context & ctx);
 
 	void start ();
 	void stop ();
 	void run_one ();
 
-	bool process (nano::messages::asc_pull_ack::frontiers_payload const & response, nano::bootstrap_service::async_tag const & tag);
+	bool process (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag);
 
 private:
 	void run ();
 
 	nano::account wait_frontier ();
 	bool request_frontiers (nano::account start, std::shared_ptr<nano::transport::channel> const & channel);
-	nano::bootstrap_service::verify_result verify (nano::messages::asc_pull_ack::frontiers_payload const & response, nano::bootstrap_service::async_tag const & tag) const;
+	verify_result verify (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag) const;
 	void process_frontiers (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
 
-	nano::bootstrap_service & service;
+	bootstrap_context & ctx;
 	std::thread thread;
 };
 }
