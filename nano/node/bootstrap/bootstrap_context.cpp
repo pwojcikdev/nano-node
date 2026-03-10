@@ -649,6 +649,36 @@ verify_result bootstrap_context::verify (nano::messages::asc_pull_ack::blocks_pa
 	return verify_result::ok;
 }
 
+verify_result bootstrap_context::verify (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag) const
+{
+	auto const & payload = std::any_cast<frontier_tag_payload const &> (tag.payload);
+	auto const & frontiers = response.frontiers;
+
+	if (frontiers.empty ())
+	{
+		return verify_result::nothing_new;
+	}
+
+	// Ensure frontiers accounts are in ascending order
+	nano::account previous{ 0 };
+	for (auto const & [account, _] : frontiers)
+	{
+		if (account.number () <= previous.number ())
+		{
+			return verify_result::invalid;
+		}
+		previous = account;
+	}
+
+	// Ensure the frontiers are larger or equal to the requested frontier
+	if (frontiers.front ().first.number () < payload.start.number ())
+	{
+		return verify_result::invalid;
+	}
+
+	return verify_result::ok;
+}
+
 bool bootstrap_context::process (nano::messages::asc_pull_ack::account_info_payload const & response, async_tag const & tag)
 {
 	debug_assert (!mutex.try_lock ());
@@ -672,7 +702,56 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::account_info_payl
 
 bool bootstrap_context::process (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag)
 {
-	return frontier_strat.process (response, tag);
+	debug_assert (!mutex.try_lock ());
+	debug_assert (tag.type == query_type::frontiers);
+
+	auto const & payload = std::any_cast<frontier_tag_payload const &> (tag.payload);
+	debug_assert (!payload.start.is_zero ());
+
+	if (response.frontiers.empty ())
+	{
+		stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::frontiers_empty);
+		return true; // OK, but nothing to do
+	}
+
+	stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::frontiers);
+
+	auto result = verify (response, tag);
+	switch (result)
+	{
+		case verify_result::ok:
+		{
+			stats.inc (nano::stat::type::bootstrap_verify_frontiers, nano::stat::detail::ok);
+			stats.add (nano::stat::type::bootstrap, nano::stat::detail::frontiers, nano::stat::dir::in, response.frontiers.size ());
+
+			frontiers.process (payload.start, response.frontiers);
+
+			// Allow some overfill to avoid unnecessarily dropping responses
+			if (workers.queued_tasks () < config.frontier_scan.max_pending * 4)
+			{
+				workers.post ([this, frontiers_l = response.frontiers] {
+					frontier_strat.process_frontiers (frontiers_l);
+				});
+			}
+			else
+			{
+				stats.add (nano::stat::type::bootstrap, nano::stat::detail::frontiers_dropped, response.frontiers.size ());
+			}
+		}
+		break;
+		case verify_result::nothing_new:
+		{
+			stats.inc (nano::stat::type::bootstrap_verify_frontiers, nano::stat::detail::nothing_new);
+		}
+		break;
+		case verify_result::invalid:
+		{
+			stats.inc (nano::stat::type::bootstrap_verify_frontiers, nano::stat::detail::invalid);
+		}
+		break;
+	}
+
+	return result != verify_result::invalid;
 }
 
 bool bootstrap_context::process (nano::messages::empty_payload const & response, async_tag const & tag)

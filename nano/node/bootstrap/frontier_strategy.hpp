@@ -18,15 +18,13 @@ public:
 	void stop ();
 	void run_one ();
 
-	bool process (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag);
+	void process_frontiers (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
 
 private:
 	void run ();
 
 	nano::account wait_frontier ();
 	bool request_frontiers (nano::account start, std::shared_ptr<nano::transport::channel> const & channel);
-	verify_result verify (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag) const;
-	void process_frontiers (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
 
 	bootstrap_context & ctx;
 	std::thread thread;

@@ -184,6 +184,7 @@ private:
 	bool process (nano::messages::empty_payload const & response, async_tag const & tag);
 
 	verify_result verify (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag) const;
+	verify_result verify (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag) const;
 
 	void cleanup_and_sync ();
 	void run_timeouts ();
