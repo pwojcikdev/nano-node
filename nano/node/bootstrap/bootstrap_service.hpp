@@ -1,7 +1,9 @@
 #pragma once
 
-#include <nano/node/bootstrap/bootstrap_context.hpp>
+#include <nano/messages/fwd.hpp>
 #include <nano/node/fwd.hpp>
+
+#include <boost/property_tree/ptree_fwd.hpp>
 
 #include <memory>
 
@@ -38,7 +40,7 @@ public:
 	bool prioritized (nano::account const &) const;
 	bool blocked (nano::account const &) const;
 
-	nano::bootstrap::account_sets_index::info_t info () const;
+	boost::property_tree::ptree info () const;
 
 	struct status_result
 	{
@@ -49,8 +51,16 @@ public:
 
 	nano::container_info container_info () const;
 
+private: // Dependencies
+	nano::node_config const & config;
+	nano::ledger & ledger;
+	nano::ledger_notifications & ledger_notifications;
+	nano::block_processor & block_processor;
+	nano::network & network;
+	nano::stats & stats;
+	nano::logger & logger;
+
 private:
 	std::unique_ptr<nano::bootstrap::bootstrap_context> ctx;
-	nano::ledger_notifications & ledger_notifications;
 };
 }

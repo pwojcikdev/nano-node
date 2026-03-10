@@ -1884,35 +1884,7 @@ void nano::json_handler::bootstrap_priorities ()
 {
 	if (!ec)
 	{
-		auto [blocking, priorities] = node.bootstrap.info ();
-
-		// Priorities
-		{
-			boost::property_tree::ptree resp_l;
-			for (auto const & entry : priorities)
-			{
-				boost::property_tree::ptree entry_l;
-				entry_l.put ("account", entry.account.to_account ());
-				entry_l.put ("priority", entry.priority);
-
-				resp_l.push_back (std::make_pair ("", entry_l));
-			}
-			response_l.add_child ("priorities", resp_l);
-		}
-		// Blocking
-		{
-			boost::property_tree::ptree resp_l;
-			for (auto const & entry : blocking)
-			{
-				boost::property_tree::ptree entry_l;
-				entry_l.put ("account", entry.account.to_account ());
-				entry_l.put ("dependency", entry.dependency.to_string ());
-				entry_l.put ("dependency_account", entry.dependency_account.to_account ());
-
-				resp_l.push_back (std::make_pair ("", entry_l));
-			}
-			response_l.add_child ("blocking", resp_l);
-		}
+		response_l.add_child ("bootstrap", node.bootstrap.info ());
 	}
 	response_errors ();
 }

@@ -57,6 +57,11 @@ enum class vote_code;
 enum class vote_source;
 }
 
+namespace nano::bootstrap
+{
+class bootstrap_context;
+}
+
 namespace nano::scheduler
 {
 class component;

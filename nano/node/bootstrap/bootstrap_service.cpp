@@ -1,12 +1,21 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/node/bootstrap/bootstrap_context.hpp>
 #include <nano/node/bootstrap/bootstrap_service.hpp>
 #include <nano/node/ledger_notifications.hpp>
 #include <nano/secure/ledger.hpp>
 
-nano::bootstrap_service::bootstrap_service (nano::node_config const & node_config_a, nano::ledger & ledger_a, nano::ledger_notifications & ledger_notifications_a,
-nano::block_processor & block_processor_a, nano::network & network_a, nano::stats & stat_a, nano::logger & logger_a) :
-	ctx{ std::make_unique<nano::bootstrap::bootstrap_context> (node_config_a, ledger_a, block_processor_a, network_a, stat_a, logger_a) },
-	ledger_notifications{ ledger_notifications_a }
+#include <boost/property_tree/ptree.hpp>
+
+nano::bootstrap_service::bootstrap_service (nano::node_config const & config_a, nano::ledger & ledger_a, nano::ledger_notifications & ledger_notifications_a,
+nano::block_processor & block_processor_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a) :
+	config{ config_a },
+	ledger{ ledger_a },
+	ledger_notifications{ ledger_notifications_a },
+	block_processor{ block_processor_a },
+	network{ network_a },
+	stats{ stats_a },
+	logger{ logger_a },
+	ctx{ std::make_unique<nano::bootstrap::bootstrap_context> (config_a, ledger_a, block_processor_a, network_a, stats_a, logger_a) }
 {
 	// Inspect all processed blocks
 	ledger_notifications.blocks_processed.add ([this] (auto const & batch) {
@@ -94,10 +103,44 @@ bool nano::bootstrap_service::blocked (nano::account const & account) const
 	return ctx->accounts.blocked (account);
 }
 
-auto nano::bootstrap_service::info () const -> nano::bootstrap::account_sets_index::info_t
+boost::property_tree::ptree nano::bootstrap_service::info () const
 {
-	nano::lock_guard<nano::mutex> lock{ ctx->mutex };
-	return ctx->accounts.info ();
+	nano::unique_lock<nano::mutex> lock{ ctx->mutex };
+
+	// Copy the data under the lock, then serialize outside it
+	auto [blocking, priorities] = ctx->accounts.info ();
+
+	lock.unlock ();
+
+	boost::property_tree::ptree result;
+
+	// Priorities
+	{
+		boost::property_tree::ptree entries;
+		for (auto const & entry : priorities)
+		{
+			boost::property_tree::ptree entry_l;
+			entry_l.put ("account", entry.account.to_account ());
+			entry_l.put ("priority", entry.priority);
+			entries.push_back (std::make_pair ("", entry_l));
+		}
+		result.add_child ("priorities", entries);
+	}
+	// Blocking
+	{
+		boost::property_tree::ptree entries;
+		for (auto const & entry : blocking)
+		{
+			boost::property_tree::ptree entry_l;
+			entry_l.put ("account", entry.account.to_account ());
+			entry_l.put ("dependency", entry.dependency.to_string ());
+			entry_l.put ("dependency_account", entry.dependency_account.to_account ());
+			entries.push_back (std::make_pair ("", entry_l));
+		}
+		result.add_child ("blocking", entries);
+	}
+
+	return result;
 }
 
 auto nano::bootstrap_service::status () const -> status_result
