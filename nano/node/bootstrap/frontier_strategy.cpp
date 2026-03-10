@@ -116,7 +116,8 @@ bool frontier_strategy::process (nano::messages::asc_pull_ack::frontiers_payload
 	debug_assert (!ctx.mutex.try_lock ());
 	debug_assert (tag.type == query_type::frontiers);
 
-	auto const & payload = std::any_cast<frontier_tag_payload const &> (tag.payload);
+	release_assert (std::holds_alternative<frontier_tag_payload> (tag.payload));
+	auto const & payload = std::get<frontier_tag_payload> (tag.payload);
 	debug_assert (!payload.start.is_zero ());
 
 	if (response.frontiers.empty ())
@@ -167,7 +168,8 @@ bool frontier_strategy::process (nano::messages::asc_pull_ack::frontiers_payload
 
 verify_result frontier_strategy::verify (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag) const
 {
-	auto const & payload = std::any_cast<frontier_tag_payload const &> (tag.payload);
+	release_assert (std::holds_alternative<frontier_tag_payload> (tag.payload));
+	auto const & payload = std::get<frontier_tag_payload> (tag.payload);
 	auto const & frontiers = response.frontiers;
 
 	if (frontiers.empty ())

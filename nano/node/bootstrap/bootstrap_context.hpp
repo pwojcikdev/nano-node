@@ -19,10 +19,10 @@
 #include <boost/multi_index/sequenced_index.hpp>
 #include <boost/multi_index_container.hpp>
 
-#include <any>
 #include <chrono>
 #include <memory>
 #include <thread>
+#include <variant>
 
 namespace mi = boost::multi_index;
 
@@ -49,6 +49,8 @@ struct frontier_tag_payload
 	nano::account start{ 0 };
 };
 
+using async_tag_payload = std::variant<blocks_tag_payload, dependency_tag_payload, frontier_tag_payload>;
+
 struct async_tag
 {
 	using id_t = nano::bootstrap::id_t;
@@ -61,7 +63,7 @@ struct async_tag
 	std::chrono::steady_clock::time_point timestamp{ std::chrono::steady_clock::now () };
 	id_t id{ generate_id () };
 
-	std::any payload; // Strategy-specific data (blocks_tag_payload, dependency_tag_payload, frontier_tag_payload)
+	async_tag_payload payload;
 };
 
 enum class verify_result

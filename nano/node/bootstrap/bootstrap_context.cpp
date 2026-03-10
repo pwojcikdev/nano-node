@@ -512,7 +512,8 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::blocks_payload co
 	debug_assert (!mutex.try_lock ());
 	debug_assert (tag.type == query_type::blocks_by_hash || tag.type == query_type::blocks_by_account);
 
-	auto const & payload = std::any_cast<blocks_tag_payload const &> (tag.payload);
+	release_assert (std::holds_alternative<blocks_tag_payload> (tag.payload));
+	auto const & payload = std::get<blocks_tag_payload> (tag.payload);
 
 	stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::blocks);
 
@@ -586,7 +587,8 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::blocks_payload co
 
 verify_result bootstrap_context::verify (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag) const
 {
-	auto const & payload = std::any_cast<blocks_tag_payload const &> (tag.payload);
+	release_assert (std::holds_alternative<blocks_tag_payload> (tag.payload));
+	auto const & payload = std::get<blocks_tag_payload> (tag.payload);
 	auto const & blocks = response.blocks;
 
 	if (blocks.empty ())
