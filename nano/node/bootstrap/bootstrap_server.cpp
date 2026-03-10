@@ -21,7 +21,7 @@ nano::bootstrap_server::bootstrap_server (bootstrap_server_config const & config
 	limiter{ config.limiter, /* allow bursts */ 3.0 } // TODO: Limiter bucket capacity should be at least equal to the batch size, currently it's not configurable
 {
 	queue.max_size_query = [this] (auto const & origin) {
-		return config.max_queue;
+		return config.channel_limit;
 	};
 
 	queue.priority_query = [this] (auto const & origin) {
@@ -451,7 +451,7 @@ nano::stat::detail nano::to_stat_detail (nano::messages::asc_pull_type type)
 nano::error nano::bootstrap_server_config::serialize (nano::tomlconfig & toml) const
 {
 	toml.put ("enable", enable, "Enable bootstrap server. \ntype:bool");
-	toml.put ("max_queue", max_queue, "Maximum number of queued requests per peer. \ntype:uint64");
+	toml.put ("channel_limit", channel_limit, "Maximum number of queued requests per channel. \ntype:uint64");
 	toml.put ("threads", threads, "Number of threads to process requests. \ntype:uint64");
 	toml.put ("batch_size", batch_size, "Maximum number of requests to process in a single batch. \ntype:uint64");
 	toml.put ("limiter", limiter, "Rate limit for processing requests. Use 0 for unlimited. \ntype:uint64");
@@ -462,7 +462,7 @@ nano::error nano::bootstrap_server_config::serialize (nano::tomlconfig & toml) c
 nano::error nano::bootstrap_server_config::deserialize (nano::tomlconfig & toml)
 {
 	toml.get ("enable", enable);
-	toml.get ("max_queue", max_queue);
+	toml.get ("channel_limit", channel_limit);
 	toml.get ("threads", threads);
 	toml.get ("batch_size", batch_size);
 	toml.get ("limiter", limiter);

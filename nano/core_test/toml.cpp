@@ -405,7 +405,7 @@ TEST (toml_config, daemon_config_deserialize_defaults)
 	ASSERT_EQ (conf.node.bootstrap.block_processor_threshold, defaults.node.bootstrap.block_processor_threshold);
 	ASSERT_EQ (conf.node.bootstrap.max_requests, defaults.node.bootstrap.max_requests);
 
-	ASSERT_EQ (conf.node.bootstrap_server.max_queue, defaults.node.bootstrap_server.max_queue);
+	ASSERT_EQ (conf.node.bootstrap_server.channel_limit, defaults.node.bootstrap_server.channel_limit);
 	ASSERT_EQ (conf.node.bootstrap_server.threads, defaults.node.bootstrap_server.threads);
 	ASSERT_EQ (conf.node.bootstrap_server.batch_size, defaults.node.bootstrap_server.batch_size);
 
@@ -637,7 +637,7 @@ TEST (toml_config, daemon_config_deserialize_no_defaults)
 	max_requests = 999
 
 	[node.bootstrap_server]
-	max_queue = 999
+	channel_limit = 999
 	threads = 999
 	batch_size = 999
 
@@ -837,7 +837,7 @@ TEST (toml_config, daemon_config_deserialize_no_defaults)
 	ASSERT_NE (conf.node.bootstrap.block_processor_threshold, defaults.node.bootstrap.block_processor_threshold);
 	ASSERT_NE (conf.node.bootstrap.max_requests, defaults.node.bootstrap.max_requests);
 
-	ASSERT_NE (conf.node.bootstrap_server.max_queue, defaults.node.bootstrap_server.max_queue);
+	ASSERT_NE (conf.node.bootstrap_server.channel_limit, defaults.node.bootstrap_server.channel_limit);
 	ASSERT_NE (conf.node.bootstrap_server.threads, defaults.node.bootstrap_server.threads);
 	ASSERT_NE (conf.node.bootstrap_server.batch_size, defaults.node.bootstrap_server.batch_size);
 

@@ -23,7 +23,7 @@ public:
 
 public:
 	bool enable{ true };
-	size_t max_queue{ 16 };
+	size_t channel_limit{ 16 };
 	size_t threads{ 1 };
 	size_t batch_size{ 64 };
 	size_t limiter{ 500 };
