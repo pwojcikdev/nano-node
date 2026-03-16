@@ -26,6 +26,13 @@ namespace program_options
 
 namespace nano
 {
+// Helper for std::visit with multiple lambdas
+template <class... Ts>
+struct overloaded : Ts...
+{
+	using Ts::operator()...;
+};
+
 // Lower priority of calling work generating thread
 void work_thread_reprioritize ();
 

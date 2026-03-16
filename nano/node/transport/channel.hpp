@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/node_capabilities.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/object_stream.hpp>
 #include <nano/lib/stats.hpp>
@@ -108,6 +109,15 @@ public:
 		network_version = network_version_a;
 	}
 
+	nano::node_capabilities get_flags () const
+	{
+		return static_cast<nano::node_capabilities> (flags.load ());
+	}
+	void set_flags (nano::node_capabilities value)
+	{
+		flags = static_cast<uint64_t> (value);
+	}
+
 	nano::endpoint get_peering_endpoint () const;
 	void set_peering_endpoint (nano::endpoint endpoint);
 
@@ -129,6 +139,7 @@ private:
 	std::chrono::steady_clock::time_point last_packet_sent{ std::chrono::steady_clock::now () };
 	std::optional<nano::account> node_id{};
 	std::atomic<uint8_t> network_version{ 0 };
+	std::atomic<uint64_t> flags{ 0 };
 	std::optional<nano::endpoint> peering_endpoint{};
 	std::optional<nano::messages::keepalive> last_keepalive{};
 
