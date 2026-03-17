@@ -271,11 +271,11 @@ std::optional<nano::block_hash> node_id_handshake::response_payload::genesis () 
 	ext);
 }
 
-nano::node_capabilities node_id_handshake::response_payload::flags () const
+nano::node_capabilities_flags node_id_handshake::response_payload::flags () const
 {
 	return std::visit (nano::overloaded{
-		[] (v3_payload const & p) -> nano::node_capabilities { return p.flags; },
-		[] (auto const &) -> nano::node_capabilities { return nano::node_capabilities::none; },
+		[] (v3_payload const & p) -> nano::node_capabilities_flags { return p.flags; },
+		[] (auto const &) -> nano::node_capabilities_flags { return {}; },
 	},
 	ext);
 }

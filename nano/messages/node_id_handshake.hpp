@@ -59,7 +59,7 @@ public: // Payload definitions
 		{
 			nano::uint256_union salt;
 			nano::block_hash genesis;
-			nano::node_capabilities flags{ nano::node_capabilities::none };
+			nano::node_capabilities_flags flags;
 			uint64_t reserved{ 0 }; // Reserved for future use
 		};
 
@@ -70,7 +70,7 @@ public: // Payload definitions
 
 	public: // Accessors
 		std::optional<nano::block_hash> genesis () const;
-		nano::node_capabilities flags () const;
+		nano::node_capabilities_flags flags () const;
 
 	public:
 		static std::size_t constexpr size_v1 = sizeof (nano::account) + sizeof (nano::signature);

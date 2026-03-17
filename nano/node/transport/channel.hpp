@@ -109,13 +109,15 @@ public:
 		network_version = network_version_a;
 	}
 
-	nano::node_capabilities get_flags () const
+	nano::node_capabilities_flags get_flags () const
 	{
-		return static_cast<nano::node_capabilities> (flags.load ());
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		return flags;
 	}
-	void set_flags (nano::node_capabilities value)
+	void set_flags (nano::node_capabilities_flags value)
 	{
-		flags = static_cast<uint64_t> (value);
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		flags = value;
 	}
 
 	nano::endpoint get_peering_endpoint () const;
@@ -139,7 +141,7 @@ private:
 	std::chrono::steady_clock::time_point last_packet_sent{ std::chrono::steady_clock::now () };
 	std::optional<nano::account> node_id{};
 	std::atomic<uint8_t> network_version{ 0 };
-	std::atomic<uint64_t> flags{ 0 };
+	nano::node_capabilities_flags flags;
 	std::optional<nano::endpoint> peering_endpoint{};
 	std::optional<nano::messages::keepalive> last_keepalive{};
 

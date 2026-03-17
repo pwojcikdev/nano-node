@@ -692,7 +692,7 @@ nano::messages::node_id_handshake::response_payload nano::network::prepare_hands
 			response_payload::v3_payload v3{};
 			v3.salt = nano::random_pool::generate<uint256_union> ();
 			v3.genesis = node.network_params.ledger.genesis->hash ();
-			v3.flags = nano::node_capabilities::none; // TODO: Populate from node capabilities when topo_index/vote_storage are implemented
+			// TODO: Populate from node capabilities when topo_index/vote_storage are implemented
 			response.ext = v3;
 			break;
 		}

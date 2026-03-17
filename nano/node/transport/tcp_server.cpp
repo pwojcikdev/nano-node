@@ -493,7 +493,7 @@ bool nano::transport::tcp_server::to_bootstrap_connection ()
 	return true;
 }
 
-bool nano::transport::tcp_server::to_realtime_connection (nano::account const & node_id, nano::node_capabilities flags)
+bool nano::transport::tcp_server::to_realtime_connection (nano::account const & node_id, nano::node_capabilities_flags flags)
 {
 	if (node.flags.disable_tcp_realtime)
 	{

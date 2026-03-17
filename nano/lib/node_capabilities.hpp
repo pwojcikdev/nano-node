@@ -1,6 +1,9 @@
 #pragma once
 
+#include <nano/lib/enum_flags.hpp>
+
 #include <cstdint>
+#include <string_view>
 
 namespace nano
 {
@@ -11,16 +14,7 @@ enum class node_capabilities : uint64_t
 	vote_storage = 1ULL << 1,
 };
 
-inline node_capabilities operator| (node_capabilities a, node_capabilities b)
-{
-	return static_cast<node_capabilities> (static_cast<uint64_t> (a) | static_cast<uint64_t> (b));
-}
-inline node_capabilities operator& (node_capabilities a, node_capabilities b)
-{
-	return static_cast<node_capabilities> (static_cast<uint64_t> (a) & static_cast<uint64_t> (b));
-}
-inline node_capabilities operator~ (node_capabilities a)
-{
-	return static_cast<node_capabilities> (~static_cast<uint64_t> (a));
-}
+std::string_view to_string (node_capabilities);
+
+using node_capabilities_flags = nano::enum_flags<node_capabilities>;
 }

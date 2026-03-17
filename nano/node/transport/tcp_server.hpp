@@ -76,7 +76,7 @@ private:
 
 private:
 	bool to_bootstrap_connection ();
-	bool to_realtime_connection (nano::account const & node_id, nano::node_capabilities flags);
+	bool to_realtime_connection (nano::account const & node_id, nano::node_capabilities_flags flags);
 
 private: // Visitors
 	class realtime_message_visitor : public nano::messages::message_visitor
