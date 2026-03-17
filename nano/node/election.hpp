@@ -118,6 +118,7 @@ public: // Interface
 	nano::node &,
 	std::shared_ptr<nano::block> const & block,
 	nano::election_behavior behavior,
+	nano::bucket_index bucket = 0,
 	std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action = nullptr,
 	std::function<void (nano::account const &)> vote_action = nullptr,
 	std::function<void (nano::qualified_root const &)> update_action = nullptr);
@@ -160,6 +161,7 @@ public: // Information
 	nano::root const root;
 	nano::qualified_root const qualified_root;
 	nano::account const account;
+	nano::bucket_index const bucket;
 
 	std::vector<nano::vote_with_weight_info> votes_with_weight () const;
 	nano::election_behavior behavior () const;

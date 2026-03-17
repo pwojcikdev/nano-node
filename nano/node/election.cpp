@@ -23,7 +23,7 @@ std::chrono::milliseconds nano::election::base_latency () const
  * election
  */
 
-nano::election::election (nano::node & node_a, std::shared_ptr<nano::block> const & block_a, nano::election_behavior election_behavior_a, std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action_a, std::function<void (nano::account const &)> vote_action_a, std::function<void (nano::qualified_root const &)> update_action_a) :
+nano::election::election (nano::node & node_a, std::shared_ptr<nano::block> const & block_a, nano::election_behavior election_behavior_a, nano::bucket_index bucket_a, std::function<void (std::shared_ptr<nano::block> const &)> confirmation_action_a, std::function<void (nano::account const &)> vote_action_a, std::function<void (nano::qualified_root const &)> update_action_a) :
 	confirmation_action (std::move (confirmation_action_a)),
 	vote_action (std::move (vote_action_a)),
 	update_action (std::move (update_action_a)),
@@ -33,7 +33,8 @@ nano::election::election (nano::node & node_a, std::shared_ptr<nano::block> cons
 	height (block_a->sideband ().height),
 	root (block_a->root ()),
 	qualified_root (block_a->qualified_root ()),
-	account (block_a->account ())
+	account (block_a->account ()),
+	bucket (bucket_a)
 {
 	last_votes.emplace (nano::account::null (), nano::vote_info{ std::chrono::steady_clock::now (), 0, block_a->hash () });
 	last_blocks.emplace (block_a->hash (), block_a);

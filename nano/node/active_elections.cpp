@@ -170,7 +170,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 				trigger (root);
 			};
 
-			result.election = std::make_shared<nano::election> (node, block, behavior, nullptr, observe_rep_action, update_action);
+			result.election = std::make_shared<nano::election> (node, block, behavior, bucket, nullptr, observe_rep_action, update_action);
 
 			// Store erased callback if provided
 			if (erased_callback)
