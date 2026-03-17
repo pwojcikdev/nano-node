@@ -122,4 +122,5 @@ constexpr T enum_convert (S value)
 	},
 	value, T{});
 }
+
 }
