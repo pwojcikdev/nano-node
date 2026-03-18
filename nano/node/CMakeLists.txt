@@ -220,6 +220,14 @@ add_library(
   vote_spacing.hpp
   vote_spacing.cpp
   vote_with_weight_info.hpp
+  voting/final_vote_generator.hpp
+  voting/final_vote_generator.cpp
+  voting/vote_broadcaster.hpp
+  voting/vote_broadcaster.cpp
+  voting/vote_criteria.hpp
+  voting/vote_criteria.cpp
+  voting/vote_replier.hpp
+  voting/vote_replier.cpp
   wallet.hpp
   wallet.cpp
   websocket.hpp

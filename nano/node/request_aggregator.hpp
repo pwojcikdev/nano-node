@@ -40,7 +40,7 @@ public:
 class request_aggregator final
 {
 public:
-	request_aggregator (request_aggregator_config const &, nano::node &, nano::vote_generator &, nano::vote_generator &, nano::local_vote_history &, nano::ledger &, nano::wallets &, nano::vote_router &);
+	request_aggregator (request_aggregator_config const &, nano::node &, nano::vote_replier &, nano::local_vote_history &, nano::ledger &, nano::wallets &, nano::vote_router &);
 	~request_aggregator ();
 
 	void start ();
@@ -65,15 +65,6 @@ private:
 	/** Remove duplicate requests **/
 	void erase_duplicates (std::vector<std::pair<nano::block_hash, nano::root>> &) const;
 
-	struct aggregate_result
-	{
-		std::vector<std::shared_ptr<nano::block>> remaining_normal;
-		std::vector<std::shared_ptr<nano::block>> remaining_final;
-	};
-
-	/** Aggregate \p requests_a and send cached votes to \p channel_a . Return the remaining hashes that need vote generation for each block for regular & final vote generators **/
-	aggregate_result aggregate (nano::secure::transaction const &, request_type const &, std::shared_ptr<nano::transport::channel> const &) const;
-
 	void reply_action (std::shared_ptr<nano::vote> const & vote_a, std::shared_ptr<nano::transport::channel> const & channel_a) const;
 
 private: // Dependencies
@@ -84,8 +75,7 @@ private: // Dependencies
 	nano::ledger & ledger;
 	nano::wallets & wallets;
 	nano::vote_router & vote_router;
-	nano::vote_generator & generator;
-	nano::vote_generator & final_generator;
+	nano::vote_replier & replier;
 	nano::stats & stats;
 	nano::logger & logger;
 

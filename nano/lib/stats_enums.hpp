@@ -77,6 +77,7 @@ enum class type
 	telemetry,
 	vote_generator,
 	vote_generator_final,
+	vote_replier,
 	vote_cache,
 	vote_cache_processor,
 	hinting,

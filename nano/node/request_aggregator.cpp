@@ -7,15 +7,14 @@
 #include <nano/node/node.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/request_aggregator.hpp>
-#include <nano/node/vote_generator.hpp>
 #include <nano/node/vote_router.hpp>
+#include <nano/node/voting/vote_replier.hpp>
 #include <nano/node/wallet.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_cemented.hpp>
-#include <nano/store/ledger/final_vote.hpp>
 
-nano::request_aggregator::request_aggregator (request_aggregator_config const & config_a, nano::node & node_a, nano::vote_generator & generator_a, nano::vote_generator & final_generator_a, nano::local_vote_history & history_a, nano::ledger & ledger_a, nano::wallets & wallets_a, nano::vote_router & vote_router_a) :
+nano::request_aggregator::request_aggregator (request_aggregator_config const & config_a, nano::node & node_a, nano::vote_replier & replier_a, nano::local_vote_history & history_a, nano::ledger & ledger_a, nano::wallets & wallets_a, nano::vote_router & vote_router_a) :
 	config{ config_a },
 	node_config{ node_a.config },
 	network_constants{ node_a.network_params.network },
@@ -23,8 +22,7 @@ nano::request_aggregator::request_aggregator (request_aggregator_config const & 
 	ledger (ledger_a),
 	wallets (wallets_a),
 	vote_router{ vote_router_a },
-	generator (generator_a),
-	final_generator (final_generator_a),
+	replier (replier_a),
 	stats (node_a.stats),
 	logger (node_a.logger)
 {
@@ -187,24 +185,7 @@ void nano::request_aggregator::run_batch (nano::unique_lock<nano::mutex> & lock)
 
 void nano::request_aggregator::process (nano::secure::transaction const & transaction, request_type const & request, std::shared_ptr<nano::transport::channel> const & channel)
 {
-	auto const remaining = aggregate (transaction, request, channel);
-
-	if (!remaining.remaining_normal.empty ())
-	{
-		stats.inc (nano::stat::type::request_aggregator_replies, nano::stat::detail::normal_vote);
-
-		// Generate votes for the remaining hashes
-		auto const generated = generator.generate (remaining.remaining_normal, channel);
-		stats.add (nano::stat::type::requests, nano::stat::detail::requests_cannot_vote, stat::dir::in, remaining.remaining_normal.size () - generated);
-	}
-	if (!remaining.remaining_final.empty ())
-	{
-		stats.inc (nano::stat::type::request_aggregator_replies, nano::stat::detail::final_vote);
-
-		// Generate final votes for the remaining hashes
-		auto const generated = final_generator.generate (remaining.remaining_final, channel);
-		stats.add (nano::stat::type::requests, nano::stat::detail::requests_cannot_vote, stat::dir::in, remaining.remaining_final.size () - generated);
-	}
+	replier.reply (transaction, request, channel);
 }
 
 void nano::request_aggregator::erase_duplicates (std::vector<std::pair<nano::block_hash, nano::root>> & requests_a) const
@@ -216,91 +197,6 @@ void nano::request_aggregator::erase_duplicates (std::vector<std::pair<nano::blo
 		return pair1.first == pair2.first;
 	}),
 	requests_a.end ());
-}
-
-// This filters candidates for vote generation, the final decision and necessary checks are also performed by the vote generator
-auto nano::request_aggregator::aggregate (nano::secure::transaction const & transaction, request_type const & requests_a, std::shared_ptr<nano::transport::channel> const & channel_a) const -> aggregate_result
-{
-	std::vector<std::shared_ptr<nano::block>> to_generate;
-	std::vector<std::shared_ptr<nano::block>> to_generate_final;
-
-	for (auto const & [hash, root] : requests_a)
-	{
-		auto search_for_block = [&] () -> std::shared_ptr<nano::block> {
-			// Ledger by hash
-			if (auto block = ledger.any.block_get (transaction, hash))
-			{
-				return block;
-			}
-
-			// Ledger by root
-			if (!root.is_zero ())
-			{
-				// Search for successor of root
-				if (auto successor = ledger.any.block_successor (transaction, root.as_block_hash ()))
-				{
-					return ledger.any.block_get (transaction, successor.value ());
-				}
-
-				// If that fails treat root as account
-				if (auto info = ledger.any.account_get (transaction, root.as_account ()))
-				{
-					return ledger.any.block_get (transaction, info->open_block);
-				}
-			}
-
-			return nullptr;
-		};
-
-		auto block = search_for_block ();
-
-		auto should_generate_final_vote = [&] (auto const & block) {
-			release_assert (block);
-
-			// Check if final vote is set for this block
-			if (auto final_hash = ledger.store.final_vote.get (transaction, block->qualified_root ()))
-			{
-				return final_hash == block->hash ();
-			}
-			// If the final vote is not set, generate vote if the block is confirmed
-			else
-			{
-				return ledger.cemented.block_exists (transaction, block->hash ());
-			}
-		};
-
-		if (block)
-		{
-			if (should_generate_final_vote (block))
-			{
-				to_generate_final.push_back (block);
-
-				stats.inc (nano::stat::type::requests, nano::stat::detail::requests_final);
-
-				logger.debug (nano::log::type::request_aggregator, "Replying with final vote for: {} to: {}",
-				block->hash (), channel_a->to_string ()); // TODO: Lazy eval
-			}
-			else
-			{
-				stats.inc (nano::stat::type::requests, nano::stat::detail::requests_non_final);
-
-				logger.debug (nano::log::type::request_aggregator, "Skipping reply with normal vote for: {} (requested by: {})",
-				block->hash (), channel_a->to_string ()); // TODO: Lazy eval
-			}
-		}
-		else
-		{
-			stats.inc (nano::stat::type::requests, nano::stat::detail::requests_unknown);
-
-			logger.debug (nano::log::type::request_aggregator, "Cannot reply, block not found: {} with root: {} (requested by: {})",
-			hash, root, channel_a->to_string ()); // TODO: Lazy eval
-		}
-	}
-
-	return {
-		.remaining_normal = to_generate,
-		.remaining_final = to_generate_final
-	};
 }
 
 nano::container_info nano::request_aggregator::container_info () const

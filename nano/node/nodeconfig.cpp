@@ -247,6 +247,10 @@ nano::error nano::node_config::serialize_toml (nano::tomlconfig & toml) const
 	vote_generator.serialize (vote_generator_l);
 	toml.put_child ("vote_generator", vote_generator_l);
 
+	nano::tomlconfig final_vote_generator_l;
+	final_vote_generator.serialize (final_vote_generator_l);
+	toml.put_child ("final_vote_generator", final_vote_generator_l);
+
 	nano::tomlconfig vote_processor_l;
 	vote_processor.serialize (vote_processor_l);
 	toml.put_child ("vote_processor", vote_processor_l);
@@ -414,6 +418,12 @@ nano::error nano::node_config::deserialize_toml (nano::tomlconfig & toml)
 		{
 			auto config_l = toml.get_required_child ("vote_generator");
 			vote_generator.deserialize (config_l);
+		}
+
+		if (toml.has_key ("final_vote_generator"))
+		{
+			auto config_l = toml.get_required_child ("final_vote_generator");
+			final_vote_generator.deserialize (config_l);
 		}
 
 		if (toml.has_key ("vote_processor"))

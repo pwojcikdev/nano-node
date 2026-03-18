@@ -2,14 +2,10 @@
 
 #include <nano/lib/interval.hpp>
 #include <nano/lib/locks.hpp>
-#include <nano/lib/logging.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/processing_queue.hpp>
-#include <nano/lib/utility.hpp>
-#include <nano/node/fair_queue.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/voting/vote_broadcaster.hpp>
-#include <nano/secure/common.hpp>
 
 #include <condition_variable>
 #include <deque>
@@ -17,7 +13,7 @@
 
 namespace nano
 {
-class vote_generator_config final
+class final_vote_generator_config final
 {
 public:
 	nano::error serialize (nano::tomlconfig & toml) const;
@@ -29,20 +25,16 @@ public:
 	std::chrono::milliseconds delay{ 100ms };
 };
 
-/**
- * Generates and broadcasts non-final (normal) votes.
- * Uses fair_queue by bucket_index to ensure no single bucket monopolizes vote generation.
- */
-class vote_generator final
+class final_vote_generator final
 {
 public:
 	using candidate_t = std::pair<nano::root, nano::block_hash>;
 
-	vote_generator (vote_generator_config const &, nano::ledger &, nano::wallets &, nano::vote_processor &, nano::local_vote_history &, nano::network &, nano::network_params &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel> inproc_channel);
-	~vote_generator ();
+	final_vote_generator (final_vote_generator_config const &, nano::ledger &, nano::wallets &, nano::vote_processor &, nano::local_vote_history &, nano::network &, nano::network_params &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel> inproc_channel);
+	~final_vote_generator ();
 
-	/** Queue items for normal vote generation, categorized by bucket */
-	void add (nano::root const &, nano::block_hash const &, nano::bucket_index bucket = 0);
+	/** Queue items for final vote generation and broadcast */
+	void add (nano::root const &, nano::block_hash const &);
 
 	void start ();
 	void stop ();
@@ -58,7 +50,7 @@ private:
 	bool broadcast_predicate () const;
 
 private: // Dependencies
-	vote_generator_config const & config;
+	final_vote_generator_config const & config;
 	nano::ledger & ledger;
 	nano::stats & stats;
 	nano::logger & logger;

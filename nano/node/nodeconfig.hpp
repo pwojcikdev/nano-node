@@ -32,6 +32,7 @@
 #include <nano/node/transport/tcp_listener.hpp>
 #include <nano/node/vote_cache.hpp>
 #include <nano/node/vote_generator.hpp>
+#include <nano/node/voting/final_vote_generator.hpp>
 #include <nano/node/vote_processor.hpp>
 #include <nano/node/vote_rebroadcaster.hpp>
 #include <nano/node/websocketconfig.hpp>
@@ -143,6 +144,7 @@ public:
 	nano::block_processor_config block_processor;
 	nano::active_elections_config active_elections;
 	nano::vote_generator_config vote_generator;
+	nano::final_vote_generator_config final_vote_generator;
 	nano::vote_processor_config vote_processor;
 	nano::peer_history_config peer_history;
 	nano::transport::tcp_config tcp;

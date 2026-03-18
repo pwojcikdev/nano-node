@@ -10,6 +10,7 @@
 #include <nano/node/online_reps.hpp>
 #include <nano/node/vote_generator.hpp>
 #include <nano/node/vote_router.hpp>
+#include <nano/node/voting/final_vote_generator.hpp>
 #include <nano/secure/ledger.hpp>
 
 using namespace std::chrono;
@@ -723,7 +724,7 @@ void nano::election::broadcast_vote_locked (nano::unique_lock<nano::mutex> & loc
 			nano::log::arg{ "winner", status.winner },
 			nano::log::arg{ "type", "normal" });
 
-			node.generator.add (root, status.winner->hash ()); // Broadcasts vote to the network
+			node.generator.add (root, status.winner->hash (), bucket); // Broadcasts vote to the network
 		}
 	}
 }
