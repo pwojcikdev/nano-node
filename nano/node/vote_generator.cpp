@@ -4,20 +4,20 @@
 #include <nano/node/network.hpp>
 #include <nano/node/vote_generator.hpp>
 #include <nano/node/vote_spacing.hpp>
-#include <nano/node/voting/vote_criteria.hpp>
+#include <nano/node/voting/vote_factory.hpp>
 #include <nano/secure/ledger.hpp>
-#include <nano/secure/ledger_set_any.hpp>
 
 #include <chrono>
 
-nano::vote_generator::vote_generator (vote_generator_config const & config_a, nano::ledger & ledger_a, nano::wallets & wallets_a, nano::vote_processor & vote_processor_a, nano::local_vote_history & history_a, nano::network & network_a, nano::network_params & network_params_a, nano::stats & stats_a, nano::logger & logger_a, std::shared_ptr<nano::transport::channel> inproc_channel_a) :
+nano::vote_generator::vote_generator (vote_generator_config const & config_a, nano::vote_factory & factory_a, nano::ledger & ledger_a, nano::vote_processor & vote_processor_a, nano::local_vote_history & history_a, nano::network & network_a, nano::network_params & network_params_a, nano::stats & stats_a, nano::logger & logger_a, std::shared_ptr<nano::transport::channel> inproc_channel_a) :
 	config (config_a),
+	factory (factory_a),
 	ledger (ledger_a),
 	stats (stats_a),
 	logger (logger_a),
 	spacing_impl{ std::make_unique<nano::vote_spacing> (network_params_a.voting.delay) },
 	spacing{ *spacing_impl },
-	broadcaster (wallets_a, vote_processor_a, history_a, spacing, network_a, stats_a, std::move (inproc_channel_a)),
+	broadcaster (factory_a, vote_processor_a, history_a, spacing, network_a, stats_a, std::move (inproc_channel_a)),
 	vote_generation_queue{ stats, nano::stat::type::vote_generator, nano::thread_role::name::voting, /* single threaded */ 1, config.max_queue, config.batch_size }
 {
 	vote_generation_queue.process_batch = [this] (auto & batch) {
@@ -39,23 +39,23 @@ void nano::vote_generator::add (nano::root const & root, nano::block_hash const 
 
 void nano::vote_generator::process_batch (std::deque<queue_entry_t> & batch)
 {
-	std::deque<candidate_t> verified;
+	std::deque<nano::vote_factory::verified_candidate> verified;
 
 	auto transaction = ledger.tx_begin_read ();
 	for (auto & [root, hash] : batch)
 	{
 		transaction.refresh_if_needed ();
 
-		if (nano::vote_criteria::should_vote (transaction, ledger, root, hash))
+		if (auto candidate = factory.check (transaction, root, hash))
 		{
-			verified.emplace_back (root, hash);
+			verified.push_back (std::move (*candidate));
 		}
 	}
 
 	if (!verified.empty ())
 	{
 		nano::unique_lock<nano::mutex> lock{ mutex };
-		candidates.insert (candidates.end (), verified.begin (), verified.end ());
+		candidates.insert (candidates.end (), std::make_move_iterator (verified.begin ()), std::make_move_iterator (verified.end ()));
 		if (candidates.size () >= nano::network::confirm_ack_hashes_max)
 		{
 			lock.unlock ();
@@ -93,11 +93,11 @@ void nano::vote_generator::broadcast (nano::unique_lock<nano::mutex> & lock_a)
 {
 	debug_assert (lock_a.owns_lock ());
 
-	auto [hashes, roots] = broadcaster.collect_votable_batch (candidates, nano::stat::type::vote_generator);
-	if (!hashes.empty ())
+	auto batch = broadcaster.collect_votable_batch (candidates, nano::stat::type::vote_generator);
+	if (!batch.empty ())
 	{
 		lock_a.unlock ();
-		broadcaster.vote (hashes, roots, /* is_final */ false, [this] (auto const & generated_vote) {
+		broadcaster.vote (batch, [this] (auto const & generated_vote) {
 			stats.inc (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts);
 			stats.sample (nano::stat::sample::vote_generator_hashes, generated_vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
 			broadcaster.broadcast (generated_vote, nano::stat::type::vote_generator);

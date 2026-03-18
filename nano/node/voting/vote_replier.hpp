@@ -3,6 +3,7 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/voting/vote_broadcaster.hpp>
+#include <nano/node/voting/vote_factory.hpp>
 
 #include <memory>
 #include <utility>
@@ -13,7 +14,7 @@ namespace nano
 class vote_replier final
 {
 public:
-	vote_replier (nano::ledger &, nano::wallets &, nano::vote_processor &, nano::local_vote_history &, nano::network &, nano::network_params &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel> inproc_channel);
+	vote_replier (nano::vote_factory &, nano::ledger &, nano::vote_processor &, nano::local_vote_history &, nano::network &, nano::network_params &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel> inproc_channel);
 	~vote_replier ();
 
 	using request_type = std::vector<std::pair<nano::block_hash, nano::root>>;
@@ -28,6 +29,7 @@ public:
 	nano::container_info container_info () const;
 
 private:
+	nano::vote_factory & factory;
 	nano::ledger & ledger;
 	nano::network_params & network_params;
 	nano::stats & stats;

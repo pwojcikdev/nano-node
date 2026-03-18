@@ -6,9 +6,9 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/processing_queue.hpp>
 #include <nano/lib/utility.hpp>
-#include <nano/node/fair_queue.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/voting/vote_broadcaster.hpp>
+#include <nano/node/voting/vote_factory.hpp>
 #include <nano/secure/common.hpp>
 
 #include <condition_variable>
@@ -31,14 +31,12 @@ public:
 
 /**
  * Generates and broadcasts non-final (normal) votes.
- * Uses fair_queue by bucket_index to ensure no single bucket monopolizes vote generation.
+ * Uses vote_factory for checking and signing, vote_broadcaster for delivery.
  */
 class vote_generator final
 {
 public:
-	using candidate_t = std::pair<nano::root, nano::block_hash>;
-
-	vote_generator (vote_generator_config const &, nano::ledger &, nano::wallets &, nano::vote_processor &, nano::local_vote_history &, nano::network &, nano::network_params &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel> inproc_channel);
+	vote_generator (vote_generator_config const &, nano::vote_factory &, nano::ledger &, nano::vote_processor &, nano::local_vote_history &, nano::network &, nano::network_params &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel> inproc_channel);
 	~vote_generator ();
 
 	/** Queue items for normal vote generation, categorized by bucket */
@@ -59,6 +57,7 @@ private:
 
 private: // Dependencies
 	vote_generator_config const & config;
+	nano::vote_factory & factory;
 	nano::ledger & ledger;
 	nano::stats & stats;
 	nano::logger & logger;
@@ -69,7 +68,7 @@ private: // Dependencies
 private:
 	mutable nano::mutex mutex;
 	nano::condition_variable condition;
-	std::deque<candidate_t> candidates;
+	std::deque<nano::vote_factory::verified_candidate> candidates;
 	std::atomic<bool> stopped{ false };
 	std::thread thread;
 	nano::processing_queue<queue_entry_t> vote_generation_queue;

@@ -47,6 +47,7 @@
 #include <nano/node/vote_generator.hpp>
 #include <nano/node/vote_processor.hpp>
 #include <nano/node/voting/final_vote_generator.hpp>
+#include <nano/node/voting/vote_factory.hpp>
 #include <nano/node/voting/vote_replier.hpp>
 #include <nano/node/vote_rebroadcaster.hpp>
 #include <nano/node/vote_router.hpp>
@@ -176,11 +177,13 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	vote_processor{ *vote_processor_impl },
 	vote_cache_processor_impl{ std::make_unique<nano::vote_cache_processor> (config.vote_processor, vote_router, vote_cache, stats, logger) },
 	vote_cache_processor{ *vote_cache_processor_impl },
-	generator_impl{ std::make_unique<nano::vote_generator> (config.vote_generator, ledger, wallets, vote_processor, history, network, network_params, stats, logger, loopback_channel) },
+	vote_factory_impl{ std::make_unique<nano::vote_factory> (ledger, wallets) },
+	vote_factory{ *vote_factory_impl },
+	generator_impl{ std::make_unique<nano::vote_generator> (config.vote_generator, vote_factory, ledger, vote_processor, history, network, network_params, stats, logger, loopback_channel) },
 	generator{ *generator_impl },
-	final_generator_impl{ std::make_unique<nano::final_vote_generator> (config.final_vote_generator, ledger, wallets, vote_processor, history, network, network_params, stats, logger, loopback_channel) },
+	final_generator_impl{ std::make_unique<nano::final_vote_generator> (config.final_vote_generator, vote_factory, ledger, vote_processor, history, network, network_params, stats, logger, loopback_channel) },
 	final_generator{ *final_generator_impl },
-	vote_replier_impl{ std::make_unique<nano::vote_replier> (ledger, wallets, vote_processor, history, network, network_params, stats, logger, loopback_channel) },
+	vote_replier_impl{ std::make_unique<nano::vote_replier> (vote_factory, ledger, vote_processor, history, network, network_params, stats, logger, loopback_channel) },
 	vote_replier{ *vote_replier_impl },
 	scheduler_impl{ std::make_unique<nano::scheduler::component> (config, *this, ledger, ledger_notifications, bucketing, active, online_reps, vote_cache, cementing_set, stats, logger) },
 	scheduler{ *scheduler_impl },

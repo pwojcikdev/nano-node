@@ -6,6 +6,7 @@
 #include <nano/lib/processing_queue.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/voting/vote_broadcaster.hpp>
+#include <nano/node/voting/vote_factory.hpp>
 
 #include <condition_variable>
 #include <deque>
@@ -28,9 +29,7 @@ public:
 class final_vote_generator final
 {
 public:
-	using candidate_t = std::pair<nano::root, nano::block_hash>;
-
-	final_vote_generator (final_vote_generator_config const &, nano::ledger &, nano::wallets &, nano::vote_processor &, nano::local_vote_history &, nano::network &, nano::network_params &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel> inproc_channel);
+	final_vote_generator (final_vote_generator_config const &, nano::vote_factory &, nano::ledger &, nano::vote_processor &, nano::local_vote_history &, nano::network &, nano::network_params &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel> inproc_channel);
 	~final_vote_generator ();
 
 	/** Queue items for final vote generation and broadcast */
@@ -51,6 +50,7 @@ private:
 
 private: // Dependencies
 	final_vote_generator_config const & config;
+	nano::vote_factory & factory;
 	nano::ledger & ledger;
 	nano::stats & stats;
 	nano::logger & logger;
@@ -61,7 +61,7 @@ private: // Dependencies
 private:
 	mutable nano::mutex mutex;
 	nano::condition_variable condition;
-	std::deque<candidate_t> candidates;
+	std::deque<nano::vote_factory::verified_candidate> candidates;
 	std::atomic<bool> stopped{ false };
 	std::thread thread;
 	nano::processing_queue<queue_entry_t> vote_generation_queue;

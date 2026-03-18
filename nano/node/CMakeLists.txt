@@ -224,6 +224,8 @@ add_library(
   voting/final_vote_generator.cpp
   voting/vote_broadcaster.hpp
   voting/vote_broadcaster.cpp
+  voting/vote_factory.hpp
+  voting/vote_factory.cpp
   voting/vote_criteria.hpp
   voting/vote_criteria.cpp
   voting/vote_replier.hpp
