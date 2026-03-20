@@ -156,7 +156,7 @@ std::shared_ptr<nano::node> nano::test::system::add_node (nano::node_config cons
 		debug_assert (!ec);
 	}
 
-	logger.debug (nano::log::type::system, "Node started: {}", node->get_node_id ().to_node_id ());
+	logger.debug (nano::log::type::system, "Node started: {:node_id}", node->get_node_id ());
 
 	nodes.push_back (node);
 	return node;
@@ -170,7 +170,7 @@ std::shared_ptr<nano::node> nano::test::system::make_disconnected_node (std::opt
 	setup_node (*node);
 	node->start ();
 
-	logger.debug (nano::log::type::system, "Node started (disconnected): {}", node->get_node_id ().to_node_id ());
+	logger.debug (nano::log::type::system, "Node started (disconnected): {:node_id}", node->get_node_id ());
 
 	disconnected_nodes.push_back (node);
 	return node;

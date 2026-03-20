@@ -320,10 +320,10 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	logger.info (nano::log::type::node, "Ledger path: {}", store.get_database_path ().string ());
 	logger.info (nano::log::type::node, "Work pool threads: {} ({})", work.threads.size (), (work.opencl ? "OpenCL" : "CPU"));
 	logger.info (nano::log::type::node, "Work peers: {}", config.work_peers.size ());
-	logger.info (nano::log::type::node, "Node ID: {}", node_id.pub.to_node_id ());
+	logger.info (nano::log::type::node, "Node ID: {:node_id}", node_id.pub);
 	logger.info (nano::log::type::node, "Number of buckets: {}", bucketing.size ());
 	logger.info (nano::log::type::node, "Genesis block: {}", config.network_params.ledger.genesis->hash ());
-	logger.info (nano::log::type::node, "Genesis account: {}", config.network_params.ledger.genesis->account ().to_account ());
+	logger.info (nano::log::type::node, "Genesis account: {:account}", config.network_params.ledger.genesis->account ());
 
 	if (!work_generation_enabled ())
 	{
@@ -356,7 +356,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 
 		for (auto const & account : reps.accounts)
 		{
-			logger.info (nano::log::type::node, "Local representative: {}", account.to_account ());
+			logger.info (nano::log::type::node, "Local representative: {:account}", account);
 		}
 	}
 
@@ -405,8 +405,8 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 
 			for (auto const & rep : sorted_weights)
 			{
-				logger.info (nano::log::type::node, "Using bootstrap rep weight: {} -> {}",
-				rep.first.to_account (),
+				logger.info (nano::log::type::node, "Using bootstrap rep weight: {:account} -> {}",
+				rep.first,
 				nano::uint128_union (rep.second).format_balance (nano_ratio, 0, true));
 			}
 
