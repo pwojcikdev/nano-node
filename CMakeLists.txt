@@ -428,6 +428,7 @@ set(BOOST_INCLUDE_LIBRARIES
     pool
     process
     program_options
+    json
     property_tree
     stacktrace
     system

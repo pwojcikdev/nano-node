@@ -103,6 +103,46 @@ add_library(
   ipc/ipc_server.cpp
   json_handler.hpp
   json_handler.cpp
+  rpc_api/command.hpp
+  rpc_api/commands/account.cpp
+  rpc_api/commands/account_history.cpp
+  rpc_api/commands/account_info.cpp
+  rpc_api/commands/account_rep_set.cpp
+  rpc_api/commands/accounts.cpp
+  rpc_api/commands/accounts_receivable.cpp
+  rpc_api/commands/block.cpp
+  rpc_api/commands/block_create.cpp
+  rpc_api/commands/blocks_info.cpp
+  rpc_api/commands/bootstrap.cpp
+  rpc_api/commands/chain.cpp
+  rpc_api/commands/confirmation.cpp
+  rpc_api/commands/delegators.cpp
+  rpc_api/commands/epoch.cpp
+  rpc_api/commands/ledger_query.cpp
+  rpc_api/commands/network.cpp
+  rpc_api/commands/node.cpp
+  rpc_api/commands/password.cpp
+  rpc_api/commands/process_block.cpp
+  rpc_api/commands/receivable.cpp
+  rpc_api/commands/receive_config.cpp
+  rpc_api/commands/representatives.cpp
+  rpc_api/commands/republish.cpp
+  rpc_api/commands/send_receive.cpp
+  rpc_api/commands/sign_command.cpp
+  rpc_api/commands/stats.cpp
+  rpc_api/commands/telemetry.cpp
+  rpc_api/commands/unchecked.cpp
+  rpc_api/commands/unchecked_clear.cpp
+  rpc_api/commands/wallet_modify.cpp
+  rpc_api/commands/wallet_query.cpp
+  rpc_api/commands/wallet_receivable.cpp
+  rpc_api/commands/wallet_rep_set.cpp
+  rpc_api/commands/work.cpp
+  rpc_api/commands/work_wallet.cpp
+  rpc_api/params.hpp
+  rpc_api/params.cpp
+  rpc_api/registry.hpp
+  rpc_api/registry.cpp
   ledger_notifications.hpp
   ledger_notifications.cpp
   local_block_broadcaster.cpp
@@ -242,6 +282,7 @@ target_link_libraries(
   argon2
   lmdb
   Boost::beast
+  Boost::json
   Boost::program_options
   Boost::stacktrace
   Boost::system

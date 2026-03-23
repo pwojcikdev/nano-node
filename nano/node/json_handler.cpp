@@ -16,6 +16,8 @@
 #include <nano/node/node.hpp>
 #include <nano/node/node_rpc_config.hpp>
 #include <nano/node/online_reps.hpp>
+#include <nano/node/rpc_api/command.hpp>
+#include <nano/node/rpc_api/registry.hpp>
 #include <nano/node/telemetry.hpp>
 #include <nano/node/wallet.hpp>
 #include <nano/secure/ledger.hpp>
@@ -30,6 +32,8 @@
 #include <nano/store/ledger/successor.hpp>
 #include <nano/store/ledger_store.hpp>
 
+#include <boost/json/parse.hpp>
+#include <boost/json/serialize.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
 
@@ -5212,9 +5216,56 @@ void nano::json_handler::populate_backlog ()
 	response_errors ();
 }
 
-void nano::inprocess_rpc_handler::process_request (std::string const &, std::string const & body_a, std::function<void (std::string const &)> response_a)
+void nano::inprocess_rpc_handler::process_request (std::string const & action_a, std::string const & body_a, std::function<void (std::string const &)> response_a)
 {
-	// Note that if the rpc action is async, the shared_ptr<json_handler> lifetime will be extended by the action handler
+	// Try modern command system first
+	auto * cmd = nano::rpc_api::registry::instance ().find (action_a);
+	if (cmd)
+	{
+		try
+		{
+			auto json_ptr = std::make_shared<boost::json::value> (boost::json::parse (body_a));
+
+			// Support dev-network request callback
+			if (node_rpc_config.request_callback)
+			{
+				debug_assert (node.network_params.network.is_dev_network ());
+				boost::property_tree::ptree ptree_request;
+				std::stringstream ss (body_a);
+				boost::property_tree::read_json (ss, ptree_request);
+				node_rpc_config.request_callback (ptree_request);
+			}
+
+			auto stop_cb = [this] () {
+				this->stop_callback ();
+				this->stop ();
+			};
+
+			nano::rpc_api::request_context ctx{
+				node,
+				json_ptr,
+				[response_a] (boost::json::object result) {
+					response_a (boost::json::serialize (result));
+				},
+				[response_a] (std::string const & msg) {
+					json_error_response (response_a, msg);
+				},
+				stop_cb
+			};
+			cmd->execute (ctx);
+		}
+		catch (std::runtime_error const &)
+		{
+			json_error_response (response_a, "Unable to parse JSON");
+		}
+		catch (...)
+		{
+			json_error_response (response_a, "Internal server error in RPC");
+		}
+		return;
+	}
+
+	// Legacy handler path
 	auto handler (std::make_shared<nano::json_handler> (node, node_rpc_config, body_a, response_a, [this] () {
 		this->stop_callback ();
 		this->stop ();
