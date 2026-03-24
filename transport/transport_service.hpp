@@ -3,7 +3,7 @@
 #include <nano/lib/fwd.hpp>
 #include <nano/lib/thread_runner.hpp>
 #include <nano/secure/common.hpp>
-#include <nano/transport/fwd.hpp>
+#include <transport/fwd.hpp>
 
 #include <boost/asio/io_context.hpp>
 

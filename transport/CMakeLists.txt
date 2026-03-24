@@ -5,11 +5,15 @@ add_library(
 	transport_service.hpp
 	transport_service.cpp
 	tcp/fwd.hpp
+	tcp/handshake.hpp
+	tcp/tcp_config.hpp
+	tcp/tcp_config.cpp
 	tcp/tcp_service.hpp
 	tcp/tcp_service.cpp)
 
 target_link_libraries(
 	transport
 	nano_lib
-	nano_secure
+	nano_messages
+	secure
 	Boost::asio)

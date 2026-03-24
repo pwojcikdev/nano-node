@@ -6,7 +6,7 @@
 #include <nano/lib/observer_set.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/transport/common.hpp>
-#include <nano/node/transport/tcp_config.hpp>
+#include <transport/tcp/tcp_config.hpp>
 
 #include <boost/asio.hpp>
 #include <boost/multi_index/hashed_index.hpp>

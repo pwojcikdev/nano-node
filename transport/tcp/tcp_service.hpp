@@ -2,16 +2,17 @@
 
 #include <nano/lib/async.hpp>
 #include <nano/lib/container_info.hpp>
+#include <nano/lib/endpoint.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/observer_set.hpp>
 #include <nano/lib/random.hpp>
 #include <nano/lib/stats.hpp>
-#include <nano/node/transport/tcp_config.hpp>
-#include <nano/transport/common.hpp>
-#include <nano/transport/fwd.hpp>
-#include <nano/transport/tcp/fwd.hpp>
+#include <transport/common.hpp>
+#include <transport/fwd.hpp>
+#include <transport/tcp/fwd.hpp>
+#include <transport/tcp/tcp_config.hpp>
 
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -41,7 +42,7 @@ struct tcp_service_params
 class tcp_service
 {
 public:
-	tcp_service (asio::io_context &, tcp_config const &, nano::stats &, nano::logger &, tcp_service_params = {});
+	tcp_service (asio::io_context &, tcp_config const &, handshake_provider &, nano::stats &, nano::logger &, tcp_service_params = {});
 	~tcp_service ();
 
 	void start ();
@@ -107,6 +108,8 @@ private:
 
 	// === Limit Checks ===
 	accept_result check_limits (asio::ip::address const &, connection_type) const;
+	std::size_t count_per_type_locked (connection_type) const;
+	std::size_t count_attempts_per_ip_locked (asio::ip::address const &) const;
 
 	// === Cleanup ===
 	void run_cleanup ();
@@ -117,6 +120,7 @@ private:
 	// === Dependencies ===
 	asio::io_context & io_ctx;
 	tcp_config const & config;
+	handshake_provider & handshake;
 	nano::stats & stats;
 	nano::logger & logger;
 
@@ -231,7 +235,7 @@ private:
 		asio::ip::tcp::endpoint endpoint;
 		asio::ip::address ip;
 		asio::ip::address subnetwork;
-		nano::async::task task;
+		mutable nano::async::task task;
 		std::chrono::steady_clock::time_point started;
 
 		// Extractors for multi-index

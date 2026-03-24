@@ -188,8 +188,6 @@ add_library(
   transport/message_deserializer.cpp
   transport/tcp_channels.hpp
   transport/tcp_channels.cpp
-  transport/tcp_config.hpp
-  transport/tcp_config.cpp
   transport/tcp_listener.hpp
   transport/tcp_listener.cpp
   transport/tcp_server.hpp
@@ -233,6 +231,7 @@ target_link_libraries(
   nano_messages
   nano_store
   secure
+  transport
   weights
   rpc
   libminiupnpc-static

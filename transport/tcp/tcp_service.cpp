@@ -1,4 +1,4 @@
-#include <nano/transport/tcp/tcp_service.hpp>
+#include <transport/tcp/tcp_service.hpp>
 
 #include <nano/lib/thread_roles.hpp>
 #include <nano/lib/utility.hpp>
@@ -9,9 +9,10 @@ using namespace std::chrono_literals;
 
 namespace nano::transport::tcp
 {
-tcp_service::tcp_service (asio::io_context & io_ctx_a, tcp_config const & config_a, nano::stats & stats_a, nano::logger & logger_a, tcp_service_params params) :
+tcp_service::tcp_service (asio::io_context & io_ctx_a, tcp_config const & config_a, handshake_provider & handshake_a, nano::stats & stats_a, nano::logger & logger_a, tcp_service_params params) :
 	io_ctx{ io_ctx_a },
 	config{ config_a },
+	handshake{ handshake_a },
 	stats{ stats_a },
 	logger{ logger_a },
 	acceptor{ io_ctx_a },
@@ -134,7 +135,7 @@ bool tcp_service::connect (asio::ip::tcp::endpoint const & endpoint)
 	}
 
 	// Check max attempts per IP
-	if (count_attempts_per_ip (ip) >= config.max_attempts_per_ip)
+	if (count_attempts_per_ip_locked (ip) >= config.max_attempts_per_ip)
 	{
 		stats.inc (nano::stat::type::tcp_server, nano::stat::detail::max_attempts_per_ip, nano::stat::dir::out);
 		return false;
@@ -344,18 +345,18 @@ auto tcp_service::check_limits (asio::ip::address const & ip, connection_type ty
 
 	if (type == connection_type::inbound)
 	{
-		if (count_per_type (connection_type::inbound) >= config.max_inbound_connections)
+		if (count_per_type_locked (connection_type::inbound) >= config.max_inbound_connections)
 		{
-			stats.inc (nano::stat::type::tcp_server, nano::stat::detail::max_connections, nano::stat::dir::in);
+			stats.inc (nano::stat::type::tcp_server, nano::stat::detail::max_attempts, nano::stat::dir::in);
 			return accept_result::rejected_max_inbound;
 		}
 	}
 
 	if (type == connection_type::outbound)
 	{
-		if (count_per_type (connection_type::outbound) >= config.max_outbound_connections)
+		if (count_per_type_locked (connection_type::outbound) >= config.max_outbound_connections)
 		{
-			stats.inc (nano::stat::type::tcp_server, nano::stat::detail::max_connections, nano::stat::dir::out);
+			stats.inc (nano::stat::type::tcp_server, nano::stat::detail::max_attempts, nano::stat::dir::out);
 			return accept_result::rejected_max_outbound;
 		}
 	}
@@ -377,6 +378,12 @@ std::size_t tcp_service::count_per_subnetwork (asio::ip::address const & ip) con
 
 std::size_t tcp_service::count_per_type (connection_type type) const
 {
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	return count_per_type_locked (type);
+}
+
+std::size_t tcp_service::count_per_type_locked (connection_type type) const
+{
 	debug_assert (!mutex.try_lock ()); // Must hold mutex
 
 	bool outbound = (type == connection_type::outbound);
@@ -386,6 +393,12 @@ std::size_t tcp_service::count_per_type (connection_type type) const
 }
 
 std::size_t tcp_service::count_attempts_per_ip (asio::ip::address const & ip) const
+{
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	return count_attempts_per_ip_locked (ip);
+}
+
+std::size_t tcp_service::count_attempts_per_ip_locked (asio::ip::address const & ip) const
 {
 	debug_assert (!mutex.try_lock ()); // Must hold mutex
 	return attempts.get<tag_ip> ().count (ip);
