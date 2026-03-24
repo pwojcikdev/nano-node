@@ -19,6 +19,11 @@ transport_service::~transport_service ()
 
 void transport_service::stop ()
 {
+	if (stopped.exchange (true))
+	{
+		return;
+	}
+
 	runner.abort ();
 	runner.join ();
 }

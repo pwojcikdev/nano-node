@@ -78,6 +78,8 @@
 #include <future>
 #include <sstream>
 
+#include <transport/transport_service.hpp>
+
 nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, uint16_t peering_port_a, std::filesystem::path const & application_path_a, nano::work_pool & work_a, nano::node_flags flags_a, unsigned seq) :
 	node (io_ctx_a, application_path_a, nano::node_config (peering_port_a), work_a, flags_a, seq)
 {
@@ -128,6 +130,8 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	handshake_impl{ std::make_unique<nano::node_handshake> (
 	network_params, node_id, [this] () { return get_capabilities (); }, config.network.max_peers_per_ip, stats, logger) },
 	handshake{ *handshake_impl },
+	transport_impl{ std::make_unique<nano::transport::transport_service> (network_params, stats, logger, nano::transport::transport_params{ config.network_threads }) },
+	transport{ *transport_impl },
 	// empty `config.peering_port` means the user made no port choice at all;
 	// otherwise, any value is considered, with `0` having the special meaning of 'let the OS pick a port instead'
 	//
@@ -612,6 +616,7 @@ void nano::node::stop ()
 	local_block_broadcaster.stop ();
 	message_processor.stop ();
 	network.stop ();
+	transport.stop ();
 	monitor.stop ();
 	http_callbacks.stop ();
 	pruning.stop ();

@@ -6,6 +6,8 @@
 #include <nano/node/transport/tcp_channel.hpp>
 #include <nano/node/transport/transport.hpp>
 
+#include <transport/transport_service.hpp>
+
 /*
  * tcp_channel
  */
@@ -13,7 +15,7 @@
 nano::transport::tcp_channel::tcp_channel (nano::node & node_a, std::shared_ptr<nano::transport::tcp_socket> socket_a) :
 	channel (node_a),
 	socket{ socket_a },
-	strand{ node_a.io_ctx.get_executor () },
+	strand{ node_a.transport.io_ctx.get_executor () },
 	sending_task{ strand }
 {
 	remote_endpoint = socket_a->get_remote_endpoint ();
@@ -71,9 +73,9 @@ void nano::transport::tcp_channel::stop ()
 	if (sending_task.running ())
 	{
 		// Node context must be running to gracefully stop async tasks
-		debug_assert (!node.io_ctx.stopped ());
+		debug_assert (!node.transport.io_ctx.stopped ());
 		// Ensure that we are not trying to await the task while running on the same thread / io_context
-		debug_assert (!node.io_ctx.get_executor ().running_in_this_thread ());
+		debug_assert (!node.transport.io_ctx.get_executor ().running_in_this_thread ());
 
 		sending_task.cancel ();
 		sending_task.join ();

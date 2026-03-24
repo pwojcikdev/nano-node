@@ -12,11 +12,13 @@
 #include <memory>
 #include <utility>
 
+#include <transport/transport_service.hpp>
+
 nano::transport::tcp_socket::tcp_socket (nano::node & node_a, nano::transport::socket_endpoint endpoint_type_a) :
 	node{ node_a },
-	strand{ node_a.io_ctx.get_executor () },
+	strand{ node_a.transport.io_ctx.get_executor () },
 	task{ strand },
-	raw_socket{ node_a.io_ctx },
+	raw_socket{ node_a.transport.io_ctx },
 	endpoint_type{ endpoint_type_a }
 {
 	start ();
@@ -24,7 +26,7 @@ nano::transport::tcp_socket::tcp_socket (nano::node & node_a, nano::transport::s
 
 nano::transport::tcp_socket::tcp_socket (nano::node & node_a, asio::ip::tcp::socket raw_socket_a, nano::transport::socket_endpoint endpoint_type_a) :
 	node{ node_a },
-	strand{ node_a.io_ctx.get_executor () },
+	strand{ node_a.transport.io_ctx.get_executor () },
 	task{ strand },
 	raw_socket{ std::move (raw_socket_a) },
 	local_endpoint{ raw_socket.local_endpoint () },
@@ -51,9 +53,9 @@ void nano::transport::tcp_socket::close ()
 	}
 
 	// Node context must be running to gracefully stop async tasks
-	debug_assert (!node.io_ctx.stopped ());
+	debug_assert (!node.transport.io_ctx.stopped ());
 	// Ensure that we are not trying to await the task while running on the same thread / io_context
-	debug_assert (!node.io_ctx.get_executor ().running_in_this_thread ());
+	debug_assert (!node.transport.io_ctx.get_executor ().running_in_this_thread ());
 
 	// Dispatch close raw socket to the strand, wait synchronously for the operation to complete
 	auto fut = asio::dispatch (strand, asio::use_future ([this] () {
@@ -65,7 +67,7 @@ void nano::transport::tcp_socket::close ()
 void nano::transport::tcp_socket::close_async ()
 {
 	// Node context must be running to gracefully stop async tasks
-	debug_assert (!node.io_ctx.stopped ());
+	debug_assert (!node.transport.io_ctx.stopped ());
 
 	asio::dispatch (strand, [this, /* lifetime guard */ this_s = shared_from_this ()] () {
 		close_impl ();
@@ -107,9 +109,9 @@ void nano::transport::tcp_socket::stop ()
 	if (task.running ())
 	{
 		// Node context must be running to gracefully stop async tasks
-		debug_assert (!node.io_ctx.stopped ());
+		debug_assert (!node.transport.io_ctx.stopped ());
 		// Ensure that we are not trying to await the task while running on the same thread / io_context
-		debug_assert (!node.io_ctx.get_executor ().running_in_this_thread ());
+		debug_assert (!node.transport.io_ctx.get_executor ().running_in_this_thread ());
 
 		task.cancel ();
 		task.join ();

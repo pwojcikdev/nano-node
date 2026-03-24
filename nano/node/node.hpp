@@ -30,6 +30,8 @@
 #include <optional>
 #include <vector>
 
+#include <transport/fwd.hpp>
+
 namespace nano
 {
 class node final : public std::enable_shared_from_this<node>
@@ -140,6 +142,8 @@ public:
 	nano::message_processor & message_processor;
 	std::unique_ptr<nano::node_handshake> handshake_impl;
 	nano::node_handshake & handshake;
+	std::unique_ptr<nano::transport::transport_service> transport_impl;
+	nano::transport::transport_service & transport;
 	std::unique_ptr<nano::network> network_impl;
 	nano::network & network;
 	std::shared_ptr<nano::transport::channel> loopback_channel;

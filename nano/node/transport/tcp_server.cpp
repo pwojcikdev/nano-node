@@ -7,10 +7,12 @@
 
 #include <memory>
 
+#include <transport/transport_service.hpp>
+
 nano::transport::tcp_server::tcp_server (nano::node & node_a, std::shared_ptr<nano::transport::tcp_socket> socket_a) :
 	node{ node_a },
 	socket{ socket_a },
-	strand{ node_a.io_ctx.get_executor () },
+	strand{ node_a.transport.io_ctx.get_executor () },
 	task{ strand },
 	buffer{ std::make_shared<nano::shared_buffer::element_type> (max_buffer_size) }
 {
@@ -43,9 +45,9 @@ void nano::transport::tcp_server::stop ()
 	if (task.running ())
 	{
 		// Node context must be running to gracefully stop async tasks
-		debug_assert (!node.io_ctx.stopped ());
+		debug_assert (!node.transport.io_ctx.stopped ());
 		// Ensure that we are not trying to await the task while running on the same thread / io_context
-		debug_assert (!node.io_ctx.get_executor ().running_in_this_thread ());
+		debug_assert (!node.transport.io_ctx.get_executor ().running_in_this_thread ());
 
 		task.cancel ();
 		task.join ();

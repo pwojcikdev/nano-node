@@ -11,6 +11,8 @@
 #include <memory>
 #include <ranges>
 
+#include <transport/transport_service.hpp>
+
 using namespace std::chrono_literals;
 
 /*
@@ -23,7 +25,7 @@ nano::transport::tcp_listener::tcp_listener (uint16_t port_a, tcp_config const &
 	stats{ node_a.stats },
 	logger{ node_a.logger },
 	port{ port_a },
-	strand{ node_a.io_ctx.get_executor () },
+	strand{ node_a.transport.io_ctx.get_executor () },
 	acceptor{ strand },
 	task{ strand }
 {
