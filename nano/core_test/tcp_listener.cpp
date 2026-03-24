@@ -1,6 +1,7 @@
 #include <nano/boost/asio/ip/address_v6.hpp>
 #include <nano/boost/asio/ip/network_v6.hpp>
 #include <nano/lib/thread_runner.hpp>
+#include <nano/node/transport/handshake.hpp>
 #include <nano/node/transport/tcp_listener.hpp>
 #include <nano/node/transport/tcp_socket.hpp>
 #include <nano/test_common/system.hpp>
@@ -172,7 +173,7 @@ TEST (tcp_listener, node_id_handshake)
 	nano::test::system system (1);
 	auto socket (std::make_shared<nano::transport::tcp_socket> (*system.nodes[0]));
 	auto bootstrap_endpoint (system.nodes[0]->tcp_listener.endpoint ());
-	auto cookie (system.nodes[0]->network.syn_cookies.assign (nano::transport::map_tcp_to_endpoint (bootstrap_endpoint)));
+	auto cookie (system.nodes[0]->handshake.assign (nano::transport::map_tcp_to_endpoint (bootstrap_endpoint)));
 	ASSERT_TRUE (cookie);
 	nano::messages::node_id_handshake::query_payload query{ *cookie };
 	nano::messages::node_id_handshake node_id_handshake{ nano::dev::network_params.network, query };
@@ -222,7 +223,7 @@ TEST (tcp_listener, timeout_node_id_handshake)
 	config.tcp.handshake_timeout = 2s;
 	auto node0 = system.add_node (config);
 	auto socket (std::make_shared<nano::transport::tcp_socket> (*node0));
-	auto cookie (node0->network.syn_cookies.assign (nano::transport::map_tcp_to_endpoint (node0->tcp_listener.endpoint ())));
+	auto cookie (node0->handshake.assign (nano::transport::map_tcp_to_endpoint (node0->tcp_listener.endpoint ())));
 	ASSERT_TRUE (cookie);
 	nano::messages::node_id_handshake::query_payload query{ *cookie };
 	nano::messages::node_id_handshake node_id_handshake{ nano::dev::network_params.network, query };

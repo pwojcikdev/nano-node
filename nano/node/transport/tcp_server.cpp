@@ -1,5 +1,6 @@
 #include <nano/messages/messages.hpp>
 #include <nano/node/node.hpp>
+#include <nano/node/transport/handshake.hpp>
 #include <nano/node/transport/message_deserializer.hpp>
 #include <nano/node/transport/tcp_listener.hpp>
 #include <nano/node/transport/tcp_server.hpp>
@@ -340,7 +341,7 @@ auto nano::transport::tcp_server::process_handshake (nano::messages::node_id_han
 	}
 	if (message.response)
 	{
-		if (node.network.verify_handshake_response (*message.response, get_remote_endpoint ()))
+		if (node.handshake.verify_response (*message.response, get_remote_endpoint ()))
 		{
 			bool success = to_realtime_connection (message.response->node_id, message.response->flags ());
 			if (success)
@@ -369,7 +370,7 @@ auto nano::transport::tcp_server::process_handshake (nano::messages::node_id_han
 
 auto nano::transport::tcp_server::send_handshake_request () -> asio::awaitable<void>
 {
-	auto query = node.network.prepare_handshake_query (get_remote_endpoint ());
+	auto query = node.handshake.prepare_query (get_remote_endpoint ());
 	nano::messages::node_id_handshake message{ node.network_params.network, query };
 
 	node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_initiate, nano::stat::dir::out);
@@ -394,8 +395,8 @@ auto nano::transport::tcp_server::send_handshake_request () -> asio::awaitable<v
 
 auto nano::transport::tcp_server::send_handshake_response (nano::messages::node_id_handshake::query_payload const & query, nano::messages::handshake_version version) -> asio::awaitable<void>
 {
-	auto response = node.network.prepare_handshake_response (query, version);
-	auto own_query = node.network.prepare_handshake_query (get_remote_endpoint ());
+	auto response = node.handshake.prepare_response (query, version, get_remote_endpoint ());
+	auto own_query = node.handshake.prepare_query (get_remote_endpoint ());
 	nano::messages::node_id_handshake handshake_response{ node.network_params.network, own_query, response };
 
 	node.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response, nano::stat::dir::out);

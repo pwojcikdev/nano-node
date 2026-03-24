@@ -43,6 +43,7 @@
 #include <nano/node/scheduler/optimistic.hpp>
 #include <nano/node/scheduler/priority.hpp>
 #include <nano/node/telemetry.hpp>
+#include <nano/node/transport/handshake.hpp>
 #include <nano/node/transport/loopback.hpp>
 #include <nano/node/transport/tcp_listener.hpp>
 #include <nano/node/vote_generator.hpp>
@@ -124,6 +125,9 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	outbound_limiter{ *outbound_limiter_impl },
 	message_processor_impl{ std::make_unique<nano::message_processor> (config.message_processor, *this) },
 	message_processor{ *message_processor_impl },
+	handshake_impl{ std::make_unique<nano::node_handshake> (
+	network_params, node_id, [this] () { return get_capabilities (); }, config.network.max_peers_per_ip, stats, logger) },
+	handshake{ *handshake_impl },
 	// empty `config.peering_port` means the user made no port choice at all;
 	// otherwise, any value is considered, with `0` having the special meaning of 'let the OS pick a port instead'
 	//

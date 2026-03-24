@@ -5,6 +5,7 @@
 #include <nano/node/scheduler/component.hpp>
 #include <nano/node/scheduler/priority.hpp>
 #include <nano/node/transport/fake.hpp>
+#include <nano/node/transport/handshake.hpp>
 #include <nano/node/transport/inproc.hpp>
 #include <nano/node/transport/tcp_listener.hpp>
 #include <nano/node/transport/tcp_socket.hpp>
@@ -840,11 +841,11 @@ TEST (network, tcp_no_accept_excluded_peers)
 	ASSERT_FALSE (node0->network.excluded_peers.check (endpoint1_tcp));
 
 	// Wait until there is a syn_cookie
-	ASSERT_TIMELY (5s, node1->network.syn_cookies.cookies_size () != 0);
+	ASSERT_TIMELY (5s, node1->handshake.cookies_size () != 0);
 
 	// Manually cleanup previous attempt
 	node1->network.cleanup (std::chrono::steady_clock::now ());
-	node1->network.syn_cookies.purge (std::chrono::steady_clock::now ());
+	node1->handshake.purge (std::chrono::steady_clock::now ());
 
 	// Ensure a successful connection
 	ASSERT_EQ (0, node0->network.size ());

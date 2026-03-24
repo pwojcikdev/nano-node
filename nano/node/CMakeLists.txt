@@ -180,6 +180,8 @@ add_library(
   transport/fake.hpp
   transport/fake.cpp
   transport/fwd.hpp
+  transport/handshake.hpp
+  transport/handshake.cpp
   transport/inproc.hpp
   transport/inproc.cpp
   transport/loopback.cpp

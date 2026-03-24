@@ -28,6 +28,7 @@ class logger;
 class network;
 class network_params;
 class node;
+class node_handshake;
 class node_config;
 class node_flags;
 class node_observers;
