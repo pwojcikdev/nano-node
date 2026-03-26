@@ -37,6 +37,9 @@ public:
 	nano::root root () const;
 	nano::block_hash const & hash () const;
 	nano::vote_type type () const;
+
+	/// For tests: dummy permit with fields set to 0
+	static vote_permit dummy (nano::vote_type type);
 };
 
 /**

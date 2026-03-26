@@ -37,6 +37,11 @@ nano::vote_type nano::vote_permit::type () const
 	return type_m;
 }
 
+nano::vote_permit nano::vote_permit::dummy (nano::vote_type type)
+{
+	return nano::vote_permit{ nano::qualified_root{ 0, 0 }, 0, type };
+}
+
 /*
  * voting_policy
  */
