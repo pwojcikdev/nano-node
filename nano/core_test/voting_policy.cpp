@@ -13,18 +13,18 @@
 #include <gtest/gtest.h>
 
 /*
- * vote_normal
+ * vote
  */
 
 // Genesis block has zero dependencies — always eligible
-TEST (voting_policy, vote_normal_genesis)
+TEST (voting_policy, vote_genesis)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
 	nano::voting_policy policy{ ledger };
 
 	auto txn = ledger.tx_begin_read ();
-	auto result = policy.vote_normal (txn, *nano::dev::genesis);
+	auto result = policy.vote (txn, *nano::dev::genesis);
 	ASSERT_TRUE (result);
 	ASSERT_EQ (result->qualified_root (), nano::dev::genesis->qualified_root ());
 	ASSERT_EQ (result->hash (), nano::dev::genesis->hash ());
@@ -32,7 +32,7 @@ TEST (voting_policy, vote_normal_genesis)
 }
 
 // Send from genesis — previous (genesis) is cemented at init
-TEST (voting_policy, vote_normal_send)
+TEST (voting_policy, vote_send)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -53,7 +53,7 @@ TEST (voting_policy, vote_normal_send)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (ledger.tx_begin_write (), send1));
 
 	auto txn = ledger.tx_begin_read ();
-	auto result = policy.vote_normal (txn, *send1);
+	auto result = policy.vote (txn, *send1);
 	ASSERT_TRUE (result);
 	ASSERT_EQ (result->qualified_root (), send1->qualified_root ());
 	ASSERT_EQ (result->hash (), send1->hash ());
@@ -61,7 +61,7 @@ TEST (voting_policy, vote_normal_send)
 }
 
 // Second send fails — previous (send1) is not cemented
-TEST (voting_policy, vote_normal_send_previous_not_cemented)
+TEST (voting_policy, vote_send_previous_not_cemented)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -93,13 +93,13 @@ TEST (voting_policy, vote_normal_send_previous_not_cemented)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send1));
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send2));
 
-	ASSERT_FALSE (policy.vote_normal (txn, *send2));
+	ASSERT_FALSE (policy.vote (txn, *send2));
 	ASSERT_FALSE (policy.vote_final (txn, *send2));
 	ASSERT_FALSE (policy.reply_final (txn, *send2));
 }
 
 // Open block receiving from uncemented send — source dependency not met
-TEST (voting_policy, vote_normal_open_source_not_cemented)
+TEST (voting_policy, vote_open_source_not_cemented)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -132,13 +132,13 @@ TEST (voting_policy, vote_normal_open_source_not_cemented)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, open1));
 
 	// send1 is not cemented so open1's source dependency fails
-	ASSERT_FALSE (policy.vote_normal (txn, *open1));
+	ASSERT_FALSE (policy.vote (txn, *open1));
 	ASSERT_FALSE (policy.vote_final (txn, *open1));
 	ASSERT_FALSE (policy.reply_final (txn, *open1));
 }
 
 // Open block receiving from cemented send — previous is zero (trivial), source cemented
-TEST (voting_policy, vote_normal_open_source_cemented)
+TEST (voting_policy, vote_open_source_cemented)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -171,14 +171,14 @@ TEST (voting_policy, vote_normal_open_source_cemented)
 	ledger.cement (txn, send1->hash ());
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, open1));
 
-	auto result = policy.vote_normal (txn, *open1);
+	auto result = policy.vote (txn, *open1);
 	ASSERT_TRUE (result);
 	ASSERT_EQ (result->qualified_root (), open1->qualified_root ());
 	ASSERT_EQ (result->hash (), open1->hash ());
 }
 
 // Receive where previous is cemented but source send is not
-TEST (voting_policy, vote_normal_receive_previous_cemented_source_not)
+TEST (voting_policy, vote_receive_previous_cemented_source_not)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -237,13 +237,13 @@ TEST (voting_policy, vote_normal_receive_previous_cemented_source_not)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, receive2));
 
 	// previous (open1) is cemented, but source (send2) is not
-	ASSERT_FALSE (policy.vote_normal (txn, *receive2));
+	ASSERT_FALSE (policy.vote (txn, *receive2));
 	ASSERT_FALSE (policy.vote_final (txn, *receive2));
 	ASSERT_FALSE (policy.reply_final (txn, *receive2));
 }
 
 // Receive where source is cemented but previous is not
-TEST (voting_policy, vote_normal_receive_source_cemented_previous_not)
+TEST (voting_policy, vote_receive_source_cemented_previous_not)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -300,13 +300,13 @@ TEST (voting_policy, vote_normal_receive_source_cemented_previous_not)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, receive2));
 
 	// source (send2) is cemented, but previous (open1) is not
-	ASSERT_FALSE (policy.vote_normal (txn, *receive2));
+	ASSERT_FALSE (policy.vote (txn, *receive2));
 	ASSERT_FALSE (policy.vote_final (txn, *receive2));
 	ASSERT_FALSE (policy.reply_final (txn, *receive2));
 }
 
 // Receive with both previous and source cemented — eligible
-TEST (voting_policy, vote_normal_receive_both_cemented)
+TEST (voting_policy, vote_receive_both_cemented)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -362,13 +362,13 @@ TEST (voting_policy, vote_normal_receive_both_cemented)
 	ledger.cement (txn, send2->hash ()); // cements genesis, send1, send2
 	ledger.cement (txn, open1->hash ()); // cements open1
 
-	auto result = policy.vote_normal (txn, *receive2);
+	auto result = policy.vote (txn, *receive2);
 	ASSERT_TRUE (result);
 	ASSERT_EQ (result->hash (), receive2->hash ());
 }
 
 // Change block with cemented previous — eligible (no source dependency)
-TEST (voting_policy, vote_normal_change_cemented)
+TEST (voting_policy, vote_change_cemented)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -390,13 +390,13 @@ TEST (voting_policy, vote_normal_change_cemented)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (ledger.tx_begin_write (), change1));
 
 	auto txn = ledger.tx_begin_read ();
-	auto result = policy.vote_normal (txn, *change1);
+	auto result = policy.vote (txn, *change1);
 	ASSERT_TRUE (result);
 	ASSERT_EQ (result->hash (), change1->hash ());
 }
 
 // Change block with uncemented previous — not eligible
-TEST (voting_policy, vote_normal_change_not_cemented)
+TEST (voting_policy, vote_change_not_cemented)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -429,13 +429,13 @@ TEST (voting_policy, vote_normal_change_not_cemented)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, change1));
 
 	// send1 not cemented, so change1 fails
-	ASSERT_FALSE (policy.vote_normal (txn, *change1));
+	ASSERT_FALSE (policy.vote (txn, *change1));
 	ASSERT_FALSE (policy.vote_final (txn, *change1));
 	ASSERT_FALSE (policy.reply_final (txn, *change1));
 }
 
 // Epoch block with cemented previous — eligible (link is epoch link, not a block hash)
-TEST (voting_policy, vote_normal_epoch_cemented)
+TEST (voting_policy, vote_epoch_cemented)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -456,7 +456,7 @@ TEST (voting_policy, vote_normal_epoch_cemented)
 	auto txn = ledger.tx_begin_write ();
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, epoch1));
 
-	auto result = policy.vote_normal (txn, *epoch1);
+	auto result = policy.vote (txn, *epoch1);
 	ASSERT_TRUE (result);
 	ASSERT_EQ (result->hash (), epoch1->hash ());
 
@@ -466,7 +466,7 @@ TEST (voting_policy, vote_normal_epoch_cemented)
 }
 
 // Epoch block with uncemented previous — not eligible
-TEST (voting_policy, vote_normal_epoch_not_cemented)
+TEST (voting_policy, vote_epoch_not_cemented)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -499,13 +499,13 @@ TEST (voting_policy, vote_normal_epoch_not_cemented)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, epoch1));
 
 	// send1 not cemented
-	ASSERT_FALSE (policy.vote_normal (txn, *epoch1));
+	ASSERT_FALSE (policy.vote (txn, *epoch1));
 	ASSERT_FALSE (policy.vote_final (txn, *epoch1));
 	ASSERT_FALSE (policy.reply_final (txn, *epoch1));
 }
 
 // Epoch open block — dependencies are [0, 0], always eligible
-TEST (voting_policy, vote_normal_epoch_open_cemented)
+TEST (voting_policy, vote_epoch_open_cemented)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -540,7 +540,7 @@ TEST (voting_policy, vote_normal_epoch_open_cemented)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, epoch_open));
 
 	// Epoch open has deps [0, 0] — always eligible regardless of send1 cementing status
-	auto result = policy.vote_normal (txn, *epoch_open);
+	auto result = policy.vote (txn, *epoch_open);
 	ASSERT_TRUE (result);
 	ASSERT_EQ (result->hash (), epoch_open->hash ());
 
@@ -552,7 +552,7 @@ TEST (voting_policy, vote_normal_epoch_open_cemented)
 }
 
 // Epoch open block with uncemented send — eligible because deps are [0, 0]
-TEST (voting_policy, vote_normal_epoch_open_send_not_cemented)
+TEST (voting_policy, vote_epoch_open_send_not_cemented)
 {
 	auto ctx = nano::test::ledger_empty ();
 	auto & ledger = ctx.ledger ();
@@ -585,8 +585,94 @@ TEST (voting_policy, vote_normal_epoch_open_send_not_cemented)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, epoch_open));
 
 	// send1 is NOT cemented, but epoch open deps are [0, 0] — eligible
-	ASSERT_TRUE (policy.vote_normal (txn, *epoch_open));
+	ASSERT_TRUE (policy.vote (txn, *epoch_open));
 	ASSERT_TRUE (policy.vote_final (txn, *epoch_open));
+}
+
+// When a final vote was already recorded for this root, vote upgrades to a final vote for the recorded hash
+TEST (voting_policy, vote_upgrades_to_final)
+{
+	auto ctx = nano::test::ledger_empty ();
+	auto & ledger = ctx.ledger ();
+	auto & pool = ctx.pool ();
+	nano::voting_policy policy{ ledger };
+	nano::keypair key1;
+	nano::block_builder builder;
+
+	auto send1 = builder.state ()
+				 .account (nano::dev::genesis_key.pub)
+				 .previous (nano::dev::genesis->hash ())
+				 .representative (nano::dev::genesis_key.pub)
+				 .balance (nano::dev::constants.genesis_amount - 100)
+				 .link (key1.pub)
+				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				 .work (*pool.generate (nano::dev::genesis->hash ()))
+				 .build ();
+
+	auto txn = ledger.tx_begin_write ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send1));
+
+	// Before recording a final vote, vote returns a normal permit
+	auto normal_result = policy.vote (txn, *send1);
+	ASSERT_TRUE (normal_result);
+	ASSERT_EQ (normal_result->type (), nano::vote_type::normal);
+	ASSERT_EQ (normal_result->hash (), send1->hash ());
+
+	// Record a final vote
+	ASSERT_TRUE (policy.vote_final (txn, *send1));
+
+	// After recording, vote upgrades to a final permit for the recorded hash
+	auto upgraded_result = policy.vote (txn, *send1);
+	ASSERT_TRUE (upgraded_result);
+	ASSERT_EQ (upgraded_result->type (), nano::vote_type::final);
+	ASSERT_EQ (upgraded_result->hash (), send1->hash ());
+}
+
+// When a final vote was recorded for a fork, vote on the fork upgrades to final for the original hash
+TEST (voting_policy, vote_upgrades_to_final_fork)
+{
+	auto ctx = nano::test::ledger_empty ();
+	auto & ledger = ctx.ledger ();
+	auto & pool = ctx.pool ();
+	nano::voting_policy policy{ ledger };
+	nano::keypair key1, key2;
+	nano::block_builder builder;
+
+	auto send1a = builder.state ()
+				  .account (nano::dev::genesis_key.pub)
+				  .previous (nano::dev::genesis->hash ())
+				  .representative (nano::dev::genesis_key.pub)
+				  .balance (nano::dev::constants.genesis_amount - 100)
+				  .link (key1.pub)
+				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				  .work (*pool.generate (nano::dev::genesis->hash ()))
+				  .build ();
+	auto send1b = builder.state ()
+				  .account (nano::dev::genesis_key.pub)
+				  .previous (nano::dev::genesis->hash ())
+				  .representative (nano::dev::genesis_key.pub)
+				  .balance (nano::dev::constants.genesis_amount - 200)
+				  .link (key2.pub)
+				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				  .work (*pool.generate (nano::dev::genesis->hash ()))
+				  .build ();
+
+	auto txn = ledger.tx_begin_write ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send1a));
+
+	// Record final vote for send1a
+	ASSERT_TRUE (policy.vote_final (txn, *send1a));
+
+	// Replace with fork
+	ASSERT_FALSE (ledger.rollback (txn, send1a->hash ()));
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send1b));
+
+	// vote on the fork upgrades to final with the originally recorded hash
+	auto result = policy.vote (txn, *send1b);
+	ASSERT_TRUE (result);
+	ASSERT_EQ (result->type (), nano::vote_type::final);
+	ASSERT_EQ (result->hash (), send1a->hash ());
+	ASSERT_NE (result->hash (), send1b->hash ());
 }
 
 /*
@@ -941,7 +1027,7 @@ TEST (voting_policy_DeathTest, sign_type_mismatch)
 	auto txn = ledger.tx_begin_write ();
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send1));
 
-	auto normal_permit = policy.vote_normal (txn, *send1);
+	auto normal_permit = policy.vote (txn, *send1);
 	ASSERT_TRUE (normal_permit);
 
 	nano::voting_policy::vote_signer_t signer = [&rep] (auto const & callback) { callback (rep.pub, rep.prv); };
@@ -991,7 +1077,7 @@ TEST (voting_policy, sign_single_permit)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (ledger.tx_begin_write (), send1));
 
 	auto txn = ledger.tx_begin_read ();
-	auto permit = policy.vote_normal (txn, *send1);
+	auto permit = policy.vote (txn, *send1);
 	ASSERT_TRUE (permit);
 
 	nano::voting_policy::vote_signer_t signer = [&rep] (auto const & callback) { callback (rep.pub, rep.prv); };
@@ -1042,8 +1128,8 @@ TEST (voting_policy, sign_multiple_permits)
 	ledger.cement (txn, send1->hash ());
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send2));
 
-	auto permit1 = policy.vote_normal (txn, *send1);
-	auto permit2 = policy.vote_normal (txn, *send2);
+	auto permit1 = policy.vote (txn, *send1);
+	auto permit2 = policy.vote (txn, *send2);
 	ASSERT_TRUE (permit1);
 	ASSERT_TRUE (permit2);
 
@@ -1079,7 +1165,7 @@ TEST (voting_policy, sign_multiple_signers)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (ledger.tx_begin_write (), send1));
 
 	auto txn = ledger.tx_begin_read ();
-	auto permit = policy.vote_normal (txn, *send1);
+	auto permit = policy.vote (txn, *send1);
 	ASSERT_TRUE (permit);
 
 	nano::voting_policy::vote_signer_t signer = [&rep1, &rep2] (auto const & callback) {
@@ -1151,7 +1237,7 @@ TEST (voting_policy, sign_normal_custom_timestamp)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (ledger.tx_begin_write (), send1));
 
 	auto txn = ledger.tx_begin_read ();
-	auto permit = policy.vote_normal (txn, *send1);
+	auto permit = policy.vote (txn, *send1);
 	ASSERT_TRUE (permit);
 
 	nano::voting_policy::vote_signer_t signer = [&rep] (auto const & callback) { callback (rep.pub, rep.prv); };
@@ -1187,7 +1273,7 @@ TEST (voting_policy, sign_no_signers)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (ledger.tx_begin_write (), send1));
 
 	auto txn = ledger.tx_begin_read ();
-	auto permit = policy.vote_normal (txn, *send1);
+	auto permit = policy.vote (txn, *send1);
 	ASSERT_TRUE (permit);
 
 	nano::voting_policy::vote_signer_t empty_signer = [] (auto const &) {};
@@ -1257,21 +1343,21 @@ TEST (voting_policy, progressive_cementing)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, receive2));
 
 	// Phase 1: Nothing cemented beyond genesis — receive2 not eligible
-	ASSERT_FALSE (policy.vote_normal (txn, *receive2));
-	ASSERT_FALSE (policy.vote_normal (txn, *open1));
+	ASSERT_FALSE (policy.vote (txn, *receive2));
+	ASSERT_FALSE (policy.vote (txn, *open1));
 
 	// Phase 2: Cement send1 — open1 now eligible (source cemented), receive2 still not
 	ledger.cement (txn, send1->hash ());
-	ASSERT_TRUE (policy.vote_normal (txn, *open1));
-	ASSERT_FALSE (policy.vote_normal (txn, *receive2));
+	ASSERT_TRUE (policy.vote (txn, *open1));
+	ASSERT_FALSE (policy.vote (txn, *receive2));
 
 	// Phase 3: Cement open1 — receive2 still not eligible (send2 not cemented)
 	ledger.cement (txn, open1->hash ());
-	ASSERT_FALSE (policy.vote_normal (txn, *receive2));
+	ASSERT_FALSE (policy.vote (txn, *receive2));
 
 	// Phase 4: Cement send2 — receive2 now eligible (both deps cemented)
 	ledger.cement (txn, send2->hash ());
-	ASSERT_TRUE (policy.vote_normal (txn, *receive2));
+	ASSERT_TRUE (policy.vote (txn, *receive2));
 }
 
 // Complete flow: check eligibility, get permits, sign votes, verify signatures
@@ -1309,7 +1395,7 @@ TEST (voting_policy, full_send_receive_sign)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, open1));
 
 	// Check normal eligibility
-	auto normal_permit = policy.vote_normal (txn, *open1);
+	auto normal_permit = policy.vote (txn, *open1);
 	ASSERT_TRUE (normal_permit);
 
 	// Check final eligibility
@@ -1387,7 +1473,7 @@ TEST (voting_policy, pruned_dependency)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, open1));
 
 	// Pruned source should satisfy dependency check
-	ASSERT_TRUE (policy.vote_normal (txn, *open1));
+	ASSERT_TRUE (policy.vote (txn, *open1));
 	ASSERT_TRUE (policy.vote_final (txn, *open1));
 	ASSERT_TRUE (policy.reply_final (txn, *open1));
 }
@@ -1448,8 +1534,11 @@ TEST (voting_policy, final_vote_fork_safety)
 	ASSERT_TRUE (fork_reply);
 	ASSERT_EQ (fork_reply->hash (), send1a->hash ());
 
-	// Normal vote is also denied for the fork
-	ASSERT_FALSE (policy.vote_normal (txn, *send1b));
+	// Normal vote for the fork upgrades to final with the originally recorded hash
+	auto normal_fork = policy.vote (txn, *send1b);
+	ASSERT_TRUE (normal_fork);
+	ASSERT_EQ (normal_fork->hash (), send1a->hash ());
+	ASSERT_EQ (normal_fork->type (), nano::vote_type::final);
 
 	// Rollback fork and confirm original block is still votable
 	ASSERT_FALSE (ledger.rollback (txn, send1b->hash ()));

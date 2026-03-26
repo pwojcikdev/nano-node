@@ -105,7 +105,7 @@ void nano::vote_generator::process_batch (std::deque<queue_entry_t> & batch)
 			auto block = ledger.any.block_get (transaction, hash);
 			if (block)
 			{
-				if (auto permit = policy.vote_normal (transaction, *block))
+				if (auto permit = policy.vote (transaction, *block))
 				{
 					verified.push_back (*permit);
 				}
