@@ -17,6 +17,10 @@
 
 #include <chrono>
 
+/*
+ * vote_generator
+ */
+
 nano::vote_generator::vote_generator (vote_generator_config const & config_a, nano::node & node_a, nano::voting_policy & policy_a, nano::ledger & ledger_a, nano::wallets & wallets_a, nano::vote_processor & vote_processor_a, nano::local_vote_history & history_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a, bool is_final_a, std::shared_ptr<nano::transport::channel> inproc_channel_a) :
 	config (config_a),
 	node (node_a),
@@ -265,4 +269,43 @@ nano::error nano::vote_generator_config::deserialize (nano::tomlconfig & toml)
 	toml.get_duration ("delay", delay);
 
 	return toml.get_error ();
+}
+
+/*
+ * vote_broadcast_index
+ */
+
+bool nano::vote_broadcast_index::push (nano::qualified_root const & root, nano::vote_permit permit)
+{
+	auto & sequenced = entries.get<tag_sequenced> ();
+	auto result = sequenced.push_back ({ root, permit });
+	return result.second;
+}
+
+bool nano::vote_broadcast_index::erase (nano::qualified_root const & root)
+{
+	auto & by_root = entries.get<tag_root> ();
+	return by_root.erase (root) > 0;
+}
+
+std::deque<nano::vote_permit> nano::vote_broadcast_index::next_batch (size_t count)
+{
+	auto & sequenced = entries.get<tag_sequenced> ();
+	std::deque<nano::vote_permit> batch;
+	while (!sequenced.empty () && batch.size () < count)
+	{
+		batch.push_back (sequenced.front ().permit);
+		sequenced.pop_front ();
+	}
+	return batch;
+}
+
+size_t nano::vote_broadcast_index::size () const
+{
+	return entries.size ();
+}
+
+bool nano::vote_broadcast_index::empty () const
+{
+	return entries.empty ();
 }

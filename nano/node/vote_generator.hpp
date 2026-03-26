@@ -36,6 +36,47 @@ public:
 	std::chrono::milliseconds delay{ 100ms };
 };
 
+/**
+ * Holds vote permits in FIFO order with deduplication by root
+ * Provides batch extraction from the front
+ */
+class vote_broadcast_index final
+{
+public:
+	/// Insert a permit keyed by root. If a permit for the same root already exists, the new one is dropped
+	bool push (nano::qualified_root const & root, nano::vote_permit permit);
+
+	/// Remove the entry for the given root. Returns true if erased
+	bool erase (nano::qualified_root const & root);
+
+	/// Remove and return up to `count` entries from the front (FIFO order)
+	std::deque<nano::vote_permit> next_batch (size_t count);
+
+	size_t size () const;
+	bool empty () const;
+
+private:
+	struct entry
+	{
+		nano::qualified_root root;
+		nano::vote_permit permit;
+	};
+
+	// clang-format off
+	class tag_sequenced {};
+	class tag_root {};
+
+	using ordered_entries = boost::multi_index_container<entry,
+	mi::indexed_by<
+		mi::sequenced<mi::tag<tag_sequenced>>,
+		mi::hashed_unique<mi::tag<tag_root>,
+			mi::member<entry, nano::qualified_root, &entry::root>>
+	>>;
+	// clang-format on
+
+	ordered_entries entries;
+};
+
 class vote_generator final
 {
 private:
