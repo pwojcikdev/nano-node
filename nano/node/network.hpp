@@ -112,8 +112,8 @@ public:
 
 	size_t flood_vote (std::shared_ptr<nano::vote> const &, nano::transport::traffic_type, bool rebroadcasted = false) const;
 	size_t flood_vote_all (std::shared_ptr<nano::vote> const &, nano::transport::traffic_type, bool rebroadcasted = false) const;
-	size_t flood_vote_pr (std::shared_ptr<nano::vote> const &) const;
-	size_t flood_vote_non_pr (std::shared_ptr<nano::vote> const &, float scale) const;
+	size_t flood_vote_pr (std::shared_ptr<nano::vote> const &, nano::transport::traffic_type = nano::transport::traffic_type::vote) const;
+	size_t flood_vote_non_pr (std::shared_ptr<nano::vote> const &, float scale, nano::transport::traffic_type = nano::transport::traffic_type::vote) const;
 
 	// Flood block to a random selection of peers
 	size_t flood_block (std::shared_ptr<nano::block> const &, nano::transport::traffic_type) const;

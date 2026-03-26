@@ -1,4 +1,6 @@
+#include <nano/lib/assert.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/config.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
@@ -35,6 +37,12 @@ nano::block_hash const & nano::vote_permit::hash () const
 nano::vote_type nano::vote_permit::type () const
 {
 	return type_m;
+}
+
+nano::vote_permit nano::vote_permit::dummy (nano::qualified_root const & root, nano::block_hash const & hash, nano::vote_type type)
+{
+	release_assert (nano::is_dev_run ());
+	return nano::vote_permit{ root, hash, type };
 }
 
 /*

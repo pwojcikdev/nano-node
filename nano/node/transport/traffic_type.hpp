@@ -19,6 +19,8 @@ enum class traffic_type
 	confirmation_requests,
 	keepalive,
 	vote,
+	vote_normal,
+	vote_final,
 	vote_rebroadcast,
 	vote_reply,
 	rep_crawler,

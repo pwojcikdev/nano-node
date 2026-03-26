@@ -61,11 +61,17 @@ std::string nano::thread_role::get_string (nano::thread_role::name role)
 		case nano::thread_role::name::bootstrap_connections:
 			thread_role_name_string = "Bootstrap conn";
 			break;
-		case nano::thread_role::name::voting:
-			thread_role_name_string = "Voting";
+		case nano::thread_role::name::voting_normal_processing:
+			thread_role_name_string = "Vote norm proc";
 			break;
-		case nano::thread_role::name::voting_final:
-			thread_role_name_string = "Voting final";
+		case nano::thread_role::name::voting_final_processing:
+			thread_role_name_string = "Vote fin proc";
+			break;
+		case nano::thread_role::name::voting_normal_broadcast:
+			thread_role_name_string = "Vote norm bcast";
+			break;
+		case nano::thread_role::name::voting_final_broadcast:
+			thread_role_name_string = "Vote fin bcast";
 			break;
 		case nano::thread_role::name::signature_checking:
 			thread_role_name_string = "Signature check";

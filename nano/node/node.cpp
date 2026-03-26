@@ -178,10 +178,8 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	vote_cache_processor{ *vote_cache_processor_impl },
 	voting_policy_impl{ std::make_unique<nano::voting_policy> (ledger) },
 	voting_policy{ *voting_policy_impl },
-	generator_impl{ std::make_unique<nano::vote_generator> (config.vote_generator, *this, voting_policy, ledger, wallets, vote_processor, history, network, stats, logger, /* non-final */ false, loopback_channel) },
-	generator{ *generator_impl },
-	final_generator_impl{ std::make_unique<nano::vote_generator> (config.vote_generator, *this, voting_policy, ledger, wallets, vote_processor, history, network, stats, logger, /* final */ true, loopback_channel) },
-	final_generator{ *final_generator_impl },
+	vote_generator_impl{ std::make_unique<nano::vote_generator> (config.vote_generator, voting_policy, ledger, wallets, vote_processor, network, stats, logger, loopback_channel) },
+	vote_generator{ *vote_generator_impl },
 	scheduler_impl{ std::make_unique<nano::scheduler::component> (config, *this, ledger, ledger_notifications, bucketing, active, online_reps, vote_cache, cementing_set, stats, logger) },
 	scheduler{ *scheduler_impl },
 	vote_replier_impl{ std::make_unique<nano::vote_replier> (config.vote_replier, voting_policy, ledger, wallets, network_params.network, stats, logger, config.enable_voting) },
@@ -543,8 +541,7 @@ void nano::node::start ()
 	ledger_notifications.start ();
 	block_processor.start ();
 	active.start ();
-	generator.start ();
-	final_generator.start ();
+	vote_generator.start ();
 	cementing_set.start ();
 	scheduler.start ();
 	vote_replier.start ();
@@ -597,8 +594,7 @@ void nano::node::stop ()
 	rep_tiers.stop ();
 	scheduler.stop ();
 	active.stop ();
-	generator.stop ();
-	final_generator.stop ();
+	vote_generator.stop ();
 	cementing_set.stop ();
 	ledger_notifications.stop ();
 	telemetry.stop ();
@@ -967,8 +963,7 @@ nano::container_info nano::node::container_info () const
 	info.add ("scheduler", scheduler.container_info ());
 	info.add ("vote_cache", vote_cache.container_info ());
 	info.add ("vote_router", vote_router.container_info ());
-	info.add ("generator", generator.container_info ());
-	info.add ("final_generator", final_generator.container_info ());
+	info.add ("vote_generator", vote_generator.container_info ());
 	info.add ("bootstrap", bootstrap.container_info ());
 	info.add ("unchecked", unchecked.container_info ());
 	info.add ("local_block_broadcaster", local_block_broadcaster.container_info ());

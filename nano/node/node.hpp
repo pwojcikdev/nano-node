@@ -181,10 +181,8 @@ public:
 	nano::vote_cache_processor & vote_cache_processor;
 	std::unique_ptr<nano::voting_policy> voting_policy_impl;
 	nano::voting_policy & voting_policy;
-	std::unique_ptr<nano::vote_generator> generator_impl;
-	nano::vote_generator & generator;
-	std::unique_ptr<nano::vote_generator> final_generator_impl;
-	nano::vote_generator & final_generator;
+	std::unique_ptr<nano::vote_generator> vote_generator_impl;
+	nano::vote_generator & vote_generator;
 	std::unique_ptr<nano::scheduler::component> scheduler_impl;
 	nano::scheduler::component & scheduler;
 	std::unique_ptr<nano::vote_replier> vote_replier_impl;

@@ -2116,7 +2116,7 @@ TEST (node, vote_by_hash_bundle)
 
 	for (auto const & block : blocks)
 	{
-		system.nodes[0]->generator.add (block->root (), block->hash ());
+		system.nodes[0]->vote_generator.vote_normal (block->qualified_root (), block->hash (), 0);
 	}
 
 	// Verify that bundling occurs. While reaching 12 should be common on most hardware in release mode,

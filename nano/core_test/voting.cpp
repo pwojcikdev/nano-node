@@ -66,11 +66,8 @@ TEST (vote_generator, cache)
 	auto & node (*system.nodes[0]);
 	auto epoch1 = system.upgrade_genesis_epoch (node, nano::epoch::epoch_1);
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	node.generator.add (epoch1->root (), epoch1->hash ());
-	ASSERT_TIMELY (1s, !node.history.votes (epoch1->root (), epoch1->hash ()).empty ());
-	auto votes (node.history.votes (epoch1->root (), epoch1->hash ()));
-	ASSERT_FALSE (votes.empty ());
-	ASSERT_TRUE (std::any_of (votes[0]->hashes.begin (), votes[0]->hashes.end (), [hash = epoch1->hash ()] (nano::block_hash const & hash_a) { return hash_a == hash; }));
+	node.vote_generator.vote_normal (epoch1->qualified_root (), epoch1->hash (), 0);
+	ASSERT_TIMELY_EQ (3s, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts), 1);
 }
 
 TEST (vote_generator, multiple_representatives)
@@ -99,15 +96,7 @@ TEST (vote_generator, multiple_representatives)
 	auto hash = wallet.send_sync (nano::dev::genesis_key.pub, nano::dev::genesis_key.pub, 1);
 	auto send = node.block (hash);
 	ASSERT_NE (nullptr, send);
-	ASSERT_TIMELY_EQ (5s, node.history.votes (send->root (), send->hash ()).size (), 4);
-	auto votes (node.history.votes (send->root (), send->hash ()));
-	for (auto const & account : { key1.pub, key2.pub, key3.pub, nano::dev::genesis_key.pub })
-	{
-		auto existing (std::find_if (votes.begin (), votes.end (), [&account] (std::shared_ptr<nano::vote> const & vote_a) -> bool {
-			return vote_a->account == account;
-		}));
-		ASSERT_NE (votes.end (), existing);
-	}
+	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts), 4);
 }
 
 TEST (vote_spacing, basic)
@@ -143,89 +132,4 @@ TEST (vote_spacing, prune)
 	ASSERT_EQ (1, spacing.size ());
 }
 
-TEST (vote_spacing, vote_generator)
-{
-	nano::node_config config;
-	config.backlog_scan.enable = false;
-	config.active_elections.hinted_limit_percentage = 0; // Disable election hinting
-	nano::test::system system;
-	nano::node_flags node_flags;
-	node_flags.disable_search_pending = true;
-	auto & node = *system.add_node (config, node_flags);
-	auto & wallet = *system.wallet (0);
-	wallet.insert_adhoc (nano::dev::genesis_key.prv);
-	nano::state_block_builder builder;
-	auto send1 = builder.make_block ()
-				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
-				 .representative (nano::dev::genesis_key.pub)
-				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
-				 .link (nano::dev::genesis_key.pub)
-				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
-				 .build ();
-	auto send2 = builder.make_block ()
-				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
-				 .representative (nano::dev::genesis_key.pub)
-				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio - 1)
-				 .link (nano::dev::genesis_key.pub)
-				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
-				 .build ();
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1));
-	ASSERT_EQ (0, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts));
-	node.generator.add (nano::dev::genesis->hash (), send1->hash ());
-	ASSERT_TIMELY_EQ (3s, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts), 1);
-	ASSERT_FALSE (node.ledger.rollback (node.ledger.tx_begin_write (), send1->hash ()));
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send2));
-	node.generator.add (nano::dev::genesis->hash (), send2->hash ());
-	ASSERT_TIMELY_EQ (3s, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_spacing), 1);
-	ASSERT_EQ (1, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts));
-	std::this_thread::sleep_for (config.network_params.voting.delay);
-	node.generator.add (nano::dev::genesis->hash (), send2->hash ());
-	ASSERT_TIMELY_EQ (3s, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts), 2);
-}
-
-TEST (vote_spacing, rapid)
-{
-	nano::node_config config;
-	config.backlog_scan.enable = false;
-	config.active_elections.hinted_limit_percentage = 0; // Disable election hinting
-	nano::test::system system;
-	nano::node_flags node_flags;
-	node_flags.disable_search_pending = true;
-	auto & node = *system.add_node (config, node_flags);
-	auto & wallet = *system.wallet (0);
-	wallet.insert_adhoc (nano::dev::genesis_key.prv);
-	nano::state_block_builder builder;
-	auto send1 = builder.make_block ()
-				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
-				 .representative (nano::dev::genesis_key.pub)
-				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
-				 .link (nano::dev::genesis_key.pub)
-				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
-				 .build ();
-	auto send2 = builder.make_block ()
-				 .account (nano::dev::genesis_key.pub)
-				 .previous (nano::dev::genesis->hash ())
-				 .representative (nano::dev::genesis_key.pub)
-				 .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio - 1)
-				 .link (nano::dev::genesis_key.pub)
-				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				 .work (*system.work.generate (nano::dev::genesis->hash ()))
-				 .build ();
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send1));
-	node.generator.add (nano::dev::genesis->hash (), send1->hash ());
-	ASSERT_TIMELY_EQ (3s, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts), 1);
-	ASSERT_FALSE (node.ledger.rollback (node.ledger.tx_begin_write (), send1->hash ()));
-	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send2));
-	node.generator.add (nano::dev::genesis->hash (), send2->hash ());
-	ASSERT_TIMELY_EQ (3s, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_spacing), 1);
-	ASSERT_TIMELY_EQ (3s, 1, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts));
-	std::this_thread::sleep_for (config.network_params.voting.delay);
-	node.generator.add (nano::dev::genesis->hash (), send2->hash ());
-	ASSERT_TIMELY_EQ (3s, node.stats.count (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts), 2);
-}
+// vote_spacing integration tests removed — vote_spacing is no longer part of vote_generator

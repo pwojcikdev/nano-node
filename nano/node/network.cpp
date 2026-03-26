@@ -413,11 +413,9 @@ size_t nano::network::flood_vote_all (std::shared_ptr<nano::vote> const & vote, 
 	return flood_message_all (message, type);
 }
 
-size_t nano::network::flood_vote_non_pr (std::shared_ptr<nano::vote> const & vote, float scale) const
+size_t nano::network::flood_vote_non_pr (std::shared_ptr<nano::vote> const & vote, float scale, nano::transport::traffic_type type) const
 {
 	nano::messages::confirm_ack message{ node.network_params.network, vote };
-
-	auto const type = transport::traffic_type::vote;
 
 	auto channels = list_non_pr (fanout (scale), [type] (auto const & channel) {
 		return !channel->max (type); // Only use channels that are not full for this traffic type
@@ -432,11 +430,9 @@ size_t nano::network::flood_vote_non_pr (std::shared_ptr<nano::vote> const & vot
 	return result;
 }
 
-size_t nano::network::flood_vote_pr (std::shared_ptr<nano::vote> const & vote) const
+size_t nano::network::flood_vote_pr (std::shared_ptr<nano::vote> const & vote, nano::transport::traffic_type type) const
 {
 	nano::messages::confirm_ack message{ node.network_params.network, vote };
-
-	auto const type = nano::transport::traffic_type::vote;
 
 	size_t result = 0;
 	for (auto const & channel : node.rep_crawler.principal_representatives ())
