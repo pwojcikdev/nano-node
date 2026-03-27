@@ -275,8 +275,17 @@ nano::error nano::vote_generator_config::deserialize (nano::tomlconfig & toml)
  * vote_broadcast_index
  */
 
+nano::vote_broadcast_index::vote_broadcast_index (size_t max_size) :
+	max_size{ max_size }
+{
+}
+
 bool nano::vote_broadcast_index::push (nano::qualified_root const & root, nano::vote_permit permit)
 {
+	if (entries.size () >= max_size)
+	{
+		return false;
+	}
 	auto & sequenced = entries.get<tag_sequenced> ();
 	auto [it, inserted] = sequenced.push_back ({ root, permit });
 	return inserted;

@@ -72,6 +72,8 @@ private:
 class vote_broadcast_index final
 {
 public:
+	explicit vote_broadcast_index (size_t max_size);
+
 	/// Insert a permit keyed by root. If a permit for the same root already exists, the new one is dropped
 	bool push (nano::qualified_root const & root, nano::vote_permit permit);
 
@@ -85,6 +87,8 @@ public:
 	bool empty () const;
 
 private:
+	size_t const max_size;
+
 	struct entry
 	{
 		nano::qualified_root root;

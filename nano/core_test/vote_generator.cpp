@@ -5,7 +5,7 @@
 
 TEST (vote_broadcast_index, fifo_order_and_dedup)
 {
-	nano::vote_broadcast_index index;
+	nano::vote_broadcast_index index{ 1024 };
 	auto permit = nano::vote_permit::dummy (nano::vote_type::normal);
 
 	nano::qualified_root root1{ 1, 0 };
@@ -27,7 +27,7 @@ TEST (vote_broadcast_index, fifo_order_and_dedup)
 
 TEST (vote_broadcast_index, erase_and_reinsert)
 {
-	nano::vote_broadcast_index index;
+	nano::vote_broadcast_index index{ 1024 };
 	auto permit = nano::vote_permit::dummy (nano::vote_type::normal);
 
 	nano::qualified_root root1{ 1, 0 };
