@@ -282,6 +282,16 @@ nano::vote_broadcast_index::vote_broadcast_index (size_t max_size) :
 
 bool nano::vote_broadcast_index::push (nano::qualified_root const & root, nano::vote_permit permit)
 {
+	auto & by_root = entries.get<tag_root> ();
+	if (auto existing = by_root.find (root); existing != by_root.end ())
+	{
+		if (existing->permit.hash () == permit.hash ())
+		{
+			return false; // Duplicate
+		}
+		// Conflict: different hash for same root, replace old entry
+		by_root.erase (existing);
+	}
 	if (entries.size () >= max_size)
 	{
 		return false;

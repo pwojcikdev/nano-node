@@ -74,7 +74,7 @@ class vote_broadcast_index final
 public:
 	explicit vote_broadcast_index (size_t max_size);
 
-	/// Insert a permit keyed by root. If a permit for the same root already exists, the new one is dropped
+	/// Insert a permit keyed by root. If same root+hash exists, the new one is dropped. If same root but different hash (conflict), the old entry is replaced.
 	bool push (nano::qualified_root const & root, nano::vote_permit permit);
 
 	/// Remove the entry for the given root. Returns true if erased
