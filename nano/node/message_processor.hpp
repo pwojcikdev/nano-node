@@ -3,7 +3,7 @@
 #include <nano/lib/interval.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/threading.hpp>
-#include <nano/node/fair_queue.hpp>
+#include <nano/node/fair_queue_traits.hpp>
 #include <nano/node/fwd.hpp>
 
 #include <thread>
@@ -51,7 +51,7 @@ private: // Dependencies
 
 private:
 	using entry_t = std::pair<std::unique_ptr<nano::messages::message>, std::shared_ptr<nano::transport::channel>>;
-	nano::fair_queue<entry_t, nano::no_value> queue;
+	nano::fair_queue<entry_t, nano::no_value, std::shared_ptr<nano::transport::channel>> queue;
 
 	std::atomic<bool> stopped{ false };
 	mutable nano::mutex mutex;
