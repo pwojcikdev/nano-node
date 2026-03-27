@@ -4,8 +4,10 @@
 #include <nano/lib/locks.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/processing_queue.hpp>
 #include <nano/lib/utility.hpp>
+#include <nano/node/fair_queue.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/voting_policy.hpp>
@@ -19,6 +21,7 @@
 #include <condition_variable>
 #include <deque>
 #include <thread>
+#include <unordered_map>
 
 namespace mi = boost::multi_index;
 
@@ -34,6 +37,32 @@ public:
 	size_t max_queue{ 1024 * 32 };
 	size_t batch_size{ 256 };
 	std::chrono::milliseconds delay{ 100ms };
+};
+
+/**
+ * Fair queue over balance buckets with deduplication by root
+ * Replaces existing entry when a new hash arrives for the same root
+ * Holds ca
+ */
+class vote_generator_index final
+{
+public:
+	using entry = std::pair<nano::root, nano::block_hash>;
+
+	explicit vote_generator_index (size_t max_size_per_bucket);
+
+	/// Push a request. Returns true if added or replaced, false if duplicate (same root+hash) or queue full
+	bool push (nano::bucket_index bucket, nano::root const & root, nano::block_hash const & hash);
+
+	/// Remove and return up to `count` valid entries (stale entries from replacements are skipped)
+	std::deque<entry> next_batch (size_t count);
+
+	size_t size () const;
+	bool empty () const;
+
+private:
+	nano::fair_queue<entry, nano::bucket_index> queue;
+	std::unordered_map<nano::root, nano::block_hash> dedup;
 };
 
 /**

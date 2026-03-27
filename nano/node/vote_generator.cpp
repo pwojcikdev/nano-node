@@ -278,8 +278,8 @@ nano::error nano::vote_generator_config::deserialize (nano::tomlconfig & toml)
 bool nano::vote_broadcast_index::push (nano::qualified_root const & root, nano::vote_permit permit)
 {
 	auto & sequenced = entries.get<tag_sequenced> ();
-	auto result = sequenced.push_back ({ root, permit });
-	return result.second;
+	auto [it, inserted] = sequenced.push_back ({ root, permit });
+	return inserted;
 }
 
 bool nano::vote_broadcast_index::erase (nano::qualified_root const & root)
@@ -308,4 +308,77 @@ size_t nano::vote_broadcast_index::size () const
 bool nano::vote_broadcast_index::empty () const
 {
 	return entries.empty ();
+}
+
+/*
+ * vote_generator_index
+ */
+
+nano::vote_generator_index::vote_generator_index (size_t max_size_per_bucket)
+{
+	queue.max_size_query = [max_size_per_bucket] (auto const &) {
+		return max_size_per_bucket;
+	};
+	queue.priority_query = [] (auto const &) {
+		return size_t{ 1 };
+	};
+}
+
+bool nano::vote_generator_index::push (nano::bucket_index bucket, nano::root const & root, nano::block_hash const & hash)
+{
+	if (auto existing = dedup.find (root); existing != dedup.end ())
+	{
+		if (existing->second == hash)
+		{
+			return false; // Duplicate
+		}
+		else
+		{
+			// Different hash for same root
+			// Update dedup (old becomes stale)
+			existing->second = hash;
+			bool added = queue.push ({ root, hash }, { bucket });
+			return added;
+		}
+	}
+	else
+	{
+		// New root
+		if (queue.push ({ root, hash }, { bucket }))
+		{
+			dedup.emplace (root, hash);
+			return true;
+		}
+	}
+	return false; // Queue full
+}
+
+auto nano::vote_generator_index::next_batch (size_t count) -> std::deque<entry>
+{
+	std::deque<entry> result;
+	while (result.size () < count && !queue.empty ())
+	{
+		auto [item, origin] = queue.next ();
+		auto const & [root, hash] = item;
+
+		// Check if the item is still valid (not stale from a later replacement)
+		auto existing = dedup.find (root);
+		if (existing != dedup.end () && existing->second == hash)
+		{
+			dedup.erase (existing);
+			result.push_back (item);
+		}
+		// Otherwise stale — skip
+	}
+	return result;
+}
+
+size_t nano::vote_generator_index::size () const
+{
+	return dedup.size ();
+}
+
+bool nano::vote_generator_index::empty () const
+{
+	return dedup.empty ();
 }
