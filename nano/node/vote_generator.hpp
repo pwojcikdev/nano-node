@@ -47,12 +47,12 @@ public:
 class vote_generator_index final
 {
 public:
-	using entry = std::pair<nano::root, nano::block_hash>;
+	using entry = std::pair<nano::qualified_root, nano::block_hash>;
 
 	explicit vote_generator_index (size_t max_size_per_bucket);
 
 	/// Push a request. Returns true if added or replaced, false if duplicate (same root+hash) or queue full
-	bool push (nano::bucket_index bucket, nano::root const & root, nano::block_hash const & hash);
+	bool push (nano::qualified_root const & root, nano::block_hash const & hash, nano::bucket_index bucket);
 
 	/// Remove and return up to `count` valid entries (stale entries from replacements are skipped)
 	std::deque<entry> next_batch (size_t count);
@@ -62,7 +62,7 @@ public:
 
 private:
 	nano::fair_queue<entry, nano::bucket_index> queue;
-	std::unordered_map<nano::root, nano::block_hash> dedup;
+	std::unordered_map<nano::qualified_root, nano::block_hash> dedup;
 };
 
 /**

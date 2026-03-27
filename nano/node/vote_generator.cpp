@@ -343,7 +343,7 @@ nano::vote_generator_index::vote_generator_index (size_t max_size_per_bucket)
 	};
 }
 
-bool nano::vote_generator_index::push (nano::bucket_index bucket, nano::root const & root, nano::block_hash const & hash)
+bool nano::vote_generator_index::push (nano::qualified_root const & root, nano::block_hash const & hash, nano::bucket_index bucket)
 {
 	if (auto existing = dedup.find (root); existing != dedup.end ())
 	{
