@@ -3,7 +3,7 @@
 #include <nano/lib/interval.hpp>
 #include <nano/node/block_context.hpp>
 #include <nano/node/block_source.hpp>
-#include <nano/node/fair_queue.hpp>
+#include <nano/node/fair_queue_traits.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/secure/common.hpp>
 
@@ -91,7 +91,7 @@ private:
 	double backlog_factor () const;
 
 private:
-	nano::fair_queue<nano::block_context, nano::block_source> queue;
+	nano::fair_queue<nano::block_context, nano::block_source, std::shared_ptr<nano::transport::channel>> queue;
 
 	bool stopped{ false };
 	nano::condition_variable condition;

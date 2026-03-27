@@ -4,7 +4,7 @@
 #include <nano/lib/observer_set.hpp>
 #include <nano/lib/rate_limiting.hpp>
 #include <nano/messages/messages.hpp>
-#include <nano/node/fair_queue.hpp>
+#include <nano/node/fair_queue_traits.hpp>
 #include <nano/node/fwd.hpp>
 
 #include <atomic>
@@ -93,7 +93,7 @@ private: // Dependencies
 	nano::stats & stats;
 
 private:
-	nano::fair_queue<request_t, nano::no_value> queue;
+	nano::fair_queue<request_t, nano::no_value, std::shared_ptr<nano::transport::channel>> queue;
 	nano::rate_limiter limiter;
 
 	std::atomic<bool> stopped{ false };

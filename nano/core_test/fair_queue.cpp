@@ -1,4 +1,4 @@
-#include <nano/node/fair_queue.hpp>
+#include <nano/node/fair_queue_traits.hpp>
 #include <nano/node/transport/fake.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
@@ -45,7 +45,7 @@ TEST (fair_queue, process_one)
 	auto [result, origin] = queue.next ();
 	ASSERT_EQ (result, 7);
 	ASSERT_EQ (origin.source, source_enum::live);
-	ASSERT_EQ (origin.channel, nullptr);
+	ASSERT_EQ (origin.channel, std::monostate{});
 
 	ASSERT_TRUE (queue.empty ());
 }
@@ -190,7 +190,7 @@ TEST (fair_queue, source_channel)
 {
 	nano::test::system system{ 1 };
 
-	nano::fair_queue<int, source_enum> queue;
+	nano::fair_queue<int, source_enum, std::shared_ptr<nano::transport::channel>> queue;
 	queue.priority_query = [] (auto const &) { return 1; };
 	queue.max_size_query = [] (auto const &) { return 999; };
 
@@ -243,7 +243,7 @@ TEST (fair_queue, cleanup)
 {
 	nano::test::system system{ 1 };
 
-	nano::fair_queue<int, source_enum> queue;
+	nano::fair_queue<int, source_enum, std::shared_ptr<nano::transport::channel>> queue;
 	queue.priority_query = [] (auto const &) { return 1; };
 	queue.max_size_query = [] (auto const &) { return 999; };
 

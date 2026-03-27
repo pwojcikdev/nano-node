@@ -4,7 +4,7 @@
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/threading.hpp>
-#include <nano/node/fair_queue.hpp>
+#include <nano/node/fair_queue_traits.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/transport/channel.hpp>
 #include <nano/node/transport/transport.hpp>
@@ -67,7 +67,7 @@ private: // Dependencies
 
 private:
 	using value_type = std::pair<request_type, std::shared_ptr<nano::transport::channel>>;
-	nano::fair_queue<value_type, nano::no_value> queue;
+	nano::fair_queue<value_type, nano::no_value, std::shared_ptr<nano::transport::channel>> queue;
 
 	bool const enabled;
 	bool stopped{ false };

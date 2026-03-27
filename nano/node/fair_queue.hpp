@@ -1,20 +1,30 @@
 #pragma once
 
 #include <nano/lib/utility.hpp>
-#include <nano/node/transport/channel.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <deque>
 #include <functional>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <tuple>
 #include <utility>
+#include <variant>
 
 namespace nano
 {
-template <typename Request, typename Source>
+template <typename Channel>
+struct fair_queue_traits
+{
+	static bool alive (Channel const &)
+	{
+		return true;
+	}
+};
+
+template <typename Request, typename Source, typename Channel = std::monostate>
 class fair_queue final
 {
 public:
@@ -24,30 +34,15 @@ public:
 	struct origin
 	{
 		Source source;
+		Channel channel;
 
-		// This can be null for some sources (eg. local RPC) to indicate that the source is not associated with a channel.
-		std::shared_ptr<nano::transport::channel> channel;
-
-		origin (Source source, std::shared_ptr<nano::transport::channel> channel = nullptr) :
+		origin (Source source, Channel channel = Channel{}) :
 			source{ source },
 			channel{ std::move (channel) }
 		{
 		}
 
 		origin (origin const & origin) = default;
-
-		bool alive () const
-		{
-			if (channel)
-			{
-				return channel->alive ();
-			}
-			else
-			{
-				// Some sources (eg. local RPC) don't have an associated channel, never remove their queue
-				return true;
-			}
-		}
 
 		auto operator<=> (origin const & other) const = default;
 	};
@@ -190,15 +185,17 @@ public:
 public:
 	using max_size_query_t = std::function<size_t (origin_type const &)>;
 	using priority_query_t = std::function<size_t (origin_type const &)>;
+	using alive_query_t = std::function<bool (origin_type const &)>;
 
 	max_size_query_t max_size_query{ [] (auto const & origin) { debug_assert (false, "max_size_query callback empty"); return 0; } };
 	priority_query_t priority_query{ [] (auto const & origin) { debug_assert (false, "priority_query callback empty"); return 0; } };
+	alive_query_t alive_query{ [] (auto const & origin) { return fair_queue_traits<Channel>::alive (origin.channel); } };
 
 public:
 	value_type next ()
 	{
 		release_assert (!empty ()); // Should be checked before calling next
-		debug_assert ((std::chrono::steady_clock::now () - last_update) < 60s); // The queue should be cleaned up periodically
+		debug_assert ((std::chrono::steady_clock::now () - last_update) < std::chrono::seconds{ 60 }); // The queue should be cleaned up periodically
 
 		if (should_seek ())
 		{
@@ -273,8 +270,8 @@ private:
 		iterator = queues.end ();
 
 		// Only removing empty queues, no need to update the `total size` counter
-		erase_if (queues, [] (auto const & entry) {
-			return entry.second.empty () && !entry.first.alive ();
+		erase_if (queues, [this] (auto const & entry) {
+			return entry.second.empty () && !alive_query (entry.first);
 		});
 	}
 

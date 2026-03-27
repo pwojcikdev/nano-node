@@ -4,7 +4,7 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/lib/utility.hpp>
-#include <nano/node/fair_queue.hpp>
+#include <nano/node/fair_queue_traits.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/rep_tiers.hpp>
 #include <nano/node/vote_router.hpp>
@@ -75,7 +75,7 @@ private:
 
 private:
 	using entry_t = std::pair<std::shared_ptr<nano::vote>, nano::vote_source>;
-	nano::fair_queue<entry_t, nano::rep_tier> queue;
+	nano::fair_queue<entry_t, nano::rep_tier, std::shared_ptr<nano::transport::channel>> queue;
 
 private:
 	bool stopped{ false };
