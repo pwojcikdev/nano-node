@@ -15,6 +15,221 @@
 #include <chrono>
 
 /*
+ * vote_generator
+ */
+
+nano::vote_generator::vote_generator (vote_generator_config const & config_a, nano::voting_policy & policy_a, nano::ledger & ledger_a, nano::wallets & wallets_a, nano::vote_processor & vote_processor_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a, std::shared_ptr<nano::transport::channel> inproc_channel_a) :
+	config{ config_a },
+	policy{ policy_a },
+	ledger{ ledger_a },
+	wallets{ wallets_a },
+	vote_processor{ vote_processor_a },
+	network{ network_a },
+	stats{ stats_a },
+	logger{ logger_a },
+	inproc_channel{ inproc_channel_a },
+	normal_verifier{ config_a.max_queue, config_a.batch_size, config_a.normal_threads, nano::thread_role::name::voting_normal_processing },
+	normal_broadcaster{ config_a.max_queue, nano::network::confirm_ack_hashes_max, config_a.delay, nano::thread_role::name::voting_normal_broadcast },
+	final_verifier{ config_a.max_queue, config_a.batch_size, /* single threaded */ 1, nano::thread_role::name::voting_final_processing },
+	final_broadcaster{ config_a.max_queue, nano::network::confirm_ack_hashes_max, config_a.delay, nano::thread_role::name::voting_final_broadcast }
+{
+	normal_verifier.process_batch = [this] (auto batch) { process_normal (std::move (batch)); };
+	final_verifier.process_batch = [this] (auto batch) { process_final (std::move (batch)); };
+	normal_broadcaster.broadcast_batch = [this] (auto batch) { broadcast_normal (std::move (batch)); };
+	final_broadcaster.broadcast_batch = [this] (auto batch) { broadcast_final (std::move (batch)); };
+}
+
+nano::vote_generator::~vote_generator () = default;
+
+void nano::vote_generator::process_normal (std::deque<vote_verifier::entry> batch)
+{
+	std::deque<nano::vote_permit> verified;
+	auto transaction = ledger.tx_begin_read ();
+	for (auto & [qroot, hash] : batch)
+	{
+		transaction.refresh_if_needed ();
+
+		auto block = ledger.any.block_get (transaction, hash);
+		if (block)
+		{
+			if (auto permit = policy.vote (transaction, *block))
+			{
+				verified.push_back (*permit);
+			}
+		}
+	}
+	for (auto & p : verified)
+	{
+		normal_broadcaster.push (p.qualified_root (), std::move (p));
+	}
+}
+
+void nano::vote_generator::process_final (std::deque<vote_verifier::entry> batch)
+{
+	std::deque<nano::vote_permit> verified;
+	auto transaction = ledger.tx_begin_write (nano::store::writer::voting_final);
+	for (auto & [qroot, hash] : batch)
+	{
+		transaction.refresh_if_needed ();
+
+		auto block = ledger.any.block_get (transaction, hash);
+		if (block)
+		{
+			if (auto permit = policy.vote_final (transaction, *block))
+			{
+				verified.push_back (*permit);
+			}
+		}
+	}
+	for (auto & p : verified)
+	{
+		final_broadcaster.push (p.qualified_root (), std::move (p));
+	}
+}
+
+void nano::vote_generator::broadcast_normal (std::deque<nano::vote_permit> batch)
+{
+	std::vector<nano::vote_permit> permits;
+	for (auto & p : batch)
+	{
+		permits.push_back (std::move (p));
+	}
+	if (permits.empty ())
+	{
+		return;
+	}
+	auto votes = policy.sign (nano::vote_type::normal, permits, wallets.signer ());
+	for (auto const & vote : votes)
+	{
+		stats.inc (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts);
+		stats.sample (nano::stat::sample::vote_generator_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
+		broadcast_vote (vote);
+	}
+}
+
+void nano::vote_generator::broadcast_final (std::deque<nano::vote_permit> batch)
+{
+	std::vector<nano::vote_permit> permits;
+	for (auto & p : batch)
+	{
+		permits.push_back (std::move (p));
+	}
+	if (permits.empty ())
+	{
+		return;
+	}
+	auto votes = policy.sign (nano::vote_type::final, permits, wallets.signer ());
+	for (auto const & vote : votes)
+	{
+		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::generator_broadcasts);
+		stats.sample (nano::stat::sample::vote_generator_final_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
+		broadcast_vote (vote);
+	}
+}
+
+void nano::vote_generator::start ()
+{
+	normal_verifier.start ();
+	final_verifier.start ();
+	normal_broadcaster.start ();
+	final_broadcaster.start ();
+}
+
+void nano::vote_generator::stop ()
+{
+	normal_verifier.stop ();
+	final_verifier.stop ();
+	normal_broadcaster.stop ();
+	final_broadcaster.stop ();
+}
+
+void nano::vote_generator::vote (nano::qualified_root const & root, nano::block_hash const & hash, nano::bucket_index bucket, nano::vote_type type)
+{
+	switch (type)
+	{
+		case nano::vote_type::normal:
+			vote_normal (root, hash, bucket);
+			break;
+		case nano::vote_type::final:
+			vote_final (root, hash, bucket);
+			break;
+	}
+}
+
+void nano::vote_generator::vote_normal (nano::qualified_root const & root, nano::block_hash const & hash, nano::bucket_index bucket)
+{
+	if (normal_verifier.push (root, hash, bucket))
+	{
+		stats.inc (nano::stat::type::vote_generator, nano::stat::detail::queue);
+	}
+	else
+	{
+		stats.inc (nano::stat::type::vote_generator, nano::stat::detail::overfill);
+	}
+}
+
+void nano::vote_generator::vote_final (nano::qualified_root const & root, nano::block_hash const & hash, nano::bucket_index bucket)
+{
+	if (final_verifier.push (root, hash, bucket))
+	{
+		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::queue);
+	}
+	else
+	{
+		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::overfill);
+	}
+}
+
+void nano::vote_generator::broadcast_vote (std::shared_ptr<nano::vote> const & vote) const
+{
+	bool const is_final = vote->is_final ();
+	auto const traffic_type = is_final ? nano::transport::traffic_type::vote_final : nano::transport::traffic_type::vote_normal;
+	auto const stat_type = is_final ? nano::stat::type::vote_generator_final : nano::stat::type::vote_generator;
+
+	vote_processor.vote (vote, inproc_channel);
+
+	auto sent_pr = network.flood_vote_pr (vote, traffic_type);
+	auto sent_non_pr = network.flood_vote_non_pr (vote, 2.0f, traffic_type);
+
+	stats.add (stat_type, nano::stat::detail::sent_pr, sent_pr);
+	stats.add (stat_type, nano::stat::detail::sent_non_pr, sent_non_pr);
+}
+
+nano::container_info nano::vote_generator::container_info () const
+{
+	nano::container_info info;
+	info.put ("normal_verifier", normal_verifier.size ());
+	info.put ("normal_broadcaster", normal_broadcaster.size ());
+	info.put ("final_verifier", final_verifier.size ());
+	info.put ("final_broadcaster", final_broadcaster.size ());
+	return info;
+}
+
+/*
+ * vote_generator_config
+ */
+
+nano::error nano::vote_generator_config::serialize (nano::tomlconfig & toml) const
+{
+	toml.put ("max_queue", max_queue, "Maximum number of entries in the vote generation queue. \ntype:uint64");
+	toml.put ("batch_size", batch_size, "Maximum number of entries to process in a single batch. \ntype:uint64");
+	toml.put ("normal_threads", normal_threads, "Number of threads for normal vote processing. \ntype:uint64");
+	toml.put ("delay", delay.count (), "Delay before votes are sent to allow for efficient bundling of hashes in votes. \ntype:milliseconds");
+
+	return toml.get_error ();
+}
+
+nano::error nano::vote_generator_config::deserialize (nano::tomlconfig & toml)
+{
+	toml.get ("max_queue", max_queue);
+	toml.get ("batch_size", batch_size);
+	toml.get ("normal_threads", normal_threads);
+	toml.get_duration ("delay", delay);
+
+	return toml.get_error ();
+}
+
+/*
  * vote_verifier
  */
 
@@ -215,219 +430,6 @@ bool nano::vote_broadcaster::empty () const
 {
 	nano::lock_guard<nano::mutex> lock{ mutex };
 	return index.empty ();
-}
-
-/*
- * vote_generator
- */
-
-nano::vote_generator::vote_generator (vote_generator_config const & config_a, nano::voting_policy & policy_a, nano::ledger & ledger_a, nano::wallets & wallets_a, nano::vote_processor & vote_processor_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a, std::shared_ptr<nano::transport::channel> inproc_channel_a) :
-	config{ config_a },
-	policy{ policy_a },
-	ledger{ ledger_a },
-	wallets{ wallets_a },
-	vote_processor{ vote_processor_a },
-	network{ network_a },
-	stats{ stats_a },
-	logger{ logger_a },
-	inproc_channel{ inproc_channel_a },
-	normal_verifier{ config_a.max_queue, config_a.batch_size, config_a.normal_threads, nano::thread_role::name::voting_normal_processing },
-	normal_broadcaster{ config_a.max_queue, nano::network::confirm_ack_hashes_max, config_a.delay, nano::thread_role::name::voting_normal_broadcast },
-	final_verifier{ config_a.max_queue, config_a.batch_size, /* single threaded */ 1, nano::thread_role::name::voting_final_processing },
-	final_broadcaster{ config_a.max_queue, nano::network::confirm_ack_hashes_max, config_a.delay, nano::thread_role::name::voting_final_broadcast }
-{
-	normal_verifier.process_batch = [this] (auto batch) { process_normal (std::move (batch)); };
-	final_verifier.process_batch = [this] (auto batch) { process_final (std::move (batch)); };
-	normal_broadcaster.broadcast_batch = [this] (auto batch) { broadcast_normal (std::move (batch)); };
-	final_broadcaster.broadcast_batch = [this] (auto batch) { broadcast_final (std::move (batch)); };
-}
-
-nano::vote_generator::~vote_generator () = default;
-
-void nano::vote_generator::process_normal (std::deque<vote_verifier::entry> batch)
-{
-	std::deque<nano::vote_permit> verified;
-	auto transaction = ledger.tx_begin_read ();
-	for (auto & [qroot, hash] : batch)
-	{
-		transaction.refresh_if_needed ();
-		auto block = ledger.any.block_get (transaction, hash);
-		if (block)
-		{
-			if (auto permit = policy.vote (transaction, *block))
-			{
-				verified.push_back (*permit);
-			}
-		}
-	}
-	for (auto & p : verified)
-	{
-		normal_broadcaster.push (p.qualified_root (), std::move (p));
-	}
-}
-
-void nano::vote_generator::process_final (std::deque<vote_verifier::entry> batch)
-{
-	std::deque<nano::vote_permit> verified;
-	auto transaction = ledger.tx_begin_write (nano::store::writer::voting_final);
-	for (auto & [qroot, hash] : batch)
-	{
-		transaction.refresh_if_needed ();
-		auto block = ledger.any.block_get (transaction, hash);
-		if (block)
-		{
-			if (auto permit = policy.vote_final (transaction, *block))
-			{
-				verified.push_back (*permit);
-			}
-		}
-	}
-	for (auto & p : verified)
-	{
-		final_broadcaster.push (p.qualified_root (), std::move (p));
-	}
-}
-
-void nano::vote_generator::broadcast_normal (std::deque<nano::vote_permit> batch)
-{
-	std::vector<nano::vote_permit> permits;
-	for (auto & p : batch)
-	{
-		permits.push_back (std::move (p));
-	}
-	if (permits.empty ())
-	{
-		return;
-	}
-	auto votes = policy.sign (nano::vote_type::normal, permits, wallets.signer ());
-	for (auto const & vote : votes)
-	{
-		stats.inc (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts);
-		stats.sample (nano::stat::sample::vote_generator_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
-		broadcast_vote (vote);
-	}
-}
-
-void nano::vote_generator::broadcast_final (std::deque<nano::vote_permit> batch)
-{
-	std::vector<nano::vote_permit> permits;
-	for (auto & p : batch)
-	{
-		permits.push_back (std::move (p));
-	}
-	if (permits.empty ())
-	{
-		return;
-	}
-	auto votes = policy.sign (nano::vote_type::final, permits, wallets.signer ());
-	for (auto const & vote : votes)
-	{
-		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::generator_broadcasts);
-		stats.sample (nano::stat::sample::vote_generator_final_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
-		broadcast_vote (vote);
-	}
-}
-
-void nano::vote_generator::start ()
-{
-	normal_verifier.start ();
-	final_verifier.start ();
-	normal_broadcaster.start ();
-	final_broadcaster.start ();
-}
-
-void nano::vote_generator::stop ()
-{
-	normal_verifier.stop ();
-	final_verifier.stop ();
-	normal_broadcaster.stop ();
-	final_broadcaster.stop ();
-}
-
-void nano::vote_generator::vote (nano::qualified_root const & root, nano::block_hash const & hash, nano::bucket_index bucket, nano::vote_type type)
-{
-	switch (type)
-	{
-		case nano::vote_type::normal:
-			vote_normal (root, hash, bucket);
-			break;
-		case nano::vote_type::final:
-			vote_final (root, hash, bucket);
-			break;
-	}
-}
-
-void nano::vote_generator::vote_normal (nano::qualified_root const & root, nano::block_hash const & hash, nano::bucket_index bucket)
-{
-	if (normal_verifier.push (root, hash, bucket))
-	{
-		stats.inc (nano::stat::type::vote_generator, nano::stat::detail::queue);
-	}
-	else
-	{
-		stats.inc (nano::stat::type::vote_generator, nano::stat::detail::overfill);
-	}
-}
-
-void nano::vote_generator::vote_final (nano::qualified_root const & root, nano::block_hash const & hash, nano::bucket_index bucket)
-{
-	if (final_verifier.push (root, hash, bucket))
-	{
-		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::queue);
-	}
-	else
-	{
-		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::overfill);
-	}
-}
-
-void nano::vote_generator::broadcast_vote (std::shared_ptr<nano::vote> const & vote) const
-{
-	bool const is_final = vote->is_final ();
-	auto const traffic_type = is_final ? nano::transport::traffic_type::vote_final : nano::transport::traffic_type::vote_normal;
-	auto const stat_type = is_final ? nano::stat::type::vote_generator_final : nano::stat::type::vote_generator;
-
-	vote_processor.vote (vote, inproc_channel);
-
-	auto sent_pr = network.flood_vote_pr (vote, traffic_type);
-	auto sent_non_pr = network.flood_vote_non_pr (vote, 2.0f, traffic_type);
-
-	stats.add (stat_type, nano::stat::detail::sent_pr, sent_pr);
-	stats.add (stat_type, nano::stat::detail::sent_non_pr, sent_non_pr);
-}
-
-nano::container_info nano::vote_generator::container_info () const
-{
-	nano::container_info info;
-	info.put ("normal_verifier", normal_verifier.size ());
-	info.put ("normal_broadcaster", normal_broadcaster.size ());
-	info.put ("final_verifier", final_verifier.size ());
-	info.put ("final_broadcaster", final_broadcaster.size ());
-	return info;
-}
-
-/*
- * vote_generator_config
- */
-
-nano::error nano::vote_generator_config::serialize (nano::tomlconfig & toml) const
-{
-	toml.put ("max_queue", max_queue, "Maximum number of entries in the vote generation queue. \ntype:uint64");
-	toml.put ("batch_size", batch_size, "Maximum number of entries to process in a single batch. \ntype:uint64");
-	toml.put ("normal_threads", normal_threads, "Number of threads for normal vote processing. \ntype:uint64");
-	toml.put ("delay", delay.count (), "Delay before votes are sent to allow for efficient bundling of hashes in votes. \ntype:milliseconds");
-
-	return toml.get_error ();
-}
-
-nano::error nano::vote_generator_config::deserialize (nano::tomlconfig & toml)
-{
-	toml.get ("max_queue", max_queue);
-	toml.get ("batch_size", batch_size);
-	toml.get ("normal_threads", normal_threads);
-	toml.get_duration ("delay", delay);
-
-	return toml.get_error ();
 }
 
 /*
