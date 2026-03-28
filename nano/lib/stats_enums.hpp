@@ -375,6 +375,8 @@ enum class detail
 	block_broadcast_rpc,
 	block_rebroadcast,
 	confirmation_requests,
+	vote_normal,
+	vote_final,
 	vote_rebroadcast,
 	vote_reply,
 	rep_crawler,
