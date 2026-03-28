@@ -195,13 +195,12 @@ private:
 };
 
 /**
- * Unified vote generator for both normal and final votes.
- * Internally manages separate processing and broadcast pipelines.
+ * Unified vote generator for both normal and final votes
  */
 class vote_generator final
 {
 public:
-	vote_generator (vote_generator_config const &, nano::voting_policy &, nano::ledger &, nano::wallets &, nano::vote_processor &, nano::network &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel> inproc_channel);
+	vote_generator (vote_generator_config const &, nano::voting_policy &, nano::ledger &, nano::wallets &, nano::vote_processor &, nano::network &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel>);
 	~vote_generator ();
 
 	void start ();
@@ -218,7 +217,7 @@ private:
 	void process_final (std::deque<vote_verifier::entry> batch);
 	void broadcast_normal (std::deque<nano::vote_permit> batch);
 	void broadcast_final (std::deque<nano::vote_permit> batch);
-	void broadcast_vote (std::shared_ptr<nano::vote> const &, nano::transport::traffic_type) const;
+	void broadcast_vote (std::shared_ptr<nano::vote> const & vote) const;
 
 private: // Dependencies
 	vote_generator_config const & config;

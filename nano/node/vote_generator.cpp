@@ -304,7 +304,7 @@ void nano::vote_generator::broadcast_normal (std::deque<nano::vote_permit> batch
 	{
 		stats.inc (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts);
 		stats.sample (nano::stat::sample::vote_generator_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
-		broadcast_vote (vote, nano::transport::traffic_type::vote_normal);
+		broadcast_vote (vote);
 	}
 }
 
@@ -324,7 +324,7 @@ void nano::vote_generator::broadcast_final (std::deque<nano::vote_permit> batch)
 	{
 		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::generator_broadcasts);
 		stats.sample (nano::stat::sample::vote_generator_final_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
-		broadcast_vote (vote, nano::transport::traffic_type::vote_final);
+		broadcast_vote (vote);
 	}
 }
 
@@ -381,14 +381,17 @@ void nano::vote_generator::vote_final (nano::qualified_root const & root, nano::
 	}
 }
 
-void nano::vote_generator::broadcast_vote (std::shared_ptr<nano::vote> const & vote_a, nano::transport::traffic_type type) const
+void nano::vote_generator::broadcast_vote (std::shared_ptr<nano::vote> const & vote) const
 {
-	vote_processor.vote (vote_a, inproc_channel);
+	bool const is_final = vote->is_final ();
+	auto const traffic_type = is_final ? nano::transport::traffic_type::vote_final : nano::transport::traffic_type::vote_normal;
+	auto const stat_type = is_final ? nano::stat::type::vote_generator_final : nano::stat::type::vote_generator;
 
-	auto sent_pr = network.flood_vote_pr (vote_a, type);
-	auto sent_non_pr = network.flood_vote_non_pr (vote_a, 2.0f, type);
+	vote_processor.vote (vote, inproc_channel);
 
-	auto stat_type = (type == nano::transport::traffic_type::vote_final) ? nano::stat::type::vote_generator_final : nano::stat::type::vote_generator;
+	auto sent_pr = network.flood_vote_pr (vote, traffic_type);
+	auto sent_non_pr = network.flood_vote_non_pr (vote, 2.0f, traffic_type);
+
 	stats.add (stat_type, nano::stat::detail::sent_pr, sent_pr);
 	stats.add (stat_type, nano::stat::detail::sent_non_pr, sent_non_pr);
 }
