@@ -28,7 +28,7 @@ nano::vote_verifier::vote_verifier (size_t max_size_per_bucket, size_t batch_siz
 
 nano::vote_verifier::~vote_verifier ()
 {
-	debug_assert (stopped);
+	debug_assert (threads.empty ());
 }
 
 void nano::vote_verifier::start ()
@@ -45,15 +45,19 @@ void nano::vote_verifier::start ()
 
 void nano::vote_verifier::stop ()
 {
-	stopped = true;
-	condition.notify_all ();
-	for (auto & t : threads)
 	{
-		if (t.joinable ())
+		nano::unique_lock<nano::mutex> lock{ mutex };
+		stopped = true;
+	}
+	condition.notify_all ();
+	for (auto & thread : threads)
+	{
+		if (thread.joinable ())
 		{
-			t.join ();
+			thread.join ();
 		}
 	}
+	threads.clear ();
 }
 
 bool nano::vote_verifier::push (nano::qualified_root const & root, nano::block_hash const & hash, nano::bucket_index bucket)
@@ -82,6 +86,7 @@ void nano::vote_verifier::run ()
 		{
 			return;
 		}
+
 		auto batch = index.next_batch (batch_size);
 		lock.unlock ();
 
@@ -106,14 +111,6 @@ bool nano::vote_verifier::empty () const
 	return index.empty ();
 }
 
-nano::container_info nano::vote_verifier::container_info () const
-{
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	nano::container_info info;
-	info.put ("index", index.size ());
-	return info;
-}
-
 /*
  * vote_broadcaster
  */
@@ -122,8 +119,7 @@ nano::vote_broadcaster::vote_broadcaster (size_t max_size, size_t batch_threshol
 	batch_threshold{ batch_threshold },
 	delay{ delay },
 	thread_role{ thread_role },
-	index{ max_size },
-	next_broadcast{ std::chrono::steady_clock::now () }
+	index{ max_size }
 {
 }
 
@@ -143,7 +139,10 @@ void nano::vote_broadcaster::start ()
 
 void nano::vote_broadcaster::stop ()
 {
-	stopped = true;
+	{
+		nano::unique_lock<nano::mutex> lock{ mutex };
+		stopped = true;
+	}
 	condition.notify_all ();
 	if (thread.joinable ())
 	{
@@ -151,12 +150,12 @@ void nano::vote_broadcaster::stop ()
 	}
 }
 
-bool nano::vote_broadcaster::push (nano::qualified_root const & root, nano::vote_permit permit)
+bool nano::vote_broadcaster::push (nano::qualified_root const & root, nano::vote_permit const & permit)
 {
 	bool added = false;
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
-		added = index.push (root, std::move (permit));
+		added = index.push (root, permit);
 	}
 	if (added)
 	{
@@ -185,10 +184,10 @@ void nano::vote_broadcaster::run ()
 			if (!batch.empty ())
 			{
 				broadcast_batch (std::move (batch));
+				last_broadcast = std::chrono::steady_clock::now ();
 			}
 
 			lock.lock ();
-			next_broadcast = std::chrono::steady_clock::now () + delay;
 		}
 	}
 }
@@ -199,7 +198,7 @@ bool nano::vote_broadcaster::predicate () const
 	{
 		return true;
 	}
-	if (!index.empty () && std::chrono::steady_clock::now () > next_broadcast)
+	if (!index.empty () && std::chrono::steady_clock::now () - last_broadcast >= delay)
 	{
 		return true;
 	}
@@ -216,14 +215,6 @@ bool nano::vote_broadcaster::empty () const
 {
 	nano::lock_guard<nano::mutex> lock{ mutex };
 	return index.empty ();
-}
-
-nano::container_info nano::vote_broadcaster::container_info () const
-{
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	nano::container_info info;
-	info.put ("index", index.size ());
-	return info;
 }
 
 /*
@@ -405,10 +396,10 @@ void nano::vote_generator::broadcast_vote (std::shared_ptr<nano::vote> const & v
 nano::container_info nano::vote_generator::container_info () const
 {
 	nano::container_info info;
-	info.add ("normal_verifier", normal_verifier.container_info ());
-	info.add ("normal_broadcaster", normal_broadcaster.container_info ());
-	info.add ("final_verifier", final_verifier.container_info ());
-	info.add ("final_broadcaster", final_broadcaster.container_info ());
+	info.put ("normal_verifier", normal_verifier.size ());
+	info.put ("normal_broadcaster", normal_broadcaster.size ());
+	info.put ("final_verifier", final_verifier.size ());
+	info.put ("final_broadcaster", final_broadcaster.size ());
 	return info;
 }
 

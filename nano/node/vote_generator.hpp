@@ -121,6 +121,7 @@ class vote_verifier final
 public:
 	using entry = vote_generator_index::entry;
 
+public:
 	vote_verifier (size_t max_size_per_bucket, size_t batch_size, size_t thread_count, nano::thread_role::name thread_role);
 	~vote_verifier ();
 
@@ -131,9 +132,8 @@ public:
 
 	size_t size () const;
 	bool empty () const;
-	nano::container_info container_info () const;
 
-	/// Set before start(). Called on worker threads with a batch of entries.
+	/// Called on worker threads with a batch of entries.
 	std::function<void (std::deque<entry>)> process_batch;
 
 private:
@@ -142,11 +142,13 @@ private:
 	size_t const batch_size;
 	size_t const thread_count;
 	nano::thread_role::name const thread_role;
+
+	vote_generator_index index;
+
 	mutable nano::mutex mutex;
 	nano::condition_variable condition;
-	vote_generator_index index;
 	std::vector<std::thread> threads;
-	std::atomic<bool> stopped{ false };
+	bool stopped{ false };
 };
 
 /**
@@ -157,19 +159,21 @@ private:
 class vote_broadcaster final
 {
 public:
+	using entry = nano::vote_permit;
+
+public:
 	vote_broadcaster (size_t max_size, size_t batch_threshold, std::chrono::milliseconds delay, nano::thread_role::name thread_role);
 	~vote_broadcaster ();
 
 	void start ();
 	void stop ();
 
-	bool push (nano::qualified_root const &, nano::vote_permit permit);
+	bool push (nano::qualified_root const &, nano::vote_permit const &);
 
 	size_t size () const;
 	bool empty () const;
-	nano::container_info container_info () const;
 
-	/// Set before start(). Called on broadcast thread with a batch of permits.
+	/// Called on broadcast thread with a batch of permits.
 	std::function<void (std::deque<nano::vote_permit>)> broadcast_batch;
 
 private:
@@ -179,12 +183,15 @@ private:
 	size_t const batch_threshold;
 	std::chrono::milliseconds const delay;
 	nano::thread_role::name const thread_role;
+
+	vote_broadcast_index index;
+
+	std::chrono::steady_clock::time_point last_broadcast{ std::chrono::steady_clock::now () };
+
 	mutable nano::mutex mutex;
 	nano::condition_variable condition;
-	vote_broadcast_index index;
-	std::chrono::steady_clock::time_point next_broadcast;
 	std::thread thread;
-	std::atomic<bool> stopped{ false };
+	bool stopped{ false };
 };
 
 /**
