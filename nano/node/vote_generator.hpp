@@ -10,7 +10,6 @@
 #include <nano/node/fair_queue.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/transport/traffic_type.hpp>
-#include <nano/node/vote_spacing.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/voting_policy.hpp>
 
@@ -195,7 +194,7 @@ private:
 class vote_generator final
 {
 public:
-	vote_generator (vote_generator_config const &, nano::voting_policy &, nano::ledger &, nano::wallets &, nano::vote_processor &, nano::local_vote_history &, nano::network &, nano::stats &, nano::logger &, nano::voting_constants const &, std::shared_ptr<nano::transport::channel> inproc_channel);
+	vote_generator (vote_generator_config const &, nano::voting_policy &, nano::ledger &, nano::wallets &, nano::vote_processor &, nano::network &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel> inproc_channel);
 	~vote_generator ();
 
 	void start ();
@@ -220,7 +219,6 @@ private: // Dependencies
 	nano::ledger & ledger;
 	nano::wallets & wallets;
 	nano::vote_processor & vote_processor;
-	nano::local_vote_history & history;
 	nano::network & network;
 	nano::stats & stats;
 	nano::logger & logger;
@@ -229,11 +227,9 @@ private: // Dependencies
 private:
 	vote_verifier normal_verifier;
 	vote_broadcaster normal_broadcaster;
-	nano::vote_spacing normal_spacing;
 
 	vote_verifier final_verifier;
 	vote_broadcaster final_broadcaster;
-	nano::vote_spacing final_spacing;
 
 	nano::interval log_interval;
 };

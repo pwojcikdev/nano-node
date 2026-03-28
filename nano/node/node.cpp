@@ -178,7 +178,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	vote_cache_processor{ *vote_cache_processor_impl },
 	voting_policy_impl{ std::make_unique<nano::voting_policy> (ledger) },
 	voting_policy{ *voting_policy_impl },
-	vote_generator_impl{ std::make_unique<nano::vote_generator> (config.vote_generator, voting_policy, ledger, wallets, vote_processor, history, network, stats, logger, network_params.voting, loopback_channel) },
+	vote_generator_impl{ std::make_unique<nano::vote_generator> (config.vote_generator, voting_policy, ledger, wallets, vote_processor, network, stats, logger, loopback_channel) },
 	vote_generator{ *vote_generator_impl },
 	scheduler_impl{ std::make_unique<nano::scheduler::component> (config, *this, ledger, ledger_notifications, bucketing, active, online_reps, vote_cache, cementing_set, stats, logger) },
 	scheduler{ *scheduler_impl },

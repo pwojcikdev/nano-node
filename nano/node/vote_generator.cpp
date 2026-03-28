@@ -2,7 +2,6 @@
 #include <nano/lib/stats.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/vote.hpp>
-#include <nano/node/local_vote_history.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/transport/inproc.hpp>
@@ -231,23 +230,20 @@ nano::container_info nano::vote_broadcaster::container_info () const
  * vote_generator
  */
 
-nano::vote_generator::vote_generator (vote_generator_config const & config_a, nano::voting_policy & policy_a, nano::ledger & ledger_a, nano::wallets & wallets_a, nano::vote_processor & vote_processor_a, nano::local_vote_history & history_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a, nano::voting_constants const & voting_constants_a, std::shared_ptr<nano::transport::channel> inproc_channel_a) :
+nano::vote_generator::vote_generator (vote_generator_config const & config_a, nano::voting_policy & policy_a, nano::ledger & ledger_a, nano::wallets & wallets_a, nano::vote_processor & vote_processor_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a, std::shared_ptr<nano::transport::channel> inproc_channel_a) :
 	config{ config_a },
 	policy{ policy_a },
 	ledger{ ledger_a },
 	wallets{ wallets_a },
 	vote_processor{ vote_processor_a },
-	history{ history_a },
 	network{ network_a },
 	stats{ stats_a },
 	logger{ logger_a },
 	inproc_channel{ inproc_channel_a },
 	normal_verifier{ config_a.max_queue, config_a.batch_size, config_a.normal_threads, nano::thread_role::name::voting_normal_processing },
 	normal_broadcaster{ config_a.max_queue, nano::network::confirm_ack_hashes_max, config_a.delay, nano::thread_role::name::voting_normal_broadcast },
-	normal_spacing{ voting_constants_a.delay },
 	final_verifier{ config_a.max_queue, config_a.batch_size, /* single threaded */ 1, nano::thread_role::name::voting_final_processing },
-	final_broadcaster{ config_a.max_queue, nano::network::confirm_ack_hashes_max, config_a.delay, nano::thread_role::name::voting_final_broadcast },
-	final_spacing{ voting_constants_a.delay }
+	final_broadcaster{ config_a.max_queue, nano::network::confirm_ack_hashes_max, config_a.delay, nano::thread_role::name::voting_final_broadcast }
 {
 	normal_verifier.process_batch = [this] (auto batch) { process_normal (std::move (batch)); };
 	final_verifier.process_batch = [this] (auto batch) { process_final (std::move (batch)); };
@@ -306,14 +302,7 @@ void nano::vote_generator::broadcast_normal (std::deque<nano::vote_permit> batch
 	std::vector<nano::vote_permit> permits;
 	for (auto & p : batch)
 	{
-		if (normal_spacing.votable (p.root (), p.hash ()))
-		{
-			permits.push_back (std::move (p));
-		}
-		else
-		{
-			stats.inc (nano::stat::type::vote_generator, nano::stat::detail::generator_spacing);
-		}
+		permits.push_back (std::move (p));
 	}
 	if (permits.empty ())
 	{
@@ -322,11 +311,6 @@ void nano::vote_generator::broadcast_normal (std::deque<nano::vote_permit> batch
 	auto votes = policy.sign (nano::vote_type::normal, permits, wallets.signer ());
 	for (auto const & vote : votes)
 	{
-		for (auto const & p : permits)
-		{
-			history.add (p.root (), p.hash (), vote);
-			normal_spacing.flag (p.root (), p.hash ());
-		}
 		stats.inc (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts);
 		stats.sample (nano::stat::sample::vote_generator_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
 		broadcast_vote (vote, nano::transport::traffic_type::vote_normal);
@@ -338,14 +322,7 @@ void nano::vote_generator::broadcast_final (std::deque<nano::vote_permit> batch)
 	std::vector<nano::vote_permit> permits;
 	for (auto & p : batch)
 	{
-		if (final_spacing.votable (p.root (), p.hash ()))
-		{
-			permits.push_back (std::move (p));
-		}
-		else
-		{
-			stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::generator_spacing);
-		}
+		permits.push_back (std::move (p));
 	}
 	if (permits.empty ())
 	{
@@ -354,11 +331,6 @@ void nano::vote_generator::broadcast_final (std::deque<nano::vote_permit> batch)
 	auto votes = policy.sign (nano::vote_type::final, permits, wallets.signer ());
 	for (auto const & vote : votes)
 	{
-		for (auto const & p : permits)
-		{
-			history.add (p.root (), p.hash (), vote);
-			final_spacing.flag (p.root (), p.hash ());
-		}
 		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::generator_broadcasts);
 		stats.sample (nano::stat::sample::vote_generator_final_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
 		broadcast_vote (vote, nano::transport::traffic_type::vote_final);
