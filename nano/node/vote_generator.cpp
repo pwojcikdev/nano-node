@@ -41,92 +41,6 @@ nano::vote_generator::vote_generator (vote_generator_config const & config_a, na
 
 nano::vote_generator::~vote_generator () = default;
 
-void nano::vote_generator::process_normal (std::deque<vote_verifier::entry> batch)
-{
-	std::deque<nano::vote_permit> verified;
-	auto transaction = ledger.tx_begin_read ();
-	for (auto & [qroot, hash] : batch)
-	{
-		transaction.refresh_if_needed ();
-
-		auto block = ledger.any.block_get (transaction, hash);
-		if (block)
-		{
-			if (auto permit = policy.vote (transaction, *block))
-			{
-				verified.push_back (*permit);
-			}
-		}
-	}
-	for (auto & p : verified)
-	{
-		normal_broadcaster.push (p.qualified_root (), std::move (p));
-	}
-}
-
-void nano::vote_generator::process_final (std::deque<vote_verifier::entry> batch)
-{
-	std::deque<nano::vote_permit> verified;
-	auto transaction = ledger.tx_begin_write (nano::store::writer::voting_final);
-	for (auto & [qroot, hash] : batch)
-	{
-		transaction.refresh_if_needed ();
-
-		auto block = ledger.any.block_get (transaction, hash);
-		if (block)
-		{
-			if (auto permit = policy.vote_final (transaction, *block))
-			{
-				verified.push_back (*permit);
-			}
-		}
-	}
-	for (auto & p : verified)
-	{
-		final_broadcaster.push (p.qualified_root (), std::move (p));
-	}
-}
-
-void nano::vote_generator::broadcast_normal (std::deque<nano::vote_permit> batch)
-{
-	std::vector<nano::vote_permit> permits;
-	for (auto & p : batch)
-	{
-		permits.push_back (std::move (p));
-	}
-	if (permits.empty ())
-	{
-		return;
-	}
-	auto votes = policy.sign (nano::vote_type::normal, permits, wallets.signer ());
-	for (auto const & vote : votes)
-	{
-		stats.inc (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts);
-		stats.sample (nano::stat::sample::vote_generator_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
-		broadcast_vote (vote);
-	}
-}
-
-void nano::vote_generator::broadcast_final (std::deque<nano::vote_permit> batch)
-{
-	std::vector<nano::vote_permit> permits;
-	for (auto & p : batch)
-	{
-		permits.push_back (std::move (p));
-	}
-	if (permits.empty ())
-	{
-		return;
-	}
-	auto votes = policy.sign (nano::vote_type::final, permits, wallets.signer ());
-	for (auto const & vote : votes)
-	{
-		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::generator_broadcasts);
-		stats.sample (nano::stat::sample::vote_generator_final_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
-		broadcast_vote (vote);
-	}
-}
-
 void nano::vote_generator::start ()
 {
 	normal_verifier.start ();
@@ -177,6 +91,116 @@ void nano::vote_generator::vote_final (nano::qualified_root const & root, nano::
 	else
 	{
 		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::overfill);
+	}
+}
+
+void nano::vote_generator::process_normal (std::deque<vote_verifier::entry> batch)
+{
+	std::deque<nano::vote_permit> verified;
+
+	auto transaction = ledger.tx_begin_read ();
+
+	for (auto & [root, hash] : batch)
+	{
+		transaction.refresh_if_needed ();
+
+		auto block = ledger.any.block_get (transaction, hash);
+		if (block)
+		{
+			if (auto permit = policy.vote (transaction, *block))
+			{
+				verified.push_back (*permit);
+			}
+		}
+	}
+
+	for (auto & permit : verified)
+	{
+		// Normal vote policy may upgrade a permit to final if a final vote was already recorded for this root
+		switch (permit.type ())
+		{
+			case nano::vote_type::normal:
+				normal_broadcaster.push (permit.qualified_root (), permit);
+				break;
+			case nano::vote_type::final:
+				final_broadcaster.push (permit.qualified_root (), permit);
+				break;
+		}
+	}
+}
+
+void nano::vote_generator::process_final (std::deque<vote_verifier::entry> batch)
+{
+	std::deque<nano::vote_permit> verified;
+
+	auto transaction = ledger.tx_begin_write (nano::store::writer::voting_final);
+
+	for (auto & [root, hash] : batch)
+	{
+		transaction.refresh_if_needed ();
+
+		auto block = ledger.any.block_get (transaction, hash);
+		if (block)
+		{
+			if (auto permit = policy.vote_final (transaction, *block))
+			{
+				verified.push_back (*permit);
+			}
+		}
+	}
+
+	for (auto & permit : verified)
+	{
+		debug_assert (permit.type () == nano::vote_type::final);
+		final_broadcaster.push (permit.qualified_root (), permit);
+	}
+}
+
+void nano::vote_generator::broadcast_normal (std::deque<nano::vote_permit> batch)
+{
+	debug_assert (batch.size () <= nano::network::confirm_ack_hashes_max);
+
+	std::vector<nano::vote_permit> permits;
+	for (auto & p : batch)
+	{
+		permits.push_back (std::move (p));
+	}
+	if (permits.empty ())
+	{
+		return;
+	}
+
+	auto votes = policy.sign (nano::vote_type::normal, permits, wallets.signer ());
+	for (auto const & vote : votes)
+	{
+		stats.inc (nano::stat::type::vote_generator, nano::stat::detail::generator_broadcasts);
+		stats.sample (nano::stat::sample::vote_generator_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
+
+		broadcast_vote (vote);
+	}
+}
+
+void nano::vote_generator::broadcast_final (std::deque<nano::vote_permit> batch)
+{
+	debug_assert (batch.size () <= nano::network::confirm_ack_hashes_max);
+
+	std::vector<nano::vote_permit> permits;
+	for (auto & p : batch)
+	{
+		permits.push_back (std::move (p));
+	}
+	if (permits.empty ())
+	{
+		return;
+	}
+
+	auto votes = policy.sign (nano::vote_type::final, permits, wallets.signer ());
+	for (auto const & vote : votes)
+	{
+		stats.inc (nano::stat::type::vote_generator_final, nano::stat::detail::generator_broadcasts);
+		stats.sample (nano::stat::sample::vote_generator_final_hashes, vote->hashes.size (), { 0, nano::network::confirm_ack_hashes_max });
+
+		broadcast_vote (vote);
 	}
 }
 
