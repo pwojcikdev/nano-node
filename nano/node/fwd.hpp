@@ -1,9 +1,9 @@
 #pragma once
 
 #include <nano/lib/fwd.hpp>
-#include <nano/node/transport/fwd.hpp>
 #include <nano/secure/fwd.hpp>
 #include <nano/store/fwd.hpp>
+#include <nano/transport/fwd.hpp>
 
 namespace nano
 {

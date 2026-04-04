@@ -43,6 +43,7 @@ namespace transport
 			bool send_impl (nano::messages::message const &, nano::transport::traffic_type, nano::transport::channel::callback_t) override;
 
 		private:
+			nano::node & node; // TODO: Remove when inproc is fully decoupled
 			nano::node & destination;
 			nano::endpoint const endpoint;
 		};

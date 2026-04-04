@@ -1,0 +1,154 @@
+#pragma once
+
+#include <nano/lib/endpoint.hpp>
+#include <nano/lib/locks.hpp>
+#include <nano/lib/node_capabilities.hpp>
+#include <nano/lib/object_stream.hpp>
+#include <nano/lib/stats.hpp>
+#include <nano/messages/messages.hpp>
+#include <nano/transport/common.hpp>
+#include <nano/transport/traffic_type.hpp>
+
+#include <boost/asio/ip/network_v6.hpp>
+
+namespace nano::transport
+{
+struct transport_context;
+
+enum class transport_type : uint8_t
+{
+	undefined = 0,
+	tcp = 1,
+	loopback = 2,
+	fake = 3
+};
+
+class channel
+{
+public:
+	using callback_t = std::function<void (boost::system::error_code const &, std::size_t)>;
+
+public:
+	explicit channel (nano::transport::transport_context &, void * owner_id = nullptr);
+	virtual ~channel () = default;
+
+	/// @returns true if the message was sent (or queued to be sent), false if it was immediately dropped
+	bool send (nano::messages::message const &, nano::transport::traffic_type, callback_t = nullptr);
+
+	virtual void close () = 0;
+
+	virtual nano::endpoint get_remote_endpoint () const = 0;
+	virtual nano::endpoint get_local_endpoint () const = 0;
+
+	virtual std::string to_string () const = 0;
+	virtual nano::transport::transport_type get_type () const = 0;
+
+	virtual bool max (nano::transport::traffic_type)
+	{
+		return false;
+	}
+
+	virtual bool alive () const
+	{
+		return true;
+	}
+
+	std::chrono::steady_clock::time_point get_last_bootstrap_attempt () const
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		return last_bootstrap_attempt;
+	}
+	void set_last_bootstrap_attempt (std::chrono::steady_clock::time_point const time_a)
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		last_bootstrap_attempt = time_a;
+	}
+
+	std::chrono::steady_clock::time_point get_last_packet_received () const
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		return last_packet_received;
+	}
+	void set_last_packet_received (std::chrono::steady_clock::time_point const time_a)
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		last_packet_received = time_a;
+	}
+
+	std::chrono::steady_clock::time_point get_last_packet_sent () const
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		return last_packet_sent;
+	}
+	void set_last_packet_sent (std::chrono::steady_clock::time_point const time_a)
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		last_packet_sent = time_a;
+	}
+
+	std::optional<nano::account> get_node_id_optional () const
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		return node_id;
+	}
+	nano::account get_node_id () const
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		return node_id.value_or (0);
+	}
+	void set_node_id (nano::account node_id_a)
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		node_id = node_id_a;
+	}
+
+	uint8_t get_network_version () const
+	{
+		return network_version;
+	}
+	void set_network_version (uint8_t network_version_a)
+	{
+		network_version = network_version_a;
+	}
+
+	nano::node_capabilities_flags get_flags () const
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		return flags;
+	}
+	void set_flags (nano::node_capabilities_flags value)
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		flags = value;
+	}
+
+	nano::endpoint get_peering_endpoint () const;
+	void set_peering_endpoint (nano::endpoint endpoint);
+
+	void set_last_keepalive (nano::messages::keepalive const & message);
+	std::optional<nano::messages::keepalive> pop_last_keepalive ();
+
+	void * owner () const;
+
+protected:
+	virtual bool send_impl (nano::messages::message const &, nano::transport::traffic_type, callback_t) = 0;
+
+protected:
+	nano::transport::transport_context & ctx;
+	mutable nano::mutex mutex;
+
+private:
+	void * owner_id;
+	std::chrono::steady_clock::time_point last_bootstrap_attempt{ std::chrono::steady_clock::time_point () };
+	std::chrono::steady_clock::time_point last_packet_received{ std::chrono::steady_clock::now () };
+	std::chrono::steady_clock::time_point last_packet_sent{ std::chrono::steady_clock::now () };
+	std::optional<nano::account> node_id{};
+	std::atomic<uint8_t> network_version{ 0 };
+	nano::node_capabilities_flags flags;
+	std::optional<nano::endpoint> peering_endpoint{};
+	std::optional<nano::messages::keepalive> last_keepalive{};
+
+public: // Logging
+	virtual void operator() (nano::object_stream &) const;
+};
+}

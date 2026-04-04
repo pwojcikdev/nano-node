@@ -53,6 +53,7 @@ namespace transport
 			bool send_impl (nano::messages::message const &, nano::transport::traffic_type, nano::transport::channel::callback_t) override;
 
 		private:
+			nano::node & node; // TODO: Remove when fake is fully decoupled
 			nano::endpoint endpoint;
 
 			std::atomic<bool> closed{ false };

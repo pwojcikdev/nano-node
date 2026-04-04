@@ -10,6 +10,9 @@ class loopback_channel final : public nano::transport::channel, public std::enab
 public:
 	explicit loopback_channel (nano::node & node);
 
+private:
+	nano::node & node; // TODO: Remove when loopback is fully decoupled
+
 	std::string to_string () const override;
 
 	nano::endpoint get_remote_endpoint () const override

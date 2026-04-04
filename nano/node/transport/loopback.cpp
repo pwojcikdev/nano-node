@@ -7,7 +7,8 @@
 #include <boost/format.hpp>
 
 nano::transport::loopback_channel::loopback_channel (nano::node & node) :
-	transport::channel{ node },
+	transport::channel{ node.transport_ctx, &node },
+	node{ node },
 	endpoint{ node.network.endpoint () }
 {
 	set_node_id (node.node_id.pub);

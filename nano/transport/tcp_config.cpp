@@ -1,4 +1,4 @@
-#include <nano/node/transport/tcp_config.hpp>
+#include <nano/transport/tcp_config.hpp>
 
 nano::error nano::transport::tcp_config::serialize (nano::tomlconfig & toml) const
 {

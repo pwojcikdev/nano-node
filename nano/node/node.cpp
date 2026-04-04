@@ -14,7 +14,6 @@
 #include <nano/lib/work_version.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/backlog_scan.hpp>
-#include <nano/node/bandwidth_limiter.hpp>
 #include <nano/node/block_rebroadcaster.hpp>
 #include <nano/node/bootstrap/bootstrap_server.hpp>
 #include <nano/node/bootstrap/bootstrap_service.hpp>
@@ -68,6 +67,7 @@
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 #include <nano/store/rocksdb/backend_rocksdb.hpp>
+#include <nano/transport/bandwidth_limiter.hpp>
 #include <nano/weights/bootstrap_weights.hpp>
 
 #include <boost/format.hpp>
@@ -122,8 +122,20 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	unchecked{ *unchecked_impl },
 	ledger_notifications_impl{ std::make_unique<nano::ledger_notifications> (config, stats, logger) },
 	ledger_notifications{ *ledger_notifications_impl },
-	outbound_limiter_impl{ std::make_unique<nano::bandwidth_limiter> (config, flags) },
+	outbound_limiter_impl{ std::make_unique<nano::transport::bandwidth_limiter> (nano::transport::bandwidth_limiter_config{
+	flags.super_rebroadcaster ? std::size_t{ 0 } : config.bandwidth_limit,
+	config.bandwidth_limit_burst_ratio,
+	config.bootstrap_bandwidth_limit,
+	config.bootstrap_bandwidth_burst_ratio }) },
 	outbound_limiter{ *outbound_limiter_impl },
+	transport_ctx_impl{ std::make_unique<nano::transport::transport_context> (nano::transport::transport_context{
+	io_ctx,
+	network_params,
+	stats,
+	logger,
+	config.tcp,
+	outbound_limiter }) },
+	transport_ctx{ *transport_ctx_impl },
 	message_processor_impl{ std::make_unique<nano::message_processor> (config.message_processor, *this) },
 	message_processor{ *message_processor_impl },
 	// empty `config.peering_port` means the user made no port choice at all;
@@ -456,7 +468,7 @@ nano::node::~node ()
 
 void nano::node::inbound (const nano::messages::message & message, const std::shared_ptr<nano::transport::channel> & channel)
 {
-	debug_assert (channel->owner () == shared_from_this ()); // This node should be the channel owner
+	debug_assert (channel->owner () == this); // This node should be the channel owner
 
 	debug_assert (message.header.network == network_params.network.current_network);
 	debug_assert (message.header.version_using >= network_params.network.protocol_version_min);

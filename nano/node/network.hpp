@@ -6,9 +6,9 @@
 #include <nano/lib/network_filter.hpp>
 #include <nano/messages/messages.hpp>
 #include <nano/node/peer_exclusion.hpp>
-#include <nano/node/transport/common.hpp>
-#include <nano/node/transport/fwd.hpp>
 #include <nano/node/transport/tcp_channels.hpp>
+#include <nano/transport/common.hpp>
+#include <nano/transport/fwd.hpp>
 
 #include <deque>
 #include <memory>

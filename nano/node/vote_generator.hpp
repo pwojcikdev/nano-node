@@ -9,9 +9,9 @@
 #include <nano/lib/utility.hpp>
 #include <nano/node/fair_queue.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/transport/traffic_type.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/voting_policy.hpp>
+#include <nano/transport/traffic_type.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/member.hpp>

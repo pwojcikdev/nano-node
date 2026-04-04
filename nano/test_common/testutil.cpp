@@ -245,7 +245,7 @@ std::shared_ptr<nano::transport::channel> nano::test::fake_channel (nano::node &
 
 std::shared_ptr<nano::transport::test_channel> nano::test::test_channel (nano::node & node, nano::account node_id)
 {
-	auto channel = std::make_shared<nano::transport::test_channel> (node);
+	auto channel = std::make_shared<nano::transport::test_channel> (node.transport_ctx, &node);
 	if (!node_id.is_zero ())
 	{
 		channel->set_node_id (node_id);

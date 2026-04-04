@@ -28,7 +28,6 @@
 #include <nano/node/scheduler/hinted.hpp>
 #include <nano/node/scheduler/optimistic.hpp>
 #include <nano/node/scheduler/priority.hpp>
-#include <nano/node/transport/tcp_config.hpp>
 #include <nano/node/transport/tcp_listener.hpp>
 #include <nano/node/vote_cache.hpp>
 #include <nano/node/vote_generator.hpp>
@@ -39,6 +38,7 @@
 #include <nano/secure/common.hpp>
 #include <nano/secure/generate_cache_flags.hpp>
 #include <nano/store/txn_tracking.hpp>
+#include <nano/transport/tcp_config.hpp>
 
 #include <chrono>
 #include <filesystem>

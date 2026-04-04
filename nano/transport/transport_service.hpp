@@ -4,6 +4,7 @@
 #include <nano/lib/thread_runner.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/transport/fwd.hpp>
+#include <nano/transport/transport_context.hpp>
 
 #include <boost/asio/io_context.hpp>
 

@@ -1,23 +1,23 @@
 #include <nano/lib/endpoint.hpp>
-#include <nano/node/node.hpp>
-#include <nano/node/transport/channel.hpp>
-#include <nano/node/transport/transport.hpp>
+#include <nano/transport/channel.hpp>
+#include <nano/transport/transport_context.hpp>
 
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/address_v6.hpp>
 #include <boost/format.hpp>
 
-nano::transport::channel::channel (nano::node & node_a) :
-	node{ node_a }
+nano::transport::channel::channel (nano::transport::transport_context & ctx_a, void * owner_id_a) :
+	ctx{ ctx_a },
+	owner_id{ owner_id_a }
 {
-	set_network_version (node_a.network_params.network.protocol_version);
+	set_network_version (ctx_a.network_params.network.protocol_version);
 }
 
 bool nano::transport::channel::send (nano::messages::message const & message, nano::transport::traffic_type traffic_type, callback_t callback)
 {
 	bool sent = send_impl (message, traffic_type, std::move (callback));
-	node.stats.inc (sent ? nano::stat::type::message : nano::stat::type::message_drop, to_stat_detail (message.type ()), nano::stat::dir::out, /* aggregate all */ true);
+	ctx.stats.inc (sent ? nano::stat::type::message : nano::stat::type::message_drop, to_stat_detail (message.type ()), nano::stat::dir::out, /* aggregate all */ true);
 	return sent;
 }
 
@@ -53,9 +53,9 @@ std::optional<nano::messages::keepalive> nano::transport::channel::pop_last_keep
 	return result;
 }
 
-std::shared_ptr<nano::node> nano::transport::channel::owner () const
+void * nano::transport::channel::owner () const
 {
-	return node.shared ();
+	return owner_id;
 }
 
 void nano::transport::channel::operator() (nano::object_stream & obs) const

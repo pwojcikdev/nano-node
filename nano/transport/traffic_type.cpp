@@ -1,6 +1,6 @@
 #include <nano/lib/enum_util.hpp>
 #include <nano/lib/utility.hpp>
-#include <nano/node/transport/traffic_type.hpp>
+#include <nano/transport/traffic_type.hpp>
 
 #include <magic_enum.hpp>
 

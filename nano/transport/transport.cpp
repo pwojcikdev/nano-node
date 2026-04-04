@@ -1,6 +1,5 @@
 #include <nano/lib/endpoint.hpp>
-#include <nano/node/node.hpp>
-#include <nano/node/transport/transport.hpp>
+#include <nano/transport/transport.hpp>
 
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/address_v4.hpp>

@@ -1,6 +1,5 @@
 #include <nano/lib/enum_util.hpp>
-#include <nano/node/node.hpp>
-#include <nano/node/transport/message_deserializer.hpp>
+#include <nano/transport/message_deserializer.hpp>
 
 nano::transport::message_deserializer::message_deserializer (nano::network_constants const & network_constants_a, nano::network_filter & network_filter_a, nano::block_uniquer & block_uniquer_a, nano::vote_uniquer & vote_uniquer_a,
 read_query read_op) :
