@@ -57,5 +57,8 @@ struct transport_context
 	std::function<void (std::array<nano::endpoint, 8> &)> random_fill;
 	std::function<bool (nano::endpoint const &)> is_not_a_peer;
 	std::function<std::shared_ptr<nano::transport::tcp_channel> (std::shared_ptr<nano::transport::tcp_socket> const &, std::shared_ptr<nano::transport::tcp_server> const &, nano::account const &, nano::node_capabilities_flags)> create_channel;
+
+	// Synchronous inbound message processing (used by loopback channel)
+	std::function<void (nano::messages::message const &, std::shared_ptr<nano::transport::channel>)> process_inbound;
 };
 }

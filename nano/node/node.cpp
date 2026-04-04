@@ -143,7 +143,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	//
 	network_impl{ std::make_unique<nano::network> (*this, config.peering_port.has_value () ? *config.peering_port : 0) },
 	network{ *network_impl },
-	loopback_channel{ std::make_shared<nano::transport::loopback_channel> (*this) },
+	loopback_channel{ std::make_shared<nano::transport::loopback_channel> (transport_ctx, network.endpoint (), this) },
 	telemetry_impl{ std::make_unique<nano::telemetry> (flags, *this, network, observers, network_params, stats) },
 	telemetry{ *telemetry_impl },
 	// BEWARE: `bootstrap` takes `network.port` instead of `config.peering_port` because when the user doesn't specify
@@ -265,6 +265,11 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	transport_ctx.is_not_a_peer = [this] (nano::endpoint const & endpoint) {
 		return network.not_a_peer (endpoint, config.allow_local_peers);
 	};
+	transport_ctx.process_inbound = [this] (nano::messages::message const & msg, std::shared_ptr<nano::transport::channel> channel) {
+		inbound (msg, channel);
+	};
+
+	loopback_channel->set_node_id (node_id.pub);
 
 	// Subscribe to tcp_listener events
 	tcp_listener.connection_accepted.add ([this] (auto const & socket, auto const & server) {

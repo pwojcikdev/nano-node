@@ -25,6 +25,11 @@ add_library(
   tcp_server.cpp
   tcp_socket.hpp
   tcp_socket.cpp
+  test_channel.hpp
+  fake.hpp
+  fake.cpp
+  loopback.hpp
+  loopback.cpp
   traffic_type.hpp
   traffic_type.cpp
   transport_context.hpp

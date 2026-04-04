@@ -235,11 +235,8 @@ std::vector<std::shared_ptr<nano::block>> nano::test::clone (std::vector<std::sh
 
 std::shared_ptr<nano::transport::channel> nano::test::fake_channel (nano::node & node, nano::account node_id)
 {
-	auto channel = std::make_shared<nano::transport::fake::channel> (node);
-	if (!node_id.is_zero ())
-	{
-		channel->set_node_id (node_id);
-	}
+	auto channel = std::make_shared<nano::transport::fake::channel> (node.transport_ctx, node.network.endpoint (), &node);
+	channel->set_node_id (node_id.is_zero () ? node.node_id.pub : node_id);
 	return channel;
 }
 

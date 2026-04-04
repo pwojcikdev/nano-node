@@ -173,10 +173,8 @@ add_library(
   transport/channel.hpp
   transport/tcp_channel.hpp
   transport/fake.hpp
-  transport/fake.cpp
   transport/inproc.hpp
   transport/inproc.cpp
-  transport/loopback.cpp
   transport/loopback.hpp
   transport/message_deserializer.hpp
   transport/tcp_channels.hpp
@@ -184,7 +182,6 @@ add_library(
   transport/tcp_server.hpp
   transport/tcp_socket.hpp
   transport/test_channel.hpp
-  transport/test_channel.cpp
   transport/formatting.hpp
   transport/transport.hpp
   unchecked_map.cpp
