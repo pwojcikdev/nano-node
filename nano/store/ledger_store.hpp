@@ -41,6 +41,8 @@ public: // Upgrades
 	void upgrade_v22_to_v23 ();
 	void upgrade_v23_to_v24 ();
 	void upgrade_v24_to_v25 ();
+	void upgrade_v25_to_v26 ();
+	void populate_topo_index ();
 
 public:
 	nano::store::write_queue write_queue; // TODO: Shouldn't be public
@@ -61,6 +63,7 @@ private:
 	std::unique_ptr<nano::store::ledger::peer_view> peer_impl;
 	std::unique_ptr<nano::store::ledger::confirmation_height_view> confirmation_height_impl;
 	std::unique_ptr<nano::store::ledger::final_vote_view> final_vote_impl;
+	std::unique_ptr<nano::store::ledger::topology_view> topology_impl;
 	std::unique_ptr<nano::store::ledger::version_view> version_impl;
 
 public:
@@ -75,11 +78,12 @@ public:
 	nano::store::ledger::peer_view & peer;
 	nano::store::ledger::confirmation_height_view & confirmation_height;
 	nano::store::ledger::final_vote_view & final_vote;
+	nano::store::ledger::topology_view & topology;
 	nano::store::ledger::version_view & version;
 
 public:
 	static nano::store::backend_version_t constexpr version_minimum{ 21 };
-	static nano::store::backend_version_t constexpr version_current{ 25 };
+	static nano::store::backend_version_t constexpr version_current{ 26 };
 
 public:
 	static nano::store::column_schema const schema_current;
@@ -87,5 +91,6 @@ public:
 	static nano::store::column_schema const schema_v22;
 	static nano::store::column_schema const schema_v23;
 	static nano::store::column_schema const schema_v24;
+	static nano::store::column_schema const schema_v25;
 };
 };

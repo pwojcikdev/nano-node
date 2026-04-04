@@ -2,6 +2,7 @@ add_library(
   nano_store
   ledger_store.hpp
   ledger_store.cpp
+  ledger_topo_index.cpp
   backend.hpp
   backend.cpp
   ledger/account.hpp
@@ -22,6 +23,8 @@ add_library(
   ledger/pruned.cpp
   ledger/successor.hpp
   ledger/successor.cpp
+  ledger/topology.hpp
+  ledger/topology.cpp
   ledger/rep_weight.hpp
   ledger/rep_weight.cpp
   ledger/version.hpp

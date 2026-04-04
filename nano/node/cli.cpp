@@ -66,6 +66,7 @@ void nano::add_node_options (boost::program_options::options_description & descr
 	("confirmation_height_clear", "Clear confirmation height. Requires an <account> option that can be 'all' to clear all accounts")
 	("final_vote_clear", "Clear final votes")
 	("migrate_database_lmdb_to_rocksdb", "Migrates LMDB database to RocksDB")
+	("upgrade_topo_index", "Compute and store topological index for all existing blocks. Required for nodes upgrading from older versions.")
 	("rollback", "Rolls back the specified block hash, effectively removing this block and all blocks following it")
 	("diagnostics", "Run internal diagnostics")
 	("generate_config", boost::program_options::value<std::string> (), "Write configuration to stdout, populated with defaults suitable for this system. Pass the configuration type node, rpc or log. See also use_defaults.")
@@ -506,6 +507,25 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 		{
 			nano::default_logger ().error (nano::log::type::migration, "Migration failed: {}", e.what ());
 			std::cerr << "Migration failed: " << e.what () << std::endl;
+		}
+	}
+	else if (vm.count ("upgrade_topo_index"))
+	{
+		std::filesystem::path data_path = vm.count ("data_path") ? std::filesystem::path (vm["data_path"].as<std::string> ()) : nano::working_path ();
+		auto node_flags = nano::inactive_node_flag_defaults ();
+		node_flags.read_only = false;
+		nano::update_flags (node_flags, vm);
+		nano::inactive_node inactive_node (data_path, node_flags);
+		auto node = inactive_node.node;
+
+		if (node->ledger.topo_index_enabled ())
+		{
+			std::cout << "Topological index is already enabled." << std::endl;
+		}
+		else
+		{
+			node->ledger.store.populate_topo_index ();
+			std::cout << "Topological index populated successfully." << std::endl;
 		}
 	}
 	else if (vm.count ("rollback"))

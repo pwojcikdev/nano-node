@@ -27,5 +27,6 @@ public:
 
 private:
 	bool validate_epoch_block (nano::state_block const & block);
+	uint64_t topology_index (std::shared_ptr<nano::block> const & dep1, std::shared_ptr<nano::block> const & dep2 = nullptr) const;
 };
 }

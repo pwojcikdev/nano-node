@@ -26,6 +26,7 @@
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 
@@ -82,6 +83,11 @@ void nano::ledger::initialize (nano::generate_cache_flags const & generate_cache
 		logger.info (nano::log::type::ledger, "Initializing ledger with genesis block: {}", constants.genesis->hash ());
 		auto const transaction = store.tx_begin_write ();
 		store.initialize (transaction, constants);
+	}
+
+	{
+		auto const transaction = store.tx_begin_read ();
+		topo_index_enabled_ = store.version.get_topo_enabled (transaction);
 	}
 
 	if (generate_cache_flags.account_count || generate_cache_flags.block_count)
@@ -733,6 +739,10 @@ uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a
 		if (block_l != nullptr)
 		{
 			release_assert (cemented.block_exists (transaction_a, hash));
+			if (block_l->sideband ().topo_index != 0)
+			{
+				store.topology.del (transaction_a, block_l->sideband ().topo_index, hash);
+			}
 			store.block.del (transaction_a, hash);
 			store.pruned.put (transaction_a, hash);
 			hash = block_l->previous ();
@@ -812,6 +822,11 @@ uint64_t nano::ledger::account_count () const
 uint64_t nano::ledger::pruned_count () const
 {
 	return cache.pruned_count;
+}
+
+bool nano::ledger::topo_index_enabled () const
+{
+	return topo_index_enabled_;
 }
 
 uint64_t nano::ledger::backlog_size () const

@@ -18,6 +18,7 @@ enum class table
 	pending,
 	pruned,
 	successor,
+	topology, // (topology index, block_hash) -> no_value
 	vote,
 	rep_weights,
 	unchecked, // dropped in v22

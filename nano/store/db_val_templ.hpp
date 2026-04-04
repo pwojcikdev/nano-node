@@ -93,6 +93,17 @@ inline db_val::db_val (nano::endpoint_key const & value) :
 	static_assert (std::is_standard_layout<nano::endpoint_key>::value, "Standard layout is required");
 }
 
+inline db_val::db_val (nano::topo_key const & value) :
+	buffer{ std::make_shared<std::vector<uint8_t>> () }
+{
+	{
+		nano::vectorstream stream{ *buffer };
+		nano::write (stream, boost::endian::native_to_big (value.topo_index));
+		nano::write (stream, value.hash.bytes);
+	}
+	convert_buffer_to_value ();
+}
+
 inline db_val::db_val (std::shared_ptr<nano::block> const & block) :
 	buffer{ std::make_shared<std::vector<uint8_t>> () }
 {
@@ -193,6 +204,16 @@ inline db_val::operator nano::endpoint_key () const
 	nano::endpoint_key result;
 	debug_assert (span_view.size () == sizeof (result));
 	std::copy (span_view.begin (), span_view.end (), reinterpret_cast<uint8_t *> (&result));
+	return result;
+}
+
+inline db_val::operator nano::topo_key () const
+{
+	nano::bufferstream stream{ span_view.data (), span_view.size () };
+	nano::topo_key result;
+	nano::read (stream, result.topo_index);
+	boost::endian::big_to_native_inplace (result.topo_index);
+	nano::read (stream, result.hash.bytes);
 	return result;
 }
 

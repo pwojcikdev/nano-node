@@ -56,6 +56,7 @@ public:
 	db_val (nano::confirmation_height_info const &);
 	db_val (nano::block_info const &);
 	db_val (nano::endpoint_key const &);
+	db_val (nano::topo_key const &);
 	db_val (std::shared_ptr<nano::block> const &);
 
 	explicit operator uint64_t () const;
@@ -70,6 +71,7 @@ public:
 	explicit operator nano::confirmation_height_info () const;
 	explicit operator nano::block_info () const;
 	explicit operator nano::endpoint_key () const;
+	explicit operator nano::topo_key () const;
 	explicit operator std::shared_ptr<nano::block> () const;
 	explicit operator nano::amount () const;
 	explicit operator nano::block_hash () const;

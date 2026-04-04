@@ -30,4 +30,25 @@ uint64_t version_view::get (nano::store::transaction const & txn) const
 	}
 	return result;
 }
+
+void version_view::put_topo_enabled (nano::store::write_transaction const & txn, bool enabled)
+{
+	nano::uint256_union topo_key{ 2 };
+	nano::uint256_union topo_value{ enabled ? uint64_t{ 1 } : uint64_t{ 0 } };
+	auto status = backend.put (txn, nano::store::table::meta, topo_key, topo_value);
+	backend.release_assert_success (status);
+}
+
+bool version_view::get_topo_enabled (nano::store::transaction const & txn) const
+{
+	nano::uint256_union topo_key{ 2 };
+	nano::store::db_val data;
+	auto status = backend.get (txn, nano::store::table::meta, topo_key, data);
+	if (backend.success (status))
+	{
+		nano::uint256_union topo_value{ data };
+		return topo_value.number () != 0;
+	}
+	return false;
+}
 }

@@ -17,6 +17,7 @@
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
 #include <nano/store/ledger/successor.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 
@@ -33,6 +34,7 @@ nano::store::column_schema const ledger_store::schema_current{
 	{ nano::store::table::peers, "peers" },
 	{ nano::store::table::confirmation_height, "confirmation_height" },
 	{ nano::store::table::final_votes, "final_votes" },
+	{ nano::store::table::topology, "topology" },
 	{ nano::store::table::meta, "meta" }
 };
 }
@@ -53,6 +55,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	peer_impl{ std::make_unique<nano::store::ledger::peer_view> (*backend_impl) },
 	confirmation_height_impl{ std::make_unique<nano::store::ledger::confirmation_height_view> (*backend_impl) },
 	final_vote_impl{ std::make_unique<nano::store::ledger::final_vote_view> (*backend_impl) },
+	topology_impl{ std::make_unique<nano::store::ledger::topology_view> (*backend_impl) },
 	version_impl{ std::make_unique<nano::store::ledger::version_view> (*backend_impl) },
 	backend{ *backend_impl },
 	successor{ *successor_impl },
@@ -65,6 +68,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	peer{ *peer_impl },
 	confirmation_height{ *confirmation_height_impl },
 	final_vote{ *final_vote_impl },
+	topology{ *topology_impl },
 	version{ *version_impl }
 {
 	// Skip automatic open/upgrade when defer_open is set (used for testing individual upgrades)
@@ -163,6 +167,8 @@ void ledger_store::initialize (nano::store::write_transaction const & txn, nano:
 
 	// TODO: Use designated initialization
 	block.put (txn, constants.genesis->hash (), *constants.genesis);
+	topology.put (txn, constants.genesis->sideband ().topo_index, constants.genesis->hash ());
+	version.put_topo_enabled (txn, true);
 	confirmation_height.put (txn, constants.genesis->account (), nano::confirmation_height_info{ 1, constants.genesis->hash () });
 	account.put (txn, constants.genesis->account (), { constants.genesis->hash (), constants.genesis->account (), constants.genesis->hash (), std::numeric_limits<nano::uint128_t>::max (), nano::seconds_since_epoch (), 1, nano::epoch::epoch_0 });
 	rep_weight.put (txn, constants.genesis->account (), std::numeric_limits<nano::uint128_t>::max ());
@@ -205,6 +211,9 @@ void ledger_store::perform_upgrades (nano::store::backend_meta meta)
 			upgrade_v24_to_v25 ();
 			[[fallthrough]];
 		case 25:
+			upgrade_v25_to_v26 ();
+			[[fallthrough]];
+		case 26:
 			break;
 		default:
 			release_assert (false, "invalid ledger database version for upgrade", std::to_string (meta.version));
@@ -434,6 +443,37 @@ void ledger_store::upgrade_v24_to_v25 ()
 	backend.close ();
 
 	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v24 to v25 completed");
+}
+
+nano::store::column_schema const ledger_store::schema_v25{
+	{ nano::store::table::blocks, "blocks" },
+	{ nano::store::table::accounts, "accounts" },
+	{ nano::store::table::pending, "pending" },
+	{ nano::store::table::rep_weights, "rep_weights" },
+	{ nano::store::table::online_weight, "online_weight" },
+	{ nano::store::table::pruned, "pruned" },
+	{ nano::store::table::successor, "successor" },
+	{ nano::store::table::peers, "peers" },
+	{ nano::store::table::confirmation_height, "confirmation_height" },
+	{ nano::store::table::final_votes, "final_votes" },
+	{ nano::store::table::meta, "meta" }
+};
+
+// Add topology table
+void ledger_store::upgrade_v25_to_v26 ()
+{
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v25 to v26...");
+
+	backend.open (schema_current, nano::store::open_mode::read_write);
+	{
+		release_assert (backend.get_version (backend.tx_begin_read ()) == 25, "unexpected version during upgrade", std::to_string (backend.get_version (backend.tx_begin_read ())));
+
+		auto transaction = backend.tx_begin_write ();
+		version.put (transaction, 26);
+	}
+	backend.close ();
+
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v25 to v26 completed");
 }
 
 std::string ledger_store::vendor_get () const

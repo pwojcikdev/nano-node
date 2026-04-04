@@ -76,6 +76,7 @@ public:
 	nano::account epoch_signer (nano::link const &) const;
 	nano::link epoch_link (nano::epoch) const;
 	bool bootstrap_height_reached () const;
+	bool topo_index_enabled () const;
 	std::unordered_map<nano::account, nano::uint128_t> rep_weights_snapshot () const;
 
 	static nano::epoch version (nano::block const & block);
@@ -130,6 +131,7 @@ public:
 public:
 	uint64_t const max_backlog_size{ 0 };
 	bool pruning{ false };
+	bool topo_index_enabled_{ false };
 
 	nano::bootstrap_weights bootstrap_weights{};
 
