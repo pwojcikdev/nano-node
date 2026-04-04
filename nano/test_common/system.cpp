@@ -5,13 +5,13 @@
 #include <nano/lib/thread_runner.hpp>
 #include <nano/lib/work_version.hpp>
 #include <nano/node/active_elections.hpp>
-#include <nano/node/transport/tcp_listener.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/test_common/common.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
+#include <nano/transport/tcp_listener.hpp>
 
 #include <boost/asio.hpp>
 #include <boost/format.hpp>

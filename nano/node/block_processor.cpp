@@ -9,10 +9,10 @@
 #include <nano/node/ledger_notifications.hpp>
 #include <nano/node/local_vote_history.hpp>
 #include <nano/node/node.hpp>
-#include <nano/node/transport/formatting.hpp>
 #include <nano/node/unchecked_map.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
+#include <nano/transport/formatting.hpp>
 
 #include <utility>
 

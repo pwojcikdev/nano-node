@@ -5,13 +5,13 @@
 #include <nano/node/active_elections.hpp>
 #include <nano/node/online_reps.hpp>
 #include <nano/node/telemetry.hpp>
-#include <nano/node/transport/fake.hpp>
 #include <nano/node/vote_router.hpp>
 #include <nano/node/websocket.hpp>
 #include <nano/test_common/network.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/telemetry.hpp>
 #include <nano/test_common/testutil.hpp>
+#include <nano/transport/fake.hpp>
 
 #include <gtest/gtest.h>
 
@@ -168,7 +168,7 @@ TEST (websocket, started_election)
 				 .work (*system.work.generate (nano::dev::genesis->hash ()))
 				 .build ();
 	nano::messages::publish publish1{ nano::dev::network_params.network, send1 };
-	auto channel1 = std::make_shared<nano::transport::fake::channel> (*node1);
+	auto channel1 = nano::test::fake_channel (*node1);
 	node1->inbound (publish1, channel1);
 	ASSERT_TIMELY (1s, node1->active.election (send1->qualified_root ()));
 	ASSERT_TIMELY_EQ (5s, future.wait_for (0s), std::future_status::ready);
@@ -216,7 +216,7 @@ TEST (websocket, stopped_election)
 				 .work (*system.work.generate (nano::dev::genesis->hash ()))
 				 .build ();
 	nano::messages::publish publish1{ nano::dev::network_params.network, send1 };
-	auto channel1 = std::make_shared<nano::transport::fake::channel> (*node1);
+	auto channel1 = nano::test::fake_channel (*node1);
 	node1->inbound (publish1, channel1);
 	ASSERT_TIMELY (5s, node1->active.election (send1->qualified_root ()));
 	node1->active.erase (*send1);

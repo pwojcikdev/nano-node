@@ -2,7 +2,7 @@
 #include <nano/lib/thread_roles.hpp>
 #include <nano/node/bootstrap/dependency_strategy.hpp>
 #include <nano/node/nodeconfig.hpp>
-#include <nano/node/transport/formatting.hpp>
+#include <nano/transport/formatting.hpp>
 
 using namespace std::chrono_literals;
 

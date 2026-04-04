@@ -1,7 +1,7 @@
 #pragma once
 
 #include <nano/node/fair_queue.hpp>
-#include <nano/node/transport/channel.hpp>
+#include <nano/transport/channel.hpp>
 
 namespace nano
 {

@@ -1,41 +1,39 @@
 #pragma once
 
-#include <nano/lib/fwd.hpp>
-#include <nano/lib/thread_runner.hpp>
-#include <nano/secure/common.hpp>
 #include <nano/transport/fwd.hpp>
-
-#include <boost/asio/io_context.hpp>
+#include <nano/transport/transport_context.hpp>
 
 #include <memory>
 
-namespace asio = boost::asio;
-
 namespace nano::transport
 {
-struct transport_params
-{
-	unsigned io_threads{ 1 };
-};
-
 class transport_service
 {
 public:
-	transport_service (nano::network_params const & network_params, nano::stats & stats, nano::logger & logger, transport_params = {});
+	transport_service (
+	boost::asio::io_context &,
+	nano::network_params const &,
+	nano::stats &,
+	nano::logger &,
+	nano::transport::tcp_config const &,
+	nano::transport::bandwidth_limiter &,
+	uint16_t port);
+
 	~transport_service ();
 
 	void start ();
 	void stop ();
 
-public:
-	std::shared_ptr<asio::io_context> io_ctx_shared;
-	asio::io_context & io_ctx;
-
-	nano::network_params const network_params;
-	nano::stats & stats;
-	nano::logger & logger;
+	nano::container_info container_info () const;
 
 private:
-	nano::thread_runner runner;
+	std::unique_ptr<nano::transport::transport_context> ctx_impl;
+	std::unique_ptr<nano::transport::tcp_channels> tcp_channels_impl;
+	std::unique_ptr<nano::transport::tcp_listener> tcp_listener_impl;
+
+public:
+	nano::transport::transport_context & ctx;
+	nano::transport::tcp_channels & tcp_channels;
+	nano::transport::tcp_listener & tcp_listener;
 };
 }

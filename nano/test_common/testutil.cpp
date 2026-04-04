@@ -6,7 +6,6 @@
 #include <nano/node/scheduler/component.hpp>
 #include <nano/node/scheduler/manual.hpp>
 #include <nano/node/scheduler/priority.hpp>
-#include <nano/node/transport/fake.hpp>
 #include <nano/node/vote_router.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
@@ -18,6 +17,7 @@
 #include <nano/store/ledger/pending.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
+#include <nano/transport/fake.hpp>
 
 #include <gtest/gtest.h>
 
@@ -235,17 +235,14 @@ std::vector<std::shared_ptr<nano::block>> nano::test::clone (std::vector<std::sh
 
 std::shared_ptr<nano::transport::channel> nano::test::fake_channel (nano::node & node, nano::account node_id)
 {
-	auto channel = std::make_shared<nano::transport::fake::channel> (node);
-	if (!node_id.is_zero ())
-	{
-		channel->set_node_id (node_id);
-	}
+	auto channel = std::make_shared<nano::transport::fake::channel> (node.transport.ctx, node.network.endpoint (), &node);
+	channel->set_node_id (node_id.is_zero () ? node.node_id.pub : node_id);
 	return channel;
 }
 
 std::shared_ptr<nano::transport::test_channel> nano::test::test_channel (nano::node & node, nano::account node_id)
 {
-	auto channel = std::make_shared<nano::transport::test_channel> (node);
+	auto channel = std::make_shared<nano::transport::test_channel> (node.transport.ctx, &node);
 	if (!node_id.is_zero ())
 	{
 		channel->set_node_id (node_id);

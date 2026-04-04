@@ -3,12 +3,12 @@
 #include <nano/node/bootstrap/frontier_strategy.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
-#include <nano/node/transport/formatting.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/pending.hpp>
+#include <nano/transport/formatting.hpp>
 
 using namespace std::chrono_literals;
 

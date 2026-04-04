@@ -7,7 +7,7 @@
 #include <nano/node/node.hpp>
 #include <nano/node/portmapping.hpp>
 #include <nano/node/telemetry.hpp>
-#include <nano/node/transport/formatting.hpp>
+#include <nano/transport/formatting.hpp>
 
 using namespace std::chrono_literals;
 
@@ -26,7 +26,7 @@ nano::network::network (nano::node & node_a, uint16_t port_a) :
 	syn_cookies{ node.config.network.max_peers_per_ip, node.logger },
 	resolver{ node.io_ctx },
 	filter{ node.config.network.duplicate_filter_size, node.config.network.duplicate_filter_cutoff },
-	tcp_channels{ node },
+	tcp_channels{ node.transport.tcp_channels },
 	port{ port_a }
 {
 	node.observers.channel_connected.add ([this] (std::shared_ptr<nano::transport::channel> const & channel) {
@@ -717,7 +717,7 @@ void nano::network::exclude (std::shared_ptr<nano::transport::channel> const & c
 	erase (*channel);
 }
 
-bool nano::network::verify_handshake_response (const nano::messages::node_id_handshake::response_payload & response, const nano::endpoint & remote_endpoint)
+auto nano::network::verify_handshake_response (const nano::messages::node_id_handshake::response_payload & response, const nano::endpoint & remote_endpoint) -> bool
 {
 	// Prevent connection with ourselves
 	if (response.node_id == node.node_id.pub)
@@ -751,7 +751,7 @@ bool nano::network::verify_handshake_response (const nano::messages::node_id_han
 	return true; // OK
 }
 
-std::optional<nano::messages::node_id_handshake::query_payload> nano::network::prepare_handshake_query (const nano::endpoint & remote_endpoint)
+auto nano::network::prepare_handshake_query (const nano::endpoint & remote_endpoint) -> std::optional<nano::messages::node_id_handshake::query_payload>
 {
 	if (auto cookie = syn_cookies.assign (remote_endpoint); cookie)
 	{
@@ -761,7 +761,7 @@ std::optional<nano::messages::node_id_handshake::query_payload> nano::network::p
 	return std::nullopt;
 }
 
-nano::messages::node_id_handshake::response_payload nano::network::prepare_handshake_response (const nano::messages::node_id_handshake::query_payload & query, nano::messages::handshake_version version) const
+auto nano::network::prepare_handshake_response (const nano::messages::node_id_handshake::query_payload & query, nano::messages::handshake_version version) const -> nano::messages::node_id_handshake::response_payload
 {
 	using handshake_version = nano::messages::handshake_version;
 	using response_payload = nano::messages::node_id_handshake::response_payload;

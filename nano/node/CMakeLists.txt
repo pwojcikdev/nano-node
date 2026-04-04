@@ -20,8 +20,6 @@ add_library(
   active_elections_index.cpp
   backlog_scan.hpp
   backlog_scan.cpp
-  bandwidth_limiter.hpp
-  bandwidth_limiter.cpp
   block_context.hpp
   block_processor.hpp
   block_processor.cpp
@@ -171,37 +169,8 @@ add_library(
   scheduler/priority_pool.cpp
   telemetry.hpp
   telemetry.cpp
-  transport/block_deserializer.hpp
-  transport/block_deserializer.cpp
-  transport/channel.hpp
-  transport/channel.cpp
-  transport/tcp_channel.hpp
-  transport/tcp_channel.cpp
-  transport/fake.hpp
-  transport/fake.cpp
-  transport/fwd.hpp
   transport/inproc.hpp
   transport/inproc.cpp
-  transport/loopback.cpp
-  transport/loopback.hpp
-  transport/message_deserializer.hpp
-  transport/message_deserializer.cpp
-  transport/tcp_channels.hpp
-  transport/tcp_channels.cpp
-  transport/tcp_config.hpp
-  transport/tcp_config.cpp
-  transport/tcp_listener.hpp
-  transport/tcp_listener.cpp
-  transport/tcp_server.hpp
-  transport/tcp_server.cpp
-  transport/tcp_socket.hpp
-  transport/tcp_socket.cpp
-  transport/test_channel.hpp
-  transport/test_channel.cpp
-  transport/traffic_type.hpp
-  transport/traffic_type.cpp
-  transport/transport.hpp
-  transport/transport.cpp
   unchecked_map.cpp
   unchecked_map.hpp
   vote_cache.hpp
@@ -231,6 +200,7 @@ target_link_libraries(
   node
   nano_lib
   nano_messages
+  nano_transport
   nano_store
   secure
   weights

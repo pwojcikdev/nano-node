@@ -1,5 +1,5 @@
-#include <nano/node/transport/transport.hpp>
 #include <nano/test_common/testutil.hpp>
+#include <nano/transport/transport.hpp>
 
 #include <gtest/gtest.h>
 

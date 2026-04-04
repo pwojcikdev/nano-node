@@ -1,0 +1,347 @@
+#include <nano/lib/stacktrace.hpp>
+#include <nano/lib/stats.hpp>
+#include <nano/lib/utility.hpp>
+#include <nano/transport/bandwidth_limiter.hpp>
+#include <nano/transport/tcp_channel.hpp>
+#include <nano/transport/tcp_socket.hpp>
+#include <nano/transport/transport.hpp>
+#include <nano/transport/transport_context.hpp>
+
+/*
+ * tcp_channel
+ */
+
+nano::transport::tcp_channel::tcp_channel (transport_context & ctx_a, std::shared_ptr<tcp_socket> socket_a, void * owner_id_a) :
+	channel (ctx_a, owner_id_a),
+	socket{ socket_a },
+	strand{ ctx_a.io_ctx.get_executor () },
+	sending_task{ strand }
+{
+	remote_endpoint = socket_a->get_remote_endpoint ();
+	local_endpoint = socket_a->get_local_endpoint ();
+	start ();
+}
+
+nano::transport::tcp_channel::~tcp_channel ()
+{
+	close ();
+}
+
+void nano::transport::tcp_channel::close ()
+{
+	stop ();
+	socket->close ();
+}
+
+void nano::transport::tcp_channel::close_async ()
+{
+	socket->close_async ();
+}
+
+void nano::transport::tcp_channel::start ()
+{
+	sending_task = nano::async::task (strand, [this] (nano::async::condition & condition) {
+		return start_sending (condition); // This is not a coroutine, but a corotuine factory
+	});
+}
+
+asio::awaitable<void> nano::transport::tcp_channel::start_sending (nano::async::condition & condition)
+{
+	debug_assert (strand.running_in_this_thread ());
+	try
+	{
+		co_await run_sending (condition);
+	}
+	catch (boost::system::system_error const & ex)
+	{
+		// Operation aborted is expected when cancelling the task
+		debug_assert (ex.code () == asio::error::operation_aborted);
+	}
+	catch (...)
+	{
+		release_assert (false, "unexpected exception");
+	}
+	debug_assert (strand.running_in_this_thread ());
+
+	// Ensure socket gets closed if task is stopped
+	close_async ();
+}
+
+void nano::transport::tcp_channel::stop ()
+{
+	if (sending_task.running ())
+	{
+		// Node context must be running to gracefully stop async tasks
+		debug_assert (!ctx.io_ctx.stopped ());
+		// Ensure that we are not trying to await the task while running on the same thread / io_context
+		debug_assert (!ctx.io_ctx.get_executor ().running_in_this_thread ());
+
+		sending_task.cancel ();
+		sending_task.join ();
+	}
+}
+
+bool nano::transport::tcp_channel::max (nano::transport::traffic_type traffic_type)
+{
+	nano::lock_guard<nano::mutex> guard{ mutex };
+	return queue.max (traffic_type);
+}
+
+bool nano::transport::tcp_channel::send_impl (nano::messages::message const & message, nano::transport::traffic_type type, nano::transport::channel::callback_t callback)
+{
+	auto buffer = message.to_shared_const_buffer ();
+
+	nano::unique_lock<nano::mutex> lock{ mutex };
+	if (!queue.full (type))
+	{
+		queue.push (type, { buffer, callback });
+		lock.unlock ();
+
+		ctx.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::queued, nano::stat::dir::out);
+		ctx.stats.inc (nano::stat::type::tcp_channel_queued, to_stat_detail (type), nano::stat::dir::out);
+
+		sending_task.notify (); // Wake up the sending task
+
+		return true;
+	}
+	else
+	{
+		lock.unlock ();
+
+		ctx.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::drop, nano::stat::dir::out);
+		ctx.stats.inc (nano::stat::type::tcp_channel_drop, to_stat_detail (type), nano::stat::dir::out);
+	}
+	return false;
+}
+
+asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::condition & condition)
+{
+	while (!co_await nano::async::cancelled ())
+	{
+		debug_assert (strand.running_in_this_thread ());
+
+		auto next_batch = [this] () {
+			const size_t max_batch = 8; // TODO: Make this configurable
+			nano::lock_guard<nano::mutex> lock{ mutex };
+			return queue.next_batch (max_batch);
+		};
+
+		if (auto batch = next_batch (); !batch.empty ())
+		{
+			for (auto const & [type, item] : batch)
+			{
+				auto ec = co_await send_one (type, item);
+				if (ec)
+				{
+					co_return; // Stop on error
+				}
+			}
+		}
+		else
+		{
+			co_await condition.wait ();
+		}
+	}
+}
+
+asio::awaitable<boost::system::error_code> nano::transport::tcp_channel::send_one (traffic_type type, tcp_channel_queue::entry_t const & item)
+{
+	debug_assert (strand.running_in_this_thread ());
+
+	auto const & [buffer, callback] = item;
+	auto const size = buffer.size ();
+
+	// Wait for bandwidth
+	// This is somewhat inefficient
+	// The performance impact *should* be mitigated by the fact that we allocate it in larger chunks, so this happens relatively infrequently
+	const size_t bandwidth_chunk = 128 * 1024; // TODO: Make this configurable
+	while (allocated_bandwidth < size)
+	{
+		// TODO: Consider implementing a subsribe/notification mechanism for bandwidth allocation
+		if (ctx.outbound_limiter.should_pass (bandwidth_chunk, type)) // Allocate bandwidth in larger chunks
+		{
+			allocated_bandwidth += bandwidth_chunk;
+		}
+		else
+		{
+			ctx.stats.inc (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_bandwidth, nano::stat::dir::out);
+			co_await nano::async::sleep_for (100ms); // TODO: Exponential backoff
+		}
+	}
+	allocated_bandwidth -= size;
+
+	ctx.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::send, nano::stat::dir::out);
+	ctx.stats.inc (nano::stat::type::tcp_channel_send, to_stat_detail (type), nano::stat::dir::out);
+
+	auto [ec, size_written] = co_await socket->co_write (buffer, buffer.size ());
+	debug_assert (ec || size_written == size);
+	debug_assert (strand.running_in_this_thread ());
+
+	if (!ec)
+	{
+		ctx.stats.add (nano::stat::type::traffic_tcp_type, to_stat_detail (type), nano::stat::dir::out, size_written);
+		set_last_packet_sent (std::chrono::steady_clock::now ());
+	}
+	else
+	{
+		ctx.stats.inc (nano::stat::type::tcp_channel_ec, nano::to_stat_detail (ec), nano::stat::dir::out);
+	}
+
+	if (callback)
+	{
+		callback (ec, size_written);
+	}
+
+	co_return ec;
+}
+
+bool nano::transport::tcp_channel::alive () const
+{
+	return socket->alive ();
+}
+
+nano::endpoint nano::transport::tcp_channel::get_remote_endpoint () const
+{
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	return remote_endpoint;
+}
+
+nano::endpoint nano::transport::tcp_channel::get_local_endpoint () const
+{
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	return local_endpoint;
+}
+
+std::string nano::transport::tcp_channel::to_string () const
+{
+	return nano::util::to_str (get_remote_endpoint ());
+}
+
+void nano::transport::tcp_channel::operator() (nano::object_stream & obs) const
+{
+	nano::transport::channel::operator() (obs); // Write common data
+	obs.write ("socket", socket);
+}
+
+/*
+ * tcp_channel_queue
+ */
+
+nano::transport::tcp_channel_queue::tcp_channel_queue ()
+{
+	for (auto type : all_traffic_types ())
+	{
+		queues.at (type) = { type, {} };
+	}
+}
+
+bool nano::transport::tcp_channel_queue::empty () const
+{
+	return total_size == 0;
+}
+
+size_t nano::transport::tcp_channel_queue::size () const
+{
+	return total_size;
+}
+
+size_t nano::transport::tcp_channel_queue::size (traffic_type type) const
+{
+	return queues.at (type).second.size ();
+}
+
+bool nano::transport::tcp_channel_queue::max (traffic_type type) const
+{
+	return size (type) >= max_size;
+}
+
+bool nano::transport::tcp_channel_queue::full (traffic_type type) const
+{
+	return size (type) >= full_size;
+}
+
+void nano::transport::tcp_channel_queue::push (traffic_type type, entry_t entry)
+{
+	debug_assert (!full (type)); // Should be checked before calling this function
+	queues.at (type).second.push_back (std::move (entry));
+	++total_size;
+}
+
+auto nano::transport::tcp_channel_queue::next () -> value_t
+{
+	debug_assert (!empty ()); // Should be checked before calling next
+
+	auto should_seek = [&, this] () {
+		if (current == queues.end ())
+		{
+			return true;
+		}
+		auto & queue = current->second;
+		if (queue.empty ())
+		{
+			return true;
+		}
+		// Allow up to `priority` requests to be processed before moving to the next queue
+		if (counter >= priority (current->first))
+		{
+			return true;
+		}
+		return false;
+	};
+
+	auto seek_next = [&, this] () {
+		counter = 0;
+		do
+		{
+			if (current != queues.end ())
+			{
+				++current;
+			}
+			if (current == queues.end ())
+			{
+				current = queues.begin ();
+			}
+			release_assert (current != queues.end ());
+		} while (current->second.empty ());
+	};
+
+	if (should_seek ())
+	{
+		seek_next ();
+	}
+
+	release_assert (current != queues.end ());
+
+	auto & source = current->first;
+	auto & queue = current->second;
+
+	++counter;
+	--total_size;
+
+	release_assert (!queue.empty ());
+	auto entry = std::move (queue.front ());
+	queue.pop_front ();
+	return { source, std::move (entry) };
+}
+
+auto nano::transport::tcp_channel_queue::next_batch (size_t max_count) -> batch_t
+{
+	std::deque<value_t> result;
+	while (!empty () && result.size () < max_count)
+	{
+		result.emplace_back (next ());
+	}
+	return result;
+}
+
+size_t nano::transport::tcp_channel_queue::priority (traffic_type type) const
+{
+	switch (type)
+	{
+		case traffic_type::block_broadcast:
+		case traffic_type::vote_rebroadcast:
+			return 1;
+		default:
+			return 4;
+	}
+}

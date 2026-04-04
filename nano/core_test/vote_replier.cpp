@@ -2,13 +2,13 @@
 #include <nano/lib/stats.hpp>
 #include <nano/messages/confirm.hpp>
 #include <nano/node/network.hpp>
-#include <nano/node/transport/fake.hpp>
-#include <nano/node/transport/test_channel.hpp>
 #include <nano/node/vote_replier.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/test_common/chains.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
+#include <nano/transport/fake.hpp>
+#include <nano/transport/test_channel.hpp>
 
 #include <gtest/gtest.h>
 

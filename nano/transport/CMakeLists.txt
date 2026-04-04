@@ -1,11 +1,42 @@
 add_library(
   nano_transport
+  bandwidth_limiter.hpp
+  bandwidth_limiter.cpp
+  block_deserializer.hpp
+  block_deserializer.cpp
+  channel.hpp
+  channel.cpp
   common.hpp
+  common.cpp
+  formatting.hpp
   fwd.hpp
+  handshake_handler.hpp
+  ports.hpp
+  message_deserializer.hpp
+  message_deserializer.cpp
+  tcp_channel.hpp
+  tcp_channel.cpp
+  tcp_channels.hpp
+  tcp_channels.cpp
+  tcp_config.hpp
+  tcp_config.cpp
+  tcp_listener.hpp
+  tcp_listener.cpp
+  tcp_server.hpp
+  tcp_server.cpp
+  tcp_socket.hpp
+  tcp_socket.cpp
+  test_channel.hpp
+  fake.hpp
+  fake.cpp
+  loopback.hpp
+  loopback.cpp
+  traffic_type.hpp
+  traffic_type.cpp
+  transport_context.hpp
+  transport.hpp
+  transport.cpp
   transport_service.hpp
-  transport_service.cpp
-  tcp/fwd.hpp
-  tcp/tcp_service.hpp
-  tcp/tcp_service.cpp)
+  transport_service.cpp)
 
-target_link_libraries(nano_transport nano_lib nano_secure Boost::asio)
+target_link_libraries(nano_transport nano_lib nano_messages secure Boost::asio)

@@ -16,10 +16,12 @@
 #include <nano/node/portmapping.hpp>
 #include <nano/node/rep_tiers.hpp>
 #include <nano/node/repcrawler.hpp>
-#include <nano/node/transport/tcp_server.hpp>
 #include <nano/node/unchecked_map.hpp>
 #include <nano/node/vote_cache.hpp>
 #include <nano/node/websocket.hpp>
+#include <nano/transport/bandwidth_limiter.hpp>
+#include <nano/transport/tcp_server.hpp>
+#include <nano/transport/transport_service.hpp>
 #include <nano/weights/bootstrap_weights.hpp>
 
 #include <boost/program_options.hpp>
@@ -134,8 +136,15 @@ public:
 	nano::unchecked_map & unchecked;
 	std::unique_ptr<nano::ledger_notifications> ledger_notifications_impl;
 	nano::ledger_notifications & ledger_notifications;
-	std::unique_ptr<nano::bandwidth_limiter> outbound_limiter_impl;
-	nano::bandwidth_limiter & outbound_limiter;
+	std::unique_ptr<nano::transport::bandwidth_limiter> outbound_limiter_impl;
+	nano::transport::bandwidth_limiter & outbound_limiter;
+	std::unique_ptr<nano::transport::message_sink> message_sink_impl;
+	std::unique_ptr<nano::transport::peer_policy> peer_policy_impl;
+	std::unique_ptr<nano::transport::connector> connector_impl;
+	std::unique_ptr<nano::transport::channel_events> channel_events_impl;
+	std::unique_ptr<nano::transport::channel_factory> channel_factory_impl;
+	std::unique_ptr<nano::transport::transport_service> transport_impl;
+	nano::transport::transport_service & transport;
 	std::unique_ptr<nano::message_processor> message_processor_impl;
 	nano::message_processor & message_processor;
 	std::unique_ptr<nano::network> network_impl;
@@ -143,8 +152,6 @@ public:
 	std::shared_ptr<nano::transport::channel> loopback_channel;
 	std::unique_ptr<nano::telemetry> telemetry_impl;
 	nano::telemetry & telemetry;
-	std::unique_ptr<nano::transport::tcp_listener> tcp_listener_impl;
-	nano::transport::tcp_listener & tcp_listener;
 	std::unique_ptr<nano::port_mapping> port_mapping_impl;
 	nano::port_mapping & port_mapping;
 	std::unique_ptr<nano::block_processor> block_processor_impl;

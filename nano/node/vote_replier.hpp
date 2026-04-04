@@ -6,8 +6,8 @@
 #include <nano/lib/threading.hpp>
 #include <nano/node/fair_queue_traits.hpp>
 #include <nano/node/fwd.hpp>
-#include <nano/node/transport/channel.hpp>
-#include <nano/node/transport/transport.hpp>
+#include <nano/transport/channel.hpp>
+#include <nano/transport/transport.hpp>
 
 #include <atomic>
 #include <condition_variable>

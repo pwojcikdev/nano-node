@@ -5,8 +5,8 @@
 #include <nano/node/node.hpp>
 #include <nano/node/node_observers.hpp>
 #include <nano/node/telemetry.hpp>
-#include <nano/node/transport/transport.hpp>
 #include <nano/secure/ledger.hpp>
+#include <nano/transport/transport.hpp>
 
 #include <boost/algorithm/string.hpp>
 

@@ -4,13 +4,13 @@
 #include <nano/lib/vote.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/repcrawler.hpp>
-#include <nano/node/transport/fake.hpp>
 #include <nano/node/transport/inproc.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/test_common/chains.hpp>
 #include <nano/test_common/network.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
+#include <nano/transport/fake.hpp>
 
 #include <gtest/gtest.h>
 
@@ -187,7 +187,7 @@ TEST (rep_crawler, rep_remove)
 	}
 
 	// Create channel for Rep1
-	auto channel_rep1 (std::make_shared<nano::transport::fake::channel> (searching_node));
+	auto channel_rep1 (nano::test::fake_channel (searching_node));
 
 	// Ensure Rep1 is found by the rep_crawler after receiving a vote from it
 	auto vote_rep1 = std::make_shared<nano::vote> (keys_rep1.pub, keys_rep1.prv, 0, 0, std::vector<nano::block_hash>{ nano::dev::genesis->hash () });

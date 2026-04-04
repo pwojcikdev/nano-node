@@ -6,7 +6,7 @@
 #include <nano/lib/rpcconfig.hpp>
 #include <nano/lib/tomlconfig.hpp>
 #include <nano/node/nodeconfig.hpp>
-#include <nano/node/transport/transport.hpp>
+#include <nano/transport/transport.hpp>
 
 #include <boost/format.hpp>
 

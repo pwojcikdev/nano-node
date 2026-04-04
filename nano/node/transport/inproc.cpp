@@ -2,12 +2,13 @@
 #include <nano/node/network.hpp>
 #include <nano/node/node.hpp>
 #include <nano/node/transport/inproc.hpp>
-#include <nano/node/transport/message_deserializer.hpp>
+#include <nano/transport/message_deserializer.hpp>
 
 #include <boost/format.hpp>
 
 nano::transport::inproc::channel::channel (nano::node & node, nano::node & destination) :
-	transport::channel{ node },
+	transport::channel{ node.transport.ctx, &node },
+	node{ node },
 	destination{ destination },
 	endpoint{ node.network.endpoint () }
 {

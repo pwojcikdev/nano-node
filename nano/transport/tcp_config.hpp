@@ -1,0 +1,44 @@
+#pragma once
+
+#include <nano/lib/config.hpp>
+#include <nano/lib/constants.hpp>
+
+#include <chrono>
+
+namespace nano::transport
+{
+class tcp_config
+{
+public:
+	explicit tcp_config (nano::network_constants const & network)
+	{
+		if (network.is_dev_network ())
+		{
+			max_inbound_connections = 128;
+			max_outbound_connections = 128;
+			max_attempts = 128;
+			max_attempts_per_ip = 128;
+			connect_timeout = 5s;
+			checkup_interval = 1s;
+		}
+	}
+
+public:
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
+
+public:
+	size_t max_inbound_connections{ 2048 };
+	size_t max_outbound_connections{ 2048 };
+	size_t max_attempts{ 60 };
+	size_t max_attempts_per_ip{ 1 };
+	std::chrono::seconds connect_timeout{ 30 };
+	std::chrono::seconds handshake_timeout{ 30 };
+	std::chrono::seconds io_timeout{ 30 };
+	std::chrono::seconds silent_timeout{ 30 };
+	std::chrono::seconds checkup_interval{ 5 };
+	unsigned bootstrap_connections_max{ 64 };
+	size_t max_peers_per_ip{ 4 };
+	size_t max_peers_per_subnetwork{ 16 };
+};
+}

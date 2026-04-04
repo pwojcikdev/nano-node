@@ -13,13 +13,13 @@
 #include <nano/node/ledger_notifications.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
-#include <nano/node/transport/formatting.hpp>
-#include <nano/node/transport/transport.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/transport/formatting.hpp>
+#include <nano/transport/transport.hpp>
 
 using namespace std::chrono_literals;
 
