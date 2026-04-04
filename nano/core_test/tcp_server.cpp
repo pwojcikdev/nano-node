@@ -43,7 +43,7 @@ TEST (tcp_server, handshake_deserialization_failure)
 	auto node = system.add_node ();
 
 	// Create a client socket to connect to the node
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (*node);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 
 	// Connect using blocking helper
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
@@ -95,7 +95,7 @@ TEST (tcp_server, handshake_incomplete_message)
 	auto node = system.add_node ();
 
 	// Create a client socket
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (*node);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 
 	// Connect using blocking helper
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
@@ -133,7 +133,7 @@ TEST (tcp_server, handshake_invalid_message_type_aborts)
 	nano::test::system system;
 	auto node = system.add_node ();
 
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (*node);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 
 	// Connect to the node
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
@@ -184,7 +184,7 @@ TEST (tcp_server, handshake_self_connection_rejected)
 	nano::test::system system;
 	auto node = system.add_node ();
 
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (*node);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 
 	// Connect to the node
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
@@ -226,7 +226,7 @@ TEST (tcp_server, handshake_multiple_queries_rejected)
 	nano::test::system system;
 	auto node = system.add_node ();
 
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (*node);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 
 	// Connect to node1
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
@@ -267,7 +267,7 @@ TEST (tcp_server, handshake_outdated_protocol_version)
 	nano::test::system system;
 	auto node = system.add_node ();
 
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (*node);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 
 	// Connect to the node
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
@@ -319,7 +319,7 @@ TEST (tcp_server, handshake_wrong_network_id)
 	nano::test::system system;
 	auto node = system.add_node ();
 
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (*node);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 
 	// Connect to the node
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());

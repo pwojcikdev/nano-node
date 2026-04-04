@@ -13,8 +13,14 @@ add_library(
   handshake_provider.hpp
   message_deserializer.hpp
   message_deserializer.cpp
+  tcp_channel.hpp
+  tcp_channel.cpp
   tcp_config.hpp
   tcp_config.cpp
+  tcp_server.hpp
+  tcp_server.cpp
+  tcp_socket.hpp
+  tcp_socket.cpp
   traffic_type.hpp
   traffic_type.cpp
   transport_context.hpp

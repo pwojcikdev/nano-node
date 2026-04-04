@@ -3,6 +3,7 @@
 #include <nano/lib/endpoint.hpp>
 #include <nano/lib/fwd.hpp>
 #include <nano/lib/network_filter.hpp>
+#include <nano/lib/node_capabilities.hpp>
 #include <nano/messages/fwd.hpp>
 #include <nano/transport/bandwidth_limiter.hpp>
 #include <nano/transport/fwd.hpp>
@@ -55,5 +56,6 @@ struct transport_context
 	std::function<std::size_t ()> bootstrap_count;
 	std::function<void (std::array<nano::endpoint, 8> &)> random_fill;
 	std::function<bool (nano::endpoint const &)> is_not_a_peer;
+	std::function<std::shared_ptr<nano::transport::tcp_channel> (std::shared_ptr<nano::transport::tcp_socket> const &, std::shared_ptr<nano::transport::tcp_server> const &, nano::account const &, nano::node_capabilities_flags)> create_channel;
 };
 }

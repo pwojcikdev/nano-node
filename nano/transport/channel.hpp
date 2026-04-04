@@ -29,7 +29,7 @@ public:
 	using callback_t = std::function<void (boost::system::error_code const &, std::size_t)>;
 
 public:
-	explicit channel (nano::transport::transport_context &, void * owner_id = nullptr);
+	explicit channel (transport_context &, void * owner_id = nullptr);
 	virtual ~channel () = default;
 
 	/// @returns true if the message was sent (or queued to be sent), false if it was immediately dropped
@@ -134,7 +134,7 @@ protected:
 	virtual bool send_impl (nano::messages::message const &, nano::transport::traffic_type, callback_t) = 0;
 
 protected:
-	nano::transport::transport_context & ctx;
+	transport_context & ctx;
 	mutable nano::mutex mutex;
 
 private:

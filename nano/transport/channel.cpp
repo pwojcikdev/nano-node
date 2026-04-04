@@ -7,7 +7,7 @@
 #include <boost/asio/ip/address_v6.hpp>
 #include <boost/format.hpp>
 
-nano::transport::channel::channel (nano::transport::transport_context & ctx_a, void * owner_id_a) :
+nano::transport::channel::channel (transport_context & ctx_a, void * owner_id_a) :
 	ctx{ ctx_a },
 	owner_id{ owner_id_a }
 {

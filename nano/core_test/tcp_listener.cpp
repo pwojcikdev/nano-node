@@ -32,13 +32,13 @@ TEST (tcp_listener, max_connections)
 	};
 
 	// Start 3 clients, 2 should connect successfully
-	auto client1 = std::make_shared<nano::transport::tcp_socket> (*node);
+	auto client1 = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 	client1->async_connect (node->network.endpoint (), connect_handler);
 
-	auto client2 = std::make_shared<nano::transport::tcp_socket> (*node);
+	auto client2 = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 	client2->async_connect (node->network.endpoint (), connect_handler);
 
-	auto client3 = std::make_shared<nano::transport::tcp_socket> (*node);
+	auto client3 = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 	client3->async_connect (node->network.endpoint (), connect_handler);
 
 	ASSERT_TIMELY_EQ (5s, node->stats.count (nano::stat::type::tcp_listener, nano::stat::detail::accept_success), 2);
@@ -76,7 +76,7 @@ TEST (tcp_listener, max_connections_per_ip)
 
 	for (auto idx = 0; idx < max_ip_connections + 1; ++idx)
 	{
-		auto client = std::make_shared<nano::transport::tcp_socket> (*node);
+		auto client = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 		client->async_connect (node->network.endpoint (), connect_handler);
 		client_list.push_back (client);
 	}
@@ -117,7 +117,7 @@ TEST (tcp_listener, max_connections_per_subnetwork)
 
 	for (auto idx = 0; idx < max_subnetwork_connections + 1; ++idx)
 	{
-		auto client = std::make_shared<nano::transport::tcp_socket> (*node);
+		auto client = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 		client->async_connect (node->network.endpoint (), connect_handler);
 		client_list.push_back (client);
 	}
@@ -157,7 +157,7 @@ TEST (tcp_listener, max_peers_per_ip)
 
 	for (auto idx = 0; idx < max_ip_connections + 1; ++idx)
 	{
-		auto client = std::make_shared<nano::transport::tcp_socket> (*node);
+		auto client = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
 		client->async_connect (node->network.endpoint (), connect_handler);
 		client_list.push_back (client);
 	}
@@ -170,7 +170,7 @@ TEST (tcp_listener, max_peers_per_ip)
 TEST (tcp_listener, node_id_handshake)
 {
 	nano::test::system system (1);
-	auto socket (std::make_shared<nano::transport::tcp_socket> (*system.nodes[0]));
+	auto socket (std::make_shared<nano::transport::tcp_socket> (system.nodes[0]->transport_ctx));
 	auto bootstrap_endpoint (system.nodes[0]->tcp_listener.endpoint ());
 	auto cookie (system.nodes[0]->network.syn_cookies.assign (nano::transport::map_tcp_to_endpoint (bootstrap_endpoint)));
 	ASSERT_TRUE (cookie);
@@ -207,7 +207,7 @@ TEST (tcp_listener, timeout_empty)
 	nano::node_config config;
 	config.tcp.handshake_timeout = 2s;
 	auto node0 = system.add_node (config);
-	auto socket (std::make_shared<nano::transport::tcp_socket> (*node0));
+	auto socket (std::make_shared<nano::transport::tcp_socket> (node0->transport_ctx));
 	socket->async_connect (node0->tcp_listener.endpoint (), [] (boost::system::error_code const & ec) {
 		ASSERT_FALSE (ec);
 	});
@@ -221,12 +221,12 @@ TEST (tcp_listener, timeout_node_id_handshake)
 	nano::node_config config;
 	config.tcp.handshake_timeout = 2s;
 	auto node0 = system.add_node (config);
-	auto socket (std::make_shared<nano::transport::tcp_socket> (*node0));
+	auto socket (std::make_shared<nano::transport::tcp_socket> (node0->transport_ctx));
 	auto cookie (node0->network.syn_cookies.assign (nano::transport::map_tcp_to_endpoint (node0->tcp_listener.endpoint ())));
 	ASSERT_TRUE (cookie);
 	nano::messages::node_id_handshake::query_payload query{ *cookie };
 	nano::messages::node_id_handshake node_id_handshake{ nano::dev::network_params.network, query };
-	auto channel = std::make_shared<nano::transport::tcp_channel> (*node0, socket);
+	auto channel = std::make_shared<nano::transport::tcp_channel> (node0->transport_ctx, socket, node0.get ());
 	socket->async_connect (node0->tcp_listener.endpoint (), [&node_id_handshake, channel] (boost::system::error_code const & ec) {
 		ASSERT_FALSE (ec);
 		channel->send (node_id_handshake, nano::transport::traffic_type::test, [] (boost::system::error_code const & ec, size_t size_a) {

@@ -1,20 +1,20 @@
 #include <nano/lib/stacktrace.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/utility.hpp>
-#include <nano/node/node.hpp>
-#include <nano/node/transport/message_deserializer.hpp>
-#include <nano/node/transport/tcp_channel.hpp>
-#include <nano/node/transport/transport.hpp>
+#include <nano/transport/bandwidth_limiter.hpp>
+#include <nano/transport/tcp_channel.hpp>
+#include <nano/transport/tcp_socket.hpp>
+#include <nano/transport/transport.hpp>
+#include <nano/transport/transport_context.hpp>
 
 /*
  * tcp_channel
  */
 
-nano::transport::tcp_channel::tcp_channel (nano::node & node_a, std::shared_ptr<nano::transport::tcp_socket> socket_a) :
-	channel (node_a.transport_ctx, &node_a),
-	node{ node_a },
+nano::transport::tcp_channel::tcp_channel (transport_context & ctx_a, std::shared_ptr<tcp_socket> socket_a, void * owner_id_a) :
+	channel (ctx_a, owner_id_a),
 	socket{ socket_a },
-	strand{ node_a.io_ctx.get_executor () },
+	strand{ ctx_a.io_ctx.get_executor () },
 	sending_task{ strand }
 {
 	remote_endpoint = socket_a->get_remote_endpoint ();
@@ -72,9 +72,9 @@ void nano::transport::tcp_channel::stop ()
 	if (sending_task.running ())
 	{
 		// Node context must be running to gracefully stop async tasks
-		debug_assert (!node.io_ctx.stopped ());
+		debug_assert (!ctx.io_ctx.stopped ());
 		// Ensure that we are not trying to await the task while running on the same thread / io_context
-		debug_assert (!node.io_ctx.get_executor ().running_in_this_thread ());
+		debug_assert (!ctx.io_ctx.get_executor ().running_in_this_thread ());
 
 		sending_task.cancel ();
 		sending_task.join ();
@@ -97,8 +97,8 @@ bool nano::transport::tcp_channel::send_impl (nano::messages::message const & me
 		queue.push (type, { buffer, callback });
 		lock.unlock ();
 
-		node.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::queued, nano::stat::dir::out);
-		node.stats.inc (nano::stat::type::tcp_channel_queued, to_stat_detail (type), nano::stat::dir::out);
+		ctx.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::queued, nano::stat::dir::out);
+		ctx.stats.inc (nano::stat::type::tcp_channel_queued, to_stat_detail (type), nano::stat::dir::out);
 
 		sending_task.notify (); // Wake up the sending task
 
@@ -108,8 +108,8 @@ bool nano::transport::tcp_channel::send_impl (nano::messages::message const & me
 	{
 		lock.unlock ();
 
-		node.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::drop, nano::stat::dir::out);
-		node.stats.inc (nano::stat::type::tcp_channel_drop, to_stat_detail (type), nano::stat::dir::out);
+		ctx.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::drop, nano::stat::dir::out);
+		ctx.stats.inc (nano::stat::type::tcp_channel_drop, to_stat_detail (type), nano::stat::dir::out);
 	}
 	return false;
 }
@@ -158,20 +158,20 @@ asio::awaitable<boost::system::error_code> nano::transport::tcp_channel::send_on
 	while (allocated_bandwidth < size)
 	{
 		// TODO: Consider implementing a subsribe/notification mechanism for bandwidth allocation
-		if (node.outbound_limiter.should_pass (bandwidth_chunk, type)) // Allocate bandwidth in larger chunks
+		if (ctx.outbound_limiter.should_pass (bandwidth_chunk, type)) // Allocate bandwidth in larger chunks
 		{
 			allocated_bandwidth += bandwidth_chunk;
 		}
 		else
 		{
-			node.stats.inc (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_bandwidth, nano::stat::dir::out);
+			ctx.stats.inc (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_bandwidth, nano::stat::dir::out);
 			co_await nano::async::sleep_for (100ms); // TODO: Exponential backoff
 		}
 	}
 	allocated_bandwidth -= size;
 
-	node.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::send, nano::stat::dir::out);
-	node.stats.inc (nano::stat::type::tcp_channel_send, to_stat_detail (type), nano::stat::dir::out);
+	ctx.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::send, nano::stat::dir::out);
+	ctx.stats.inc (nano::stat::type::tcp_channel_send, to_stat_detail (type), nano::stat::dir::out);
 
 	auto [ec, size_written] = co_await socket->co_write (buffer, buffer.size ());
 	debug_assert (ec || size_written == size);
@@ -179,12 +179,12 @@ asio::awaitable<boost::system::error_code> nano::transport::tcp_channel::send_on
 
 	if (!ec)
 	{
-		node.stats.add (nano::stat::type::traffic_tcp_type, to_stat_detail (type), nano::stat::dir::out, size_written);
+		ctx.stats.add (nano::stat::type::traffic_tcp_type, to_stat_detail (type), nano::stat::dir::out, size_written);
 		set_last_packet_sent (std::chrono::steady_clock::now ());
 	}
 	else
 	{
-		node.stats.inc (nano::stat::type::tcp_channel_ec, nano::to_stat_detail (ec), nano::stat::dir::out);
+		ctx.stats.inc (nano::stat::type::tcp_channel_ec, nano::to_stat_detail (ec), nano::stat::dir::out);
 	}
 
 	if (callback)

@@ -116,7 +116,7 @@ std::shared_ptr<nano::transport::tcp_channel> nano::transport::tcp_channels::cre
 	nano::log::as_node_id (node_id));
 
 	// This should be the only place in node where channels are created
-	auto channel = std::make_shared<nano::transport::tcp_channel> (node, socket);
+	auto channel = std::make_shared<nano::transport::tcp_channel> (node.transport_ctx, socket, &node);
 	channel->set_node_id (node_id);
 	channel->set_flags (flags);
 

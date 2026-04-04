@@ -439,8 +439,8 @@ auto nano::transport::tcp_listener::accept_one (asio::ip::tcp::socket raw_socket
 	stats.inc (nano::stat::type::tcp_listener, nano::stat::detail::accept_success, to_stat_dir (type));
 	logger.debug (nano::log::type::tcp_listener, "Accepted connection: {} ({})", remote_endpoint, type);
 
-	auto socket = std::make_shared<nano::transport::tcp_socket> (node, std::move (raw_socket), to_socket_endpoint (type));
-	auto server = std::make_shared<nano::transport::tcp_server> (node, socket);
+	auto socket = std::make_shared<nano::transport::tcp_socket> (node.transport_ctx, std::move (raw_socket), to_socket_endpoint (type));
+	auto server = std::make_shared<nano::transport::tcp_server> (node.transport_ctx, socket);
 	server->start ();
 
 	connections.emplace_back (connection{ type, remote_endpoint, socket, server });

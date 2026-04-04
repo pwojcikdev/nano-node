@@ -172,7 +172,6 @@ add_library(
   transport/block_deserializer.hpp
   transport/channel.hpp
   transport/tcp_channel.hpp
-  transport/tcp_channel.cpp
   transport/fake.hpp
   transport/fake.cpp
   transport/inproc.hpp
@@ -185,9 +184,7 @@ add_library(
   transport/tcp_listener.hpp
   transport/tcp_listener.cpp
   transport/tcp_server.hpp
-  transport/tcp_server.cpp
   transport/tcp_socket.hpp
-  transport/tcp_socket.cpp
   transport/test_channel.hpp
   transport/test_channel.cpp
   transport/formatting.hpp

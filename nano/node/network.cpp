@@ -717,7 +717,7 @@ void nano::network::exclude (std::shared_ptr<nano::transport::channel> const & c
 	erase (*channel);
 }
 
-bool nano::network::verify_handshake_response (const nano::messages::node_id_handshake::response_payload & response, const nano::endpoint & remote_endpoint)
+auto nano::network::verify_handshake_response (const nano::messages::node_id_handshake::response_payload & response, const nano::endpoint & remote_endpoint) -> bool
 {
 	// Prevent connection with ourselves
 	if (response.node_id == node.node_id.pub)
@@ -751,7 +751,7 @@ bool nano::network::verify_handshake_response (const nano::messages::node_id_han
 	return true; // OK
 }
 
-std::optional<nano::messages::node_id_handshake::query_payload> nano::network::prepare_handshake_query (const nano::endpoint & remote_endpoint)
+auto nano::network::prepare_handshake_query (const nano::endpoint & remote_endpoint) -> std::optional<nano::messages::node_id_handshake::query_payload>
 {
 	if (auto cookie = syn_cookies.assign (remote_endpoint); cookie)
 	{
@@ -761,7 +761,7 @@ std::optional<nano::messages::node_id_handshake::query_payload> nano::network::p
 	return std::nullopt;
 }
 
-nano::messages::node_id_handshake::response_payload nano::network::prepare_handshake_response (const nano::messages::node_id_handshake::query_payload & query, nano::messages::handshake_version version) const
+auto nano::network::prepare_handshake_response (const nano::messages::node_id_handshake::query_payload & query, nano::messages::handshake_version version) const -> nano::messages::node_id_handshake::response_payload
 {
 	using handshake_version = nano::messages::handshake_version;
 	using response_payload = nano::messages::node_id_handshake::response_payload;

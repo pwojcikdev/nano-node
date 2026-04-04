@@ -11,6 +11,7 @@ class tcp_server;
 class tcp_service;
 class tcp_socket;
 class transport_service;
+struct transport_context;
 }
 
 namespace nano::transport::fake

@@ -1,9 +1,10 @@
 #include <nano/boost/asio/bind_executor.hpp>
 #include <nano/boost/asio/read.hpp>
 #include <nano/lib/enum_util.hpp>
-#include <nano/node/node.hpp>
-#include <nano/node/transport/tcp_socket.hpp>
-#include <nano/node/transport/transport.hpp>
+#include <nano/lib/stats.hpp>
+#include <nano/transport/tcp_socket.hpp>
+#include <nano/transport/transport.hpp>
+#include <nano/transport/transport_context.hpp>
 
 #include <cstdint>
 #include <cstdlib>
@@ -12,19 +13,19 @@
 #include <memory>
 #include <utility>
 
-nano::transport::tcp_socket::tcp_socket (nano::node & node_a, nano::transport::socket_endpoint endpoint_type_a) :
-	node{ node_a },
-	strand{ node_a.io_ctx.get_executor () },
+nano::transport::tcp_socket::tcp_socket (transport_context & ctx_a, socket_endpoint endpoint_type_a) :
+	ctx{ ctx_a },
+	strand{ ctx_a.io_ctx.get_executor () },
 	task{ strand },
-	raw_socket{ node_a.io_ctx },
+	raw_socket{ ctx_a.io_ctx },
 	endpoint_type{ endpoint_type_a }
 {
 	start ();
 }
 
-nano::transport::tcp_socket::tcp_socket (nano::node & node_a, asio::ip::tcp::socket raw_socket_a, nano::transport::socket_endpoint endpoint_type_a) :
-	node{ node_a },
-	strand{ node_a.io_ctx.get_executor () },
+nano::transport::tcp_socket::tcp_socket (transport_context & ctx_a, asio::ip::tcp::socket raw_socket_a, socket_endpoint endpoint_type_a) :
+	ctx{ ctx_a },
+	strand{ ctx_a.io_ctx.get_executor () },
 	task{ strand },
 	raw_socket{ std::move (raw_socket_a) },
 	local_endpoint{ raw_socket.local_endpoint () },
@@ -51,9 +52,9 @@ void nano::transport::tcp_socket::close ()
 	}
 
 	// Node context must be running to gracefully stop async tasks
-	debug_assert (!node.io_ctx.stopped ());
+	debug_assert (!ctx.io_ctx.stopped ());
 	// Ensure that we are not trying to await the task while running on the same thread / io_context
-	debug_assert (!node.io_ctx.get_executor ().running_in_this_thread ());
+	debug_assert (!ctx.io_ctx.get_executor ().running_in_this_thread ());
 
 	// Dispatch close raw socket to the strand, wait synchronously for the operation to complete
 	auto fut = asio::dispatch (strand, asio::use_future ([this] () {
@@ -65,7 +66,7 @@ void nano::transport::tcp_socket::close ()
 void nano::transport::tcp_socket::close_async ()
 {
 	// Node context must be running to gracefully stop async tasks
-	debug_assert (!node.io_ctx.stopped ());
+	debug_assert (!ctx.io_ctx.stopped ());
 
 	asio::dispatch (strand, [this, /* lifetime guard */ this_s = shared_from_this ()] () {
 		close_impl ();
@@ -86,13 +87,13 @@ void nano::transport::tcp_socket::close_impl ()
 	raw_socket.close (ec); // Best effort, ignore errors
 	if (!ec)
 	{
-		node.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::close);
-		node.logger.debug (nano::log::type::tcp_socket, "Closed socket: {}", remote_endpoint);
+		ctx.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::close);
+		ctx.logger.debug (nano::log::type::tcp_socket, "Closed socket: {}", remote_endpoint);
 	}
 	else
 	{
-		node.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::close_error);
-		node.logger.debug (nano::log::type::tcp_socket, "Closed socket, ungracefully: {} ({})", remote_endpoint, ec.message ());
+		ctx.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::close_error);
+		ctx.logger.debug (nano::log::type::tcp_socket, "Closed socket, ungracefully: {} ({})", remote_endpoint, ec.message ());
 	}
 }
 
@@ -107,9 +108,9 @@ void nano::transport::tcp_socket::stop ()
 	if (task.running ())
 	{
 		// Node context must be running to gracefully stop async tasks
-		debug_assert (!node.io_ctx.stopped ());
+		debug_assert (!ctx.io_ctx.stopped ());
 		// Ensure that we are not trying to await the task while running on the same thread / io_context
-		debug_assert (!node.io_ctx.get_executor ().running_in_this_thread ());
+		debug_assert (!ctx.io_ctx.get_executor ().running_in_this_thread ());
 
 		task.cancel ();
 		task.join ();
@@ -126,8 +127,8 @@ auto nano::transport::tcp_socket::ongoing_checkup () -> asio::awaitable<void>
 			bool healthy = checkup ();
 			if (!healthy)
 			{
-				node.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::unhealthy);
-				node.logger.debug (nano::log::type::tcp_socket, "Unhealthy socket detected: {} (timed out: {})",
+				ctx.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::unhealthy);
+				ctx.logger.debug (nano::log::type::tcp_socket, "Unhealthy socket detected: {} (timed out: {})",
 				remote_endpoint,
 				timed_out.load ());
 
@@ -137,7 +138,7 @@ auto nano::transport::tcp_socket::ongoing_checkup () -> asio::awaitable<void>
 			}
 			else
 			{
-				std::chrono::seconds sleep_duration = node.config.tcp.checkup_interval;
+				std::chrono::seconds sleep_duration = ctx.tcp_config.checkup_interval;
 				co_await nano::async::sleep_for (sleep_duration);
 				timestamp += sleep_duration.count ();
 			}
@@ -162,7 +163,7 @@ bool nano::transport::tcp_socket::checkup ()
 	{
 		if (!raw_socket.is_open ())
 		{
-			node.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::already_closed);
+			ctx.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::already_closed);
 			return false; // Bad
 		}
 
@@ -171,26 +172,26 @@ bool nano::transport::tcp_socket::checkup ()
 		debug_assert (timestamp >= last_receive);
 		debug_assert (timestamp >= last_send);
 
-		std::chrono::seconds const io_threshold = node.config.tcp.io_timeout;
-		std::chrono::seconds const silence_threshold = node.config.tcp.silent_timeout;
+		std::chrono::seconds const io_threshold = ctx.tcp_config.io_timeout;
+		std::chrono::seconds const silence_threshold = ctx.tcp_config.silent_timeout;
 
 		// Timeout threshold of 0 indicates no timeout
 		if (io_threshold.count () > 0)
 		{
 			if (read_timestamp > 0 && timestamp - read_timestamp > io_threshold.count ())
 			{
-				node.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::timeout);
-				node.stats.inc (nano::stat::type::tcp_socket_timeout, nano::stat::detail::timeout_receive);
-				node.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_io_timeout_drop, nano::stat::dir::in);
+				ctx.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::timeout);
+				ctx.stats.inc (nano::stat::type::tcp_socket_timeout, nano::stat::detail::timeout_receive);
+				ctx.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_io_timeout_drop, nano::stat::dir::in);
 
 				timed_out = true;
 				return false; // Bad
 			}
 			if (write_timestamp > 0 && timestamp - write_timestamp > io_threshold.count ())
 			{
-				node.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::timeout);
-				node.stats.inc (nano::stat::type::tcp_socket_timeout, nano::stat::detail::timeout_send);
-				node.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_io_timeout_drop, nano::stat::dir::out);
+				ctx.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::timeout);
+				ctx.stats.inc (nano::stat::type::tcp_socket_timeout, nano::stat::detail::timeout_send);
+				ctx.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_io_timeout_drop, nano::stat::dir::out);
 
 				timed_out = true;
 				return false; // Bad
@@ -200,9 +201,9 @@ bool nano::transport::tcp_socket::checkup ()
 		{
 			if ((timestamp - last_receive) > silence_threshold.count () || (timestamp - last_send) > silence_threshold.count ())
 			{
-				node.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::timeout);
-				node.stats.inc (nano::stat::type::tcp_socket_timeout, nano::stat::detail::timeout_silence);
-				node.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_silent_connection_drop, nano::stat::dir::in);
+				ctx.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::timeout);
+				ctx.stats.inc (nano::stat::type::tcp_socket_timeout, nano::stat::detail::timeout_silence);
+				ctx.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_silent_connection_drop, nano::stat::dir::in);
 
 				timed_out = true;
 				return false; // Bad
@@ -212,12 +213,12 @@ bool nano::transport::tcp_socket::checkup ()
 	else // Not connected yet
 	{
 		auto const now = std::chrono::steady_clock::now ();
-		auto const cutoff = now - node.config.tcp.connect_timeout;
+		auto const cutoff = now - ctx.tcp_config.connect_timeout;
 
 		if (time_created < cutoff)
 		{
-			node.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::timeout);
-			node.stats.inc (nano::stat::type::tcp_socket_timeout, nano::stat::detail::timeout_connect);
+			ctx.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::timeout);
+			ctx.stats.inc (nano::stat::type::tcp_socket_timeout, nano::stat::detail::timeout_connect);
 
 			timed_out = true;
 			return false; // Bad
@@ -254,17 +255,17 @@ auto nano::transport::tcp_socket::co_connect_impl (nano::endpoint endpoint) -> a
 		connected = true; // Mark as connected
 		time_connected = std::chrono::steady_clock::now ();
 
-		node.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_connect_success);
-		node.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::connect_success);
-		node.logger.debug (nano::log::type::tcp_socket, "Successfully connected to: {} from local: {}",
+		ctx.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_connect_success);
+		ctx.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::connect_success);
+		ctx.logger.debug (nano::log::type::tcp_socket, "Successfully connected to: {} from local: {}",
 		remote_endpoint, local_endpoint);
 	}
 	else
 	{
-		node.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_connect_error);
-		node.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::connect_error);
-		node.stats.inc (nano::stat::type::tcp_socket_connect_ec, nano::to_stat_detail (ec));
-		node.logger.debug (nano::log::type::tcp_socket, "Failed to connect to: {} ({})",
+		ctx.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_connect_error);
+		ctx.stats.inc (nano::stat::type::tcp_socket, nano::stat::detail::connect_error);
+		ctx.stats.inc (nano::stat::type::tcp_socket_connect_ec, nano::to_stat_detail (ec));
+		ctx.logger.debug (nano::log::type::tcp_socket, "Failed to connect to: {} ({})",
 		endpoint, local_endpoint, ec);
 
 		error = true;
@@ -313,13 +314,13 @@ auto nano::transport::tcp_socket::co_read_impl (nano::shared_buffer buffer, size
 	if (!ec)
 	{
 		last_receive = timestamp;
-		node.stats.add (nano::stat::type::traffic_tcp, nano::stat::detail::all, nano::stat::dir::in, size_read);
+		ctx.stats.add (nano::stat::type::traffic_tcp, nano::stat::detail::all, nano::stat::dir::in, size_read);
 	}
 	else
 	{
-		node.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_read_error);
-		node.stats.inc (nano::stat::type::tcp_socket_read_ec, nano::to_stat_detail (ec));
-		node.logger.debug (nano::log::type::tcp_socket, "Error reading from: {} ({})", remote_endpoint, ec);
+		ctx.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_read_error);
+		ctx.stats.inc (nano::stat::type::tcp_socket_read_ec, nano::to_stat_detail (ec));
+		ctx.logger.debug (nano::log::type::tcp_socket, "Error reading from: {} ({})", remote_endpoint, ec);
 
 		error = true;
 		close_impl ();
@@ -366,13 +367,13 @@ auto nano::transport::tcp_socket::co_write_impl (nano::shared_buffer buffer, siz
 	if (!ec)
 	{
 		last_send = timestamp;
-		node.stats.add (nano::stat::type::traffic_tcp, nano::stat::detail::all, nano::stat::dir::out, size_written);
+		ctx.stats.add (nano::stat::type::traffic_tcp, nano::stat::detail::all, nano::stat::dir::out, size_written);
 	}
 	else
 	{
-		node.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_write_error);
-		node.stats.inc (nano::stat::type::tcp_socket_write_ec, nano::to_stat_detail (ec));
-		node.logger.debug (nano::log::type::tcp_socket, "Error writing to: {} ({})", remote_endpoint, ec);
+		ctx.stats.inc (nano::stat::type::tcp, nano::stat::detail::tcp_write_error);
+		ctx.stats.inc (nano::stat::type::tcp_socket_write_ec, nano::to_stat_detail (ec));
+		ctx.logger.debug (nano::log::type::tcp_socket, "Error writing to: {} ({})", remote_endpoint, ec);
 
 		error = true;
 		close_impl ();

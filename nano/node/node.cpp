@@ -228,6 +228,33 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 {
 	logger.debug (nano::log::type::node, "Constructing node...");
 
+	// Wire transport_context optional dependencies and callbacks
+	config.tcp.bootstrap_connections_max = config.bootstrap_connections_max;
+	transport_ctx.network_filter = &network.filter;
+	transport_ctx.block_uniquer = &block_uniquer;
+	transport_ctx.vote_uniquer = &vote_uniquer;
+	transport_ctx.handshake = &network;
+	transport_ctx.flags.disable_tcp_realtime = flags.disable_tcp_realtime;
+	transport_ctx.flags.disable_bootstrap_listener = flags.disable_bootstrap_listener;
+	transport_ctx.flags.disable_max_peers_per_ip = flags.disable_max_peers_per_ip;
+	transport_ctx.flags.disable_max_peers_per_subnetwork = flags.disable_max_peers_per_subnetwork;
+	transport_ctx.flags.allow_local_peers = config.allow_local_peers;
+	transport_ctx.on_message = [this] (std::unique_ptr<nano::messages::message> msg, std::shared_ptr<nano::transport::channel> channel) {
+		return message_processor.put (std::move (msg), channel);
+	};
+	transport_ctx.on_channel_connected = [this] (std::shared_ptr<nano::transport::channel> channel) {
+		observers.channel_connected.notify (channel);
+	};
+	transport_ctx.is_excluded = [this] (boost::asio::ip::address const & addr) {
+		return network.excluded_peers.check (addr);
+	};
+	transport_ctx.bootstrap_count = [this] () -> std::size_t {
+		return tcp_listener.bootstrap_count ();
+	};
+	transport_ctx.create_channel = [this] (std::shared_ptr<nano::transport::tcp_socket> const & socket, std::shared_ptr<nano::transport::tcp_server> const & server, nano::account const & node_id, nano::node_capabilities_flags flags) {
+		return network.tcp_channels.create (socket, server, node_id, flags);
+	};
+
 	vote_cache.rep_weight_query = [this] (nano::account const & rep) {
 		return ledger.weight (rep);
 	};
