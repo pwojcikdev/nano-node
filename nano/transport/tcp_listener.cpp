@@ -1,10 +1,13 @@
 #include <nano/lib/enum_util.hpp>
 #include <nano/lib/interval.hpp>
+#include <nano/lib/stats.hpp>
+#include <nano/lib/thread_roles.hpp>
 #include <nano/messages/messages.hpp>
-#include <nano/node/node.hpp>
-#include <nano/node/transport/tcp_listener.hpp>
-#include <nano/node/transport/tcp_server.hpp>
-#include <nano/node/transport/transport.hpp>
+#include <nano/transport/tcp_listener.hpp>
+#include <nano/transport/tcp_server.hpp>
+#include <nano/transport/tcp_socket.hpp>
+#include <nano/transport/transport.hpp>
+#include <nano/transport/transport_context.hpp>
 
 #include <boost/asio/use_future.hpp>
 
@@ -17,19 +20,16 @@ using namespace std::chrono_literals;
  * tcp_listener
  */
 
-nano::transport::tcp_listener::tcp_listener (uint16_t port_a, tcp_config const & config_a, nano::node & node_a) :
-	config{ config_a },
-	node{ node_a },
-	stats{ node_a.stats },
-	logger{ node_a.logger },
+nano::transport::tcp_listener::tcp_listener (transport_context & ctx_a, uint16_t port_a) :
+	ctx{ ctx_a },
+	config{ ctx_a.tcp_config },
+	stats{ ctx_a.stats },
+	logger{ ctx_a.logger },
 	port{ port_a },
-	strand{ node_a.io_ctx.get_executor () },
+	strand{ ctx_a.io_ctx.get_executor () },
 	acceptor{ strand },
 	task{ strand }
 {
-	connection_accepted.add ([this] (auto const & socket, auto const & server) {
-		node.observers.socket_connected.notify (socket);
-	});
 }
 
 nano::transport::tcp_listener::~tcp_listener ()
@@ -260,7 +260,7 @@ bool nano::transport::tcp_listener::connect (asio::ip::address ip, uint16_t port
 
 	if (port == 0)
 	{
-		port = node.network_params.network.default_node_port;
+		port = ctx.network_params.network.default_node_port;
 	}
 
 	if (auto count = attempts.size (); count > config.max_attempts)
@@ -389,7 +389,7 @@ asio::awaitable<void> nano::transport::tcp_listener::wait_available_slots () con
 	nano::interval log_interval;
 	while (connection_count () >= config.max_inbound_connections && !stopped)
 	{
-		if (log_interval.elapse (node.network_params.network.is_dev_network () ? 1s : 15s))
+		if (log_interval.elapse (ctx.network_params.network.is_dev_network () ? 1s : 15s))
 		{
 			logger.warn (nano::log::type::tcp_listener, "Waiting for available slots to accept new connections (current: {} / max: {})",
 			connection_count (), config.max_inbound_connections);
@@ -439,8 +439,8 @@ auto nano::transport::tcp_listener::accept_one (asio::ip::tcp::socket raw_socket
 	stats.inc (nano::stat::type::tcp_listener, nano::stat::detail::accept_success, to_stat_dir (type));
 	logger.debug (nano::log::type::tcp_listener, "Accepted connection: {} ({})", remote_endpoint, type);
 
-	auto socket = std::make_shared<nano::transport::tcp_socket> (node.transport_ctx, std::move (raw_socket), to_socket_endpoint (type));
-	auto server = std::make_shared<nano::transport::tcp_server> (node.transport_ctx, socket);
+	auto socket = std::make_shared<nano::transport::tcp_socket> (ctx, std::move (raw_socket), to_socket_endpoint (type));
+	auto server = std::make_shared<nano::transport::tcp_server> (ctx, socket);
 	server->start ();
 
 	connections.emplace_back (connection{ type, remote_endpoint, socket, server });
@@ -461,7 +461,7 @@ auto nano::transport::tcp_listener::check_limits (asio::ip::address const & ip, 
 		return accept_result::rejected;
 	}
 
-	if (node.network.excluded_peers.check (ip)) // true => error
+	if (ctx.is_excluded (ip)) // true => error
 	{
 		stats.inc (nano::stat::type::tcp_listener_rejected, nano::stat::detail::excluded, to_stat_dir (type));
 		logger.debug (nano::log::type::tcp_listener, "Rejected connection from excluded peer: {} ({})", ip, type);
@@ -469,9 +469,9 @@ auto nano::transport::tcp_listener::check_limits (asio::ip::address const & ip, 
 		return accept_result::rejected_excluded;
 	}
 
-	if (!node.flags.disable_max_peers_per_ip)
+	if (!ctx.flags.disable_max_peers_per_ip)
 	{
-		if (auto count = count_per_ip (ip); count >= node.config.network.max_peers_per_ip)
+		if (auto count = count_per_ip (ip); count >= config.max_peers_per_ip)
 		{
 			stats.inc (nano::stat::type::tcp_listener_rejected, nano::stat::detail::max_per_ip, to_stat_dir (type));
 			logger.debug (nano::log::type::tcp_listener, "Max connections: {} per IP: {} reached, unable to open a new connection ({})",
@@ -482,9 +482,9 @@ auto nano::transport::tcp_listener::check_limits (asio::ip::address const & ip, 
 	}
 
 	// If the address is IPv4 we don't check for a subnetwork limit, since its address space isn't big as IPv6/64.
-	if (!node.flags.disable_max_peers_per_subnetwork && !nano::transport::is_ipv4_or_v4_mapped_address (ip))
+	if (!ctx.flags.disable_max_peers_per_subnetwork && !nano::transport::is_ipv4_or_v4_mapped_address (ip))
 	{
-		if (auto count = count_per_subnetwork (ip); count >= node.config.network.max_peers_per_subnetwork)
+		if (auto count = count_per_subnetwork (ip); count >= config.max_peers_per_subnetwork)
 		{
 			stats.inc (nano::stat::type::tcp_listener_rejected, nano::stat::detail::max_per_subnetwork, to_stat_dir (type));
 			logger.debug (nano::log::type::tcp_listener, "Max connections: {} per subnetwork of IP: {} reached, unable to open a new connection ({})",

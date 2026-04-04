@@ -153,7 +153,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	//         Thus, be very careful if you change the order: if `bootstrap` gets constructed before `network`,
 	//         the latter would inherit the port from the former (if TCP is active, otherwise `network` picks first)
 	//
-	tcp_listener_impl{ std::make_unique<nano::transport::tcp_listener> (network.port, config.tcp, *this) },
+	tcp_listener_impl{ std::make_unique<nano::transport::tcp_listener> (transport_ctx, network.port) },
 	tcp_listener{ *tcp_listener_impl },
 	port_mapping_impl{ std::make_unique<nano::port_mapping> (*this) },
 	port_mapping{ *port_mapping_impl },
@@ -230,6 +230,8 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 
 	// Wire transport_context optional dependencies and callbacks
 	config.tcp.bootstrap_connections_max = config.bootstrap_connections_max;
+	config.tcp.max_peers_per_ip = config.network.max_peers_per_ip;
+	config.tcp.max_peers_per_subnetwork = config.network.max_peers_per_subnetwork;
 	transport_ctx.network_filter = &network.filter;
 	transport_ctx.block_uniquer = &block_uniquer;
 	transport_ctx.vote_uniquer = &vote_uniquer;
@@ -254,6 +256,20 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	transport_ctx.create_channel = [this] (std::shared_ptr<nano::transport::tcp_socket> const & socket, std::shared_ptr<nano::transport::tcp_server> const & server, nano::account const & node_id, nano::node_capabilities_flags flags) {
 		return network.tcp_channels.create (socket, server, node_id, flags);
 	};
+	transport_ctx.connect = [this] (boost::asio::ip::address ip, uint16_t port) {
+		return tcp_listener.connect (ip, port);
+	};
+	transport_ctx.random_fill = [this] (std::array<nano::endpoint, 8> & endpoints) {
+		network.random_fill (endpoints);
+	};
+	transport_ctx.is_not_a_peer = [this] (nano::endpoint const & endpoint) {
+		return network.not_a_peer (endpoint, config.allow_local_peers);
+	};
+
+	// Subscribe to tcp_listener events
+	tcp_listener.connection_accepted.add ([this] (auto const & socket, auto const & server) {
+		observers.socket_connected.notify (socket);
+	});
 
 	vote_cache.rep_weight_query = [this] (nano::account const & rep) {
 		return ledger.weight (rep);

@@ -180,9 +180,7 @@ add_library(
   transport/loopback.hpp
   transport/message_deserializer.hpp
   transport/tcp_channels.hpp
-  transport/tcp_channels.cpp
   transport/tcp_listener.hpp
-  transport/tcp_listener.cpp
   transport/tcp_server.hpp
   transport/tcp_socket.hpp
   transport/test_channel.hpp

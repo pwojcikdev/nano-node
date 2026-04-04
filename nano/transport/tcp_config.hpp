@@ -38,5 +38,7 @@ public:
 	std::chrono::seconds silent_timeout{ 30 };
 	std::chrono::seconds checkup_interval{ 5 };
 	unsigned bootstrap_connections_max{ 64 };
+	size_t max_peers_per_ip{ 4 };
+	size_t max_peers_per_subnetwork{ 16 };
 };
 }
