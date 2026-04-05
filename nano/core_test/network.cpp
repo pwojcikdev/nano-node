@@ -68,7 +68,7 @@ TEST (network, construction_with_specified_port)
 	auto const node = system.add_node (nano::node_config{ port });
 	EXPECT_EQ (port, node->network.port);
 	EXPECT_EQ (port, node->network.endpoint ().port ());
-	EXPECT_EQ (port, node->tcp_listener.endpoint ().port ());
+	EXPECT_EQ (port, node->transport.tcp_listener.endpoint ().port ());
 }
 
 TEST (network, construction_without_specified_port)
@@ -78,7 +78,7 @@ TEST (network, construction_without_specified_port)
 	auto const port = node->network.port.load ();
 	EXPECT_NE (0, port);
 	EXPECT_EQ (port, node->network.endpoint ().port ());
-	EXPECT_EQ (port, node->tcp_listener.endpoint ().port ());
+	EXPECT_EQ (port, node->transport.tcp_listener.endpoint ().port ());
 }
 
 TEST (network, send_node_id_handshake_tcp)
@@ -1034,7 +1034,7 @@ TEST (network, purge_dead_channel)
 	ASSERT_TRUE (channel);
 
 	std::deque<std::shared_ptr<nano::transport::tcp_socket>> sockets;
-	ASSERT_TIMELY_EQ (5s, (sockets = node1.tcp_listener.all_sockets ()).size (), 1);
+	ASSERT_TIMELY_EQ (5s, (sockets = node1.transport.tcp_listener.all_sockets ()).size (), 1);
 	auto socket = sockets.front ();
 	ASSERT_TRUE (socket);
 
@@ -1084,7 +1084,7 @@ TEST (network, purge_dead_channel_remote)
 	ASSERT_TRUE (channel);
 
 	std::deque<std::shared_ptr<nano::transport::tcp_socket>> sockets;
-	ASSERT_TIMELY_EQ (5s, (sockets = node1.tcp_listener.all_sockets ()).size (), 1);
+	ASSERT_TIMELY_EQ (5s, (sockets = node1.transport.tcp_listener.all_sockets ()).size (), 1);
 	auto socket = sockets.front ();
 	ASSERT_TRUE (socket);
 

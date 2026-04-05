@@ -7,7 +7,7 @@
 #include <boost/format.hpp>
 
 nano::transport::inproc::channel::channel (nano::node & node, nano::node & destination) :
-	transport::channel{ node.transport_ctx, &node },
+	transport::channel{ node.transport.ctx, &node },
 	node{ node },
 	destination{ destination },
 	endpoint{ node.network.endpoint () }

@@ -128,14 +128,15 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	config.bootstrap_bandwidth_limit,
 	config.bootstrap_bandwidth_burst_ratio }) },
 	outbound_limiter{ *outbound_limiter_impl },
-	transport_ctx_impl{ std::make_unique<nano::transport::transport_context> (nano::transport::transport_context{
+	transport_impl{ std::make_unique<nano::transport::transport_service> (
 	io_ctx,
 	network_params,
 	stats,
 	logger,
 	config.tcp,
-	outbound_limiter }) },
-	transport_ctx{ *transport_ctx_impl },
+	outbound_limiter,
+	config.peering_port.has_value () ? *config.peering_port : 0) },
+	transport{ *transport_impl },
 	message_processor_impl{ std::make_unique<nano::message_processor> (config.message_processor, *this) },
 	message_processor{ *message_processor_impl },
 	// empty `config.peering_port` means the user made no port choice at all;
@@ -143,18 +144,9 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	//
 	network_impl{ std::make_unique<nano::network> (*this, config.peering_port.has_value () ? *config.peering_port : 0) },
 	network{ *network_impl },
-	loopback_channel{ std::make_shared<nano::transport::loopback_channel> (transport_ctx, network.endpoint (), this) },
+	loopback_channel{ std::make_shared<nano::transport::loopback_channel> (transport.ctx, network.endpoint (), this) },
 	telemetry_impl{ std::make_unique<nano::telemetry> (flags, *this, network, observers, network_params, stats) },
 	telemetry{ *telemetry_impl },
-	// BEWARE: `bootstrap` takes `network.port` instead of `config.peering_port` because when the user doesn't specify
-	//         a peering port and wants the OS to pick one, the picking happens when `network` gets initialized
-	//         (if UDP is active, otherwise it happens when `bootstrap` gets initialized), so then for TCP traffic
-	//         we want to tell `bootstrap` to use the already picked port instead of itself picking a different one.
-	//         Thus, be very careful if you change the order: if `bootstrap` gets constructed before `network`,
-	//         the latter would inherit the port from the former (if TCP is active, otherwise `network` picks first)
-	//
-	tcp_listener_impl{ std::make_unique<nano::transport::tcp_listener> (transport_ctx, network.port) },
-	tcp_listener{ *tcp_listener_impl },
 	port_mapping_impl{ std::make_unique<nano::port_mapping> (*this) },
 	port_mapping{ *port_mapping_impl },
 	block_processor_impl{ std::make_unique<nano::block_processor> (config, ledger, ledger_notifications, unchecked, stats, logger) },
@@ -232,47 +224,47 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	config.tcp.bootstrap_connections_max = config.bootstrap_connections_max;
 	config.tcp.max_peers_per_ip = config.network.max_peers_per_ip;
 	config.tcp.max_peers_per_subnetwork = config.network.max_peers_per_subnetwork;
-	transport_ctx.network_filter = &network.filter;
-	transport_ctx.block_uniquer = &block_uniquer;
-	transport_ctx.vote_uniquer = &vote_uniquer;
-	transport_ctx.handshake = &network;
-	transport_ctx.flags.disable_tcp_realtime = flags.disable_tcp_realtime;
-	transport_ctx.flags.disable_bootstrap_listener = flags.disable_bootstrap_listener;
-	transport_ctx.flags.disable_max_peers_per_ip = flags.disable_max_peers_per_ip;
-	transport_ctx.flags.disable_max_peers_per_subnetwork = flags.disable_max_peers_per_subnetwork;
-	transport_ctx.flags.allow_local_peers = config.allow_local_peers;
-	transport_ctx.on_message = [this] (std::unique_ptr<nano::messages::message> msg, std::shared_ptr<nano::transport::channel> channel) {
+	transport.ctx.network_filter = &network.filter;
+	transport.ctx.block_uniquer = &block_uniquer;
+	transport.ctx.vote_uniquer = &vote_uniquer;
+	transport.ctx.handshake = &network;
+	transport.ctx.flags.disable_tcp_realtime = flags.disable_tcp_realtime;
+	transport.ctx.flags.disable_bootstrap_listener = flags.disable_bootstrap_listener;
+	transport.ctx.flags.disable_max_peers_per_ip = flags.disable_max_peers_per_ip;
+	transport.ctx.flags.disable_max_peers_per_subnetwork = flags.disable_max_peers_per_subnetwork;
+	transport.ctx.flags.allow_local_peers = config.allow_local_peers;
+	transport.ctx.on_message = [this] (std::unique_ptr<nano::messages::message> msg, std::shared_ptr<nano::transport::channel> channel) {
 		return message_processor.put (std::move (msg), channel);
 	};
-	transport_ctx.on_channel_connected = [this] (std::shared_ptr<nano::transport::channel> channel) {
+	transport.ctx.on_channel_connected = [this] (std::shared_ptr<nano::transport::channel> channel) {
 		observers.channel_connected.notify (channel);
 	};
-	transport_ctx.is_excluded = [this] (boost::asio::ip::address const & addr) {
+	transport.ctx.is_excluded = [this] (boost::asio::ip::address const & addr) {
 		return network.excluded_peers.check (addr);
 	};
-	transport_ctx.bootstrap_count = [this] () -> std::size_t {
-		return tcp_listener.bootstrap_count ();
+	transport.ctx.bootstrap_count = [this] () -> std::size_t {
+		return transport.tcp_listener.bootstrap_count ();
 	};
-	transport_ctx.create_channel = [this] (std::shared_ptr<nano::transport::tcp_socket> const & socket, std::shared_ptr<nano::transport::tcp_server> const & server, nano::account const & node_id, nano::node_capabilities_flags flags) {
+	transport.ctx.create_channel = [this] (std::shared_ptr<nano::transport::tcp_socket> const & socket, std::shared_ptr<nano::transport::tcp_server> const & server, nano::account const & node_id, nano::node_capabilities_flags flags) {
 		return network.tcp_channels.create (socket, server, node_id, flags);
 	};
-	transport_ctx.connect = [this] (boost::asio::ip::address ip, uint16_t port) {
-		return tcp_listener.connect (ip, port);
+	transport.ctx.connect = [this] (boost::asio::ip::address ip, uint16_t port) {
+		return transport.tcp_listener.connect (ip, port);
 	};
-	transport_ctx.random_fill = [this] (std::array<nano::endpoint, 8> & endpoints) {
+	transport.ctx.random_fill = [this] (std::array<nano::endpoint, 8> & endpoints) {
 		network.random_fill (endpoints);
 	};
-	transport_ctx.is_not_a_peer = [this] (nano::endpoint const & endpoint) {
+	transport.ctx.is_not_a_peer = [this] (nano::endpoint const & endpoint) {
 		return network.not_a_peer (endpoint, config.allow_local_peers);
 	};
-	transport_ctx.process_inbound = [this] (nano::messages::message const & msg, std::shared_ptr<nano::transport::channel> channel) {
+	transport.ctx.process_inbound = [this] (nano::messages::message const & msg, std::shared_ptr<nano::transport::channel> channel) {
 		inbound (msg, channel);
 	};
 
 	loopback_channel->set_node_id (node_id.pub);
 
 	// Subscribe to tcp_listener events
-	tcp_listener.connection_accepted.add ([this] (auto const & socket, auto const & server) {
+	transport.tcp_listener.connection_accepted.add ([this] (auto const & socket, auto const & server) {
 		observers.socket_connected.notify (socket);
 	});
 
@@ -570,12 +562,12 @@ void nano::node::start ()
 	bool tcp_enabled = false;
 	if (!(flags.disable_bootstrap_listener && flags.disable_tcp_realtime))
 	{
-		tcp_listener.start ();
+		transport.tcp_listener.start ();
 		tcp_enabled = true;
 
-		if (network.port != tcp_listener.endpoint ().port ())
+		if (network.port != transport.tcp_listener.endpoint ().port ())
 		{
-			network.port = tcp_listener.endpoint ().port ();
+			network.port = transport.tcp_listener.endpoint ().port ();
 		}
 
 		logger.info (nano::log::type::node, "Peering port: {}", network.port.load ());
@@ -636,7 +628,7 @@ void nano::node::stop ()
 
 	logger.info (nano::log::type::node, "Stopping...");
 
-	tcp_listener.stop ();
+	transport.tcp_listener.stop ();
 	online_reps.stop ();
 	vote_router.stop ();
 	peer_history.stop ();
@@ -1001,7 +993,7 @@ nano::container_info nano::node::container_info () const
 	info.add ("work", work.container_info ());
 	info.add ("ledger", ledger.container_info ());
 	info.add ("active", active.container_info ());
-	info.add ("tcp_listener", tcp_listener.container_info ());
+	info.add ("tcp_listener", transport.tcp_listener.container_info ());
 	info.add ("network", network.container_info ());
 	info.add ("telemetry", telemetry.container_info ());
 	info.add ("workers", workers.container_info ());

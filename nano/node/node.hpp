@@ -21,7 +21,7 @@
 #include <nano/node/vote_cache.hpp>
 #include <nano/node/websocket.hpp>
 #include <nano/transport/bandwidth_limiter.hpp>
-#include <nano/transport/transport_context.hpp>
+#include <nano/transport/transport_service.hpp>
 #include <nano/weights/bootstrap_weights.hpp>
 
 #include <boost/program_options.hpp>
@@ -138,8 +138,8 @@ public:
 	nano::ledger_notifications & ledger_notifications;
 	std::unique_ptr<nano::transport::bandwidth_limiter> outbound_limiter_impl;
 	nano::transport::bandwidth_limiter & outbound_limiter;
-	std::unique_ptr<nano::transport::transport_context> transport_ctx_impl;
-	nano::transport::transport_context & transport_ctx;
+	std::unique_ptr<nano::transport::transport_service> transport_impl;
+	nano::transport::transport_service & transport;
 	std::unique_ptr<nano::message_processor> message_processor_impl;
 	nano::message_processor & message_processor;
 	std::unique_ptr<nano::network> network_impl;
@@ -147,8 +147,6 @@ public:
 	std::shared_ptr<nano::transport::channel> loopback_channel;
 	std::unique_ptr<nano::telemetry> telemetry_impl;
 	nano::telemetry & telemetry;
-	std::unique_ptr<nano::transport::tcp_listener> tcp_listener_impl;
-	nano::transport::tcp_listener & tcp_listener;
 	std::unique_ptr<nano::port_mapping> port_mapping_impl;
 	nano::port_mapping & port_mapping;
 	std::unique_ptr<nano::block_processor> block_processor_impl;

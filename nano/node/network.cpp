@@ -26,7 +26,7 @@ nano::network::network (nano::node & node_a, uint16_t port_a) :
 	syn_cookies{ node.config.network.max_peers_per_ip, node.logger },
 	resolver{ node.io_ctx },
 	filter{ node.config.network.duplicate_filter_size, node.config.network.duplicate_filter_cutoff },
-	tcp_channels{ node.transport_ctx },
+	tcp_channels{ node.transport.tcp_channels },
 	port{ port_a }
 {
 	node.observers.channel_connected.add ([this] (std::shared_ptr<nano::transport::channel> const & channel) {

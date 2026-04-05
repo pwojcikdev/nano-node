@@ -88,10 +88,10 @@ void nano::monitor::run_one ()
 
 	logger.info (nano::log::type::monitor, "Peers: {} (realtime: {} | bootstrap: {}) (inbound: {} | outbound: {})",
 	node.network.size (),
-	node.tcp_listener.realtime_count (),
-	node.tcp_listener.bootstrap_count (),
-	node.tcp_listener.connection_count (nano::transport::tcp_listener::connection_type::inbound),
-	node.tcp_listener.connection_count (nano::transport::tcp_listener::connection_type::outbound));
+	node.transport.tcp_listener.realtime_count (),
+	node.transport.tcp_listener.bootstrap_count (),
+	node.transport.tcp_listener.connection_count (nano::transport::tcp_listener::connection_type::inbound),
+	node.transport.tcp_listener.connection_count (nano::transport::tcp_listener::connection_type::outbound));
 
 	auto const quorum = node.online_reps.delta ();
 	auto const stake_online = node.online_reps.online ();

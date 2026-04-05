@@ -43,14 +43,14 @@ TEST (tcp_server, handshake_deserialization_failure)
 	auto node = system.add_node ();
 
 	// Create a client socket to connect to the node
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport.ctx);
 
 	// Connect using blocking helper
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
 	ASSERT_FALSE (ec);
 
 	// Ensure the server has accepted the connection
-	ASSERT_TIMELY_EQ (5s, node->tcp_listener.all_sockets ().size (), 1);
+	ASSERT_TIMELY_EQ (5s, node->transport.tcp_listener.all_sockets ().size (), 1);
 
 	// Send malformed handshake data that will fail deserialization
 	// Create an invalid message header with wrong message type and invalid size
@@ -79,7 +79,7 @@ TEST (tcp_server, handshake_deserialization_failure)
 
 	// The server should close the connection after receiving malformed data
 	// Wait for the connection to be dropped
-	ASSERT_TIMELY (5s, node->tcp_listener.all_sockets ().empty ());
+	ASSERT_TIMELY (5s, node->transport.tcp_listener.all_sockets ().empty ());
 
 	// Verify stats show the handshake was aborted
 	ASSERT_TIMELY_EQ (5s, node->stats.count (nano::stat::type::tcp_server, nano::stat::detail::handshake_abort), 1);
@@ -95,13 +95,13 @@ TEST (tcp_server, handshake_incomplete_message)
 	auto node = system.add_node ();
 
 	// Create a client socket
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport.ctx);
 
 	// Connect using blocking helper
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
 	ASSERT_FALSE (ec);
 
-	ASSERT_TIMELY_EQ (5s, node->tcp_listener.all_sockets ().size (), 1);
+	ASSERT_TIMELY_EQ (5s, node->transport.tcp_listener.all_sockets ().size (), 1);
 
 	// Send only partial header (not enough bytes for a complete header)
 	std::vector<uint8_t> partial_header;
@@ -125,7 +125,7 @@ TEST (tcp_server, handshake_incomplete_message)
 	client_socket->close ();
 
 	// Server should detect incomplete message and close connection
-	ASSERT_TIMELY (5s, node->tcp_listener.all_sockets ().empty ());
+	ASSERT_TIMELY (5s, node->transport.tcp_listener.all_sockets ().empty ());
 }
 
 TEST (tcp_server, handshake_invalid_message_type_aborts)
@@ -133,13 +133,13 @@ TEST (tcp_server, handshake_invalid_message_type_aborts)
 	nano::test::system system;
 	auto node = system.add_node ();
 
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport.ctx);
 
 	// Connect to the node
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
 	ASSERT_FALSE (ec);
 
-	ASSERT_TIMELY_EQ (5s, node->tcp_listener.all_sockets ().size (), 1);
+	ASSERT_TIMELY_EQ (5s, node->transport.tcp_listener.all_sockets ().size (), 1);
 
 	// Create a valid header but with an invalid message type for handshake phase
 	std::vector<uint8_t> invalid_handshake_data;
@@ -170,7 +170,7 @@ TEST (tcp_server, handshake_invalid_message_type_aborts)
 	ASSERT_EQ (bytes_written, invalid_handshake_data.size ());
 
 	// The server should abort the connection because it received a non-handshake message during handshake
-	ASSERT_TIMELY (5s, node->tcp_listener.all_sockets ().empty ());
+	ASSERT_TIMELY (5s, node->transport.tcp_listener.all_sockets ().empty ());
 
 	// Verify the handshake was aborted
 	ASSERT_TIMELY_EQ (5s, node->stats.count (nano::stat::type::tcp_server, nano::stat::detail::handshake_abort), 1);
@@ -184,13 +184,13 @@ TEST (tcp_server, handshake_self_connection_rejected)
 	nano::test::system system;
 	auto node = system.add_node ();
 
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport.ctx);
 
 	// Connect to the node
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
 	ASSERT_FALSE (ec);
 
-	ASSERT_TIMELY_EQ (5s, node->tcp_listener.all_sockets ().size (), 1);
+	ASSERT_TIMELY_EQ (5s, node->transport.tcp_listener.all_sockets ().size (), 1);
 
 	// Create a handshake response claiming to be from the same node
 	nano::messages::node_id_handshake::query_payload query{ nano::random_pool::generate<nano::uint256_union> () };
@@ -212,7 +212,7 @@ TEST (tcp_server, handshake_self_connection_rejected)
 	ASSERT_EQ (bytes_written, shared_const_buffer.size ());
 
 	// The server should reject the connection due to self-connection
-	ASSERT_TIMELY (5s, node->tcp_listener.all_sockets ().empty ());
+	ASSERT_TIMELY (5s, node->transport.tcp_listener.all_sockets ().empty ());
 
 	// Verify the handshake was rejected
 	ASSERT_TIMELY_EQ (5s, node->stats.count (nano::stat::type::handshake, nano::stat::detail::invalid_node_id), 1);
@@ -226,13 +226,13 @@ TEST (tcp_server, handshake_multiple_queries_rejected)
 	nano::test::system system;
 	auto node = system.add_node ();
 
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport.ctx);
 
 	// Connect to node1
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
 	ASSERT_FALSE (ec);
 
-	ASSERT_TIMELY_EQ (5s, node->tcp_listener.all_sockets ().size (), 1);
+	ASSERT_TIMELY_EQ (5s, node->transport.tcp_listener.all_sockets ().size (), 1);
 
 	// Send first handshake query
 	nano::messages::node_id_handshake::query_payload query1{ nano::random_pool::generate<nano::uint256_union> () };
@@ -253,7 +253,7 @@ TEST (tcp_server, handshake_multiple_queries_rejected)
 	ASSERT_EQ (bytes_written2, buffer2.size ());
 
 	// The server should abort the connection due to multiple queries
-	ASSERT_TIMELY (5s, node->tcp_listener.all_sockets ().empty ());
+	ASSERT_TIMELY (5s, node->transport.tcp_listener.all_sockets ().empty ());
 
 	// Verify the handshake was aborted due to multiple queries
 	ASSERT_TIMELY_EQ (5s, node->stats.count (nano::stat::type::tcp_server, nano::stat::detail::handshake_error), 1);
@@ -267,13 +267,13 @@ TEST (tcp_server, handshake_outdated_protocol_version)
 	nano::test::system system;
 	auto node = system.add_node ();
 
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport.ctx);
 
 	// Connect to the node
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
 	ASSERT_FALSE (ec);
 
-	ASSERT_TIMELY_EQ (5s, node->tcp_listener.all_sockets ().size (), 1);
+	ASSERT_TIMELY_EQ (5s, node->transport.tcp_listener.all_sockets ().size (), 1);
 
 	// Create a handshake message with outdated protocol version
 	std::vector<uint8_t> handshake_data;
@@ -304,7 +304,7 @@ TEST (tcp_server, handshake_outdated_protocol_version)
 	ASSERT_EQ (bytes_written, handshake_data.size ());
 
 	// The server should reject the connection due to outdated protocol version
-	ASSERT_TIMELY (5s, node->tcp_listener.all_sockets ().empty ());
+	ASSERT_TIMELY (5s, node->transport.tcp_listener.all_sockets ().empty ());
 
 	// Verify the handshake was aborted
 	ASSERT_TIMELY_EQ (5s, node->stats.count (nano::stat::type::tcp_server, nano::stat::detail::handshake_abort), 1);
@@ -319,13 +319,13 @@ TEST (tcp_server, handshake_wrong_network_id)
 	nano::test::system system;
 	auto node = system.add_node ();
 
-	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport_ctx);
+	auto client_socket = std::make_shared<nano::transport::tcp_socket> (node->transport.ctx);
 
 	// Connect to the node
 	auto ec = client_socket->blocking_connect (node->network.endpoint ());
 	ASSERT_FALSE (ec);
 
-	ASSERT_TIMELY_EQ (5s, node->tcp_listener.all_sockets ().size (), 1);
+	ASSERT_TIMELY_EQ (5s, node->transport.tcp_listener.all_sockets ().size (), 1);
 
 	// Create a handshake message with wrong network ID
 	std::vector<uint8_t> handshake_data;
@@ -362,7 +362,7 @@ TEST (tcp_server, handshake_wrong_network_id)
 	ASSERT_EQ (bytes_written, handshake_data.size ());
 
 	// The server should reject the connection due to wrong network ID
-	ASSERT_TIMELY (5s, node->tcp_listener.all_sockets ().empty ());
+	ASSERT_TIMELY (5s, node->transport.tcp_listener.all_sockets ().empty ());
 
 	// Verify the handshake was aborted
 	ASSERT_TIMELY_EQ (5s, node->stats.count (nano::stat::type::tcp_server, nano::stat::detail::handshake_abort), 1);

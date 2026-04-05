@@ -194,7 +194,7 @@ public:
 	boost::asio::ip::tcp::resolver resolver;
 	nano::peer_exclusion excluded_peers;
 	nano::network_filter filter;
-	nano::transport::tcp_channels tcp_channels;
+	nano::transport::tcp_channels & tcp_channels;
 	std::atomic<uint16_t> port{ 0 };
 
 public: // Callbacks
