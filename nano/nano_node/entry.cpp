@@ -1845,7 +1845,7 @@ int main (int argc, char * const * argv)
 							{
 								std::cout << boost::str (boost::format ("%1% blocks retrieved") % count) << std::endl;
 							}
-							node.node->block_processor.add (block);
+							node.node->block_processor.add (block, nano::block_source::test);
 							if (block->type () == nano::block_type::state && block->previous ().is_zero () && source_node->ledger.is_epoch_link (block->link_field ().value ()))
 							{
 								// Epoch open blocks can be rejected without processed pending blocks to account, push it later again
