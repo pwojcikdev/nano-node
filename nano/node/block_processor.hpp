@@ -53,7 +53,7 @@ public:
 class block_processor final
 {
 public:
-	block_processor (nano::node_config const &, nano::ledger &, nano::ledger_notifications &, nano::unchecked_map &, nano::stats &, nano::logger &);
+	block_processor (nano::node_config const &, nano::ledger &, nano::ledger_notifications &, nano::stats &, nano::logger &);
 	~block_processor ();
 
 	void start ();
@@ -88,7 +88,6 @@ private: // Dependencies
 	nano::network_params const & network_params;
 	nano::ledger & ledger;
 	nano::ledger_notifications & ledger_notifications;
-	nano::unchecked_map & unchecked;
 	nano::stats & stats;
 	nano::logger & logger;
 

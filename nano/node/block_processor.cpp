@@ -10,7 +10,6 @@
 #include <nano/node/local_vote_history.hpp>
 #include <nano/node/node.hpp>
 #include <nano/node/transport/formatting.hpp>
-#include <nano/node/unchecked_map.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 
@@ -20,13 +19,12 @@
  * block_processor
  */
 
-nano::block_processor::block_processor (nano::node_config const & node_config_a, nano::ledger & ledger_a, nano::ledger_notifications & ledger_notifications_a, nano::unchecked_map & unchecked_a, nano::stats & stats_a, nano::logger & logger_a) :
+nano::block_processor::block_processor (nano::node_config const & node_config_a, nano::ledger & ledger_a, nano::ledger_notifications & ledger_notifications_a, nano::stats & stats_a, nano::logger & logger_a) :
 	config{ node_config_a.block_processor },
 	node_config{ node_config_a },
 	network_params{ node_config.network_params },
 	ledger{ ledger_a },
 	ledger_notifications{ ledger_notifications_a },
-	unchecked{ unchecked_a },
 	stats{ stats_a },
 	logger{ logger_a }
 {
@@ -57,10 +55,6 @@ nano::block_processor::block_processor (nano::node_config const & node_config_a,
 		}
 	};
 
-	// Requeue blocks that could not be immediately processed
-	unchecked.satisfied.add ([this] (nano::unchecked_info const & info) {
-		add (info.block, nano::block_source::unchecked);
-	});
 }
 
 nano::block_processor::~block_processor ()
@@ -478,35 +472,20 @@ nano::block_status nano::block_processor::process_one (secure::write_transaction
 	{
 		case nano::block_status::progress:
 		{
-			unchecked.trigger (hash);
-
-			/*
-			 * For send blocks check epoch open unchecked (gap pending).
-			 * For state blocks check only send subtype and only if block epoch is not last epoch.
-			 * If epoch is last, then pending entry shouldn't trigger same epoch open block for destination account.
-			 */
-			if (block->type () == nano::block_type::send || (block->type () == nano::block_type::state && block->is_send () && std::underlying_type_t<nano::epoch> (block->sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
-			{
-				unchecked.trigger (block->destination ());
-			}
 			break;
 		}
 		case nano::block_status::gap_previous:
 		{
-			unchecked.put (block->previous (), block);
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_previous);
 			break;
 		}
 		case nano::block_status::gap_source:
 		{
-			release_assert (block->source_field () || block->link_field ());
-			unchecked.put (block->source_field ().value_or (block->link_field ().value_or (0).as_block_hash ()), block);
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
 			break;
 		}
 		case nano::block_status::gap_epoch_open_pending:
 		{
-			unchecked.put (block->account_field ().value_or (0), block); // Specific unchecked key starting with epoch open block account public key
 			stats.inc (nano::stat::type::ledger, nano::stat::detail::gap_source);
 			break;
 		}

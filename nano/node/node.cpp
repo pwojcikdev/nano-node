@@ -144,7 +144,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	tcp_listener{ *tcp_listener_impl },
 	port_mapping_impl{ std::make_unique<nano::port_mapping> (*this) },
 	port_mapping{ *port_mapping_impl },
-	block_processor_impl{ std::make_unique<nano::block_processor> (config, ledger, ledger_notifications, unchecked, stats, logger) },
+	block_processor_impl{ std::make_unique<nano::block_processor> (config, ledger, ledger_notifications, stats, logger) },
 	block_processor{ *block_processor_impl },
 	fork_cache_impl{ std::make_unique<nano::fork_cache> (config.fork_cache, stats) },
 	fork_cache{ *fork_cache_impl },
@@ -248,6 +248,55 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 				fork_cache.put (context.block);
 			}
 		}
+	});
+
+	// Handle unchecked blocks: store gapped blocks and trigger dependencies
+	ledger_notifications.blocks_processed.add ([this] (auto const & batch) {
+		for (auto const & [result, context] : batch)
+		{
+			auto const & block = context.block;
+			switch (result)
+			{
+				case nano::block_status::progress:
+				{
+					unchecked.trigger (block->hash ());
+
+					/*
+					 * For send blocks check epoch open unchecked (gap pending).
+					 * For state blocks check only send subtype and only if block epoch is not last epoch.
+					 * If epoch is last, then pending entry shouldn't trigger same epoch open block for destination account.
+					 */
+					if (block->type () == nano::block_type::send || (block->type () == nano::block_type::state && block->is_send () && std::underlying_type_t<nano::epoch> (block->sideband ().details.epoch) < std::underlying_type_t<nano::epoch> (nano::epoch::max)))
+					{
+						unchecked.trigger (block->destination ());
+					}
+					break;
+				}
+				case nano::block_status::gap_previous:
+				{
+					unchecked.put (block->previous (), block);
+					break;
+				}
+				case nano::block_status::gap_source:
+				{
+					release_assert (block->source_field () || block->link_field ());
+					unchecked.put (block->source_field ().value_or (block->link_field ().value_or (0).as_block_hash ()), block);
+					break;
+				}
+				case nano::block_status::gap_epoch_open_pending:
+				{
+					unchecked.put (block->account_field ().value_or (0), block); // Specific unchecked key starting with epoch open block account public key
+					break;
+				}
+				default:
+					break;
+			}
+		}
+	});
+
+	// Requeue blocks from unchecked when their dependencies are satisfied
+	unchecked.satisfied.add ([this] (nano::unchecked_info const & info) {
+		block_processor.add (info.block, nano::block_source::unchecked);
 	});
 
 	// Announce new blocks via websocket
