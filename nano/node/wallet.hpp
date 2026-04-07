@@ -9,6 +9,7 @@
 #include <nano/lib/work.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/openclwork.hpp>
+#include <nano/node/wallet/wallet_repository.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/store/lmdb/lmdb_env.hpp>
 #include <nano/store/lmdb/wallet_value.hpp>
@@ -69,61 +70,60 @@ public:
 	using iterator = store::typed_iterator<nano::account, nano::wallet_value>;
 
 public:
-	wallet_store (nano::kdf &, nano::store::write_transaction &, store::lmdb::env &, nano::account representative, unsigned fanout, std::string const & wallet_path);
-	wallet_store (nano::kdf &, nano::store::write_transaction &, store::lmdb::env &, unsigned fanout, std::string const & wallet_path, std::string const & json);
+	wallet_store (nano::kdf &, nano::store::write_transaction & wallet_txn, store::lmdb::env &, nano::account representative, unsigned fanout, std::string const & wallet_path);
+	wallet_store (nano::kdf &, nano::store::write_transaction & wallet_txn, store::lmdb::env &, unsigned fanout, std::string const & wallet_path, std::string const & json);
 
-	void initialize (nano::store::write_transaction const &, std::string const & path);
-	std::vector<nano::account> accounts (nano::store::transaction const &) const;
-	nano::uint256_union check (nano::store::transaction const &) const;
-	bool rekey (nano::store::write_transaction const &, std::string const & password);
-	bool valid_password (nano::store::transaction const &) const;
+	std::vector<nano::account> accounts (nano::store::transaction const & wallet_txn) const;
+	nano::uint256_union check (nano::store::transaction const & wallet_txn) const;
+	bool rekey (nano::store::write_transaction const & wallet_txn, std::string const & password_text);
+	bool valid_password (nano::store::transaction const & wallet_txn) const;
 	bool valid_public_key (nano::public_key const &) const;
-	bool attempt_password (nano::store::transaction const &, std::string const & password);
-	void wallet_key (nano::raw_key & result, nano::store::transaction const &) const;
-	nano::raw_key seed (nano::store::transaction const &) const;
-	void seed_set (nano::store::write_transaction const &, nano::raw_key const & seed);
+	bool attempt_password (nano::store::transaction const & wallet_txn, std::string const & password_text);
+	void wallet_key (nano::raw_key & result, nano::store::transaction const & wallet_txn) const;
+	nano::raw_key seed (nano::store::transaction const & wallet_txn) const;
+	void seed_set (nano::store::write_transaction const & wallet_txn, nano::raw_key const & seed);
 	nano::key_type key_type (nano::wallet_value const &) const;
-	nano::public_key deterministic_insert (nano::store::write_transaction const &);
-	nano::public_key deterministic_insert (nano::store::write_transaction const &, uint32_t index);
-	nano::raw_key deterministic_key (nano::store::transaction const &, uint32_t index) const;
-	uint32_t deterministic_index_get (nano::store::transaction const &) const;
-	void deterministic_index_set (nano::store::write_transaction const &, uint32_t index);
-	void deterministic_clear (nano::store::write_transaction const &);
-	nano::uint256_union salt (nano::store::transaction const &) const;
-	bool is_representative (nano::store::transaction const &) const;
-	nano::account representative (nano::store::transaction const &) const;
-	void representative_set (nano::store::write_transaction const &, nano::account const & rep);
-	nano::public_key insert_adhoc (nano::store::write_transaction const &, nano::raw_key const & prv);
-	bool insert_watch (nano::store::write_transaction const &, nano::account const & pub);
-	void erase (nano::store::write_transaction const &, nano::account const & pub);
-	nano::wallet_value entry_get_raw (nano::store::transaction const &, nano::account const & pub) const;
-	void entry_put_raw (nano::store::write_transaction const &, nano::account const & pub, nano::wallet_value const & entry);
-	nano::result<nano::raw_key> fetch (nano::store::transaction const &, nano::account const & pub) const;
-	bool exists (nano::store::transaction const &, nano::account const & pub) const;
-	void destroy (nano::store::write_transaction const &);
-	iterator find (nano::store::transaction const &, nano::account const & key) const;
-	iterator begin (nano::store::transaction const &, nano::account const & key) const;
-	iterator begin (nano::store::transaction const &) const;
-	iterator end (nano::store::transaction const &) const;
-	void derive_key (nano::raw_key & result, nano::store::transaction const &, std::string const & password) const;
-	void serialize_json (nano::store::transaction const &, std::string & json) const;
-	void write_backup (nano::store::transaction const &, std::filesystem::path const & path) const;
-	bool move (nano::store::write_transaction const &, nano::wallet_store & source, std::vector<nano::public_key> const & keys);
-	bool import (nano::store::write_transaction const &, nano::wallet_store & source);
-	std::optional<uint64_t> work_get (nano::store::transaction const &, nano::public_key const &) const;
-	void work_put (nano::store::write_transaction const &, nano::public_key const & pub, uint64_t work);
-	unsigned version (nano::store::transaction const &) const;
-	void version_put (nano::store::write_transaction const &, unsigned version);
+	nano::public_key deterministic_insert (nano::store::write_transaction const & wallet_txn);
+	nano::public_key deterministic_insert (nano::store::write_transaction const & wallet_txn, uint32_t index);
+	nano::raw_key deterministic_key (nano::store::transaction const & wallet_txn, uint32_t index) const;
+	uint32_t deterministic_index_get (nano::store::transaction const & wallet_txn) const;
+	void deterministic_index_set (nano::store::write_transaction const & wallet_txn, uint32_t index);
+	void deterministic_clear (nano::store::write_transaction const & wallet_txn);
+	nano::uint256_union salt (nano::store::transaction const & wallet_txn) const;
+	bool is_representative (nano::store::transaction const & wallet_txn) const;
+	nano::account representative (nano::store::transaction const & wallet_txn) const;
+	void representative_set (nano::store::write_transaction const & wallet_txn, nano::account const & representative);
+	nano::public_key insert_adhoc (nano::store::write_transaction const & wallet_txn, nano::raw_key const & prv);
+	bool insert_watch (nano::store::write_transaction const & wallet_txn, nano::account const & account);
+	void erase (nano::store::write_transaction const & wallet_txn, nano::account const & account);
+	nano::wallet_value entry_get_raw (nano::store::transaction const & wallet_txn, nano::account const & account) const;
+	void entry_put_raw (nano::store::write_transaction const & wallet_txn, nano::account const & account, nano::wallet_value const & entry);
+	nano::result<nano::raw_key> fetch (nano::store::transaction const & wallet_txn, nano::account const & account) const;
+	bool exists (nano::store::transaction const & wallet_txn, nano::account const & account) const;
+	void destroy (nano::store::write_transaction const & wallet_txn);
+	iterator find (nano::store::transaction const & wallet_txn, nano::account const & key) const;
+	iterator begin (nano::store::transaction const & wallet_txn, nano::account const & key) const;
+	iterator begin (nano::store::transaction const & wallet_txn) const;
+	iterator end (nano::store::transaction const & wallet_txn) const;
+	void derive_key (nano::raw_key & result, nano::store::transaction const & wallet_txn, std::string const & password_text) const;
+	std::string serialize_json (nano::store::transaction const & wallet_txn) const;
+	void write_backup (nano::store::transaction const & wallet_txn, std::filesystem::path const & path) const;
+	bool move (nano::store::write_transaction const & wallet_txn, nano::wallet_store & source, std::vector<nano::public_key> const & keys);
+	bool import (nano::store::write_transaction const & wallet_txn, nano::wallet_store & source);
+	bool is_open () const;
+	std::optional<uint64_t> work_get (nano::store::transaction const & wallet_txn, nano::public_key const & account) const;
+	void work_put (nano::store::write_transaction const & wallet_txn, nano::public_key const & account, uint64_t work);
+	unsigned version (nano::store::transaction const & wallet_txn) const;
+	void version_put (nano::store::write_transaction const & wallet_txn, unsigned version);
 
 public:
 	nano::fan password;
 	nano::fan wallet_key_mem;
 	nano::kdf & kdf;
-	std::atomic<MDB_dbi> handle{ 0 };
 	mutable std::recursive_mutex mutex;
 
 private:
-	nano::store::lmdb::env & env;
+	nano::wallet_repository repository;
 
 public:
 	static unsigned const version_1 = 1;
@@ -213,11 +213,11 @@ public:
 
 	// Import/export
 	bool import (std::string const & json, std::string const & password);
-	void serialize_json (std::string & json);
+	std::string serialize_json ();
 	void write_backup (std::filesystem::path const & path);
 
 	// Status
-	bool live ();
+	bool is_open ();
 
 public:
 	std::unordered_set<nano::account> free_accounts;

@@ -396,8 +396,7 @@ TEST (wallet, serialize_json_empty)
 	auto transaction (env.tx_begin_write ());
 	nano::kdf kdf{ nano::dev::network_params.kdf_work };
 	nano::wallet_store wallet1 (kdf, transaction, env, nano::dev::genesis_key.pub, 1, "0");
-	std::string serialized;
-	wallet1.serialize_json (transaction, serialized);
+	auto serialized = wallet1.serialize_json (transaction);
 	nano::wallet_store wallet2 (kdf, transaction, env, 1, "1", serialized);
 	nano::raw_key password1;
 	nano::raw_key password2;
@@ -419,8 +418,7 @@ TEST (wallet, serialize_json_one)
 	nano::wallet_store wallet1 (kdf, transaction, env, nano::dev::genesis_key.pub, 1, "0");
 	nano::keypair key;
 	wallet1.insert_adhoc (transaction, key.prv);
-	std::string serialized;
-	wallet1.serialize_json (transaction, serialized);
+	auto serialized = wallet1.serialize_json (transaction);
 	nano::wallet_store wallet2 (kdf, transaction, env, 1, "1", serialized);
 	nano::raw_key password1;
 	nano::raw_key password2;
@@ -445,8 +443,7 @@ TEST (wallet, serialize_json_password)
 	nano::keypair key;
 	wallet1.rekey (transaction, "password");
 	wallet1.insert_adhoc (transaction, key.prv);
-	std::string serialized;
-	wallet1.serialize_json (transaction, serialized);
+	auto serialized = wallet1.serialize_json (transaction);
 	nano::wallet_store wallet2 (kdf, transaction, env, 1, "1", serialized);
 	ASSERT_FALSE (wallet2.valid_password (transaction));
 	ASSERT_FALSE (wallet2.attempt_password (transaction, "password"));
@@ -492,8 +489,7 @@ TEST (wallet_store, import)
 	auto wallet2 (system.wallet (1));
 	nano::keypair key1;
 	wallet1->insert_adhoc (key1.prv);
-	std::string json;
-	wallet1->serialize_json (json);
+	auto json = wallet1->serialize_json ();
 	ASSERT_FALSE (wallet2->exists (key1.pub));
 	auto error (wallet2->import (json, ""));
 	ASSERT_FALSE (error);
@@ -507,8 +503,7 @@ TEST (wallet_store, fail_import_bad_password)
 	auto wallet2 (system.wallet (1));
 	nano::keypair key1;
 	wallet1->insert_adhoc (key1.prv);
-	std::string json;
-	wallet1->serialize_json (json);
+	auto json = wallet1->serialize_json ();
 	ASSERT_FALSE (wallet2->exists (key1.pub));
 	auto error (wallet2->import (json, "1"));
 	ASSERT_TRUE (error);

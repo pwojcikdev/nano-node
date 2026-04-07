@@ -4597,9 +4597,7 @@ void nano::json_handler::wallet_export ()
 	auto wallet (wallet_impl ());
 	if (!ec)
 	{
-		std::string json;
-		wallet->serialize_json (json);
-		response_l.put ("json", json);
+		response_l.put ("json", wallet->serialize_json ());
 	}
 	response_errors ();
 }

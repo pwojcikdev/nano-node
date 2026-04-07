@@ -98,7 +98,7 @@ TEST (wallets, create_from_json)
 		auto account_result = wallet->deterministic_insert ();
 		ASSERT_TRUE (account_result);
 		account = account_result.value ();
-		wallet->serialize_json (json);
+		json = wallet->serialize_json ();
 		ASSERT_FALSE (json.empty ());
 		wallets.destroy (id);
 		ASSERT_EQ (nullptr, wallets.open (id));
