@@ -222,6 +222,8 @@ add_library(
   vote_with_weight_info.hpp
   wallet/wallet_repository.hpp
   wallet/wallet_repository.cpp
+  wallet/wallet_store.hpp
+  wallet/wallet_store.cpp
   wallet.hpp
   wallet.cpp
   websocket.hpp

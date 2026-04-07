@@ -1,5 +1,5 @@
-#include <nano/node/wallet.hpp>
 #include <nano/node/wallet/wallet_repository.hpp>
+#include <nano/node/wallet/wallet_store.hpp>
 #include <nano/store/lmdb/common.hpp>
 #include <nano/store/lmdb/db_val.hpp>
 #include <nano/store/lmdb/iterator.hpp>
