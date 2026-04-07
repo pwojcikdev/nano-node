@@ -82,6 +82,7 @@ public:
 	void wallet_key (nano::raw_key & result, nano::store::transaction const & wallet_txn) const;
 	nano::raw_key seed (nano::store::transaction const & wallet_txn) const;
 	void seed_set (nano::store::write_transaction const & wallet_txn, nano::raw_key const & seed);
+	nano::key_type key_type (nano::store::transaction const & wallet_txn, nano::account const & account) const;
 	nano::key_type key_type (nano::wallet_value const &) const;
 	nano::public_key deterministic_insert (nano::store::write_transaction const & wallet_txn);
 	nano::public_key deterministic_insert (nano::store::write_transaction const & wallet_txn, uint32_t index);
@@ -96,8 +97,6 @@ public:
 	nano::public_key insert_adhoc (nano::store::write_transaction const & wallet_txn, nano::raw_key const & prv);
 	bool insert_watch (nano::store::write_transaction const & wallet_txn, nano::account const & account);
 	void erase (nano::store::write_transaction const & wallet_txn, nano::account const & account);
-	nano::wallet_value entry_get_raw (nano::store::transaction const & wallet_txn, nano::account const & account) const;
-	void entry_put_raw (nano::store::write_transaction const & wallet_txn, nano::account const & account, nano::wallet_value const & entry);
 	nano::result<nano::raw_key> fetch (nano::store::transaction const & wallet_txn, nano::account const & account) const;
 	bool exists (nano::store::transaction const & wallet_txn, nano::account const & account) const;
 	void destroy (nano::store::write_transaction const & wallet_txn);
