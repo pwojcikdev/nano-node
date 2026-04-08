@@ -1,7 +1,9 @@
 #pragma once
 
-#include <nano/lib/blocks.hpp>
+#include <nano/lib/numbers.hpp>
 #include <nano/secure/common.hpp>
+
+#include <memory>
 
 namespace nano::test
 {

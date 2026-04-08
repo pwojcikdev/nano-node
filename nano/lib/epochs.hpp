@@ -1,6 +1,6 @@
 #pragma once
 
-#include <nano/lib/epoch.hpp>
+#include <nano/lib/epoch_templ.hpp>
 #include <nano/lib/numbers.hpp>
 
 #include <cstdint>

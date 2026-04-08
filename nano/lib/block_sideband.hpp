@@ -3,7 +3,6 @@
 #include <nano/lib/epoch.hpp>
 #include <nano/lib/fwd.hpp>
 #include <nano/lib/numbers.hpp>
-#include <nano/lib/timer.hpp>
 
 #include <cstdint>
 #include <memory>

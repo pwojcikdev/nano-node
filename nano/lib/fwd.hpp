@@ -52,6 +52,9 @@ template <typename Key, typename Value>
 class uniquer;
 
 using stream = std::basic_streambuf<uint8_t, uint8_char_traits>;
+
+using seconds_t = uint64_t;
+using millis_t = uint64_t;
 }
 
 namespace nano::stat

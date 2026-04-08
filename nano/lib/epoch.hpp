@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
 #include <type_traits>
 
 namespace nano
@@ -22,15 +21,4 @@ enum class epoch : uint8_t
 
 /* This turns epoch_0 into 0 for instance */
 std::underlying_type_t<nano::epoch> normalized_epoch (nano::epoch epoch_a);
-}
-namespace std
-{
-template <>
-struct hash<::nano::epoch>
-{
-	std::size_t operator() (::nano::epoch const & epoch_a) const
-	{
-		return std::underlying_type_t<::nano::epoch> (epoch_a);
-	}
-};
 }

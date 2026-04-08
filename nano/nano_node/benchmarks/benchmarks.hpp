@@ -1,6 +1,5 @@
 #pragma once
 
-#include <nano/lib/blocks.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/node/node.hpp>
 #include <nano/secure/common.hpp>

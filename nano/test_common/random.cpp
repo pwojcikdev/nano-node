@@ -1,4 +1,5 @@
 #include <nano/crypto_lib/random_pool.hpp>
+#include <nano/lib/blocks.hpp>
 #include <nano/test_common/random.hpp>
 
 nano::hash_or_account nano::test::random_hash_or_account ()

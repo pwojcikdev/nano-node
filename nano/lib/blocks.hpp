@@ -1,10 +1,7 @@
 #pragma once
 
 #include <nano/lib/block_sideband.hpp>
-#include <nano/lib/epoch.hpp>
-#include <nano/lib/errors.hpp>
 #include <nano/lib/fwd.hpp>
-#include <nano/lib/numbers.hpp>
 #include <nano/lib/optional_ptr.hpp>
 
 #include <boost/property_tree/ptree_fwd.hpp>
