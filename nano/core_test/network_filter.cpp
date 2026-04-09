@@ -1,5 +1,6 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/network_filter.hpp>
+#include <nano/lib/ratios.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/messages/messages.hpp>
 #include <nano/node/endpoint.hpp>

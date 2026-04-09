@@ -5,6 +5,8 @@
 #include <nano/lib/utility.hpp>
 #include <nano/secure/fwd.hpp>
 
+#include <boost/multiprecision/cpp_int.hpp>
+
 #include <memory>
 #include <shared_mutex>
 #include <unordered_map>

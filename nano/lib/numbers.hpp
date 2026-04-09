@@ -3,7 +3,7 @@
 #include <nano/lib/assert.hpp>
 
 #include <boost/functional/hash_fwd.hpp>
-#include <boost/multiprecision/cpp_int.hpp>
+#include <boost/multiprecision/fwd.hpp>
 
 #include <algorithm>
 #include <array>
@@ -20,11 +20,6 @@ using uint128_t = boost::multiprecision::uint128_t;
 using uint256_t = boost::multiprecision::uint256_t;
 using uint512_t = boost::multiprecision::uint512_t;
 
-// SI dividers
-nano::uint128_t const Knano_ratio = nano::uint128_t ("1000000000000000000000000000000000"); // 10^33 = 1000 nano
-nano::uint128_t const nano_ratio = nano::uint128_t ("1000000000000000000000000000000"); // 10^30 = 1 nano
-nano::uint128_t const raw_ratio = nano::uint128_t ("1"); // 10^0
-
 using bucket_index = uint64_t;
 using priority_timestamp = uint64_t; // Priority within the bucket
 
@@ -38,13 +33,8 @@ public:
 
 public:
 	uint128_union () = default;
-	uint128_union (uint64_t value) :
-		uint128_union (nano::uint128_t{ value }){};
-	uint128_union (nano::uint128_t const & value)
-	{
-		bytes.fill (0);
-		boost::multiprecision::export_bits (value, bytes.rbegin (), 8, false);
-	}
+	uint128_union (uint64_t value);
+	uint128_union (nano::uint128_t const & value);
 
 	/**
 	 * Decode from hex string
@@ -56,10 +46,10 @@ public:
 	bool decode_hex (std::string const &);
 	void encode_dec (std::ostream &) const;
 	bool decode_dec (std::string const &, bool = false);
-	bool decode_dec (std::string const &, nano::uint128_t);
+	bool decode_dec (std::string const &, nano::uint128_t const &);
 
-	void encode_balance (std::ostream &, nano::uint128_t scale, int precision, bool group_digits) const;
-	std::string format_balance (nano::uint128_t scale, int precision, bool group_digits) const;
+	void encode_balance (std::ostream &, nano::uint128_t const & scale, int precision, bool group_digits) const;
+	std::string format_balance (nano::uint128_t const & scale, int precision, bool group_digits) const;
 
 	void clear ()
 	{
@@ -70,12 +60,8 @@ public:
 		return qwords[0] == 0 && qwords[1] == 0;
 	}
 
-	nano::uint128_t number () const
-	{
-		nano::uint128_t result;
-		boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
-		return result;
-	}
+	nano::uint128_t number () const;
+	operator nano::uint128_t () const;
 
 	std::string to_string () const;
 	std::string to_string_dec () const;
@@ -98,10 +84,6 @@ public: // Keep operators inlined
 	{
 		return *this <=> other == 0;
 	}
-	operator nano::uint128_t () const
-	{
-		return number ();
-	}
 	uint128_union const & as_union () const
 	{
 		return *this;
@@ -119,10 +101,8 @@ public:
 	{
 		return uint128_union::operator<=> (other);
 	}
-	operator nano::uint128_t () const
-	{
-		return number ();
-	}
+
+	operator nano::uint128_t () const;
 };
 
 class raw_key;
@@ -135,13 +115,8 @@ public:
 
 public:
 	uint256_union () = default;
-	uint256_union (uint64_t value) :
-		uint256_union (nano::uint256_t{ value }){};
-	uint256_union (nano::uint256_t const & value)
-	{
-		bytes.fill (0);
-		boost::multiprecision::export_bits (value, bytes.rbegin (), 8, false);
-	}
+	uint256_union (uint64_t value);
+	uint256_union (nano::uint256_t const & value);
 
 	/**
 	 * Decode from hex string
@@ -168,12 +143,8 @@ public:
 		return owords[0].is_zero () && owords[1].is_zero ();
 	}
 
-	nano::uint256_t number () const
-	{
-		nano::uint256_t result;
-		boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
-		return result;
-	}
+	nano::uint256_t number () const;
+	operator nano::uint256_t () const;
 
 	std::string to_string () const;
 	std::string to_string_dec () const;
@@ -188,7 +159,7 @@ public:
 		std::array<uint128_union, 2> owords;
 	};
 
-public: // Keep operators inlined
+public:
 	std::strong_ordering operator<=> (nano::uint256_union const & other) const
 	{
 		return std::memcmp (bytes.data (), other.bytes.data (), 32) <=> 0;
@@ -196,10 +167,6 @@ public: // Keep operators inlined
 	bool operator== (nano::uint256_union const & other) const
 	{
 		return *this <=> other == 0;
-	}
-	operator nano::uint256_t () const
-	{
-		return number ();
 	}
 	uint256_union const & as_union () const
 	{
@@ -214,7 +181,9 @@ class block_hash final : public uint256_union
 public:
 	using uint256_union::uint256_union;
 
-public: // Keep operators inlined
+public:
+	operator nano::uint256_t () const;
+
 	auto operator<=> (nano::block_hash const & other) const
 	{
 		return uint256_union::operator<=> (other);
@@ -222,10 +191,6 @@ public: // Keep operators inlined
 	bool operator== (nano::block_hash const & other) const
 	{
 		return *this <=> other == 0;
-	}
-	operator nano::uint256_t () const
-	{
-		return number ();
 	}
 };
 
@@ -259,7 +224,9 @@ public:
 	 */
 	static public_key from_node_id (std::string const &);
 
-public: // Keep operators inlined
+public:
+	operator nano::uint256_t () const;
+
 	auto operator<=> (nano::public_key const & other) const
 	{
 		return uint256_union::operator<=> (other);
@@ -271,10 +238,6 @@ public: // Keep operators inlined
 	bool operator== (std::nullptr_t) const
 	{
 		return *this == null ();
-	}
-	operator nano::uint256_t () const
-	{
-		return number ();
 	}
 };
 
@@ -331,7 +294,9 @@ public:
 		nano::block_hash hash;
 	};
 
-public: // Keep operators inlined
+public:
+	explicit operator nano::uint256_t () const;
+
 	auto operator<=> (nano::hash_or_account const & other) const
 	{
 		return raw <=> other.raw;
@@ -339,10 +304,6 @@ public: // Keep operators inlined
 	bool operator== (nano::hash_or_account const & other) const
 	{
 		return *this <=> other == 0;
-	}
-	explicit operator nano::uint256_t () const
-	{
-		return raw.number ();
 	}
 	explicit operator nano::uint256_union () const
 	{
@@ -424,11 +385,8 @@ public:
 
 public:
 	uint512_union () = default;
-	uint512_union (nano::uint512_t const & value)
-	{
-		bytes.fill (0);
-		boost::multiprecision::export_bits (value, bytes.rbegin (), 8, false);
-	}
+	uint512_union (uint64_t value);
+	uint512_union (nano::uint512_t const & value);
 	uint512_union (nano::uint256_union const & upper, nano::uint256_union const & lower) :
 		uint256s{ upper, lower } {};
 
@@ -451,12 +409,8 @@ public:
 		return uint256s[0].is_zero () && uint256s[1].is_zero ();
 	}
 
-	nano::uint512_t number () const
-	{
-		nano::uint512_t result;
-		boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
-		return result;
-	}
+	nano::uint512_t number () const;
+	operator nano::uint512_t () const;
 
 	std::string to_string () const;
 
@@ -477,10 +431,6 @@ public: // Keep operators inlined
 	bool operator== (nano::uint512_union const & other) const
 	{
 		return *this <=> other == 0;
-	}
-	operator nano::uint512_t () const
-	{
-		return number ();
 	}
 	uint512_union const & as_union () const
 	{
@@ -510,7 +460,9 @@ public:
 	}
 	nano::block_hash previous () const
 	{
-		return nano::block_hash{ uint256s[1] };
+		nano::block_hash result;
+		result.bytes = uint256s[1].bytes;
+		return result;
 	}
 };
 
@@ -533,7 +485,7 @@ std::ostream & operator<< (std::ostream &, const uint512_union &);
 std::ostream & operator<< (std::ostream &, const hash_or_account &);
 std::ostream & operator<< (std::ostream &, const account &);
 
-void encode_balance (std::ostream &, nano::uint128_t value, nano::uint128_t scale, int precision, bool group_digits);
+void encode_balance (std::ostream &, nano::uint128_t const & value, nano::uint128_t const & scale, int precision, bool group_digits);
 
 /**
  * Convert a double to string in fixed format

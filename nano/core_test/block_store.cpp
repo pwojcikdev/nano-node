@@ -4,6 +4,7 @@
 #include <nano/lib/files.hpp>
 #include <nano/lib/lmdbconfig.hpp>
 #include <nano/lib/logging.hpp>
+#include <nano/lib/ratios.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/work.hpp>

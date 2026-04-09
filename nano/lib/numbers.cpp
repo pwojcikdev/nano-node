@@ -3,14 +3,141 @@
 #include <nano/crypto_lib/secure_memory.hpp>
 #include <nano/lib/balance_formatting.hpp>
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/ratios.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/secure/common.hpp>
 
 #include <boost/io/ios_state.hpp>
+#include <boost/multiprecision/cpp_int.hpp>
 
 #include <crypto/ed25519-donna/ed25519.h>
 #include <cryptopp/aes.h>
 #include <cryptopp/modes.h>
+
+/*
+ * Constants
+ */
+
+nano::uint128_t const nano::Knano_ratio = nano::uint128_t ("1000000000000000000000000000000000"); // 10^33 = 1000 nano
+nano::uint128_t const nano::nano_ratio = nano::uint128_t ("1000000000000000000000000000000"); // 10^30 = 1 nano
+nano::uint128_t const nano::raw_ratio = nano::uint128_t ("1"); // 10^0
+
+/*
+ * uint128_union
+ */
+
+nano::uint128_union::uint128_union (uint64_t value) :
+	uint128_union (nano::uint128_t{ value })
+{
+}
+
+nano::uint128_union::uint128_union (nano::uint128_t const & value)
+{
+	bytes.fill (0);
+	boost::multiprecision::export_bits (value, bytes.rbegin (), 8, false);
+}
+
+nano::uint128_t nano::uint128_union::number () const
+{
+	nano::uint128_t result;
+	boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
+	return result;
+}
+
+nano::uint128_union::operator nano::uint128_t () const
+{
+	return number ();
+}
+
+/*
+ * amount
+ */
+
+nano::amount::operator nano::uint128_t () const
+{
+	return number ();
+}
+
+/*
+ * uint256_union
+ */
+
+nano::uint256_union::uint256_union (uint64_t value) :
+	uint256_union (nano::uint256_t{ value })
+{
+}
+
+nano::uint256_union::uint256_union (nano::uint256_t const & value)
+{
+	bytes.fill (0);
+	boost::multiprecision::export_bits (value, bytes.rbegin (), 8, false);
+}
+
+nano::uint256_t nano::uint256_union::number () const
+{
+	nano::uint256_t result;
+	boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
+	return result;
+}
+
+nano::uint256_union::operator nano::uint256_t () const
+{
+	return number ();
+}
+
+/*
+ * block_hash
+ */
+
+nano::block_hash::operator nano::uint256_t () const
+{
+	return number ();
+}
+
+/*
+ * public_key
+ */
+
+nano::public_key::operator nano::uint256_t () const
+{
+	return number ();
+}
+
+/*
+ * hash_or_account
+ */
+
+nano::hash_or_account::operator nano::uint256_t () const
+{
+	return raw.number ();
+}
+
+/*
+ * uint512_union
+ */
+
+nano::uint512_union::uint512_union (uint64_t value) :
+	uint512_union (nano::uint512_t{ value })
+{
+}
+
+nano::uint512_union::uint512_union (nano::uint512_t const & value)
+{
+	bytes.fill (0);
+	boost::multiprecision::export_bits (value, bytes.rbegin (), 8, false);
+}
+
+nano::uint512_t nano::uint512_union::number () const
+{
+	nano::uint512_t result;
+	boost::multiprecision::import_bits (result, bytes.begin (), bytes.end ());
+	return result;
+}
+
+nano::uint512_union::operator nano::uint512_t () const
+{
+	return number ();
+}
 
 namespace
 {
@@ -493,7 +620,7 @@ bool nano::uint128_union::decode_dec (std::string const & text, bool decimal)
 	return error;
 }
 
-bool nano::uint128_union::decode_dec (std::string const & text, nano::uint128_t scale)
+bool nano::uint128_union::decode_dec (std::string const & text, nano::uint128_t const & scale)
 {
 	bool error (text.size () > 40 || (!text.empty () && text.front () == '-'));
 	if (!error)
@@ -586,12 +713,12 @@ std::string nano::uint128_union::to_string_dec () const
 	return stream.str ();
 }
 
-void nano::uint128_union::encode_balance (std::ostream & os, nano::uint128_t scale, int precision, bool group_digits) const
+void nano::uint128_union::encode_balance (std::ostream & os, nano::uint128_t const & scale, int precision, bool group_digits) const
 {
 	nano::encode_balance (os, number (), scale, precision, group_digits);
 }
 
-std::string nano::uint128_union::format_balance (nano::uint128_t scale, int precision, bool group_digits) const
+std::string nano::uint128_union::format_balance (nano::uint128_t const & scale, int precision, bool group_digits) const
 {
 	std::ostringstream stream;
 	encode_balance (stream, scale, precision, group_digits);
@@ -622,7 +749,7 @@ std::string nano::hash_or_account::to_account () const
  *
  */
 
-void nano::encode_balance (std::ostream & os, nano::uint128_t value, nano::uint128_t scale, int precision, bool group_digits)
+void nano::encode_balance (std::ostream & os, nano::uint128_t const & value, nano::uint128_t const & scale, int precision, bool group_digits)
 {
 	auto thousands_sep = std::use_facet<std::numpunct<char>> (std::locale ()).thousands_sep ();
 	auto decimal_point = std::use_facet<std::numpunct<char>> (std::locale ()).decimal_point ();

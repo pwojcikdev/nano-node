@@ -1,3 +1,4 @@
+#include <nano/lib/ratios.hpp>
 #include <nano/node/fork_cache.hpp>
 #include <nano/test_common/random.hpp>
 #include <nano/test_common/system.hpp>

@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/ratios.hpp>
 #include <nano/secure/common.hpp>
 
 #include <gtest/gtest.h>

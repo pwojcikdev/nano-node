@@ -1,3 +1,4 @@
+#include <nano/lib/ratios.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/node/node_observers.hpp>
 #include <nano/node/vote_generator.hpp>

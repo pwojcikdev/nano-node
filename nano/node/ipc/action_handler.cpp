@@ -1,6 +1,8 @@
 #include <nano/ipc_flatbuffers_lib/generated/flatbuffers/nanoapi_generated.h>
 #include <nano/lib/errors.hpp>
 #include <nano/lib/numbers.hpp>
+
+#include <boost/multiprecision/cpp_int.hpp>
 #include <nano/node/ipc/action_handler.hpp>
 #include <nano/node/ipc/ipc_server.hpp>
 #include <nano/node/node.hpp>

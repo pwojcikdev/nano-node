@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/ratios.hpp>
 
 #include <boost/system/error_code.hpp>
 
@@ -123,22 +124,14 @@ struct as_nano_formatter
 	nano::uint128_t const & value;
 	int precision{ 1 };
 
-	friend std::ostream & operator<< (std::ostream & os, as_nano_formatter const & wrapper)
-	{
-		nano::encode_balance (os, wrapper.value, nano::nano_ratio, wrapper.precision, true);
-		return os;
-	}
+	friend std::ostream & operator<< (std::ostream & os, as_nano_formatter const & wrapper);
 };
 
 struct as_raw_nano_formatter
 {
 	nano::uint128_t const & value;
 
-	friend std::ostream & operator<< (std::ostream & os, as_raw_nano_formatter const & wrapper)
-	{
-		os << wrapper.value;
-		return os;
-	}
+	friend std::ostream & operator<< (std::ostream & os, as_raw_nano_formatter const & wrapper);
 };
 
 inline auto as_account (nano::public_key const & key)

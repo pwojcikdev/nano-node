@@ -13,6 +13,8 @@
 #include <nano/store/ledger_store.hpp>
 #include <nano/weights/bootstrap_weights.hpp>
 
+#include <boost/multiprecision/cpp_int.hpp>
+
 #include <deque>
 #include <map>
 #include <memory>

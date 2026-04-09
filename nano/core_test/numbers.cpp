@@ -1,6 +1,7 @@
 #include <nano/lib/balance_formatting.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
+#include <nano/lib/ratios.hpp>
 #include <nano/secure/common.hpp>
 
 #include <gtest/gtest.h>

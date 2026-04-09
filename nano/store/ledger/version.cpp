@@ -1,6 +1,8 @@
 #include <nano/store/db_val_templ.hpp>
 #include <nano/store/ledger/version.hpp>
 
+#include <boost/multiprecision/cpp_int.hpp>
+
 namespace nano::store::ledger
 {
 version_view::version_view (nano::store::backend & backend_a) :

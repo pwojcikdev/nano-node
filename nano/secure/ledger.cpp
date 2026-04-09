@@ -29,6 +29,8 @@
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 
+#include <boost/multiprecision/cpp_int.hpp>
+
 #include <stack>
 
 #include <cryptopp/words.h>

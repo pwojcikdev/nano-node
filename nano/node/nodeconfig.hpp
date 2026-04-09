@@ -6,6 +6,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/node_capabilities.hpp>
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/ratios.hpp>
 #include <nano/lib/rocksdbconfig.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/node/active_elections.hpp>

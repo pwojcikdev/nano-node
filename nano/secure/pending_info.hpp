@@ -6,6 +6,8 @@
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/secure/fwd.hpp>
 
+#include <boost/multiprecision/cpp_int.hpp>
+
 namespace nano
 {
 /**

@@ -2,6 +2,8 @@
 #include <nano/secure/parallel_traversal.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
 
+#include <boost/multiprecision/cpp_int.hpp>
+
 #include <iostream>
 #include <stdexcept>
 

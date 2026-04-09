@@ -11,6 +11,8 @@
 #include <nano/lib/utility.hpp>
 #include <nano/secure/common.hpp>
 
+#include <boost/multiprecision/cpp_int.hpp>
+
 #include <boost/endian/conversion.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/variant/get.hpp>

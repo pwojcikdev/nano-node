@@ -1,3 +1,4 @@
+#include <nano/lib/ratios.hpp>
 #include <nano/node/bucketing.hpp>
 
 #include <gtest/gtest.h>

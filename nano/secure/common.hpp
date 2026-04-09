@@ -14,6 +14,8 @@
 #include <nano/lib/utility.hpp>
 #include <nano/store/block_w_sideband.hpp>
 
+#include <boost/multiprecision/cpp_int.hpp>
+
 #include <array>
 #include <unordered_map>
 

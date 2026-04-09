@@ -2,6 +2,7 @@
 #include <nano/node/node.hpp>
 #include <nano/test_common/rate_observer.hpp>
 
+#include <iostream>
 #include <sstream>
 #include <utility>
 
