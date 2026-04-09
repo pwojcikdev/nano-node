@@ -1,4 +1,5 @@
 #include <nano/lib/blockbuilders.hpp>
+#include <nano/lib/blocks.hpp>
 #include <nano/node/election_status.hpp>
 #include <nano/node/recently_cemented_cache.hpp>
 #include <nano/node/recently_confirmed_cache.hpp>
