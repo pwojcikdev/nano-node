@@ -36,7 +36,7 @@ public:
 class vote_replier final
 {
 public:
-	vote_replier (vote_replier_config const &, nano::voting_policy &, nano::ledger &, nano::wallets &, nano::network_constants const &, nano::stats &, nano::logger &, bool enable_voting);
+	vote_replier (vote_replier_config const &, nano::voting_policy &, nano::ledger &, nano::wallet::wallets &, nano::network_constants const &, nano::stats &, nano::logger &, bool enable_voting);
 	~vote_replier ();
 
 	void start ();
@@ -60,7 +60,7 @@ private: // Dependencies
 	vote_replier_config const & config;
 	nano::voting_policy & policy;
 	nano::ledger & ledger;
-	nano::wallets & wallets;
+	nano::wallet::wallets & wallets;
 	nano::network_constants const & network_constants;
 	nano::stats & stats;
 	nano::logger & logger;

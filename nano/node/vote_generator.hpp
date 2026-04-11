@@ -205,7 +205,7 @@ private:
 class vote_generator final
 {
 public:
-	vote_generator (vote_generator_config const &, nano::voting_policy &, nano::ledger &, nano::wallets &, nano::vote_processor &, nano::network &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel>);
+	vote_generator (vote_generator_config const &, nano::voting_policy &, nano::ledger &, nano::wallet::wallets &, nano::vote_processor &, nano::network &, nano::stats &, nano::logger &, std::shared_ptr<nano::transport::channel>);
 	~vote_generator ();
 
 	void start ();
@@ -230,7 +230,7 @@ private: // Dependencies
 	vote_generator_config const & config;
 	nano::voting_policy & policy;
 	nano::ledger & ledger;
-	nano::wallets & wallets;
+	nano::wallet::wallets & wallets;
 	nano::vote_processor & vote_processor;
 	nano::network & network;
 	nano::stats & stats;

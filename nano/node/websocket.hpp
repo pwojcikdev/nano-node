@@ -4,6 +4,7 @@
 #include <nano/lib/work.hpp>
 #include <nano/node/endpoint.hpp>
 #include <nano/node/vote_with_weight_info.hpp>
+#include <nano/node/wallet/fwd.hpp>
 #include <nano/node/websocket_stream.hpp>
 #include <nano/node/websocketconfig.hpp>
 #include <nano/secure/common.hpp>
@@ -28,7 +29,6 @@ class node;
 class node_observers;
 class vote;
 enum class vote_code;
-class wallets;
 }
 
 namespace nano::messages
@@ -155,8 +155,8 @@ namespace websocket
 	class confirmation_options final : public options
 	{
 	public:
-		confirmation_options (nano::wallets & wallets_a, nano::logger &);
-		confirmation_options (boost::property_tree::ptree const & options_a, nano::wallets & wallets_a, nano::logger &);
+		confirmation_options (nano::wallet::wallets & wallets_a, nano::logger &);
+		confirmation_options (boost::property_tree::ptree const & options_a, nano::wallet::wallets & wallets_a, nano::logger &);
 
 		/**
 		 * Checks if a message should be filtered for given block confirmation options.
@@ -213,7 +213,7 @@ namespace websocket
 	private:
 		void check_filter_empty () const;
 
-		nano::wallets & wallets;
+		nano::wallet::wallets & wallets;
 		nano::logger & logger;
 
 		bool include_election_info{ false };
@@ -318,7 +318,7 @@ namespace websocket
 	class listener final : public std::enable_shared_from_this<listener>
 	{
 	public:
-		listener (nano::logger &, nano::node &, nano::wallets & wallets_a, boost::asio::io_context & io_ctx_a, boost::asio::ip::tcp::endpoint endpoint_a);
+		listener (nano::logger &, nano::node &, nano::wallet::wallets & wallets_a, boost::asio::io_context & io_ctx_a, boost::asio::ip::tcp::endpoint endpoint_a);
 
 		/** Start accepting connections */
 		void run ();
@@ -339,7 +339,7 @@ namespace websocket
 			return acceptor.local_endpoint ().port ();
 		}
 
-		nano::wallets & get_wallets () const
+		nano::wallet::wallets & get_wallets () const
 		{
 			return wallets;
 		}
@@ -369,7 +369,7 @@ namespace websocket
 
 		nano::logger & logger;
 		nano::node & node;
-		nano::wallets & wallets;
+		nano::wallet::wallets & wallets;
 		boost::asio::ip::tcp::acceptor acceptor;
 		socket_type socket;
 		nano::mutex sessions_mutex;
@@ -385,7 +385,7 @@ namespace websocket
 class websocket_server
 {
 public:
-	websocket_server (nano::websocket::config &, nano::node &, nano::node_observers &, nano::wallets &, nano::ledger &, boost::asio::io_context &, nano::logger &);
+	websocket_server (nano::websocket::config &, nano::node &, nano::node_observers &, nano::wallet::wallets &, nano::ledger &, boost::asio::io_context &, nano::logger &);
 
 	void start ();
 	void stop ();
@@ -393,7 +393,7 @@ public:
 private: // Dependencies
 	nano::websocket::config const & config;
 	nano::node_observers & observers;
-	nano::wallets & wallets;
+	nano::wallet::wallets & wallets;
 	nano::ledger & ledger;
 	boost::asio::io_context & io_ctx;
 	nano::logger & logger;

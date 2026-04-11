@@ -130,7 +130,7 @@ nano::stat::detail to_stat_detail (nano::vote_rebroadcaster_index::result);
 class vote_rebroadcaster final
 {
 public:
-	vote_rebroadcaster (vote_rebroadcaster_config const &, nano::node_flags const &, nano::ledger &, nano::vote_router &, nano::network &, nano::wallets &, nano::rep_tiers &, nano::stats &, nano::logger &);
+	vote_rebroadcaster (vote_rebroadcaster_config const &, nano::node_flags const &, nano::ledger &, nano::vote_router &, nano::network &, nano::wallet::wallets &, nano::rep_tiers &, nano::stats &, nano::logger &);
 	~vote_rebroadcaster ();
 
 	void start ();
@@ -146,7 +146,7 @@ public: // Dependencies
 	nano::ledger & ledger;
 	nano::vote_router & vote_router;
 	nano::network & network;
-	nano::wallets & wallets;
+	nano::wallet::wallets & wallets;
 	nano::rep_tiers & rep_tiers;
 	nano::stats & stats;
 	nano::logger & logger;
@@ -168,7 +168,7 @@ private:
 
 private:
 	std::atomic<bool> has_principal{ false };
-	nano::wallet_representatives reps;
+	nano::wallet::wallet_representatives reps;
 	nano::interval refresh_interval;
 	nano::interval cleanup_interval;
 
