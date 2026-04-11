@@ -18,6 +18,8 @@ class uint256_union;
 class uint512_union;
 class amount;
 class block_hash;
+class fan;
+class kdf;
 class public_key;
 class wallet_id;
 class hash_or_account;

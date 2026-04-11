@@ -19,7 +19,7 @@
  * vote_generator
  */
 
-nano::vote_generator::vote_generator (vote_generator_config const & config_a, nano::voting_policy & policy_a, nano::ledger & ledger_a, nano::wallets & wallets_a, nano::vote_processor & vote_processor_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a, std::shared_ptr<nano::transport::channel> inproc_channel_a) :
+nano::vote_generator::vote_generator (vote_generator_config const & config_a, nano::voting_policy & policy_a, nano::ledger & ledger_a, nano::wallet::wallets & wallets_a, nano::vote_processor & vote_processor_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a, std::shared_ptr<nano::transport::channel> inproc_channel_a) :
 	config{ config_a },
 	policy{ policy_a },
 	ledger{ ledger_a },

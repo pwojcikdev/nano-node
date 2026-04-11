@@ -315,7 +315,7 @@ void nano_qt::accounts::refresh ()
 		bool display (true);
 		switch (wallet.wallet_m->key_type (key))
 		{
-			case nano::key_type::adhoc:
+			case nano::wallet::key_type::adhoc:
 			{
 				brush.setColor ("red");
 				display = !balance_amount.is_zero ();
@@ -1077,7 +1077,7 @@ std::string nano_qt::status::color ()
 	return result;
 }
 
-nano_qt::wallet::wallet (QApplication & application_a, nano_qt::eventloop_processor & processor_a, nano::node & node_a, std::shared_ptr<nano::wallet> const & wallet_a, nano::public_key const & account_a) :
+nano_qt::wallet::wallet (QApplication & application_a, nano_qt::eventloop_processor & processor_a, nano::node & node_a, std::shared_ptr<nano::wallet::wallet> const & wallet_a, nano::public_key const & account_a) :
 	rendering_ratio (nano::nano_ratio),
 	node (node_a),
 	wallet_m (wallet_a),

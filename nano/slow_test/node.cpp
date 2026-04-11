@@ -1916,7 +1916,7 @@ TEST (node, aggressive_flooding)
 	auto & node1 (*system.add_node (node_config, node_flags));
 	auto & wallet1 (*system.wallet (0));
 	wallet1.insert_adhoc (nano::dev::genesis_key.prv);
-	std::vector<std::pair<std::shared_ptr<nano::node>, std::shared_ptr<nano::wallet>>> nodes_wallets;
+	std::vector<std::pair<std::shared_ptr<nano::node>, std::shared_ptr<nano::wallet::wallet>>> nodes_wallets;
 	nodes_wallets.resize (!nano::memory_intensive_instrumentation () ? 5 : 3);
 
 	std::generate (nodes_wallets.begin (), nodes_wallets.end (), [&system, node_flags] () {

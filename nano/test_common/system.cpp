@@ -274,7 +274,7 @@ void nano::test::system::ledger_initialization_set (std::deque<nano::keypair> co
 	}
 }
 
-std::shared_ptr<nano::wallet> nano::test::system::wallet (size_t index_a)
+std::shared_ptr<nano::wallet::wallet> nano::test::system::wallet (size_t index_a)
 {
 	debug_assert (nodes.size () > index_a);
 	auto size (nodes[index_a]->wallets.items.size ());

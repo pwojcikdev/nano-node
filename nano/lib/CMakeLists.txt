@@ -63,6 +63,8 @@ add_library(
   epochs.hpp
   errors.hpp
   errors.cpp
+  fan.hpp
+  fan.cpp
   files.hpp
   files.cpp
   formatting.hpp
@@ -77,6 +79,8 @@ add_library(
   json_error_response.hpp
   jsonconfig.hpp
   jsonconfig.cpp
+  kdf.hpp
+  kdf.cpp
   keypair.hpp
   keypair.cpp
   lmdbconfig.hpp
@@ -154,6 +158,7 @@ include_directories(
 target_link_libraries(
   nano_lib
   ipc_flatbuffers_lib
+  argon2
   crypto_lib
   blake2
   ${CRYPTOPP_LIBRARY}

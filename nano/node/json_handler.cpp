@@ -188,7 +188,7 @@ void nano::json_handler::response_errors ()
 	}
 }
 
-std::shared_ptr<nano::wallet> nano::json_handler::wallet_impl ()
+std::shared_ptr<nano::wallet::wallet> nano::json_handler::wallet_impl ()
 {
 	if (!ec)
 	{
@@ -213,7 +213,7 @@ std::shared_ptr<nano::wallet> nano::json_handler::wallet_impl ()
 	return nullptr;
 }
 
-bool nano::json_handler::wallet_locked_impl (std::shared_ptr<nano::wallet> const & wallet_a)
+bool nano::json_handler::wallet_locked_impl (std::shared_ptr<nano::wallet::wallet> const & wallet_a)
 {
 	bool result (false);
 	if (!ec)
@@ -227,7 +227,7 @@ bool nano::json_handler::wallet_locked_impl (std::shared_ptr<nano::wallet> const
 	return result;
 }
 
-bool nano::json_handler::wallet_account_impl (std::shared_ptr<nano::wallet> const & wallet_a, nano::account const & account_a)
+bool nano::json_handler::wallet_account_impl (std::shared_ptr<nano::wallet::wallet> const & wallet_a, nano::account const & account_a)
 {
 	bool result (false);
 	if (!ec)
@@ -4451,12 +4451,12 @@ void nano::json_handler::wallet_info ()
 
 			receivable += node.ledger.account_receivable (block_transaction, account);
 
-			nano::key_type key_type_l (wallet->key_type (account));
-			if (key_type_l == nano::key_type::deterministic)
+			nano::wallet::key_type key_type_l (wallet->key_type (account));
+			if (key_type_l == nano::wallet::key_type::deterministic)
 			{
 				deterministic_count++;
 			}
-			else if (key_type_l == nano::key_type::adhoc)
+			else if (key_type_l == nano::wallet::key_type::adhoc)
 			{
 				adhoc_count++;
 			}

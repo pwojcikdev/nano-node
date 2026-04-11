@@ -2,6 +2,7 @@
 
 #include <nano/lib/fwd.hpp>
 #include <nano/node/transport/fwd.hpp>
+#include <nano/node/wallet/fwd.hpp>
 #include <nano/secure/fwd.hpp>
 #include <nano/store/fwd.hpp>
 
@@ -76,9 +77,6 @@ class vote_rebroadcaster_config;
 class vote_router;
 class vote_spacing;
 class voting_policy;
-class wallet;
-class wallets;
-class wallets_store;
 class websocket_server;
 
 enum class block_source;

@@ -10,7 +10,7 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/voting_policy.hpp>
 
-nano::vote_replier::vote_replier (vote_replier_config const & config_a, nano::voting_policy & policy_a, nano::ledger & ledger_a, nano::wallets & wallets_a, nano::network_constants const & network_constants_a, nano::stats & stats_a, nano::logger & logger_a, bool enable_voting) :
+nano::vote_replier::vote_replier (vote_replier_config const & config_a, nano::voting_policy & policy_a, nano::ledger & ledger_a, nano::wallet::wallets & wallets_a, nano::network_constants const & network_constants_a, nano::stats & stats_a, nano::logger & logger_a, bool enable_voting) :
 	config{ config_a },
 	policy{ policy_a },
 	ledger{ ledger_a },
