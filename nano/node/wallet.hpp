@@ -2,7 +2,6 @@
 
 #include <nano/lib/fan.hpp>
 #include <nano/lib/kdf.hpp>
-#include <nano/lib/lmdbconfig.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
@@ -12,9 +11,7 @@
 #include <nano/node/fwd.hpp>
 #include <nano/node/openclwork.hpp>
 #include <nano/secure/common.hpp>
-#include <nano/store/lmdb/lmdb_env.hpp>
-#include <nano/store/lmdb/wallet_value.hpp>
-#include <nano/store/typed_iterator.hpp>
+#include <nano/wallet/wallets_backend.hpp>
 
 #include <atomic>
 #include <mutex>
@@ -32,16 +29,21 @@ enum class key_type
 	deterministic
 };
 
+/**
+ * Parses a wallet id from hexadecimal text.
+ * @throws std::invalid_argument If the text is not a valid wallet id.
+ */
+nano::wallet_id parse_wallet_id (std::string const &);
+
 class wallet_store final
 {
 public:
 	using iterator = store::typed_iterator<nano::account, nano::wallet_value>;
 
 public:
-	wallet_store (nano::kdf &, nano::store::write_transaction &, store::lmdb::env &, nano::account representative, unsigned fanout, std::string const & wallet_path);
-	wallet_store (nano::kdf &, nano::store::write_transaction &, store::lmdb::env &, unsigned fanout, std::string const & wallet_path, std::string const & json);
+	wallet_store (nano::kdf &, nano::store::write_transaction &, wallets_backend &, nano::wallet_id const &, nano::account representative, unsigned fanout);
+	wallet_store (nano::kdf &, nano::store::write_transaction &, wallets_backend &, nano::wallet_id const &, unsigned fanout, std::string const & json);
 
-	void initialize (nano::store::write_transaction const &, std::string const & path);
 	std::vector<nano::account> accounts (nano::store::transaction const &) const;
 	nano::uint256_union check (nano::store::transaction const &) const;
 	bool rekey (nano::store::write_transaction const &, std::string const & password);
@@ -83,16 +85,19 @@ public:
 	void work_put (nano::store::write_transaction const &, nano::public_key const & pub, uint64_t work);
 	unsigned version (nano::store::transaction const &) const;
 	void version_put (nano::store::write_transaction const &, unsigned version);
+	bool live () const;
 
 public:
 	nano::fan password;
 	nano::fan wallet_key_mem;
 	nano::kdf & kdf;
-	std::atomic<MDB_dbi> handle{ 0 };
 	mutable std::recursive_mutex mutex;
 
 private:
-	nano::store::lmdb::env & env;
+	wallets_backend & backend;
+	nano::wallet_id const id;
+	wallets_backend::wallet_handle handle;
+	std::atomic<bool> active{ true };
 
 public:
 	static unsigned const version_1 = 1;
@@ -119,8 +124,8 @@ public:
 class wallet final : public std::enable_shared_from_this<wallet>
 {
 public:
-	wallet (nano::store::write_transaction &, wallets &, std::string const & wallet_path);
-	wallet (nano::store::write_transaction &, wallets &, std::string const & wallet_path, std::string const & json);
+	wallet (nano::store::write_transaction &, wallets &, nano::wallet_id const &);
+	wallet (nano::store::write_transaction &, wallets &, nano::wallet_id const &, std::string const & json);
 
 	// Password and lock management
 	void enter_initial_password ();
@@ -236,20 +241,6 @@ public:
 	}
 };
 
-class wallets_store
-{
-public:
-	virtual ~wallets_store () = default;
-};
-
-class mdb_wallets_store final : public wallets_store
-{
-public:
-	mdb_wallets_store (std::filesystem::path const &, nano::lmdb_config const & lmdb_config_a = nano::lmdb_config{});
-	nano::store::lmdb::env environment;
-	bool error{ false };
-};
-
 /**
  * The wallets set is all the wallets a node controls.
  * A node may contain multiple wallets independently encrypted and operated.
@@ -259,7 +250,7 @@ class wallets final
 public:
 	wallets (
 	nano::node &,
-	wallets_store &,
+	wallets_backend &,
 	nano::ledger &,
 	nano::node_config const &,
 	nano::network_params const &,
@@ -313,7 +304,7 @@ private: // Transactions
 
 public: // Dependencies
 	nano::node & node;
-	wallets_store & wallets_store;
+	wallets_backend & backend;
 	nano::ledger & ledger;
 	nano::node_config const & config;
 	nano::network_params const & network_params;
@@ -330,10 +321,6 @@ public:
 	nano::locked<std::unordered_map<nano::account, nano::root>> delayed_work;
 
 	nano::kdf kdf;
-
-	MDB_dbi handle{};
-	MDB_dbi send_action_ids{};
-	nano::store::lmdb::env & env;
 
 	mutable nano::mutex mutex;
 	mutable nano::mutex action_mutex;

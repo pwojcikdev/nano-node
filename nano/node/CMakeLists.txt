@@ -220,6 +220,11 @@ add_library(
   vote_spacing.hpp
   vote_spacing.cpp
   vote_with_weight_info.hpp
+  ../wallet/wallet_value.hpp
+  ../wallet/wallet_value.cpp
+  ../wallet/wallets_backend.hpp
+  ../wallet/lmdb/wallets_backend_lmdb.hpp
+  ../wallet/lmdb/wallets_backend_lmdb.cpp
   wallet.hpp
   wallet.cpp
   websocket.hpp

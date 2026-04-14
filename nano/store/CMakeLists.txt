@@ -47,8 +47,6 @@ add_library(
   lmdb/transaction_lmdb.hpp
   lmdb/transaction_lmdb.cpp
   lmdb/utility.hpp
-  lmdb/wallet_value.hpp
-  lmdb/wallet_value.cpp
   rocksdb/backend_rocksdb.hpp
   rocksdb/backend_rocksdb.cpp
   rocksdb/db_val.hpp
