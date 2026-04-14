@@ -103,8 +103,8 @@ public:
 	nano::stats & stats;
 	std::unique_ptr<nano::store::ledger_store> store_impl;
 	nano::store::ledger_store & store;
-	std::unique_ptr<nano::wallet::wallets_store> wallets_store_impl;
-	nano::wallet::wallets_store & wallets_store;
+	std::unique_ptr<nano::wallet::wallets_backend> wallets_backend_impl;
+	nano::wallet::wallets_backend & wallets_backend;
 	std::unique_ptr<nano::ledger> ledger_impl;
 	nano::ledger & ledger;
 	std::unique_ptr<nano::thread_runner> runner_impl;
