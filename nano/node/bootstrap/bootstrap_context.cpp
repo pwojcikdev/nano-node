@@ -3,6 +3,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats_enums.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/messages/asc_pull.hpp>
 #include <nano/messages/common.hpp>
 #include <nano/node/block_processor.hpp>
@@ -121,8 +122,7 @@ void bootstrap_context::start ()
 		frontier_strat.start ();
 	}
 
-	cleanup_thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bootstrap_cleanup);
+	cleanup_thread = nano::thread::create (nano::thread_role::name::bootstrap_cleanup, [this] {
 		run_cleanup ();
 	});
 }

@@ -4,6 +4,7 @@
 #include <nano/lib/fwd.hpp>
 #include <nano/lib/keypair.hpp>
 #include <nano/lib/node_capabilities.hpp>
+#include <nano/lib/thread_context.hpp>
 #include <nano/messages/fwd.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/transport/fwd.hpp>
@@ -101,6 +102,7 @@ public:
 	nano::logger & logger;
 	std::unique_ptr<nano::stats> stats_impl;
 	nano::stats & stats;
+	nano::thread_context::scoped thread_context;
 	std::unique_ptr<nano::store::ledger_store> store_impl;
 	nano::store::ledger_store & store;
 	std::unique_ptr<nano::wallets_store> wallets_store_impl;

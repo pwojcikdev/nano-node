@@ -88,10 +88,9 @@ void nano::local_block_broadcaster::start ()
 
 	debug_assert (!thread.joinable ());
 
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::local_block_broadcasting);
+	thread = nano::thread::create (nano::thread_role::name::local_block_broadcasting, [this] {
 		run ();
-	} };
+	});
 }
 
 void nano::local_block_broadcaster::stop ()

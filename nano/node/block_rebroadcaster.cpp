@@ -1,6 +1,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/tomlconfig.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/block_rebroadcaster.hpp>
@@ -57,8 +58,7 @@ void nano::block_rebroadcaster::start ()
 		return;
 	}
 
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::block_rebroadcasting);
+	thread = nano::thread::create (nano::thread_role::name::block_rebroadcasting, [this] {
 		run ();
 	});
 }

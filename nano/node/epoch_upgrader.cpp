@@ -1,6 +1,7 @@
 #include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/logging.hpp>
+#include <nano/lib/thread_context.hpp>
 #include <nano/lib/thread_pool.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/lib/work_version.hpp>
@@ -44,7 +45,9 @@ bool nano::epoch_upgrader::start (nano::raw_key const & prv_a, nano::epoch epoch
 		error = epoch_upgrade->valid () && epoch_upgrade->wait_for (std::chrono::seconds (0)) == std::future_status::timeout;
 		if (!error)
 		{
-			*epoch_upgrade = std::async (std::launch::async, [this, prv_a, epoch_a, count_limit, threads] () {
+			auto context = nano::thread_context::get ();
+			*epoch_upgrade = std::async (std::launch::async, [this, context, prv_a, epoch_a, count_limit, threads] () {
+				nano::thread_context::scoped thread_context{ context };
 				upgrade_impl (prv_a, epoch_a, count_limit, threads);
 			});
 		}

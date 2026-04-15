@@ -1,5 +1,6 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/messages/asc_pull.hpp>
 #include <nano/node/bootstrap/bootstrap_server.hpp>
@@ -46,8 +47,7 @@ void nano::bootstrap_server::start ()
 
 	for (auto i = 0u; i < config.threads; ++i)
 	{
-		threads.push_back (std::thread ([this] () {
-			nano::thread_role::set (nano::thread_role::name::bootstrap_server);
+		threads.push_back (nano::thread::create (nano::thread_role::name::bootstrap_server, [this] () {
 			run ();
 		}));
 	}

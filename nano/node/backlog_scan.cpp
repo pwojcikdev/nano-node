@@ -1,6 +1,6 @@
 #include <nano/lib/saturate.hpp>
 #include <nano/lib/stats.hpp>
-#include <nano/lib/thread_roles.hpp>
+#include <nano/lib/thread_context.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/node/backlog_scan.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -9,10 +9,10 @@
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
 
-nano::backlog_scan::backlog_scan (backlog_scan_config const & config_a, nano::ledger & ledger_a, nano::stats & stats_a) :
+nano::backlog_scan::backlog_scan (backlog_scan_config const & config_a, nano::ledger & ledger_a) :
 	config{ config_a },
 	ledger{ ledger_a },
-	stats{ stats_a },
+	stats{ nano::thread_context::stats () },
 	limiter{ config.rate_limit }
 {
 }
@@ -27,10 +27,9 @@ void nano::backlog_scan::start ()
 {
 	debug_assert (!thread.joinable ());
 
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::backlog_scan);
+	thread = nano::thread::create (nano::thread_role::name::backlog_scan, [this] {
 		run ();
-	} };
+	});
 }
 
 void nano::backlog_scan::stop ()

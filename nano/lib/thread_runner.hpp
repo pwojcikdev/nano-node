@@ -2,6 +2,7 @@
 #include <nano/boost/asio/executor_work_guard.hpp>
 #include <nano/boost/asio/io_context.hpp>
 #include <nano/lib/fwd.hpp>
+#include <nano/lib/thread_context.hpp>
 #include <nano/lib/thread_roles.hpp>
 #include <nano/lib/threading.hpp>
 
@@ -15,6 +16,7 @@ class thread_runner final
 {
 public:
 	thread_runner (std::shared_ptr<asio::io_context>, nano::logger &, unsigned num_threads = nano::hardware_concurrency (), nano::thread_role::name thread_role = nano::thread_role::name::io);
+	thread_runner (std::shared_ptr<asio::io_context>, nano::logger &, nano::thread_context::context, unsigned num_threads = nano::hardware_concurrency (), nano::thread_role::name thread_role = nano::thread_role::name::io);
 	~thread_runner ();
 
 	// Wait for IO threads to complete
@@ -30,6 +32,7 @@ private:
 	unsigned const num_threads;
 	nano::thread_role::name const role;
 	nano::logger & logger;
+	nano::thread_context::context context;
 	std::shared_ptr<asio::io_context> io_ctx;
 	asio::executor_work_guard<asio::io_context::executor_type> io_guard;
 	std::vector<boost::thread> threads;

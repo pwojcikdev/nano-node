@@ -215,6 +215,12 @@ private:
 	std::thread thread;
 };
 
+/**
+ * Returns a generic stats instance for threads that do not currently have a node-specific stats context bound.
+ * Should only be used for generic initialization/test paths, or as a fallback for thread-local context lookup.
+ */
+nano::stats & default_stats ();
+
 /** Log sink interface */
 class stat_log_sink
 {

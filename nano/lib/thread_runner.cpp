@@ -10,9 +10,15 @@
  */
 
 nano::thread_runner::thread_runner (std::shared_ptr<asio::io_context> io_ctx_a, nano::logger & logger_a, unsigned num_threads_a, const nano::thread_role::name thread_role_a) :
+	thread_runner{ std::move (io_ctx_a), logger_a, {}, num_threads_a, thread_role_a }
+{
+}
+
+nano::thread_runner::thread_runner (std::shared_ptr<asio::io_context> io_ctx_a, nano::logger & logger_a, nano::thread_context::context context_a, unsigned num_threads_a, const nano::thread_role::name thread_role_a) :
 	num_threads{ num_threads_a },
 	role{ thread_role_a },
 	logger{ logger_a },
+	context{ context_a },
 	io_ctx{ std::move (io_ctx_a) },
 	io_guard{ asio::make_work_guard (*io_ctx) }
 {
@@ -31,8 +37,7 @@ void nano::thread_runner::start ()
 
 	for (auto i = 0; i < num_threads; ++i)
 	{
-		threads.emplace_back (nano::thread_attributes::get_default (), [this] () {
-			nano::thread_role::set (role);
+		threads.emplace_back (nano::thread::create (nano::thread_attributes::get_default (), role, context, [this] () {
 			try
 			{
 				run ();
@@ -53,7 +58,7 @@ void nano::thread_runner::start ()
 				throw; // Re-throw to debugger in debug mode
 #endif
 			}
-		});
+		}));
 	}
 }
 

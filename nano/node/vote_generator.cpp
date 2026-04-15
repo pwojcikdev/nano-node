@@ -1,6 +1,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/node/network.hpp>
@@ -288,10 +289,9 @@ void nano::vote_generator_verifier::start ()
 	debug_assert (process_batch);
 	for (size_t i = 0; i < thread_count; ++i)
 	{
-		threads.emplace_back ([this] () {
-			nano::thread_role::set (thread_role);
+		threads.emplace_back (nano::thread::create (thread_role, [this] () {
 			run ();
-		});
+		}));
 	}
 }
 
@@ -384,8 +384,7 @@ void nano::vote_generator_broadcaster::start ()
 {
 	debug_assert (broadcast_batch);
 	debug_assert (check_capacity);
-	thread = std::thread ([this] () {
-		nano::thread_role::set (thread_role);
+	thread = nano::thread::create (thread_role, [this] {
 		run ();
 	});
 }

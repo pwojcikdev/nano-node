@@ -292,7 +292,7 @@ public:
 			// TODO: Previously this was stopping node.io_ctx, which was wrong. Investigate what's going on here. Why isn't it using stop_callback passed externally?
 			// This is running on the IO thread, so attempting to directly stop the server will cause it to try joining itself.
 			// This RPC/IPC system is really badly designed...
-			std::thread ([server_w] () {
+			nano::thread::create (nano::thread_role::name::io_ipc, [server_w] () {
 				std::this_thread::sleep_for (std::chrono::seconds (1));
 				if (auto server = server_w.lock ())
 				{

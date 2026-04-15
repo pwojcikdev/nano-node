@@ -3,6 +3,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
+#include <nano/lib/thread_context.hpp>
 #include <nano/lib/thread_runner.hpp>
 #include <nano/lib/version.hpp>
 #include <nano/lib/vote.hpp>
@@ -1153,7 +1154,8 @@ TEST (confirmation_height, many_accounts_send_receive_self_no_elections)
 
 	nano::node_config node_config;
 	nano::unchecked_map unchecked{ 0, stats, false };
-	nano::ledger_notifications ledger_notifications{ node_config, stats, logger };
+	nano::thread_context::scoped thread_context{ logger, stats };
+	nano::ledger_notifications ledger_notifications{ node_config };
 	nano::cementing_set_config cementing_set_config{};
 	nano::cementing_set cementing_set{ cementing_set_config, ledger, ledger_notifications, stats, logger };
 

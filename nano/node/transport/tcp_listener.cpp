@@ -2,6 +2,7 @@
 #include <nano/lib/interval.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/network_formatting.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/thread_pool.hpp>
 #include <nano/messages/messages.hpp>
 #include <nano/node/network.hpp>
@@ -82,8 +83,7 @@ void nano::transport::tcp_listener::start ()
 
 	task = nano::async::task (strand, start_impl ());
 
-	cleanup_thread = std::thread ([this] {
-		nano::thread_role::set (nano::thread_role::name::tcp_listener);
+	cleanup_thread = nano::thread::create (nano::thread_role::name::tcp_listener, [this] {
 		run_cleanup ();
 	});
 }

@@ -1,6 +1,7 @@
 #include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/logging.hpp>
+#include <nano/lib/thread_context.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/backlog_scan.hpp>
 #include <nano/node/block_processor.hpp>
@@ -33,6 +34,7 @@ struct cementing_set_context
 	nano::logger & logger;
 	nano::stats & stats;
 	nano::ledger & ledger;
+	nano::thread_context::scoped thread_context;
 
 	nano::node_config node_config;
 	nano::ledger_notifications ledger_notifications;
@@ -43,8 +45,9 @@ struct cementing_set_context
 		logger{ ledger_ctx.logger () },
 		stats{ ledger_ctx.stats () },
 		ledger{ ledger_ctx.ledger () },
+		thread_context{ logger, stats },
 		node_config{ std::move (node_config_a) },
-		ledger_notifications{ node_config, stats, logger },
+		ledger_notifications{ node_config },
 		cementing_set{ node_config.cementing_set, ledger, ledger_notifications, stats, logger }
 	{
 	}

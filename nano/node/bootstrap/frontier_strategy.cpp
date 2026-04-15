@@ -1,6 +1,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats_enums.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/messages/asc_pull.hpp>
 #include <nano/node/bootstrap/frontier_strategy.hpp>
 #include <nano/node/network.hpp>
@@ -24,8 +25,7 @@ frontier_strategy::frontier_strategy (bootstrap_context & ctx_a) :
 void frontier_strategy::start ()
 {
 	debug_assert (!thread.joinable ());
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bootstrap_frontier_scan);
+	thread = nano::thread::create (nano::thread_role::name::bootstrap_frontier_scan, [this] {
 		run ();
 	});
 }

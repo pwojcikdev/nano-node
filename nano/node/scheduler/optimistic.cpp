@@ -1,5 +1,6 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/stats.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/tomlconfig.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/election_behavior.hpp>
@@ -34,10 +35,9 @@ void nano::scheduler::optimistic::start ()
 		return;
 	}
 
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::scheduler_optimistic);
+	thread = nano::thread::create (nano::thread_role::name::scheduler_optimistic, [this] {
 		run ();
-	} };
+	});
 }
 
 void nano::scheduler::optimistic::stop ()

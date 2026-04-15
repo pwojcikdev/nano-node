@@ -3,6 +3,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/timer.hpp>
 #include <nano/node/node.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -42,8 +43,7 @@ void nano::online_reps::start ()
 		trended_result.samples);
 	}
 
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::online_reps);
+	thread = nano::thread::create (nano::thread_role::name::online_reps, [this] {
 		run ();
 	});
 }

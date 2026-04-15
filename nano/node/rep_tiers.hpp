@@ -32,7 +32,7 @@ nano::stat::detail to_stat_detail (rep_tier);
 class rep_tiers final
 {
 public:
-	rep_tiers (nano::ledger &, nano::network_params &, nano::online_reps &, nano::stats &, nano::logger &);
+	rep_tiers (nano::ledger &, nano::network_params &, nano::online_reps &);
 	~rep_tiers ();
 
 	void start ();

@@ -5,6 +5,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/stats_sinks.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/thread_roles.hpp>
 #include <nano/lib/tomlconfig.hpp>
 
@@ -41,6 +42,12 @@ std::string nano::stat_log_sink::tm_to_string (tm & tm)
  * stats
  */
 
+nano::stats & nano::default_stats ()
+{
+	static nano::stats stats{ nano::default_logger () };
+	return stats;
+}
+
 nano::stats::stats (nano::logger & logger_a, nano::stats_config config_a) :
 	counters_impl{ std::make_unique<counters_array_t> () },
 	counters{ *counters_impl },
@@ -63,8 +70,7 @@ void nano::stats::start ()
 		return;
 	}
 
-	thread = std::thread ([this] {
-		nano::thread_role::set (nano::thread_role::name::stats);
+	thread = nano::thread::create (nano::thread_role::name::stats, [this] {
 		run ();
 	});
 }

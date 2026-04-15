@@ -4,6 +4,7 @@
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/saturate.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -103,8 +104,7 @@ void nano::vote_rebroadcaster::start ()
 		return;
 	}
 
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::vote_rebroadcasting);
+	thread = nano::thread::create (nano::thread_role::name::vote_rebroadcasting, [this] {
 		run ();
 	});
 }

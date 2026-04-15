@@ -3,6 +3,7 @@
 #include <nano/lib/stats.hpp>
 #include <nano/lib/stats_enums.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/timer.hpp>
 #include <nano/node/unchecked_map.hpp>
 
@@ -22,8 +23,7 @@ void nano::unchecked_map::start ()
 {
 	debug_assert (!thread.joinable ());
 
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::unchecked);
+	thread = nano::thread::create (nano::thread_role::name::unchecked, [this] {
 		run ();
 	});
 }

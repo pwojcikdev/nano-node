@@ -1,4 +1,5 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/node.hpp>
@@ -19,10 +20,9 @@ void nano::scheduler::manual::start ()
 {
 	debug_assert (!thread.joinable ());
 
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::scheduler_manual);
+	thread = nano::thread::create (nano::thread_role::name::scheduler_manual, [this] {
 		run ();
-	} };
+	});
 }
 
 void nano::scheduler::manual::stop ()

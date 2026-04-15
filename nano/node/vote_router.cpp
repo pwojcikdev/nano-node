@@ -1,5 +1,6 @@
 #include <nano/lib/enum_util.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/node/active_elections.hpp>
@@ -25,10 +26,9 @@ nano::vote_router::~vote_router ()
 
 void nano::vote_router::start ()
 {
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::vote_router);
+	thread = nano::thread::create (nano::thread_role::name::vote_router, [this] {
 		run ();
-	} };
+	});
 }
 
 void nano::vote_router::stop ()

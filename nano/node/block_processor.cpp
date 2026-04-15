@@ -78,8 +78,7 @@ void nano::block_processor::start ()
 	boost::thread::attributes attrs;
 	attrs.set_stack_size (nano::ledger_thread_stack_size ());
 
-	thread = boost::thread (attrs, [this] () {
-		nano::thread_role::set (nano::thread_role::name::block_processing);
+	thread = nano::thread::create (attrs, nano::thread_role::name::block_processing, [this] () {
 		run ();
 	});
 }

@@ -2,6 +2,7 @@
 #include <nano/lib/network_formatting.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/node.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -55,8 +56,7 @@ void nano::port_mapping::start ()
 		return;
 	}
 
-	thread = std::thread ([this] {
-		nano::thread_role::set (nano::thread_role::name::port_mapping);
+	thread = nano::thread::create (nano::thread_role::name::port_mapping, [this] {
 		run ();
 	});
 }

@@ -3,6 +3,7 @@
 #include <nano/lib/fwd.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/relaxed_atomic.hpp>
+#include <nano/lib/thread_context.hpp>
 #include <nano/lib/thread_roles.hpp>
 #include <nano/lib/threading.hpp>
 
@@ -23,8 +24,14 @@ class thread_pool final
 public:
 	// TODO: Auto start should be removed once the node is refactored to start the thread pool explicitly
 	thread_pool (unsigned num_threads, nano::thread_role::name thread_name, bool auto_start = false) :
+		thread_pool{ num_threads, thread_name, {}, auto_start }
+	{
+	}
+
+	thread_pool (unsigned num_threads, nano::thread_role::name thread_name, nano::thread_context::context context_a, bool auto_start = false) :
 		num_threads{ num_threads },
 		thread_name{ thread_name },
+		context{ context_a },
 		thread_names_latch{ num_threads }
 	{
 		if (auto_start)
@@ -43,6 +50,10 @@ public:
 	{
 		debug_assert (!stopped);
 		debug_assert (!thread_pool_impl);
+		if (!context)
+		{
+			context = nano::thread_context::get ();
+		}
 		thread_pool_impl = std::make_unique<boost::asio::thread_pool> (num_threads);
 		set_thread_names ();
 	}
@@ -78,7 +89,8 @@ public:
 		{
 			++num_tasks;
 			release_assert (thread_pool_impl);
-			boost::asio::post (*thread_pool_impl, [this, t = std::forward<F> (task)] () mutable {
+			boost::asio::post (*thread_pool_impl, [this, context = context, t = std::forward<F> (task)] () mutable {
+				nano::thread_context::scoped thread_context{ context };
 				t ();
 				--num_tasks;
 			});
@@ -128,7 +140,8 @@ private:
 	{
 		for (auto i = 0u; i < num_threads; ++i)
 		{
-			boost::asio::post (*thread_pool_impl, [this] () {
+			boost::asio::post (*thread_pool_impl, [this, context = context] () {
+				nano::thread_context::scoped thread_context{ context };
 				nano::thread_role::set (thread_name);
 				thread_names_latch.arrive_and_wait ();
 			});
@@ -139,6 +152,7 @@ private:
 private:
 	unsigned const num_threads;
 	nano::thread_role::name const thread_name;
+	nano::thread_context::context context;
 
 	std::latch thread_names_latch;
 	mutable nano::mutex mutex;

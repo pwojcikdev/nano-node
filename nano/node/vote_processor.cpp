@@ -1,6 +1,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/timer.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/node/node_observers.hpp>
@@ -81,10 +82,9 @@ void nano::vote_processor::start ()
 
 	for (int n = 0; n < config.threads; ++n)
 	{
-		threads.emplace_back ([this] () {
-			nano::thread_role::set (nano::thread_role::name::vote_processing);
+		threads.emplace_back (nano::thread::create (nano::thread_role::name::vote_processing, [this] () {
 			run ();
-		});
+		}));
 	}
 }
 
@@ -284,8 +284,7 @@ void nano::vote_cache_processor::start ()
 {
 	debug_assert (!thread.joinable ());
 
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::vote_cache_processing);
+	thread = nano::thread::create (nano::thread_role::name::vote_cache_processing, [this] {
 		run ();
 	});
 }

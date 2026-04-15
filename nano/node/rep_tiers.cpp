@@ -1,7 +1,8 @@
 #include <nano/lib/enum_util.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
-#include <nano/lib/thread_roles.hpp>
+#include <nano/lib/thread_context.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/node/online_reps.hpp>
 #include <nano/node/rep_tiers.hpp>
 #include <nano/secure/common.hpp>
@@ -9,12 +10,12 @@
 
 using namespace std::chrono_literals;
 
-nano::rep_tiers::rep_tiers (nano::ledger & ledger_a, nano::network_params & network_params_a, nano::online_reps & online_reps_a, nano::stats & stats_a, nano::logger & logger_a) :
+nano::rep_tiers::rep_tiers (nano::ledger & ledger_a, nano::network_params & network_params_a, nano::online_reps & online_reps_a) :
 	ledger{ ledger_a },
 	network_params{ network_params_a },
 	online_reps{ online_reps_a },
-	stats{ stats_a },
-	logger{ logger_a }
+	stats{ nano::thread_context::stats () },
+	logger{ nano::thread_context::logger () }
 {
 }
 
@@ -28,10 +29,9 @@ void nano::rep_tiers::start ()
 {
 	debug_assert (!thread.joinable ());
 
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::rep_tiers);
+	thread = nano::thread::create (nano::thread_role::name::rep_tiers, [this] {
 		run ();
-	} };
+	});
 }
 
 void nano::rep_tiers::stop ()

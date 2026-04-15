@@ -46,8 +46,7 @@ void nano::telemetry::start ()
 {
 	debug_assert (!thread.joinable ());
 
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::telemetry);
+	thread = nano::thread::create (nano::thread_role::name::telemetry, [this] {
 		run ();
 	});
 }

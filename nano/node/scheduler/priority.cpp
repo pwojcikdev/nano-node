@@ -1,5 +1,6 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/logging.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/bucketing.hpp>
 #include <nano/node/cementing_set.hpp>
@@ -86,15 +87,13 @@ void nano::scheduler::priority::start ()
 		return;
 	}
 
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::scheduler_priority);
+	thread = nano::thread::create (nano::thread_role::name::scheduler_priority, [this] {
 		run ();
-	} };
+	});
 
-	cleanup_thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::scheduler_priority);
+	cleanup_thread = nano::thread::create (nano::thread_role::name::scheduler_priority, [this] {
 		run_cleanup ();
-	} };
+	});
 }
 
 void nano::scheduler::priority::stop ()

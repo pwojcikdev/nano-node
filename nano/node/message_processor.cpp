@@ -1,6 +1,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/messages/messages.hpp>
 #include <nano/node/block_processor.hpp>
@@ -41,8 +42,7 @@ void nano::message_processor::start ()
 
 	for (int n = 0; n < config.threads; ++n)
 	{
-		threads.emplace_back ([this] () {
-			nano::thread_role::set (nano::thread_role::name::message_processing);
+		threads.emplace_back (nano::thread::create (nano::thread_role::name::message_processing, [this] () {
 			try
 			{
 				run ();
@@ -67,7 +67,7 @@ void nano::message_processor::start ()
 				node.logger.critical (nano::log::type::network, "Unknown error");
 				release_assert (false);
 			}
-		});
+		}));
 	}
 }
 

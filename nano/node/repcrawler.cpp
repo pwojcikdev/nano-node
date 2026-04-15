@@ -1,6 +1,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/formatting.hpp>
 #include <nano/lib/logging.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/messages/confirm.hpp>
 #include <nano/node/active_elections.hpp>
@@ -51,10 +52,9 @@ void nano::rep_crawler::start ()
 		return;
 	}
 
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::rep_crawler);
+	thread = nano::thread::create (nano::thread_role::name::rep_crawler, [this] {
 		run ();
-	} };
+	});
 }
 
 void nano::rep_crawler::stop ()

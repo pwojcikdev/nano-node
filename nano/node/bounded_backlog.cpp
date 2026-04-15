@@ -2,6 +2,7 @@
 #include <nano/lib/config.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/backlog_scan.hpp>
 #include <nano/node/block_processor.hpp>
@@ -109,13 +110,11 @@ void nano::bounded_backlog::start ()
 	boost::thread::attributes attrs;
 	attrs.set_stack_size (nano::ledger_thread_stack_size ());
 
-	thread = boost::thread (attrs, [this] () {
-		nano::thread_role::set (nano::thread_role::name::bounded_backlog);
+	thread = nano::thread::create (attrs, nano::thread_role::name::bounded_backlog, [this] () {
 		run ();
 	});
 
-	scan_thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bounded_backlog_scan);
+	scan_thread = nano::thread::create (nano::thread_role::name::bounded_backlog_scan, [this] {
 		run_scan ();
 	});
 }

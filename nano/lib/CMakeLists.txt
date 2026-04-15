@@ -126,6 +126,8 @@ add_library(
   stream.hpp
   thread_pool.hpp
   thread_pool.cpp
+  thread_context.hpp
+  thread_context.cpp
   thread_roles.hpp
   thread_roles.cpp
   thread_runner.hpp

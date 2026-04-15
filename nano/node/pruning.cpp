@@ -34,10 +34,9 @@ void nano::pruning::start ()
 		return;
 	}
 
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::pruning);
+	thread = nano::thread::create (nano::thread_role::name::pruning, [this] {
 		run ();
-	} };
+	});
 }
 
 void nano::pruning::stop ()

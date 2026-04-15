@@ -1,5 +1,6 @@
 #include <nano/lib/stats_enums.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/node/bootstrap/database_strategy.hpp>
 #include <nano/node/nodeconfig.hpp>
 
@@ -13,8 +14,7 @@ database_strategy::database_strategy (bootstrap_context & ctx_a) :
 void database_strategy::start ()
 {
 	debug_assert (!thread.joinable ());
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bootstrap_database_scan);
+	thread = nano::thread::create (nano::thread_role::name::bootstrap_database_scan, [this] {
 		run ();
 	});
 }

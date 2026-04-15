@@ -32,7 +32,7 @@ public:
 class backlog_scan final
 {
 public:
-	backlog_scan (backlog_scan_config const &, nano::ledger &, nano::stats &);
+	backlog_scan (backlog_scan_config const &, nano::ledger &);
 	~backlog_scan ();
 
 	void start ();

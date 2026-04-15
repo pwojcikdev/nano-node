@@ -55,20 +55,17 @@ nano::network::~network ()
 
 void nano::network::start ()
 {
-	cleanup_thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::network_cleanup);
+	cleanup_thread = nano::thread::create (nano::thread_role::name::network_cleanup, [this] {
 		run_cleanup ();
 	});
 
-	keepalive_thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::network_keepalive);
+	keepalive_thread = nano::thread::create (nano::thread_role::name::network_keepalive, [this] {
 		run_keepalive ();
 	});
 
 	if (!node.flags.disable_reachout && config.peer_reachout.count () > 0)
 	{
-		reachout_thread = std::thread ([this] () {
-			nano::thread_role::set (nano::thread_role::name::network_reachout);
+		reachout_thread = nano::thread::create (nano::thread_role::name::network_reachout, [this] {
 			run_reachout ();
 		});
 	}
@@ -79,8 +76,7 @@ void nano::network::start ()
 
 	if (!node.flags.disable_reachout && config.cached_peer_reachout.count () > 0)
 	{
-		reachout_cached_thread = std::thread ([this] () {
-			nano::thread_role::set (nano::thread_role::name::network_reachout);
+		reachout_cached_thread = nano::thread::create (nano::thread_role::name::network_reachout, [this] {
 			run_reachout_cached ();
 		});
 	}
@@ -91,8 +87,7 @@ void nano::network::start ()
 
 	if (!node.flags.disable_reachout_preconfigured)
 	{
-		reachout_preconfigured_thread = std::thread ([this] () {
-			nano::thread_role::set (nano::thread_role::name::network_reachout);
+		reachout_preconfigured_thread = nano::thread::create (nano::thread_role::name::network_reachout, [this] {
 			run_reachout_preconfigured ();
 		});
 	}

@@ -2,6 +2,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/node/block_processor.hpp>
 #include <nano/node/cementing_set.hpp>
 #include <nano/node/ledger_notifications.hpp>
@@ -84,10 +85,9 @@ void nano::cementing_set::start ()
 
 	workers.start ();
 
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::confirmation_height);
+	thread = nano::thread::create (nano::thread_role::name::confirmation_height, [this] {
 		run ();
-	} };
+	});
 }
 
 void nano::cementing_set::stop ()

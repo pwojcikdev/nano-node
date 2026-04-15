@@ -1,6 +1,7 @@
 #include <nano/lib/formatting.hpp>
 #include <nano/lib/logging.hpp>
-#include <nano/lib/thread_roles.hpp>
+#include <nano/lib/thread_context.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/election_behavior.hpp>
@@ -15,7 +16,7 @@
 nano::monitor::monitor (nano::monitor_config const & config_a, nano::node & node_a) :
 	config{ config_a },
 	node{ node_a },
-	logger{ node_a.logger }
+	logger{ nano::thread_context::logger () }
 {
 }
 
@@ -31,8 +32,7 @@ void nano::monitor::start ()
 		return;
 	}
 
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::monitor);
+	thread = nano::thread::create (nano::thread_role::name::monitor, [this] {
 		run ();
 	});
 }

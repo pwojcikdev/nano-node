@@ -4,6 +4,7 @@
 #include <nano/lib/formatting.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
+#include <nano/lib/thread_context.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/work_version.hpp>
@@ -1665,7 +1666,7 @@ nano::logger & logger_a) :
 	observer{ [] (bool) {} },
 	kdf{ network_params.kdf_work },
 	env{ boost::polymorphic_downcast<nano::mdb_wallets_store *> (&wallets_store)->environment },
-	workers{ config.wallet_threads, nano::thread_role::name::wallet_worker, /* auto_start */ true }
+	workers{ config.wallet_threads, nano::thread_role::name::wallet_worker, nano::thread_context::context{ logger, stats }, /* auto_start */ true }
 {
 	logger.info (nano::log::type::wallet, "Loading wallets from: {}", env.database_path.string ());
 
@@ -1742,25 +1743,22 @@ nano::wallets::~wallets ()
 
 void nano::wallets::start ()
 {
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::wallet_actions);
+	thread = nano::thread::create (nano::thread_role::name::wallet_actions, [this] {
 		do_wallet_actions ();
-	} };
+	});
 
 	if (config.enable_voting)
 	{
-		reps_thread = std::thread{ [this] () {
-			nano::thread_role::set (nano::thread_role::name::wallet_reps);
+		reps_thread = nano::thread::create (nano::thread_role::name::wallet_reps, [this] {
 			run_reps_scan ();
-		} };
+		});
 	}
 
 	if (!node.flags.disable_search_pending)
 	{
-		receivable_thread = std::thread{ [this] () {
-			nano::thread_role::set (nano::thread_role::name::wallet_receivable);
+		receivable_thread = nano::thread::create (nano::thread_role::name::wallet_receivable, [this] {
 			run_receivable_scan ();
-		} };
+		});
 	}
 }
 

@@ -1,6 +1,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/lib/vote.hpp>
 #include <nano/messages/confirm.hpp>
 #include <nano/node/network.hpp>
@@ -44,10 +45,9 @@ void nano::vote_replier::start ()
 
 	for (auto i = 0; i < config.threads; ++i)
 	{
-		threads.emplace_back ([this] () {
-			nano::thread_role::set (nano::thread_role::name::vote_replier);
+		threads.emplace_back (nano::thread::create (nano::thread_role::name::vote_replier, [this] () {
 			run ();
-		});
+		}));
 	}
 }
 

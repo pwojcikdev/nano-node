@@ -6,6 +6,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/stream.hpp>
+#include <nano/lib/thread_context.hpp>
 #include <nano/lib/thread_pool.hpp>
 #include <nano/lib/thread_runner.hpp>
 #include <nano/lib/tomlconfig.hpp>
@@ -112,30 +113,31 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	logger{ *logger_impl },
 	stats_impl{ std::make_unique<nano::stats> (logger, config.stats_config) },
 	stats{ *stats_impl },
+	thread_context{ logger, stats },
 	store_impl{ nano::make_store (logger, stats, application_path_a, network_params.ledger, flags.read_only, true, config_a) },
 	store{ *store_impl },
 	wallets_store_impl{ std::make_unique<nano::mdb_wallets_store> (application_path_a / "wallets.ldb", config_a.lmdb_config) },
 	wallets_store{ *wallets_store_impl },
 	ledger_impl{ std::make_unique<nano::ledger> (store, network_params, stats, logger, flags_a.generate_cache, config.representative_vote_weight_minimum.number (), config.max_backlog) },
 	ledger{ *ledger_impl },
-	runner_impl{ std::make_unique<nano::thread_runner> (io_ctx_shared, logger, config.io_threads) },
+	runner_impl{ std::make_unique<nano::thread_runner> (io_ctx_shared, logger, nano::thread_context::context{ logger, stats }, config.io_threads) },
 	runner{ *runner_impl },
 	observers_impl{ std::make_unique<nano::node_observers> () },
 	observers{ *observers_impl },
-	workers_impl{ std::make_unique<nano::thread_pool> (config.background_threads, nano::thread_role::name::worker, /* start immediately */ true) },
+	workers_impl{ std::make_unique<nano::thread_pool> (config.background_threads, nano::thread_role::name::worker, nano::thread_context::context{ logger, stats }, /* start immediately */ true) },
 	workers{ *workers_impl },
-	bootstrap_workers_impl{ std::make_unique<nano::thread_pool> (config.bootstrap_serving_threads, nano::thread_role::name::bootstrap_worker, /* start immediately */ true) },
+	bootstrap_workers_impl{ std::make_unique<nano::thread_pool> (config.bootstrap_serving_threads, nano::thread_role::name::bootstrap_worker, nano::thread_context::context{ logger, stats }, /* start immediately */ true) },
 	bootstrap_workers{ *bootstrap_workers_impl },
-	wallet_workers_impl{ std::make_unique<nano::thread_pool> (1, nano::thread_role::name::wallet_worker, /* start immediately */ true) },
+	wallet_workers_impl{ std::make_unique<nano::thread_pool> (1, nano::thread_role::name::wallet_worker, nano::thread_context::context{ logger, stats }, /* start immediately */ true) },
 	wallet_workers{ *wallet_workers_impl },
-	election_workers_impl{ std::make_unique<nano::thread_pool> (1, nano::thread_role::name::election_worker, /* start immediately */ true) },
+	election_workers_impl{ std::make_unique<nano::thread_pool> (1, nano::thread_role::name::election_worker, nano::thread_context::context{ logger, stats }, /* start immediately */ true) },
 	election_workers{ *election_workers_impl },
 	work{ work_a },
 	distributed_work_impl{ std::make_unique<nano::distributed_work_factory> (*this) },
 	distributed_work{ *distributed_work_impl },
 	unchecked_impl{ std::make_unique<nano::unchecked_map> (config.max_unchecked_blocks, stats, flags.disable_block_processor_unchecked_deletion) },
 	unchecked{ *unchecked_impl },
-	ledger_notifications_impl{ std::make_unique<nano::ledger_notifications> (config, stats, logger) },
+	ledger_notifications_impl{ std::make_unique<nano::ledger_notifications> (config) },
 	ledger_notifications{ *ledger_notifications_impl },
 	outbound_limiter_impl{ std::make_unique<nano::bandwidth_limiter> (config, flags) },
 	outbound_limiter{ *outbound_limiter_impl },
@@ -176,7 +178,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	wallets{ *wallets_impl },
 	rep_crawler_impl{ std::make_unique<nano::rep_crawler> (config.rep_crawler, *this) },
 	rep_crawler{ *rep_crawler_impl },
-	rep_tiers_impl{ std::make_unique<nano::rep_tiers> (ledger, network_params, online_reps, stats, logger) },
+	rep_tiers_impl{ std::make_unique<nano::rep_tiers> (ledger, network_params, online_reps) },
 	rep_tiers{ *rep_tiers_impl },
 	history_impl{ std::make_unique<nano::local_vote_history> (config.network_params.voting) },
 	history{ *history_impl },
@@ -200,7 +202,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	scheduler{ *scheduler_impl },
 	vote_replier_impl{ std::make_unique<nano::vote_replier> (config.vote_replier, voting_policy, ledger, wallets, network_params.network, stats, logger, config.enable_voting) },
 	vote_replier{ *vote_replier_impl },
-	backlog_scan_impl{ std::make_unique<nano::backlog_scan> (config.backlog_scan, ledger, stats) },
+	backlog_scan_impl{ std::make_unique<nano::backlog_scan> (config.backlog_scan, ledger) },
 	backlog_scan{ *backlog_scan_impl },
 	backlog_impl{ std::make_unique<nano::bounded_backlog> (config, *this, ledger, ledger_notifications, bucketing, backlog_scan, block_processor, cementing_set, stats, logger) },
 	backlog{ *backlog_impl },
@@ -214,7 +216,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	epoch_upgrader{ *epoch_upgrader_impl },
 	local_block_broadcaster_impl{ std::make_unique<nano::local_block_broadcaster> (config.local_block_broadcaster, *this, ledger_notifications, network, cementing_set, stats, logger) },
 	local_block_broadcaster{ *local_block_broadcaster_impl },
-	peer_history_impl{ std::make_unique<nano::peer_history> (config.peer_history, store, network, logger, stats) },
+	peer_history_impl{ std::make_unique<nano::peer_history> (config.peer_history, store, network) },
 	peer_history{ *peer_history_impl },
 	monitor_impl{ std::make_unique<nano::monitor> (config.monitor, *this) },
 	monitor{ *monitor_impl },
@@ -514,6 +516,8 @@ void nano::node::process_local_async (std::shared_ptr<nano::block> const & block
 
 void nano::node::start ()
 {
+	nano::thread_context::scoped thread_context{ logger, stats };
+
 	network.start ();
 	message_processor.start ();
 

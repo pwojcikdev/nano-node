@@ -117,13 +117,11 @@ void nano::active_elections::start ()
 
 	debug_assert (!thread.joinable ());
 
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::aec_loop);
+	thread = nano::thread::create (nano::thread_role::name::aec_loop, [this] {
 		run ();
 	});
 
-	checkup_thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::aec_checkup);
+	checkup_thread = nano::thread::create (nano::thread_role::name::aec_checkup, [this] {
 		run_checkup ();
 	});
 }

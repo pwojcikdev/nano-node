@@ -27,7 +27,7 @@ public: // Events
 	rolled_back_event_t blocks_rolled_back;
 
 public:
-	ledger_notifications (nano::node_config const &, nano::stats &, nano::logger &);
+	ledger_notifications (nano::node_config const &);
 	~ledger_notifications ();
 
 	void start ();

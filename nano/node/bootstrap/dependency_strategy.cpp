@@ -1,6 +1,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats_enums.hpp>
 #include <nano/lib/thread_roles.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/messages/asc_pull.hpp>
 #include <nano/node/bootstrap/dependency_strategy.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -18,14 +19,12 @@ dependency_strategy::dependency_strategy (bootstrap_context & ctx_a) :
 void dependency_strategy::start ()
 {
 	debug_assert (!thread.joinable ());
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bootstrap_dependency_walker);
+	thread = nano::thread::create (nano::thread_role::name::bootstrap_dependency_walker, [this] {
 		run ();
 	});
 
 	debug_assert (!sync_thread.joinable ());
-	sync_thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bootstrap_dependency_sync);
+	sync_thread = nano::thread::create (nano::thread_role::name::bootstrap_dependency_sync, [this] {
 		run_sync ();
 	});
 }

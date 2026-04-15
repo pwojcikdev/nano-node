@@ -1,13 +1,14 @@
 #include <nano/lib/stats.hpp>
-#include <nano/lib/thread_roles.hpp>
+#include <nano/lib/thread_context.hpp>
+#include <nano/lib/threading.hpp>
 #include <nano/node/ledger_notifications.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/secure/transaction.hpp>
 
-nano::ledger_notifications::ledger_notifications (nano::node_config const & config, nano::stats & stats, nano::logger & logger) :
+nano::ledger_notifications::ledger_notifications (nano::node_config const & config) :
 	config{ config },
-	stats{ stats },
-	logger{ logger }
+	stats{ nano::thread_context::stats () },
+	logger{ nano::thread_context::logger () }
 {
 }
 
@@ -20,10 +21,9 @@ void nano::ledger_notifications::start ()
 {
 	debug_assert (!thread.joinable ());
 
-	thread = std::thread{ [this] () {
-		nano::thread_role::set (nano::thread_role::name::ledger_notifications);
+	thread = nano::thread::create (nano::thread_role::name::ledger_notifications, [this] {
 		run ();
-	} };
+	});
 }
 
 void nano::ledger_notifications::stop ()

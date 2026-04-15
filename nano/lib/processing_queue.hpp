@@ -54,10 +54,9 @@ public:
 	{
 		for (int n = 0; n < thread_count; ++n)
 		{
-			threads.emplace_back ([this] () {
-				nano::thread_role::set (thread_role);
+			threads.emplace_back (nano::thread::create (thread_role, [this] () {
 				run ();
-			});
+			}));
 		}
 	}
 
