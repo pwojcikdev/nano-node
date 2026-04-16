@@ -5,6 +5,7 @@ namespace nano::transport
 class channel;
 class loopback_channel;
 class message_deserializer;
+class message_sink;
 class tcp_channel;
 class tcp_channels;
 class tcp_server;

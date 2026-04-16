@@ -68,6 +68,7 @@
 #include <nano/store/ledger_store.hpp>
 #include <nano/store/rocksdb/backend_rocksdb.hpp>
 #include <nano/transport/bandwidth_limiter.hpp>
+#include <nano/transport/ports.hpp>
 #include <nano/weights/bootstrap_weights.hpp>
 
 #include <boost/format.hpp>
@@ -78,6 +79,34 @@
 #include <fstream>
 #include <future>
 #include <sstream>
+
+namespace
+{
+// Adapter: routes transport inbound messages into the node's processing pipeline.
+// `node &` is captured by reference; the adapter only dereferences it at call time,
+// so it is safe to construct before the owning `node` is fully initialized.
+class node_message_sink final : public nano::transport::message_sink
+{
+public:
+	explicit node_message_sink (nano::node & n) :
+		n{ n }
+	{
+	}
+
+	bool on_message (std::unique_ptr<nano::messages::message> msg, std::shared_ptr<nano::transport::channel> channel) override
+	{
+		return n.message_processor.put (std::move (msg), channel);
+	}
+
+	void process_inbound (nano::messages::message const & msg, std::shared_ptr<nano::transport::channel> channel) override
+	{
+		n.inbound (msg, channel);
+	}
+
+private:
+	nano::node & n;
+};
+}
 
 nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, uint16_t peering_port_a, std::filesystem::path const & application_path_a, nano::work_pool & work_a, nano::node_flags flags_a, unsigned seq) :
 	node (io_ctx_a, application_path_a, nano::node_config (peering_port_a), work_a, flags_a, seq)
@@ -128,6 +157,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	config.bootstrap_bandwidth_limit,
 	config.bootstrap_bandwidth_burst_ratio }) },
 	outbound_limiter{ *outbound_limiter_impl },
+	message_sink_impl{ std::make_unique<node_message_sink> (*this) },
 	transport_impl{ std::make_unique<nano::transport::transport_service> (
 	io_ctx,
 	network_params,
@@ -228,14 +258,12 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	transport.ctx.block_uniquer = &block_uniquer;
 	transport.ctx.vote_uniquer = &vote_uniquer;
 	transport.ctx.handshake = &network;
+	transport.ctx.message_sink = message_sink_impl.get ();
 	transport.ctx.flags.disable_tcp_realtime = flags.disable_tcp_realtime;
 	transport.ctx.flags.disable_bootstrap_listener = flags.disable_bootstrap_listener;
 	transport.ctx.flags.disable_max_peers_per_ip = flags.disable_max_peers_per_ip;
 	transport.ctx.flags.disable_max_peers_per_subnetwork = flags.disable_max_peers_per_subnetwork;
 	transport.ctx.flags.allow_local_peers = config.allow_local_peers;
-	transport.ctx.on_message = [this] (std::unique_ptr<nano::messages::message> msg, std::shared_ptr<nano::transport::channel> channel) {
-		return message_processor.put (std::move (msg), channel);
-	};
 	transport.ctx.on_channel_connected = [this] (std::shared_ptr<nano::transport::channel> channel) {
 		observers.channel_connected.notify (channel);
 	};
@@ -256,9 +284,6 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	};
 	transport.ctx.is_not_a_peer = [this] (nano::endpoint const & endpoint) {
 		return network.not_a_peer (endpoint, config.allow_local_peers);
-	};
-	transport.ctx.process_inbound = [this] (nano::messages::message const & msg, std::shared_ptr<nano::transport::channel> channel) {
-		inbound (msg, channel);
 	};
 
 	loopback_channel->set_node_id (node_id.pub);

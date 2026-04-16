@@ -2,6 +2,7 @@
 #include <nano/messages/messages.hpp>
 #include <nano/transport/handshake_driver.hpp>
 #include <nano/transport/handshake_provider.hpp>
+#include <nano/transport/ports.hpp>
 #include <nano/transport/tcp_channel.hpp>
 #include <nano/transport/tcp_server.hpp>
 #include <nano/transport/transport.hpp>
@@ -256,7 +257,7 @@ auto nano::transport::tcp_server::run_realtime () -> asio::awaitable<void>
 				channel->set_last_packet_received (std::chrono::steady_clock::now ());
 
 				// TODO: Throttle if not added
-				bool added = ctx.on_message (std::move (message), channel);
+				bool added = ctx.message_sink->on_message (std::move (message), channel);
 				ctx.stats.inc (nano::stat::type::tcp_server, added ? nano::stat::detail::message_queued : nano::stat::detail::message_dropped);
 			}
 			else

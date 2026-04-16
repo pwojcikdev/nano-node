@@ -8,6 +8,7 @@
 #include <nano/transport/bandwidth_limiter.hpp>
 #include <nano/transport/fwd.hpp>
 #include <nano/transport/handshake_provider.hpp>
+#include <nano/transport/ports.hpp>
 #include <nano/transport/tcp_config.hpp>
 
 #include <boost/asio/io_context.hpp>
@@ -38,6 +39,7 @@ struct transport_context
 	nano::block_uniquer * block_uniquer{};
 	nano::vote_uniquer * vote_uniquer{};
 	nano::transport::handshake_provider * handshake{};
+	nano::transport::message_sink * message_sink{};
 
 	struct
 	{
@@ -49,7 +51,8 @@ struct transport_context
 	} flags;
 
 	// Callbacks wired by node at construction time
-	std::function<bool (std::unique_ptr<nano::messages::message>, std::shared_ptr<nano::transport::channel>)> on_message;
+	// NOTE: These are being replaced with typed port interfaces (see ports.hpp).
+	// Inbound-message delivery has moved to `message_sink` above.
 	std::function<void (std::shared_ptr<nano::transport::channel>)> on_channel_connected;
 	std::function<bool (boost::asio::ip::address const &)> is_excluded;
 	std::function<bool (boost::asio::ip::address, uint16_t)> connect;
@@ -57,8 +60,5 @@ struct transport_context
 	std::function<void (std::array<nano::endpoint, 8> &)> random_fill;
 	std::function<bool (nano::endpoint const &)> is_not_a_peer;
 	std::function<std::shared_ptr<nano::transport::tcp_channel> (std::shared_ptr<nano::transport::tcp_socket> const &, std::shared_ptr<nano::transport::tcp_server> const &, nano::account const &, nano::node_capabilities_flags)> create_channel;
-
-	// Synchronous inbound message processing (used by loopback channel)
-	std::function<void (nano::messages::message const &, std::shared_ptr<nano::transport::channel>)> process_inbound;
 };
 }

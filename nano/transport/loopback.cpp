@@ -1,5 +1,6 @@
 #include <nano/boost/asio/post.hpp>
 #include <nano/transport/loopback.hpp>
+#include <nano/transport/ports.hpp>
 #include <nano/transport/transport_context.hpp>
 
 #include <boost/format.hpp>
@@ -15,7 +16,7 @@ bool nano::transport::loopback_channel::send_impl (nano::messages::message const
 {
 	ctx.stats.inc (nano::stat::type::message_loopback, to_stat_detail (message.type ()), nano::stat::dir::in);
 
-	ctx.process_inbound (message, shared_from_this ());
+	ctx.message_sink->process_inbound (message, shared_from_this ());
 
 	if (callback)
 	{
