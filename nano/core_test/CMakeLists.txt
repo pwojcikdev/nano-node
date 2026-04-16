@@ -22,6 +22,7 @@ add_executable(
   cli.cpp
   confirmation_solicitor.cpp
   deserialize_message.cpp
+  handshake_driver.cpp
   crawler.cpp
   cementing_set.cpp
   conflicts.cpp

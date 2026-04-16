@@ -10,6 +10,8 @@ add_library(
   common.cpp
   formatting.hpp
   fwd.hpp
+  handshake_driver.hpp
+  handshake_driver.cpp
   handshake_provider.hpp
   message_deserializer.hpp
   message_deserializer.cpp

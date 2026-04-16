@@ -1,5 +1,6 @@
 #include <nano/lib/stats.hpp>
 #include <nano/messages/messages.hpp>
+#include <nano/transport/handshake_driver.hpp>
 #include <nano/transport/handshake_provider.hpp>
 #include <nano/transport/tcp_channel.hpp>
 #include <nano/transport/tcp_server.hpp>
@@ -7,6 +8,7 @@
 #include <nano/transport/transport_context.hpp>
 
 #include <memory>
+#include <variant>
 
 nano::transport::tcp_server::tcp_server (transport_context & ctx_a, std::shared_ptr<tcp_socket> socket_a) :
 	ctx{ ctx_a },
@@ -61,7 +63,7 @@ auto nano::transport::tcp_server::start_impl () -> asio::awaitable<void>
 		auto handshake_result = co_await perform_handshake ();
 
 		// Only realtime mode is supported now
-		if (handshake_result == handshake_status::realtime)
+		if (handshake_result == handshake_outcome::realtime)
 		{
 			co_await run_realtime ();
 		}
@@ -91,31 +93,37 @@ bool nano::transport::tcp_server::alive () const
 	return socket->alive ();
 }
 
-auto nano::transport::tcp_server::perform_handshake () -> asio::awaitable<handshake_status>
+auto nano::transport::tcp_server::perform_handshake () -> asio::awaitable<handshake_outcome>
 {
 	debug_assert (strand.running_in_this_thread ());
 	debug_assert (get_type () == nano::transport::socket_type::undefined);
 
-	// Initiate handshake if we are the ones initiating the connection
-	if (socket->get_endpoint_type () == nano::transport::socket_endpoint::client)
-	{
-		co_await send_handshake_request ();
-	}
+	auto role = (socket->get_endpoint_type () == nano::transport::socket_endpoint::client)
+	? nano::transport::handshake_role::client
+	: nano::transport::handshake_role::server;
 
-	struct handshake_message_visitor : public nano::messages::message_visitor
-	{
-		bool process{ false };
-		std::optional<nano::messages::node_id_handshake> handshake;
-
-		void node_id_handshake (nano::messages::node_id_handshake const & msg) override
-		{
-			process = true;
-			handshake = msg;
-		}
+	nano::transport::handshake_driver driver{
+		*ctx.handshake,
+		ctx.network_params.network,
+		role,
+		get_remote_endpoint (),
+		ctx.flags.disable_tcp_realtime
 	};
 
-	// Two-step handshake
-	for (int i = 0; i < 2; ++i)
+	bool promoted = false;
+
+	// Apply initial events (for client this includes send_request).
+	for (auto const & event : driver.begin ())
+	{
+		bool terminal = co_await apply_handshake_event (event, promoted);
+		if (terminal)
+		{
+			co_return promoted ? handshake_outcome::realtime : handshake_outcome::abort;
+		}
+	}
+
+	// Pump peer messages through the driver until it reaches a terminal state.
+	while (!driver.is_terminal ())
 	{
 		auto [message, message_status] = co_await receive_message ();
 		if (!message)
@@ -123,42 +131,106 @@ auto nano::transport::tcp_server::perform_handshake () -> asio::awaitable<handsh
 			ctx.logger.debug (nano::log::type::tcp_server, "Error deserializing handshake message: {} ({})",
 			to_string (message_status),
 			get_remote_endpoint ());
-
-			co_return handshake_status::abort;
+			co_return handshake_outcome::abort;
 		}
 
-		handshake_message_visitor handshake_visitor{};
-		message->visit (handshake_visitor);
-
-		handshake_status status = handshake_status::abort;
-		if (handshake_visitor.process)
+		auto * handshake_msg = dynamic_cast<nano::messages::node_id_handshake const *> (message.get ());
+		if (!handshake_msg)
 		{
-			release_assert (handshake_visitor.handshake.has_value ());
-			status = co_await process_handshake (*handshake_visitor.handshake);
+			ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
+			ctx.logger.debug (nano::log::type::tcp_server, "Non-handshake message received during handshake ({})", get_remote_endpoint ());
+			co_return handshake_outcome::abort;
 		}
-		switch (status)
+
+		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::node_id_handshake, nano::stat::dir::in);
+		ctx.logger.debug (nano::log::type::tcp_server, "Handshake message received: {} ({})",
+		handshake_msg->query ? (handshake_msg->response ? "query + response" : "query") : (handshake_msg->response ? "response" : "none"),
+		get_remote_endpoint ());
+
+		for (auto const & event : driver.on_message (*handshake_msg))
 		{
-			case handshake_status::abort:
-			case handshake_status::bootstrap: // Legacy bootstrap is no longer supported
+			bool terminal = co_await apply_handshake_event (event, promoted);
+			if (terminal)
 			{
-				co_return handshake_status::abort;
-			}
-			case handshake_status::realtime:
-			{
-				co_return handshake_status::realtime; // Switch to realtime mode
-			}
-			case handshake_status::handshake:
-			{
-				// Continue handshake
+				co_return promoted ? handshake_outcome::realtime : handshake_outcome::abort;
 			}
 		}
 	}
 
-	// Failed to complete handshake, abort
+	// Driver reached terminal without emitting a promote — should be covered above, but
+	// keep a fallback for safety.
 	ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_failed);
 	ctx.logger.debug (nano::log::type::tcp_server, "Failed to complete handshake ({})", get_remote_endpoint ());
+	co_return promoted ? handshake_outcome::realtime : handshake_outcome::abort;
+}
 
-	co_return handshake_status::abort;
+auto nano::transport::tcp_server::apply_handshake_event (nano::transport::handshake_event const & event, bool & promoted) -> asio::awaitable<bool>
+{
+	namespace e = nano::transport::handshake_events;
+
+	// Use if-else chains — overloaded lambdas in a coroutine-visit context are awkward.
+	if (auto * req = std::get_if<e::send_request> (&event))
+	{
+		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_initiate, nano::stat::dir::out);
+		ctx.logger.debug (nano::log::type::tcp_server, "Initiating handshake query ({})", get_remote_endpoint ());
+		co_await write_handshake_message (req->message);
+		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake, nano::stat::dir::out);
+		co_return false;
+	}
+	if (auto * resp = std::get_if<e::send_response> (&event))
+	{
+		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response, nano::stat::dir::out);
+		ctx.logger.debug (nano::log::type::tcp_server, "Responding to handshake ({})", get_remote_endpoint ());
+		co_await write_handshake_message (resp->message);
+		co_return false;
+	}
+	if (auto * promote = std::get_if<e::promote_realtime> (&event))
+	{
+		if (to_realtime_connection (promote->peer_node_id, promote->peer_flags))
+		{
+			promoted = true;
+			co_return true;
+		}
+		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
+		ctx.logger.debug (nano::log::type::tcp_server, "Error switching to realtime mode ({})", get_remote_endpoint ());
+		co_return true;
+	}
+	if (std::get_if<e::promote_bootstrap> (&event))
+	{
+		// Legacy bootstrap is no longer supported; driver doesn't emit it today.
+		co_return true;
+	}
+	if (auto * abort_e = std::get_if<e::abort> (&event))
+	{
+		// Map driver abort reasons to stats where the original code distinguished them.
+		if (abort_e->reason == "invalid_response")
+		{
+			ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response_invalid);
+			ctx.logger.debug (nano::log::type::tcp_server, "Invalid handshake response received ({})", get_remote_endpoint ());
+		}
+		else
+		{
+			ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
+			ctx.logger.debug (nano::log::type::tcp_server, "Handshake aborted: {} ({})", abort_e->reason, get_remote_endpoint ());
+		}
+		co_return true;
+	}
+	// wait_for_message: nothing to do, caller continues the read loop.
+	co_return false;
+}
+
+auto nano::transport::tcp_server::write_handshake_message (nano::messages::node_id_handshake const & message) -> asio::awaitable<void>
+{
+	auto shared_const_buffer = message.to_shared_const_buffer ();
+
+	auto [ec, size] = co_await socket->co_write (shared_const_buffer, shared_const_buffer.size ());
+	debug_assert (ec || size == shared_const_buffer.size ());
+	if (ec)
+	{
+		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_network_error);
+		ctx.logger.debug (nano::log::type::tcp_server, "Error sending handshake message: {} ({})", ec.message (), get_remote_endpoint ());
+		throw boost::system::system_error (ec);
+	}
 }
 
 auto nano::transport::tcp_server::run_realtime () -> asio::awaitable<void>
@@ -301,123 +373,6 @@ auto nano::transport::tcp_server::read_socket (size_t size) const -> asio::await
 
 	release_assert (size_read == size);
 	co_return nano::buffer_view{ buffer->data (), size_read };
-}
-
-auto nano::transport::tcp_server::process_handshake (nano::messages::node_id_handshake const & message) -> asio::awaitable<handshake_status>
-{
-	if (ctx.flags.disable_tcp_realtime)
-	{
-		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
-		ctx.logger.debug (nano::log::type::tcp_server, "Handshake attempted with disabled realtime mode ({})", get_remote_endpoint ());
-
-		co_return handshake_status::abort;
-	}
-	if (!message.query && !message.response)
-	{
-		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
-		ctx.logger.debug (nano::log::type::tcp_server, "Invalid handshake message received ({})", get_remote_endpoint ());
-
-		co_return handshake_status::abort;
-	}
-	if (message.query && handshake_received) // Second handshake message should be a response only
-	{
-		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
-		ctx.logger.debug (nano::log::type::tcp_server, "Detected multiple handshake queries ({})", get_remote_endpoint ());
-
-		co_return handshake_status::abort;
-	}
-
-	handshake_received = true;
-
-	ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::node_id_handshake, nano::stat::dir::in);
-	ctx.logger.debug (nano::log::type::tcp_server, "Handshake message received: {} ({})",
-	message.query ? (message.response ? "query + response" : "query") : (message.response ? "response" : "none"),
-	get_remote_endpoint ());
-
-	if (message.query)
-	{
-		// Sends response + our own query
-		co_await send_handshake_response (*message.query, message.version ());
-		// Fall through and continue handshake
-	}
-	if (message.response)
-	{
-		if (ctx.handshake->verify_handshake_response (*message.response, get_remote_endpoint ()))
-		{
-			bool success = to_realtime_connection (message.response->node_id, message.response->flags ());
-			if (success)
-			{
-				co_return handshake_status::realtime; // Switched to realtime
-			}
-			else
-			{
-				ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_error);
-				ctx.logger.debug (nano::log::type::tcp_server, "Error switching to realtime mode ({})", get_remote_endpoint ());
-
-				co_return handshake_status::abort;
-			}
-		}
-		else
-		{
-			ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response_invalid);
-			ctx.logger.debug (nano::log::type::tcp_server, "Invalid handshake response received ({})", get_remote_endpoint ());
-
-			co_return handshake_status::abort;
-		}
-	}
-
-	co_return handshake_status::handshake; // Handshake is in progress
-}
-
-auto nano::transport::tcp_server::send_handshake_request () -> asio::awaitable<void>
-{
-	auto query = ctx.handshake->prepare_handshake_query (get_remote_endpoint ());
-	nano::messages::node_id_handshake message{ ctx.network_params.network, query };
-
-	ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_initiate, nano::stat::dir::out);
-	ctx.logger.debug (nano::log::type::tcp_server, "Initiating handshake query ({})", get_remote_endpoint ());
-
-	auto shared_const_buffer = message.to_shared_const_buffer ();
-
-	auto [ec, size] = co_await socket->co_write (shared_const_buffer, shared_const_buffer.size ());
-	debug_assert (ec || size == shared_const_buffer.size ());
-	if (ec)
-	{
-		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_network_error);
-		ctx.logger.debug (nano::log::type::tcp_server, "Error sending handshake query: {} ({})", ec.message (), get_remote_endpoint ());
-
-		throw boost::system::system_error (ec); // Abort further processing
-	}
-	else
-	{
-		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake, nano::stat::dir::out);
-	}
-}
-
-auto nano::transport::tcp_server::send_handshake_response (nano::messages::node_id_handshake::query_payload const & query, nano::messages::handshake_version version) -> asio::awaitable<void>
-{
-	auto response = ctx.handshake->prepare_handshake_response (query, version);
-	auto own_query = ctx.handshake->prepare_handshake_query (get_remote_endpoint ());
-	nano::messages::node_id_handshake handshake_response{ ctx.network_params.network, own_query, response };
-
-	ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response, nano::stat::dir::out);
-	ctx.logger.debug (nano::log::type::tcp_server, "Responding to handshake ({})", get_remote_endpoint ());
-
-	auto shared_const_buffer = handshake_response.to_shared_const_buffer ();
-
-	auto [ec, size] = co_await socket->co_write (shared_const_buffer, shared_const_buffer.size ());
-	debug_assert (ec || size == shared_const_buffer.size ());
-	if (ec)
-	{
-		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_network_error);
-		ctx.logger.debug (nano::log::type::tcp_server, "Error sending handshake response: {} ({})", ec.message (), get_remote_endpoint ());
-
-		throw boost::system::system_error (ec); // Abort further processing
-	}
-	else
-	{
-		ctx.stats.inc (nano::stat::type::tcp_server, nano::stat::detail::handshake_response, nano::stat::dir::out);
-	}
 }
 
 /*
