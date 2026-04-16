@@ -14,8 +14,6 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address.hpp>
 
-#include <array>
-#include <functional>
 #include <memory>
 
 namespace nano::transport
@@ -43,6 +41,7 @@ struct transport_context
 	nano::transport::peer_policy * peer_policy{};
 	nano::transport::connector * connector{};
 	nano::transport::channel_events * channel_events{};
+	nano::transport::channel_factory * channel_factory{};
 
 	struct
 	{
@@ -52,10 +51,5 @@ struct transport_context
 		bool disable_max_peers_per_subnetwork{};
 		bool allow_local_peers{};
 	} flags;
-
-	// Remaining callback. `create_channel` is deferred to a later step because it
-	// couples closely with tcp_channels' lifecycle (the factory both creates and
-	// registers channels). Will be replaced by a channel_factory port.
-	std::function<std::shared_ptr<nano::transport::tcp_channel> (std::shared_ptr<nano::transport::tcp_socket> const &, std::shared_ptr<nano::transport::tcp_server> const &, nano::account const &, nano::node_capabilities_flags)> create_channel;
 };
 }

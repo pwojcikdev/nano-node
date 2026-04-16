@@ -462,7 +462,7 @@ bool nano::transport::tcp_server::to_realtime_connection (nano::account const & 
 		return false;
 	}
 
-	auto channel_l = ctx.create_channel (socket, shared_from_this (), node_id, flags);
+	auto channel_l = ctx.channel_factory->create (socket, shared_from_this (), node_id, flags);
 	if (!channel_l)
 	{
 		return false;

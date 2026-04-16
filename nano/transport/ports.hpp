@@ -1,6 +1,8 @@
 #pragma once
 
 #include <nano/lib/endpoint.hpp>
+#include <nano/lib/node_capabilities.hpp>
+#include <nano/lib/numbers.hpp>
 #include <nano/messages/fwd.hpp>
 #include <nano/transport/fwd.hpp>
 
@@ -84,5 +86,27 @@ public:
 	virtual ~channel_events () = default;
 
 	virtual void on_connected (std::shared_ptr<nano::transport::channel>) = 0;
+};
+
+/**
+ * Port: creates and registers a realtime tcp_channel.
+ *
+ * This factory both constructs the channel *and* stores it in tcp_channels.
+ * Tests that want a standalone `tcp_server` can supply a stub returning a
+ * `nullptr` or a prebuilt fake channel.
+ */
+class channel_factory
+{
+public:
+	virtual ~channel_factory () = default;
+
+	/// Returns the created channel, or nullptr if registration was rejected
+	/// (e.g. duplicate node_id, exceeded per-peer limits).
+	virtual std::shared_ptr<nano::transport::tcp_channel> create (
+	std::shared_ptr<nano::transport::tcp_socket> const &,
+	std::shared_ptr<nano::transport::tcp_server> const &,
+	nano::account const & node_id,
+	nano::node_capabilities_flags)
+	= 0;
 };
 }

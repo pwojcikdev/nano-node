@@ -142,6 +142,7 @@ public:
 	std::unique_ptr<nano::transport::peer_policy> peer_policy_impl;
 	std::unique_ptr<nano::transport::connector> connector_impl;
 	std::unique_ptr<nano::transport::channel_events> channel_events_impl;
+	std::unique_ptr<nano::transport::channel_factory> channel_factory_impl;
 	std::unique_ptr<nano::transport::transport_service> transport_impl;
 	nano::transport::transport_service & transport;
 	std::unique_ptr<nano::message_processor> message_processor_impl;

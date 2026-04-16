@@ -4,6 +4,7 @@ namespace nano::transport
 {
 class channel;
 class channel_events;
+class channel_factory;
 class connector;
 class loopback_channel;
 class message_deserializer;

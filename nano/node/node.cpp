@@ -173,6 +173,27 @@ public:
 private:
 	nano::node & n;
 };
+
+class node_channel_factory final : public nano::transport::channel_factory
+{
+public:
+	explicit node_channel_factory (nano::node & n) :
+		n{ n }
+	{
+	}
+
+	std::shared_ptr<nano::transport::tcp_channel> create (
+	std::shared_ptr<nano::transport::tcp_socket> const & socket,
+	std::shared_ptr<nano::transport::tcp_server> const & server,
+	nano::account const & node_id,
+	nano::node_capabilities_flags flags) override
+	{
+		return n.network.tcp_channels.create (socket, server, node_id, flags);
+	}
+
+private:
+	nano::node & n;
+};
 }
 
 nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, uint16_t peering_port_a, std::filesystem::path const & application_path_a, nano::work_pool & work_a, nano::node_flags flags_a, unsigned seq) :
@@ -228,6 +249,7 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	peer_policy_impl{ std::make_unique<node_peer_policy> (*this) },
 	connector_impl{ std::make_unique<node_connector> (*this) },
 	channel_events_impl{ std::make_unique<node_channel_events> (*this) },
+	channel_factory_impl{ std::make_unique<node_channel_factory> (*this) },
 	transport_impl{ std::make_unique<nano::transport::transport_service> (
 	io_ctx,
 	network_params,
@@ -332,14 +354,12 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	transport.ctx.peer_policy = peer_policy_impl.get ();
 	transport.ctx.connector = connector_impl.get ();
 	transport.ctx.channel_events = channel_events_impl.get ();
+	transport.ctx.channel_factory = channel_factory_impl.get ();
 	transport.ctx.flags.disable_tcp_realtime = flags.disable_tcp_realtime;
 	transport.ctx.flags.disable_bootstrap_listener = flags.disable_bootstrap_listener;
 	transport.ctx.flags.disable_max_peers_per_ip = flags.disable_max_peers_per_ip;
 	transport.ctx.flags.disable_max_peers_per_subnetwork = flags.disable_max_peers_per_subnetwork;
 	transport.ctx.flags.allow_local_peers = config.allow_local_peers;
-	transport.ctx.create_channel = [this] (std::shared_ptr<nano::transport::tcp_socket> const & socket, std::shared_ptr<nano::transport::tcp_server> const & server, nano::account const & node_id, nano::node_capabilities_flags flags) {
-		return network.tcp_channels.create (socket, server, node_id, flags);
-	};
 
 	loopback_channel->set_node_id (node_id.pub);
 
