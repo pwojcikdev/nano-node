@@ -22,8 +22,8 @@ public:
 	void destroy_wallet (nano::store::write_transaction const &, wallet_handle const &) override;
 	std::vector<nano::wallet_id> wallet_ids (nano::store::transaction const &) const override;
 
-	nano::wallet_value get (nano::store::transaction const &, wallet_handle const &, nano::account const &) const override;
-	void put (nano::store::write_transaction const &, wallet_handle const &, nano::account const &, nano::wallet_value const &) override;
+	wallet_value get (nano::store::transaction const &, wallet_handle const &, nano::account const &) const override;
+	void put (nano::store::write_transaction const &, wallet_handle const &, nano::account const &, wallet_value const &) override;
 	void del (nano::store::write_transaction const &, wallet_handle const &, nano::account const &) override;
 	iterator begin (nano::store::transaction const &, wallet_handle const &, nano::account const &) const override;
 	iterator end (nano::store::transaction const &, wallet_handle const &) const override;

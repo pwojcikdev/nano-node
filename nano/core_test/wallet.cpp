@@ -166,7 +166,7 @@ TEST (wallet_store, one_item_iteration)
 		nano::raw_key password;
 		wallet.wallet_key (password, transaction);
 		nano::raw_key key;
-		key.decrypt (nano::wallet_value (i->second).key, password, (nano::uint256_union (i->first)).owords[0].number ());
+		key.decrypt (nano::wallet::wallet_value{ i->second }.key, password, (nano::uint256_union (i->first)).owords[0].number ());
 		ASSERT_EQ (key1.prv, key);
 	}
 }
@@ -191,7 +191,7 @@ TEST (wallet_store, two_item_iteration)
 			nano::raw_key password;
 			wallet.wallet_key (password, transaction);
 			nano::raw_key key;
-			key.decrypt (nano::wallet_value (i->second).key, password, (i->first).owords[0].number ());
+			key.decrypt (nano::wallet::wallet_value{ i->second }.key, password, (i->first).owords[0].number ());
 			prvs.insert (key);
 		}
 	}

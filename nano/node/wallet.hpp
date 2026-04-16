@@ -38,7 +38,7 @@ nano::wallet_id parse_wallet_id (std::string const &);
 class wallet_store final
 {
 public:
-	using iterator = store::typed_iterator<nano::account, nano::wallet_value>;
+	using iterator = store::typed_iterator<nano::account, wallet_value>;
 
 public:
 	wallet_store (nano::kdf &, nano::store::write_transaction &, wallets_backend &, nano::wallet_id const &, nano::account representative, unsigned fanout);
@@ -53,7 +53,7 @@ public:
 	void wallet_key (nano::raw_key & result, nano::store::transaction const &) const;
 	nano::raw_key seed (nano::store::transaction const &) const;
 	void seed_set (nano::store::write_transaction const &, nano::raw_key const & seed);
-	key_type key_type (nano::wallet_value const &) const;
+	key_type key_type (wallet_value const &) const;
 	nano::public_key deterministic_insert (nano::store::write_transaction const &);
 	nano::public_key deterministic_insert (nano::store::write_transaction const &, uint32_t index);
 	nano::raw_key deterministic_key (nano::store::transaction const &, uint32_t index) const;
@@ -67,8 +67,8 @@ public:
 	nano::public_key insert_adhoc (nano::store::write_transaction const &, nano::raw_key const & prv);
 	bool insert_watch (nano::store::write_transaction const &, nano::account const & pub);
 	void erase (nano::store::write_transaction const &, nano::account const & pub);
-	nano::wallet_value entry_get_raw (nano::store::transaction const &, nano::account const & pub) const;
-	void entry_put_raw (nano::store::write_transaction const &, nano::account const & pub, nano::wallet_value const & entry);
+	wallet_value entry_get_raw (nano::store::transaction const &, nano::account const & pub) const;
+	void entry_put_raw (nano::store::write_transaction const &, nano::account const & pub, wallet_value const & entry);
 	nano::result<nano::raw_key> fetch (nano::store::transaction const &, nano::account const & pub) const;
 	bool exists (nano::store::transaction const &, nano::account const & pub) const;
 	void destroy (nano::store::write_transaction const &);

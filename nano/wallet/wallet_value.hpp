@@ -3,7 +3,7 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/store/db_val.hpp>
 
-namespace nano
+namespace nano::wallet
 {
 class wallet_value
 {

@@ -46,9 +46,13 @@ void wallets_backend_lmdb::destroy_wallet (nano::store::write_transaction const 
 std::vector<nano::wallet_id> wallets_backend_lmdb::wallet_ids (nano::store::transaction const & transaction_a) const
 {
 	std::vector<nano::wallet_id> result;
-	std::string beginning (nano::uint256_union (0).to_string ());
+	// The LMDB main catalog stores all named tables. Wallet tables are named by the
+	// hex encoding of wallet_id, so enumerate only that lexical key range here.
+	std::string beginning{ nano::wallet_id{ 0 }.to_string () };
+	nano::wallet_id end_id;
+	end_id.bytes.fill (0xff);
+	std::string end{ end_id.to_string () };
 	nano::store::lmdb::db_val beginning_val{ beginning.size (), const_cast<char *> (beginning.c_str ()) };
-	std::string end ((nano::uint256_union (nano::uint256_t (0) - nano::uint256_t (1))).to_string ());
 	nano::store::lmdb::db_val end_val{ end.size (), const_cast<char *> (end.c_str ()) };
 	auto mdb_beginning_val = nano::store::lmdb::to_mdb_val (beginning_val);
 	auto mdb_end_val = nano::store::lmdb::to_mdb_val (end_val);
@@ -67,16 +71,16 @@ std::vector<nano::wallet_id> wallets_backend_lmdb::wallet_ids (nano::store::tran
 	return result;
 }
 
-nano::wallet_value wallets_backend_lmdb::get (nano::store::transaction const & transaction_a, wallet_handle const & wallet_a, nano::account const & account_a) const
+wallet_value wallets_backend_lmdb::get (nano::store::transaction const & transaction_a, wallet_handle const & wallet_a, nano::account const & account_a) const
 {
-	nano::wallet_value result;
+	wallet_value result;
 	nano::store::lmdb::db_val pub_key (account_a);
 	auto mdb_pub_key = nano::store::lmdb::to_mdb_val (pub_key);
 	MDB_val mdb_value{};
 	auto status = mdb_get (environment.tx (transaction_a), table_handle (wallet_a), &mdb_pub_key, &mdb_value);
 	if (status == 0)
 	{
-		result = nano::wallet_value{ nano::store::lmdb::from_mdb_val (mdb_value) };
+		result = wallet_value{ nano::store::lmdb::from_mdb_val (mdb_value) };
 	}
 	else
 	{
@@ -86,7 +90,7 @@ nano::wallet_value wallets_backend_lmdb::get (nano::store::transaction const & t
 	return result;
 }
 
-void wallets_backend_lmdb::put (nano::store::write_transaction const & transaction_a, wallet_handle const & wallet_a, nano::account const & account_a, nano::wallet_value const & entry_a)
+void wallets_backend_lmdb::put (nano::store::write_transaction const & transaction_a, wallet_handle const & wallet_a, nano::account const & account_a, wallet_value const & entry_a)
 {
 	nano::store::lmdb::db_val key (account_a);
 	auto value = entry_a.val ();

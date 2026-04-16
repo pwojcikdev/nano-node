@@ -32,6 +32,7 @@
 #include <nano/node/vote_rebroadcaster.hpp>
 #include <nano/node/vote_replier.hpp>
 #include <nano/node/websocket.hpp>
+#include <nano/store/txn_tracking.hpp>
 #include <nano/test_common/testutil.hpp>
 
 #include <gtest/gtest.h>

@@ -21,7 +21,7 @@ public:
 		nano::wallet_id id;
 	};
 
-	using iterator = nano::store::typed_iterator<nano::account, nano::wallet_value>;
+	using iterator = nano::store::typed_iterator<nano::account, wallet_value>;
 
 public:
 	virtual ~wallets_backend () = default;
@@ -33,8 +33,8 @@ public:
 	virtual void destroy_wallet (nano::store::write_transaction const &, wallet_handle const &) = 0;
 	virtual std::vector<nano::wallet_id> wallet_ids (nano::store::transaction const &) const = 0;
 
-	virtual nano::wallet_value get (nano::store::transaction const &, wallet_handle const &, nano::account const &) const = 0;
-	virtual void put (nano::store::write_transaction const &, wallet_handle const &, nano::account const &, nano::wallet_value const &) = 0;
+	virtual wallet_value get (nano::store::transaction const &, wallet_handle const &, nano::account const &) const = 0;
+	virtual void put (nano::store::write_transaction const &, wallet_handle const &, nano::account const &, wallet_value const &) = 0;
 	virtual void del (nano::store::write_transaction const &, wallet_handle const &, nano::account const &) = 0;
 	virtual iterator begin (nano::store::transaction const &, wallet_handle const &, nano::account const &) const = 0;
 	virtual iterator end (nano::store::transaction const &, wallet_handle const &) const = 0;

@@ -1,4 +1,5 @@
 #include <nano/lib/logging.hpp>
+#include <nano/lib/timer.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/ipc/action_handler.hpp>
 #include <nano/node/ipc/flatbuffers_handler.hpp>
