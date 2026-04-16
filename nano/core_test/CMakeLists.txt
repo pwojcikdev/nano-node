@@ -71,6 +71,7 @@ add_executable(
   socket.cpp
   stacktrace.cpp
   system.cpp
+  tcp_channel_queue.cpp
   tcp_listener.cpp
   tcp_server.cpp
   telemetry.cpp
