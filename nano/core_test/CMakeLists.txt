@@ -21,6 +21,7 @@ add_executable(
   bucketing.cpp
   cli.cpp
   confirmation_solicitor.cpp
+  deserialize_message.cpp
   crawler.cpp
   cementing_set.cpp
   conflicts.cpp
