@@ -40,6 +40,9 @@ struct transport_context
 	nano::vote_uniquer * vote_uniquer{};
 	nano::transport::handshake_provider * handshake{};
 	nano::transport::message_sink * message_sink{};
+	nano::transport::peer_policy * peer_policy{};
+	nano::transport::connector * connector{};
+	nano::transport::channel_events * channel_events{};
 
 	struct
 	{
@@ -50,15 +53,9 @@ struct transport_context
 		bool allow_local_peers{};
 	} flags;
 
-	// Callbacks wired by node at construction time
-	// NOTE: These are being replaced with typed port interfaces (see ports.hpp).
-	// Inbound-message delivery has moved to `message_sink` above.
-	std::function<void (std::shared_ptr<nano::transport::channel>)> on_channel_connected;
-	std::function<bool (boost::asio::ip::address const &)> is_excluded;
-	std::function<bool (boost::asio::ip::address, uint16_t)> connect;
-	std::function<std::size_t ()> bootstrap_count;
-	std::function<void (std::array<nano::endpoint, 8> &)> random_fill;
-	std::function<bool (nano::endpoint const &)> is_not_a_peer;
+	// Remaining callback. `create_channel` is deferred to a later step because it
+	// couples closely with tcp_channels' lifecycle (the factory both creates and
+	// registers channels). Will be replaced by a channel_factory port.
 	std::function<std::shared_ptr<nano::transport::tcp_channel> (std::shared_ptr<nano::transport::tcp_socket> const &, std::shared_ptr<nano::transport::tcp_server> const &, nano::account const &, nano::node_capabilities_flags)> create_channel;
 };
 }

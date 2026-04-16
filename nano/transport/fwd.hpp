@@ -3,9 +3,12 @@
 namespace nano::transport
 {
 class channel;
+class channel_events;
+class connector;
 class loopback_channel;
 class message_deserializer;
 class message_sink;
+class peer_policy;
 class tcp_channel;
 class tcp_channels;
 class tcp_server;

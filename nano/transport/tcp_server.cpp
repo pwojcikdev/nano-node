@@ -435,7 +435,7 @@ bool nano::transport::tcp_server::to_bootstrap_connection ()
 	{
 		return false;
 	}
-	if (ctx.bootstrap_count () >= ctx.tcp_config.bootstrap_connections_max)
+	if (ctx.peer_policy->bootstrap_count () >= ctx.tcp_config.bootstrap_connections_max)
 	{
 		return false;
 	}

@@ -3,6 +3,7 @@
 #include <nano/lib/stats.hpp>
 #include <nano/lib/thread_roles.hpp>
 #include <nano/messages/messages.hpp>
+#include <nano/transport/ports.hpp>
 #include <nano/transport/tcp_listener.hpp>
 #include <nano/transport/tcp_server.hpp>
 #include <nano/transport/tcp_socket.hpp>
@@ -461,7 +462,7 @@ auto nano::transport::tcp_listener::check_limits (asio::ip::address const & ip, 
 		return accept_result::rejected;
 	}
 
-	if (ctx.is_excluded (ip)) // true => error
+	if (ctx.peer_policy->is_excluded (ip)) // true => error
 	{
 		stats.inc (nano::stat::type::tcp_listener_rejected, nano::stat::detail::excluded, to_stat_dir (type));
 		logger.debug (nano::log::type::tcp_listener, "Rejected connection from excluded peer: {} ({})", ip, type);

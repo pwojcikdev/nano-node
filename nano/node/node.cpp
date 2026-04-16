@@ -82,9 +82,10 @@
 
 namespace
 {
-// Adapter: routes transport inbound messages into the node's processing pipeline.
-// `node &` is captured by reference; the adapter only dereferences it at call time,
-// so it is safe to construct before the owning `node` is fully initialized.
+// Adapters: route transport-layer calls into the node. Each holds a `node &`
+// and defers all dereferencing to call time, so they can be constructed before
+// the owning `node` finishes initialization.
+
 class node_message_sink final : public nano::transport::message_sink
 {
 public:
@@ -101,6 +102,72 @@ public:
 	void process_inbound (nano::messages::message const & msg, std::shared_ptr<nano::transport::channel> channel) override
 	{
 		n.inbound (msg, channel);
+	}
+
+private:
+	nano::node & n;
+};
+
+class node_peer_policy final : public nano::transport::peer_policy
+{
+public:
+	explicit node_peer_policy (nano::node & n) :
+		n{ n }
+	{
+	}
+
+	bool is_excluded (boost::asio::ip::address const & addr) override
+	{
+		return n.network.excluded_peers.check (addr);
+	}
+
+	bool is_not_a_peer (nano::endpoint const & endpoint) override
+	{
+		return n.network.not_a_peer (endpoint, n.config.allow_local_peers);
+	}
+
+	std::size_t bootstrap_count () override
+	{
+		return n.transport.tcp_listener.bootstrap_count ();
+	}
+
+	void random_fill (std::array<nano::endpoint, 8> & endpoints) override
+	{
+		n.network.random_fill (endpoints);
+	}
+
+private:
+	nano::node & n;
+};
+
+class node_connector final : public nano::transport::connector
+{
+public:
+	explicit node_connector (nano::node & n) :
+		n{ n }
+	{
+	}
+
+	bool connect (boost::asio::ip::address ip, std::uint16_t port) override
+	{
+		return n.transport.tcp_listener.connect (ip, port);
+	}
+
+private:
+	nano::node & n;
+};
+
+class node_channel_events final : public nano::transport::channel_events
+{
+public:
+	explicit node_channel_events (nano::node & n) :
+		n{ n }
+	{
+	}
+
+	void on_connected (std::shared_ptr<nano::transport::channel> channel) override
+	{
+		n.observers.channel_connected.notify (channel);
 	}
 
 private:
@@ -158,6 +225,9 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	config.bootstrap_bandwidth_burst_ratio }) },
 	outbound_limiter{ *outbound_limiter_impl },
 	message_sink_impl{ std::make_unique<node_message_sink> (*this) },
+	peer_policy_impl{ std::make_unique<node_peer_policy> (*this) },
+	connector_impl{ std::make_unique<node_connector> (*this) },
+	channel_events_impl{ std::make_unique<node_channel_events> (*this) },
 	transport_impl{ std::make_unique<nano::transport::transport_service> (
 	io_ctx,
 	network_params,
@@ -259,31 +329,16 @@ nano::node::node (std::shared_ptr<boost::asio::io_context> io_ctx_a, std::filesy
 	transport.ctx.vote_uniquer = &vote_uniquer;
 	transport.ctx.handshake = &network;
 	transport.ctx.message_sink = message_sink_impl.get ();
+	transport.ctx.peer_policy = peer_policy_impl.get ();
+	transport.ctx.connector = connector_impl.get ();
+	transport.ctx.channel_events = channel_events_impl.get ();
 	transport.ctx.flags.disable_tcp_realtime = flags.disable_tcp_realtime;
 	transport.ctx.flags.disable_bootstrap_listener = flags.disable_bootstrap_listener;
 	transport.ctx.flags.disable_max_peers_per_ip = flags.disable_max_peers_per_ip;
 	transport.ctx.flags.disable_max_peers_per_subnetwork = flags.disable_max_peers_per_subnetwork;
 	transport.ctx.flags.allow_local_peers = config.allow_local_peers;
-	transport.ctx.on_channel_connected = [this] (std::shared_ptr<nano::transport::channel> channel) {
-		observers.channel_connected.notify (channel);
-	};
-	transport.ctx.is_excluded = [this] (boost::asio::ip::address const & addr) {
-		return network.excluded_peers.check (addr);
-	};
-	transport.ctx.bootstrap_count = [this] () -> std::size_t {
-		return transport.tcp_listener.bootstrap_count ();
-	};
 	transport.ctx.create_channel = [this] (std::shared_ptr<nano::transport::tcp_socket> const & socket, std::shared_ptr<nano::transport::tcp_server> const & server, nano::account const & node_id, nano::node_capabilities_flags flags) {
 		return network.tcp_channels.create (socket, server, node_id, flags);
-	};
-	transport.ctx.connect = [this] (boost::asio::ip::address ip, uint16_t port) {
-		return transport.tcp_listener.connect (ip, port);
-	};
-	transport.ctx.random_fill = [this] (std::array<nano::endpoint, 8> & endpoints) {
-		network.random_fill (endpoints);
-	};
-	transport.ctx.is_not_a_peer = [this] (nano::endpoint const & endpoint) {
-		return network.not_a_peer (endpoint, config.allow_local_peers);
 	};
 
 	loopback_channel->set_node_id (node_id.pub);

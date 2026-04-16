@@ -1,6 +1,7 @@
 #include <nano/lib/formatting.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/transport/formatting.hpp>
+#include <nano/transport/ports.hpp>
 #include <nano/transport/tcp_channel.hpp>
 #include <nano/transport/tcp_channels.hpp>
 #include <nano/transport/tcp_server.hpp>
@@ -62,7 +63,7 @@ bool nano::transport::tcp_channels::check (const nano::tcp_endpoint & endpoint, 
 		return false; // Reject
 	}
 
-	if (ctx.is_not_a_peer (nano::transport::map_tcp_to_endpoint (endpoint)))
+	if (ctx.peer_policy->is_not_a_peer (nano::transport::map_tcp_to_endpoint (endpoint)))
 	{
 		ctx.stats.inc (nano::stat::type::tcp_channels_rejected, nano::stat::detail::not_a_peer);
 		ctx.logger.debug (nano::log::type::tcp_channels, "Rejected invalid endpoint channel: {}", endpoint);
@@ -132,7 +133,7 @@ std::shared_ptr<nano::transport::tcp_channel> nano::transport::tcp_channels::cre
 
 	lock.unlock ();
 
-	ctx.on_channel_connected (channel);
+	ctx.channel_events->on_connected (channel);
 
 	return channel;
 }
@@ -296,7 +297,7 @@ bool nano::transport::tcp_channels::track_reachout (nano::endpoint const & endpo
 	{
 		return false;
 	}
-	if (ctx.is_excluded (tcp_endpoint.address ()))
+	if (ctx.peer_policy->is_excluded (tcp_endpoint.address ()))
 	{
 		return false;
 	}
@@ -376,7 +377,7 @@ void nano::transport::tcp_channels::purge (std::chrono::steady_clock::time_point
 void nano::transport::tcp_channels::keepalive ()
 {
 	nano::messages::keepalive message{ ctx.network_params.network };
-	ctx.random_fill (message.peers);
+	ctx.peer_policy->random_fill (message.peers);
 
 	nano::unique_lock<nano::mutex> lock{ mutex };
 
@@ -452,7 +453,7 @@ std::deque<std::shared_ptr<nano::transport::channel>> nano::transport::tcp_chann
 
 bool nano::transport::tcp_channels::start_tcp (nano::endpoint const & endpoint)
 {
-	return ctx.connect (endpoint.address (), endpoint.port ());
+	return ctx.connector->connect (endpoint.address (), endpoint.port ());
 }
 
 auto nano::transport::tcp_channels::all_sockets () const -> std::deque<std::shared_ptr<tcp_socket>>
