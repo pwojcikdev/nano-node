@@ -301,3 +301,135 @@ TEST (handshake_driver, messages_received_counts)
 	(void)d.on_message (make_query_only ());
 	EXPECT_EQ (1, d.messages_received ());
 }
+
+// A message fed after the driver has already reached a terminal state should
+// not invoke the provider again and must produce an `already_terminal` abort.
+TEST (handshake_driver, on_message_after_terminal_is_abort)
+{
+	stub_handshake_provider provider;
+	// Begin with disable_tcp_realtime to force the driver into the terminal state.
+	handshake_driver d{ provider, test_net (), handshake_role::server, test_endpoint (), /*disable*/ true };
+	auto init = d.begin ();
+	ASSERT_TRUE (is_single<e::abort> (init));
+	ASSERT_TRUE (d.is_terminal ());
+
+	auto provider_calls_before = provider.prepare_query_calls + provider.prepare_response_calls + provider.verify_calls;
+	auto events = d.on_message (make_query_only ());
+	ASSERT_TRUE (is_single<e::abort> (events));
+	EXPECT_EQ ("already_terminal", std::get<e::abort> (events.front ()).reason);
+	// The driver must not consult the provider after going terminal.
+	auto provider_calls_after = provider.prepare_query_calls + provider.prepare_response_calls + provider.verify_calls;
+	EXPECT_EQ (provider_calls_before, provider_calls_after);
+	EXPECT_TRUE (d.is_terminal ());
+}
+
+// Client-side with disable_tcp_realtime must also abort during begin() and
+// must not request a query from the provider.
+TEST (handshake_driver, client_begin_aborts_when_realtime_disabled)
+{
+	stub_handshake_provider provider;
+	handshake_driver d{ provider, test_net (), handshake_role::client, test_endpoint (), /*disable*/ true };
+
+	auto events = d.begin ();
+	ASSERT_TRUE (is_single<e::abort> (events));
+	EXPECT_EQ ("realtime_disabled", std::get<e::abort> (events.front ()).reason);
+	EXPECT_TRUE (d.is_terminal ());
+	EXPECT_EQ (0, provider.prepare_query_calls);
+}
+
+// Client that receives just a response (no bundled query from the peer) must
+// verify-and-promote on the single message, without emitting send_response.
+TEST (handshake_driver, client_response_only_promotes)
+{
+	stub_handshake_provider provider;
+	nano::keypair peer;
+	provider.verify_result = true;
+	handshake_driver d{ provider, test_net (), handshake_role::client, test_endpoint () };
+	(void)d.begin ();
+
+	auto events = d.on_message (make_response_only (peer.pub));
+	ASSERT_TRUE (is_single<e::promote_realtime> (events));
+	EXPECT_EQ (peer.pub, std::get<e::promote_realtime> (events.front ()).peer_node_id);
+	EXPECT_TRUE (d.is_terminal ());
+	EXPECT_EQ (1, provider.verify_calls);
+	// Our own query was already sent in begin(); handling a response-only message
+	// must not ask the provider for a new query.
+	EXPECT_EQ (1, provider.prepare_query_calls);
+	EXPECT_EQ (0, provider.prepare_response_calls);
+}
+
+// Client that receives only a query (server did not bundle a response) must
+// send its response and then wait for a second message carrying the peer's
+// response. Verifies the two-step client recovery path.
+TEST (handshake_driver, client_query_only_then_response_completes)
+{
+	stub_handshake_provider provider;
+	nano::keypair peer;
+	provider.verify_result = true;
+	handshake_driver d{ provider, test_net (), handshake_role::client, test_endpoint () };
+	(void)d.begin ();
+
+	// First inbound: query only. Driver emits send_response and waits again.
+	auto first = d.on_message (make_query_only ());
+	ASSERT_EQ (2, first.size ());
+	EXPECT_TRUE (std::holds_alternative<e::send_response> (first.at (0)));
+	EXPECT_TRUE (std::holds_alternative<e::wait_for_message> (first.at (1)));
+	EXPECT_FALSE (d.is_terminal ());
+
+	// Second inbound: the peer's response. Driver must promote.
+	auto second = d.on_message (make_response_only (peer.pub));
+	ASSERT_TRUE (is_single<e::promote_realtime> (second));
+	EXPECT_EQ (peer.pub, std::get<e::promote_realtime> (second.front ()).peer_node_id);
+	EXPECT_TRUE (d.is_terminal ());
+	EXPECT_EQ (2, d.messages_received ());
+}
+
+// Receiving a combined query+response where verification fails must abort and
+// not also emit a bogus promotion event.
+TEST (handshake_driver, client_combined_aborts_on_invalid_verification)
+{
+	stub_handshake_provider provider;
+	nano::keypair peer;
+	provider.verify_result = false; // Force verification failure.
+	handshake_driver d{ provider, test_net (), handshake_role::client, test_endpoint () };
+	(void)d.begin ();
+
+	auto events = d.on_message (make_query_plus_response (peer.pub));
+	// Driver must still acknowledge the peer's query (send_response) but then abort
+	// instead of promoting.
+	ASSERT_EQ (2, events.size ());
+	EXPECT_TRUE (std::holds_alternative<e::send_response> (events.at (0)));
+	ASSERT_TRUE (std::holds_alternative<e::abort> (events.at (1)));
+	EXPECT_EQ ("invalid_response", std::get<e::abort> (events.at (1)).reason);
+	EXPECT_TRUE (d.is_terminal ());
+}
+
+// The abort-reason tag is consumed by stats and logs — lock it in so accidental
+// renames are caught by unit tests rather than downstream dashboards.
+TEST (handshake_driver, abort_reason_strings_are_stable)
+{
+	stub_handshake_provider provider;
+	{
+		handshake_driver d{ provider, test_net (), handshake_role::server, test_endpoint (), /*disable*/ true };
+		EXPECT_EQ ("realtime_disabled", std::get<e::abort> (d.begin ().front ()).reason);
+	}
+	{
+		handshake_driver d{ provider, test_net (), handshake_role::server, test_endpoint () };
+		(void)d.begin ();
+		nano::messages::node_id_handshake empty{ test_net (), std::nullopt, std::nullopt };
+		EXPECT_EQ ("empty_handshake", std::get<e::abort> (d.on_message (empty).front ()).reason);
+	}
+	{
+		handshake_driver d{ provider, test_net (), handshake_role::server, test_endpoint () };
+		(void)d.begin ();
+		(void)d.on_message (make_query_only ());
+		EXPECT_EQ ("multiple_queries", std::get<e::abort> (d.on_message (make_query_only ()).front ()).reason);
+	}
+	{
+		provider.verify_result = false;
+		handshake_driver d{ provider, test_net (), handshake_role::server, test_endpoint () };
+		(void)d.begin ();
+		(void)d.on_message (make_query_only ());
+		EXPECT_EQ ("invalid_response", std::get<e::abort> (d.on_message (make_response_only ()).front ()).reason);
+	}
+}
