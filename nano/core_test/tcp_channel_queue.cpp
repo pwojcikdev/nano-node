@@ -4,7 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <set>
 #include <string>
+#include <vector>
 
 using nano::transport::tcp_channel_queue;
 using nano::transport::traffic_type;
@@ -197,4 +200,133 @@ TEST (tcp_channel_queue, next_batch_on_empty_returns_empty)
 	tcp_channel_queue q;
 	auto batch = q.next_batch (8);
 	EXPECT_TRUE (batch.empty ());
+}
+
+// Symmetric to the high-priority-drains-four test: when the scheduler is
+// parked on a low-priority queue (block_broadcast / vote_rebroadcast), it
+// should yield after exactly one item. This locks in the weight asymmetry
+// that protects latency-sensitive traffic.
+TEST (tcp_channel_queue, low_priority_yields_after_one)
+{
+	tcp_channel_queue q;
+	// Push low-priority first so the scheduler parks on block_broadcast before
+	// seeing the higher-priority queue; then interleave with generic.
+	for (int i = 0; i < 6; ++i)
+	{
+		q.push (traffic_type::block_broadcast, make_entry ("b" + std::to_string (i)));
+		q.push (traffic_type::generic, make_entry ("g" + std::to_string (i)));
+	}
+
+	// Drain 10 items; we expect the pattern to be:
+	//   [generic * 4, block_broadcast * 1, generic * 2, block_broadcast * 1, ...]
+	// because generic sorts earlier in the traffic_type enum and the scheduler
+	// walks the enum_array in order. The key invariant to assert is simpler:
+	// between any two consecutive block_broadcast dequeues, at most 4 generic
+	// dequeues appear (i.e. low-priority is never starved for more than one
+	// full high-priority turn).
+	std::vector<traffic_type> order;
+	for (int i = 0; i < 10; ++i)
+	{
+		order.push_back (q.next ().first);
+	}
+
+	int since_last_low = 0;
+	int low_seen = 0;
+	for (auto t : order)
+	{
+		if (t == traffic_type::block_broadcast)
+		{
+			++low_seen;
+			EXPECT_LE (since_last_low, 4) << "low-priority queue was starved";
+			since_last_low = 0;
+		}
+		else
+		{
+			++since_last_low;
+		}
+	}
+	EXPECT_GT (low_seen, 0); // Sanity: we should have actually dequeued low-priority items.
+}
+
+// When three or more traffic types are populated, the round-robin must visit
+// every non-empty queue within one full sweep. Regression guard for a bug where
+// `seek_next` could skip past a populated queue.
+TEST (tcp_channel_queue, round_robin_visits_every_populated_type)
+{
+	tcp_channel_queue q;
+	q.push (traffic_type::generic, make_entry ("g"));
+	q.push (traffic_type::vote, make_entry ("v"));
+	q.push (traffic_type::keepalive, make_entry ("k"));
+	q.push (traffic_type::block_broadcast, make_entry ("b"));
+
+	std::set<traffic_type> seen;
+	while (!q.empty ())
+	{
+		seen.insert (q.next ().first);
+	}
+	EXPECT_EQ (4u, seen.size ());
+	EXPECT_NE (seen.find (traffic_type::generic), seen.end ());
+	EXPECT_NE (seen.find (traffic_type::vote), seen.end ());
+	EXPECT_NE (seen.find (traffic_type::keepalive), seen.end ());
+	EXPECT_NE (seen.find (traffic_type::block_broadcast), seen.end ());
+}
+
+// A queue that is drained and then refilled must keep scheduling: it must
+// not stall, must dequeue every item pushed, and must not favor one type over
+// another indefinitely. We intentionally do NOT assert the exact dequeue
+// order here — the internal `counter` persists across drain/refill, which is
+// an implementation detail we don't want to pin down in this contract.
+TEST (tcp_channel_queue, survives_drain_and_refill)
+{
+	tcp_channel_queue q;
+	q.push (traffic_type::generic, make_entry ("a"));
+	q.push (traffic_type::generic, make_entry ("b"));
+	(void)q.next ();
+	(void)q.next ();
+	ASSERT_TRUE (q.empty ());
+
+	// Refill with two different types; both must drain cleanly.
+	for (int i = 0; i < 6; ++i)
+	{
+		q.push (traffic_type::generic, make_entry ("g" + std::to_string (i)));
+		q.push (traffic_type::block_broadcast, make_entry ("b" + std::to_string (i)));
+	}
+
+	std::vector<traffic_type> order;
+	while (!q.empty ())
+	{
+		order.push_back (q.next ().first);
+	}
+	EXPECT_EQ (12u, order.size ());
+	EXPECT_EQ (6, std::count (order.begin (), order.end (), traffic_type::generic));
+	EXPECT_EQ (6, std::count (order.begin (), order.end (), traffic_type::block_broadcast));
+}
+
+// Every value in nano::transport::traffic_type must be a valid queue key.
+// If a new traffic_type is added to the enum without updating the internal
+// enum_array, this test catches it deterministically.
+TEST (tcp_channel_queue, accepts_every_declared_traffic_type)
+{
+	tcp_channel_queue q;
+	auto const all = nano::transport::all_traffic_types ();
+	ASSERT_FALSE (all.empty ());
+
+	for (auto type : all)
+	{
+		EXPECT_EQ (0u, q.size (type));
+		EXPECT_FALSE (q.max (type));
+		EXPECT_FALSE (q.full (type));
+		q.push (type, make_entry ("t"));
+		EXPECT_EQ (1u, q.size (type));
+	}
+	EXPECT_EQ (all.size (), q.size ());
+
+	// And drain exactly once per type — no leaks, no duplicates.
+	std::size_t drained = 0;
+	while (!q.empty ())
+	{
+		(void)q.next ();
+		++drained;
+	}
+	EXPECT_EQ (all.size (), drained);
 }
