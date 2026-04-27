@@ -75,14 +75,25 @@ public:
 	std::vector<nano::account> accounts (nano::store::transaction const &) const;
 	bool rekey (nano::store::write_transaction const &, std::string const & password);
 	bool valid_password (nano::store::transaction const &) const;
+	// Verify that `cipher` still matches this wallet's encrypted state under `transaction`.
+	bool valid_password (nano::store::transaction const &, nano::wallet::wallet_cipher const & cipher) const;
 	bool valid_public_key (nano::public_key const &) const;
 	bool attempt_password (nano::store::transaction const &, std::string const & password);
-	nano::raw_key seed (nano::store::transaction const &) const;
-	void seed_set (nano::store::write_transaction const &, nano::raw_key const & seed);
+	// Cipher-explicit overloads: callers that already have a validated cipher pass it in;
+	// the function debug_asserts cipher validity and returns the concrete type without an error path.
+	// Self-unlocking overloads: do unlock() internally and return nano::result<T> with wallet_locked
+	// on failure.
+	nano::raw_key seed (nano::store::transaction const &, nano::wallet::wallet_cipher const & cipher) const;
+	nano::result<nano::raw_key> seed (nano::store::transaction const &) const;
+	void seed_set (nano::store::write_transaction const &, nano::wallet::wallet_cipher const & cipher, nano::raw_key const & seed);
+	nano::result<void> seed_set (nano::store::write_transaction const &, nano::raw_key const & seed);
 	nano::wallet::key_type key_type (nano::wallet::wallet_value const &) const;
-	nano::public_key deterministic_insert (nano::store::write_transaction const &);
-	nano::public_key deterministic_insert (nano::store::write_transaction const &, uint32_t index);
-	nano::raw_key deterministic_key (nano::store::transaction const &, uint32_t index) const;
+	nano::public_key deterministic_insert (nano::store::write_transaction const &, nano::wallet::wallet_cipher const & cipher);
+	nano::result<nano::public_key> deterministic_insert (nano::store::write_transaction const &);
+	nano::public_key deterministic_insert (nano::store::write_transaction const &, nano::wallet::wallet_cipher const & cipher, uint32_t index);
+	nano::result<nano::public_key> deterministic_insert (nano::store::write_transaction const &, uint32_t index);
+	nano::raw_key deterministic_key (nano::store::transaction const &, nano::wallet::wallet_cipher const & cipher, uint32_t index) const;
+	nano::result<nano::raw_key> deterministic_key (nano::store::transaction const &, uint32_t index) const;
 	uint32_t deterministic_index_get (nano::store::transaction const &) const;
 	void deterministic_index_set (nano::store::write_transaction const &, uint32_t index);
 	void deterministic_clear (nano::store::write_transaction const &);
@@ -91,11 +102,13 @@ public:
 	bool is_representative (nano::store::transaction const &) const;
 	nano::account representative (nano::store::transaction const &) const;
 	void representative_set (nano::store::write_transaction const &, nano::account const & rep);
-	nano::public_key insert_adhoc (nano::store::write_transaction const &, nano::raw_key const & prv);
+	nano::public_key insert_adhoc (nano::store::write_transaction const &, nano::wallet::wallet_cipher const & cipher, nano::raw_key const & prv);
+	nano::result<nano::public_key> insert_adhoc (nano::store::write_transaction const &, nano::raw_key const & prv);
 	bool insert_watch (nano::store::write_transaction const &, nano::account const & pub);
 	void erase (nano::store::write_transaction const &, nano::account const & pub);
 	nano::wallet::wallet_value entry_get_raw (nano::store::transaction const &, nano::account const & pub) const;
 	void entry_put_raw (nano::store::write_transaction const &, nano::account const & pub, nano::wallet::wallet_value const & entry);
+	nano::result<nano::raw_key> fetch (nano::store::transaction const &, nano::wallet::wallet_cipher const & cipher, nano::account const & pub) const;
 	nano::result<nano::raw_key> fetch (nano::store::transaction const &, nano::account const & pub) const;
 	bool exists (nano::store::transaction const &, nano::account const & pub) const;
 	void destroy (nano::store::write_transaction const &);
@@ -234,14 +247,14 @@ private:
 	// Internal implementation methods (accept transactions for batching scenarios)
 	bool enter_password_impl (nano::store::transaction const &, std::string const & password);
 	bool insert_watch_impl (nano::store::write_transaction const &, nano::public_key const & pub);
-	nano::public_key deterministic_insert_impl (nano::store::write_transaction const &, bool generate_work = true);
-	nano::public_key deterministic_insert_impl (nano::store::write_transaction const &, uint32_t index, bool generate_work = true);
+	nano::public_key deterministic_insert_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const & cipher, bool generate_work = true);
+	nano::public_key deterministic_insert_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const & cipher, uint32_t index, bool generate_work = true);
 	void work_update_impl (nano::store::write_transaction const &, nano::account const & account, nano::root const & root, uint64_t work);
 	bool search_receivable_impl (nano::store::transaction const &);
 	void init_free_accounts_impl (nano::store::transaction const &);
-	uint32_t deterministic_check_impl (nano::store::transaction const &, uint32_t index);
-	nano::public_key change_seed_impl (nano::store::write_transaction const &, nano::raw_key const & seed, uint32_t count = 0);
-	void deterministic_restore_impl (nano::store::write_transaction const &);
+	uint32_t deterministic_check_impl (nano::store::transaction const &, nano::wallet::wallet_cipher const & cipher, uint32_t index);
+	nano::public_key change_seed_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const & cipher, nano::raw_key const & seed, uint32_t count = 0);
+	void deterministic_restore_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const & cipher);
 
 private:
 	nano::locked<std::unordered_set<nano::account>> representatives;
