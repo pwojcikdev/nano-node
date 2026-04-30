@@ -25,6 +25,7 @@ class pending_view;
 class pruned_view;
 class successor_view;
 class rep_weight_view;
+class topology_view;
 
 using version_view = nano::store::meta_view;
 }

@@ -28,6 +28,7 @@
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/lmdb/backend_lmdb.hpp>
 #include <nano/store/rocksdb/backend_rocksdb.hpp>
@@ -6673,4 +6674,32 @@ TEST (ledger, block_find_root_hash_account_collision)
 	auto result2 = ledger.block_find (txn, epoch_open->hash (), nano::root (send1->hash ()));
 	ASSERT_NE (nullptr, result2);
 	ASSERT_EQ (*result2, *epoch_open);
+}
+
+// `has_topo_index()` is read once at ledger construction and held immutable for
+// the process lifetime; subsequent flag flips only take effect on the next ctor.
+TEST (ledger, topo_index_flag_loaded_once_at_construction)
+{
+	nano::logger logger;
+	nano::stats stats{ logger };
+	auto store = nano::test::make_store (logger, stats);
+
+	{
+		// Fresh ledger: `ledger_store::initialize` sets the flag → loaded as true.
+		nano::ledger ledger (*store, nano::dev::network_params, stats, logger);
+		ASSERT_TRUE (ledger.flags.topo_index);
+
+		// Flipping the flag while the ledger is alive does NOT mutate the cached value.
+		{
+			auto txn = store->tx_begin_write ();
+			store->version.put_flag (txn, nano::store::meta_key::topo_index_enabled, false);
+		}
+		ASSERT_TRUE (ledger.flags.topo_index);
+	}
+
+	// A subsequently-constructed ledger picks up the new value.
+	{
+		nano::ledger ledger (*store, nano::dev::network_params, stats, logger);
+		ASSERT_FALSE (ledger.flags.topo_index);
+	}
 }

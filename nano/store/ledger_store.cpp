@@ -18,6 +18,7 @@
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
 #include <nano/store/ledger/successor.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 
@@ -34,6 +35,7 @@ nano::store::column_schema const ledger_store::schema_current{
 	{ nano::store::table::peers, "peers" },
 	{ nano::store::table::confirmation_height, "confirmation_height" },
 	{ nano::store::table::final_votes, "final_votes" },
+	{ nano::store::table::topology, "topology" },
 	{ nano::store::table::meta, "meta" }
 };
 }
@@ -54,6 +56,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	peer_impl{ std::make_unique<nano::store::ledger::peer_view> (*backend_impl) },
 	confirmation_height_impl{ std::make_unique<nano::store::ledger::confirmation_height_view> (*backend_impl) },
 	final_vote_impl{ std::make_unique<nano::store::ledger::final_vote_view> (*backend_impl) },
+	topology_impl{ std::make_unique<nano::store::ledger::topology_view> (*backend_impl) },
 	version_impl{ std::make_unique<nano::store::ledger::version_view> (*backend_impl) },
 	backend{ *backend_impl },
 	successor{ *successor_impl },
@@ -66,6 +69,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	peer{ *peer_impl },
 	confirmation_height{ *confirmation_height_impl },
 	final_vote{ *final_vote_impl },
+	topology{ *topology_impl },
 	version{ *version_impl }
 {
 	// Skip automatic open/upgrade when defer_open is set (used for testing individual upgrades)
@@ -167,6 +171,10 @@ void ledger_store::initialize (nano::store::write_transaction const & txn, nano:
 	confirmation_height.put (txn, constants.genesis->account (), nano::confirmation_height_info{ 1, constants.genesis->hash () });
 	account.put (txn, constants.genesis->account (), { constants.genesis->hash (), constants.genesis->account (), constants.genesis->hash (), std::numeric_limits<nano::uint128_t>::max (), nano::seconds_since_epoch (), 1, nano::epoch::epoch_0 });
 	rep_weight.put (txn, constants.genesis->account (), std::numeric_limits<nano::uint128_t>::max ());
+	topology.put (txn, { 1, constants.genesis->hash () });
+
+	version.put_flag (txn, nano::store::meta_key::topo_index_enabled, true);
+	version.put_version (txn, version_current);
 }
 
 bool ledger_store::empty (nano::store::transaction const & txn) const

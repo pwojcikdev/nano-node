@@ -11,6 +11,7 @@ namespace nano::store
 enum class meta_key : uint64_t
 {
 	version = 1,
+	topo_index_enabled = 8,
 };
 
 class meta_view

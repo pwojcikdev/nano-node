@@ -37,6 +37,11 @@ private:
 	std::atomic<uint64_t> account_count{ 0 };
 };
 
+struct ledger_flags
+{
+	bool topo_index{ false };
+};
+
 class ledger final
 {
 	template <typename T>
@@ -127,6 +132,7 @@ public:
 	nano::logger & logger;
 
 public:
+	nano::ledger_flags flags;
 	nano::ledger_cache cache;
 	nano::rep_weights rep_weights;
 

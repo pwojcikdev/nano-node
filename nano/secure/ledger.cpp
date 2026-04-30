@@ -27,6 +27,7 @@
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 
@@ -85,6 +86,14 @@ void nano::ledger::initialize (nano::generate_cache_flags const & generate_cache
 		logger.info (nano::log::type::ledger, "Initializing ledger with genesis block: {}", constants.genesis->hash ());
 		auto const transaction = store.tx_begin_write ();
 		store.initialize (transaction, constants);
+	}
+
+	// Load ledger flags
+	{
+		auto const transaction = store.tx_begin_read ();
+		flags.topo_index = store.version.get_flag (transaction, nano::store::meta_key::topo_index_enabled);
+
+		logger.debug (nano::log::type::ledger, "Ledger flags loaded: topo_index={}", flags.topo_index);
 	}
 
 	if (generate_cache_flags.account_count || generate_cache_flags.block_count)

@@ -25,6 +25,7 @@
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/successor.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
 #include <nano/store/lmdb/backend_lmdb.hpp>
@@ -114,38 +115,6 @@ TEST (block_store, sideband_serialization)
 	ASSERT_EQ (sideband1.height, sideband2.height);
 	ASSERT_EQ (sideband1.timestamp, sideband2.timestamp);
 	ASSERT_EQ (sideband1.topo_height, sideband2.topo_height);
-}
-
-TEST (block_store, topo_key_round_trip)
-{
-	nano::topo_key key1{ 12345, nano::block_hash{ 42 } };
-	nano::store::db_val val{ key1 };
-	auto key2 = static_cast<nano::topo_key> (val);
-	ASSERT_EQ (key1.topo_height, key2.topo_height);
-	ASSERT_EQ (key1.hash, key2.hash);
-	ASSERT_EQ (key1, key2);
-}
-
-// Lexicographic byte order must match numeric order of topo_height (big-endian encoding),
-// otherwise DB-level forward iteration would not yield blocks in topological order.
-TEST (block_store, topo_key_ordering)
-{
-	nano::topo_key a{ 1, nano::block_hash{ 100 } };
-	nano::topo_key b{ 1, nano::block_hash{ 200 } };
-	nano::topo_key c{ 2, nano::block_hash{ 50 } };
-	ASSERT_LT (a, b);
-	ASSERT_LT (a, c);
-	ASSERT_LT (b, c);
-
-	nano::store::db_val a_val{ a };
-	nano::store::db_val b_val{ b };
-	nano::store::db_val c_val{ c };
-	auto bytes = [] (nano::store::db_val const & v) {
-		return std::span<uint8_t const>{ static_cast<uint8_t const *> (v.data ()), v.size () };
-	};
-	ASSERT_TRUE (std::lexicographical_compare (bytes (a_val).begin (), bytes (a_val).end (), bytes (b_val).begin (), bytes (b_val).end ()));
-	ASSERT_TRUE (std::lexicographical_compare (bytes (a_val).begin (), bytes (a_val).end (), bytes (c_val).begin (), bytes (c_val).end ()));
-	ASSERT_TRUE (std::lexicographical_compare (bytes (b_val).begin (), bytes (b_val).end (), bytes (c_val).begin (), bytes (c_val).end ()));
 }
 
 TEST (block_store, add_item)
@@ -1316,6 +1285,140 @@ TEST (block_store, final_vote)
 		store->final_vote.del (transaction, qualified_root);
 	}
 	ASSERT_TRUE (store->final_vote.empty (store->tx_begin_read ()));
+}
+
+TEST (block_store, topo_key_round_trip)
+{
+	nano::topo_key key1{ 12345, nano::block_hash{ 42 } };
+	nano::store::db_val val{ key1 };
+	auto key2 = static_cast<nano::topo_key> (val);
+	ASSERT_EQ (key1.topo_height, key2.topo_height);
+	ASSERT_EQ (key1.hash, key2.hash);
+	ASSERT_EQ (key1, key2);
+}
+
+// Lexicographic byte order must match numeric order of topo_height (big-endian encoding),
+// otherwise DB-level forward iteration would not yield blocks in topological order.
+TEST (block_store, topo_key_ordering)
+{
+	nano::topo_key a{ 1, nano::block_hash{ 100 } };
+	nano::topo_key b{ 1, nano::block_hash{ 200 } };
+	nano::topo_key c{ 2, nano::block_hash{ 50 } };
+	ASSERT_LT (a, b);
+	ASSERT_LT (a, c);
+	ASSERT_LT (b, c);
+
+	nano::store::db_val a_val{ a };
+	nano::store::db_val b_val{ b };
+	nano::store::db_val c_val{ c };
+	auto bytes = [] (nano::store::db_val const & v) {
+		return std::span<uint8_t const>{ static_cast<uint8_t const *> (v.data ()), v.size () };
+	};
+	ASSERT_TRUE (std::lexicographical_compare (bytes (a_val).begin (), bytes (a_val).end (), bytes (b_val).begin (), bytes (b_val).end ()));
+	ASSERT_TRUE (std::lexicographical_compare (bytes (a_val).begin (), bytes (a_val).end (), bytes (c_val).begin (), bytes (c_val).end ()));
+	ASSERT_TRUE (std::lexicographical_compare (bytes (b_val).begin (), bytes (b_val).end (), bytes (c_val).begin (), bytes (c_val).end ()));
+}
+
+TEST (block_store, topology_view_put_exists_del)
+{
+	auto store = nano::test::make_store ();
+	nano::block_hash hash_a{ 100 };
+	nano::block_hash hash_b{ 200 };
+
+	{
+		auto txn = store->tx_begin_read ();
+		ASSERT_FALSE (store->topology.exists (txn, { 1, hash_a }));
+		ASSERT_EQ (0, store->topology.count (txn));
+	}
+	{
+		auto txn = store->tx_begin_write ();
+		store->topology.put (txn, { 1, hash_a });
+		store->topology.put (txn, { 2, hash_b });
+	}
+	{
+		auto txn = store->tx_begin_read ();
+		ASSERT_TRUE (store->topology.exists (txn, { 1, hash_a }));
+		ASSERT_TRUE (store->topology.exists (txn, { 2, hash_b }));
+		ASSERT_FALSE (store->topology.exists (txn, { 1, hash_b }));
+		ASSERT_FALSE (store->topology.exists (txn, { 2, hash_a }));
+		ASSERT_EQ (2, store->topology.count (txn));
+	}
+	{
+		auto txn = store->tx_begin_write ();
+		store->topology.del (txn, { 1, hash_a });
+	}
+	{
+		auto txn = store->tx_begin_read ();
+		ASSERT_FALSE (store->topology.exists (txn, { 1, hash_a }));
+		ASSERT_TRUE (store->topology.exists (txn, { 2, hash_b }));
+		ASSERT_EQ (1, store->topology.count (txn));
+	}
+}
+
+// Forward iteration must yield entries ordered by (topo_height, hash)
+TEST (block_store, topology_view_iteration_ordered_by_topo_height)
+{
+	auto store = nano::test::make_store ();
+	std::vector<nano::topo_key> inserted;
+	inserted.emplace_back (3, nano::block_hash{ 50 });
+	inserted.emplace_back (1, nano::block_hash{ 200 });
+	inserted.emplace_back (2, nano::block_hash{ 30 });
+	inserted.emplace_back (1, nano::block_hash{ 100 });
+	inserted.emplace_back (2, nano::block_hash{ 500 });
+
+	{
+		auto txn = store->tx_begin_write ();
+		for (auto const & key : inserted)
+		{
+			store->topology.put (txn, key);
+		}
+	}
+
+	auto txn = store->tx_begin_read ();
+	std::vector<nano::topo_key> seen;
+	for (auto i = store->topology.begin (txn), end = store->topology.end (txn); i != end; ++i)
+	{
+		seen.push_back (i->first);
+	}
+	ASSERT_EQ (inserted.size (), seen.size ());
+	ASSERT_TRUE (std::is_sorted (seen.begin (), seen.end ()));
+
+	// `latest()` returns the highest topo_height (last entry by sort order).
+	ASSERT_EQ (3, store->topology.latest (txn));
+
+	// Seeking to an exact (topo_height, hash) yields that entry first.
+	auto seek = store->topology.begin (txn, nano::topo_key{ 2, nano::block_hash{ 30 } });
+	ASSERT_EQ (nano::topo_key (2, nano::block_hash{ 30 }), seek->first);
+
+	// Seeking to just `topo_height` lands on the first hash at that height.
+	auto seek_height = store->topology.begin (txn, 2);
+	ASSERT_EQ (2u, seek_height->first.topo_height);
+	ASSERT_EQ (nano::block_hash{ 30 }, seek_height->first.hash);
+}
+
+TEST (block_store, topology_view_clear)
+{
+	auto store = nano::test::make_store ();
+
+	{
+		auto txn = store->tx_begin_write ();
+		store->topology.put (txn, { 1, nano::block_hash{ 1 } });
+		store->topology.put (txn, { 2, nano::block_hash{ 2 } });
+		store->topology.put (txn, { 3, nano::block_hash{ 3 } });
+	}
+	store->topology.clear ();
+	{
+		auto txn = store->tx_begin_read ();
+		ASSERT_EQ (0, store->topology.count (txn));
+		ASSERT_FALSE (store->topology.latest (txn).has_value ());
+	}
+}
+
+TEST (block_store, topology_view_latest_empty)
+{
+	auto store = nano::test::make_store ();
+	auto txn = store->tx_begin_read ();
+	ASSERT_FALSE (store->topology.latest (txn).has_value ());
 }
 
 TEST (block_store, reset_renew_existing_transaction)
