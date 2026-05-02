@@ -27,5 +27,8 @@ public:
 
 private:
 	bool validate_epoch_block (nano::state_block const & block);
+
+	// Returns 1 + max(deps' topo_height) or 0 (unindexed sentinel) when the index is disabled or any dependency is itself unindexed
+	uint64_t topology_height (std::shared_ptr<nano::block> const & dep1, std::shared_ptr<nano::block> const & dep2 = nullptr) const;
 };
 }

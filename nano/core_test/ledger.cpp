@@ -6676,30 +6676,491 @@ TEST (ledger, block_find_root_hash_account_collision)
 	ASSERT_EQ (*result2, *epoch_open);
 }
 
-// `has_topo_index()` is read once at ledger construction and held immutable for
-// the process lifetime; subsequent flag flips only take effect on the next ctor.
-TEST (ledger, topo_index_flag_loaded_once_at_construction)
+/*
+ * A freshly-initialized ledger must have `topo_index` enabled, and the flag
+ * must survive closing and reopening the store
+ */
+TEST (ledger, topo_index_flag_persists)
+{
+	nano::logger logger;
+	nano::stats stats{ logger };
+	auto const path = nano::unique_path ();
+
+	// Ledger initialization should create the store with topo_index enabled
+	{
+		auto store = nano::test::make_store (logger, stats, path);
+		nano::ledger ledger{ *store, nano::dev::network_params, stats, logger };
+		ASSERT_TRUE (ledger.flags.topo_index);
+	}
+	// Reopen store and ledger, confirm flag is still set
+	{
+		auto store = nano::test::make_store (logger, stats, path);
+		nano::ledger ledger{ *store, nano::dev::network_params, stats, logger };
+		ASSERT_TRUE (ledger.flags.topo_index);
+	}
+}
+
+/*
+ * Genesis block must carry topo_height = 1 in its sideband and have a topology entry.
+ * Every subsequently-processed block must satisfy topo_height = 1 + max(deps' topo_height)
+ * and have a matching entry in the topology table.
+ */
+TEST (ledger, topo_height_legacy_chain)
+{
+	auto ctx = nano::test::ledger_empty ();
+	auto & ledger = ctx.ledger ();
+	auto & store = ctx.store ();
+	ASSERT_TRUE (ledger.flags.topo_index);
+
+	// Genesis was loaded by `ledger_store::initialize`
+	// Confirm both the sideband value and the matching topology row
+	{
+		auto txn = ledger.tx_begin_read ();
+		auto genesis = ledger.any.block_get (txn, nano::dev::genesis->hash ());
+		ASSERT_TRUE (genesis);
+		ASSERT_EQ (1, genesis->sideband ().topo_height);
+		ASSERT_TRUE (store.topology.exists (txn, { 1, nano::dev::genesis->hash () }));
+	}
+
+	auto txn = ledger.tx_begin_write ();
+	auto & pool = ctx.pool ();
+	auto info1 = ledger.any.account_get (txn, nano::dev::genesis_key.pub);
+	ASSERT_TRUE (info1);
+	nano::keypair key2;
+	nano::block_builder builder;
+
+	// Genesis → send. dep is genesis (topo=1) → send.topo = 2
+	auto send = builder.send ()
+				.previous (info1->head)
+				.destination (key2.pub)
+				.balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*pool.generate (info1->head))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send));
+	ASSERT_EQ (2, send->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 2, send->hash () }));
+
+	// Open is a pure receive: dep is the send (topo=2) → open.topo = 3
+	auto open = builder.open ()
+				.source (send->hash ())
+				.representative (key2.pub)
+				.account (key2.pub)
+				.sign (key2.prv, key2.pub)
+				.work (*pool.generate (key2.pub))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, open));
+	ASSERT_EQ (3, open->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 3, open->hash () }));
+
+	// A second genesis send → dep is the first send (topo=2) → send2.topo = 3
+	auto send2 = builder.send ()
+				 .previous (send->hash ())
+				 .destination (key2.pub)
+				 .balance (nano::dev::constants.genesis_amount - 2 * nano::Knano_ratio)
+				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				 .work (*pool.generate (send->hash ()))
+				 .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send2));
+	ASSERT_EQ (3, send2->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 3, send2->hash () }));
+
+	// Receive on key2 has two deps: previous = open (topo=3), source = send2 (topo=3) -> receive.topo = max(3, 3) + 1 = 4
+	auto receive = builder.receive ()
+				   .previous (open->hash ())
+				   .source (send2->hash ())
+				   .sign (key2.prv, key2.pub)
+				   .work (*pool.generate (open->hash ()))
+				   .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, receive));
+	ASSERT_EQ (4, receive->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 4, receive->hash () }));
+
+	// Change on key2's chain: only dep is previous = receive (topo=4) → topo = 5
+	nano::keypair key3;
+	auto change = builder.change ()
+				  .previous (receive->hash ())
+				  .representative (key3.pub)
+				  .sign (key2.prv, key2.pub)
+				  .work (*pool.generate (receive->hash ()))
+				  .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, change));
+	ASSERT_EQ (5, change->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 5, change->hash () }));
+}
+
+/*
+ * State blocks must carry topo_height computed over their dependencies.
+ * For send/change subtypes only `previous` is a dep;
+ * For receive subtypes (including state open) both `previous` and `link` are deps.
+ */
+TEST (ledger, topo_height_state_blocks)
+{
+	auto ctx = nano::test::ledger_empty ();
+	auto & ledger = ctx.ledger ();
+	auto & store = ctx.store ();
+	ASSERT_TRUE (ledger.flags.topo_index);
+
+	auto txn = ledger.tx_begin_write ();
+	auto & pool = ctx.pool ();
+	nano::keypair key2;
+	nano::block_builder builder;
+
+	// State send from genesis. dep is genesis (topo=1) → topo = 2
+	auto send = builder.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
+				.link (key2.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*pool.generate (nano::dev::genesis->hash ()))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send));
+	ASSERT_EQ (2, send->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 2, send->hash () }));
+
+	// State open (receive subtype, no previous). dep is the send (topo=2) → topo = 3
+	auto open = builder.state ()
+				.account (key2.pub)
+				.previous (0)
+				.representative (key2.pub)
+				.balance (nano::Knano_ratio)
+				.link (send->hash ())
+				.sign (key2.prv, key2.pub)
+				.work (*pool.generate (key2.pub))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, open));
+	ASSERT_EQ (3, open->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 3, open->hash () }));
+
+	// Second state send from genesis. dep is the first send (topo=2) → topo = 3
+	auto send2 = builder.state ()
+				 .account (nano::dev::genesis_key.pub)
+				 .previous (send->hash ())
+				 .representative (nano::dev::genesis_key.pub)
+				 .balance (nano::dev::constants.genesis_amount - 2 * nano::Knano_ratio)
+				 .link (key2.pub)
+				 .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				 .work (*pool.generate (send->hash ()))
+				 .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send2));
+	ASSERT_EQ (3, send2->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 3, send2->hash () }));
+
+	// State receive on key2 (mid-chain)
+	// two deps: previous = open (topo=3), link source = send2 (topo=3). Result is max(3, 3) + 1 = 4
+	auto receive = builder.state ()
+				   .account (key2.pub)
+				   .previous (open->hash ())
+				   .representative (key2.pub)
+				   .balance (2 * nano::Knano_ratio)
+				   .link (send2->hash ())
+				   .sign (key2.prv, key2.pub)
+				   .work (*pool.generate (open->hash ()))
+				   .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, receive));
+	ASSERT_EQ (4, receive->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 4, receive->hash () }));
+
+	// State change on key2 (no balance change, link == 0)
+	// Only dep is previous = receive (topo=4) → topo = 5
+	nano::keypair key3;
+	auto change = builder.state ()
+				  .account (key2.pub)
+				  .previous (receive->hash ())
+				  .representative (key3.pub)
+				  .balance (2 * nano::Knano_ratio)
+				  .link (0)
+				  .sign (key2.prv, key2.pub)
+				  .work (*pool.generate (receive->hash ()))
+				  .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, change));
+	ASSERT_EQ (5, change->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 5, change->hash () }));
+}
+
+/*
+ * Rollback must remove the topology entry
+ */
+TEST (ledger, topo_height_rollback_removes_topology_entry)
+{
+	auto ctx = nano::test::ledger_empty ();
+	auto & ledger = ctx.ledger ();
+	auto & store = ctx.store ();
+	ASSERT_TRUE (ledger.flags.topo_index);
+
+	auto txn = ledger.tx_begin_write ();
+	auto & pool = ctx.pool ();
+	auto info1 = ledger.any.account_get (txn, nano::dev::genesis_key.pub);
+	ASSERT_TRUE (info1);
+	nano::keypair key2;
+	nano::block_builder builder;
+
+	auto send = builder.send ()
+				.previous (info1->head)
+				.destination (key2.pub)
+				.balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*pool.generate (info1->head))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send));
+	auto const send_topo = send->sideband ().topo_height;
+	ASSERT_EQ (2, send_topo);
+	ASSERT_TRUE (store.topology.exists (txn, { send_topo, send->hash () }));
+
+	ASSERT_FALSE (ledger.rollback (txn, send->hash ()));
+	ASSERT_FALSE (store.topology.exists (txn, { send_topo, send->hash () }));
+
+	// Genesis's entry must remain untouched
+	ASSERT_TRUE (store.topology.exists (txn, { 1, nano::dev::genesis->hash () }));
+}
+
+/*
+ * Epoch upgrade on an existing account chain.
+ * The block has `previous` pointer, so its topo_height must be `previous.topo_height + 1`
+ */
+TEST (ledger, topo_height_epoch_upgrade)
+{
+	auto ctx = nano::test::ledger_empty ();
+	auto & ledger = ctx.ledger ();
+	auto & store = ctx.store ();
+	ASSERT_TRUE (ledger.flags.topo_index);
+
+	auto txn = ledger.tx_begin_write ();
+	auto & pool = ctx.pool ();
+	nano::keypair key1;
+	nano::block_builder builder;
+
+	// Genesis (topo=1) → state send to key1 (topo=2)
+	auto send = builder.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
+				.link (key1.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*pool.generate (nano::dev::genesis->hash ()))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send));
+	ASSERT_EQ (2, send->sideband ().topo_height);
+
+	// State open for key1 (topo=3, source = send)
+	auto open = builder.state ()
+				.account (key1.pub)
+				.previous (0)
+				.representative (key1.pub)
+				.balance (nano::Knano_ratio)
+				.link (send->hash ())
+				.sign (key1.prv, key1.pub)
+				.work (*pool.generate (key1.pub))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, open));
+	ASSERT_EQ (3, open->sideband ().topo_height);
+
+	// Epoch upgrade on key1: previous = open. topo must be open.topo + 1 = 4
+	auto epoch1 = builder.state ()
+				  .account (key1.pub)
+				  .previous (open->hash ())
+				  .representative (key1.pub)
+				  .balance (nano::Knano_ratio)
+				  .link (ledger.epoch_link (nano::epoch::epoch_1))
+				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				  .work (*pool.generate (open->hash ()))
+				  .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, epoch1));
+	ASSERT_EQ (nano::epoch::epoch_1, epoch1->sideband ().details.epoch);
+	ASSERT_EQ (4, epoch1->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 4, epoch1->hash () }));
+
+	// Sequential epoch upgrade on the same chain: previous = epoch1. topo must be epoch1.topo + 1 = 5
+	auto epoch2 = builder.state ()
+				  .account (key1.pub)
+				  .previous (epoch1->hash ())
+				  .representative (key1.pub)
+				  .balance (nano::Knano_ratio)
+				  .link (ledger.epoch_link (nano::epoch::epoch_2))
+				  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				  .work (*pool.generate (epoch1->hash ()))
+				  .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, epoch2));
+	ASSERT_EQ (nano::epoch::epoch_2, epoch2->sideband ().details.epoch);
+	ASSERT_EQ (5, epoch2->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 5, epoch2->hash () }));
+}
+
+/*
+ * Epoch open on an unopened account is the one block type with no usable
+ * block-graph dependency: `previous == 0` and `link` carries the epoch payload
+ * (not a block hash). The protocol still anchors it to the dependency graph
+ * implicitly (it requires pending entries), so this case is treated as a known
+ * rootless chain start and indexed at topo_height = 1.
+ */
+TEST (ledger, topo_height_epoch_open)
+{
+	auto ctx = nano::test::ledger_empty ();
+	auto & ledger = ctx.ledger ();
+	auto & store = ctx.store ();
+	ASSERT_TRUE (ledger.flags.topo_index);
+
+	auto txn = ledger.tx_begin_write ();
+	auto & pool = ctx.pool ();
+	nano::keypair key1;
+	nano::block_builder builder;
+
+	// Genesis → send to key1 (creates the pending entry)
+	auto send = builder.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
+				.link (key1.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*pool.generate (nano::dev::genesis->hash ()))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send));
+	ASSERT_EQ (2, send->sideband ().topo_height);
+
+	// Epoch open on the still-unopened key1 account — rootless in the graph
+	auto epoch_open = builder.state ()
+					  .account (key1.pub)
+					  .previous (0)
+					  .representative (0)
+					  .balance (0)
+					  .link (ledger.epoch_link (nano::epoch::epoch_1))
+					  .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					  .work (*pool.generate (key1.pub))
+					  .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, epoch_open));
+
+	// Anchored at 1 so the rest of the chain remains indexable
+	ASSERT_EQ (1, epoch_open->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 1, epoch_open->hash () }));
+
+	// With epoch_open=1 and send=2, the receive's max(prev=1, source=2) + 1 = 3
+	auto receive = builder.state ()
+				   .account (key1.pub)
+				   .previous (epoch_open->hash ())
+				   .representative (key1.pub)
+				   .balance (nano::Knano_ratio)
+				   .link (send->hash ())
+				   .sign (key1.prv, key1.pub)
+				   .work (*pool.generate (epoch_open->hash ()))
+				   .build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, receive));
+	ASSERT_EQ (3, receive->sideband ().topo_height);
+	ASSERT_TRUE (store.topology.exists (txn, { 3, receive->hash () }));
+}
+
+/*
+ * When a dependency has topo_height = 0 (the "unindexed" sentinel — produced
+ * e.g. by processing under a disabled flag, by partial migration, or by a
+ * pruned dep), the new block must also be assigned topo_height = 0.
+ *
+ * Setup: process a block with the flag disabled (so it lands with topo=0),
+ * then re-enable the flag and process a successor. The successor's `previous`
+ * has topo=0 → poison must propagate
+ */
+TEST (ledger, topo_height_unindexed_dependency_propagates_zero)
+{
+	nano::logger logger;
+	nano::stats stats{ logger };
+	auto store = nano::test::make_store (logger, stats);
+	nano::work_pool pool{ nano::dev::network_params.network, 1 };
+	nano::block_builder builder;
+	nano::keypair key2;
+
+	// Initialize the ledger with topo index disabled
+	{
+		nano::ledger ledger{ *store, nano::dev::network_params, stats, logger };
+	}
+	{
+		auto txn = store->tx_begin_write ();
+		store->version.put_flag (txn, nano::store::meta_key::topo_index_enabled, false);
+	}
+
+	std::shared_ptr<nano::block> send;
+	{
+		nano::ledger ledger{ *store, nano::dev::network_params, stats, logger };
+		ASSERT_FALSE (ledger.flags.topo_index);
+		auto txn = ledger.tx_begin_write ();
+		auto info1 = ledger.any.account_get (txn, nano::dev::genesis_key.pub);
+		ASSERT_TRUE (info1);
+		send = builder.send ()
+			   .previous (info1->head)
+			   .destination (key2.pub)
+			   .balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
+			   .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+			   .work (*pool.generate (info1->head))
+			   .build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send));
+
+		// Sanity: while disabled, the send lands with the unindexed sentinel
+		ASSERT_EQ (0, send->sideband ().topo_height);
+	}
+
+	{
+		auto txn = store->tx_begin_write ();
+		store->version.put_flag (txn, nano::store::meta_key::topo_index_enabled, true);
+	}
+	{
+		nano::ledger ledger{ *store, nano::dev::network_params, stats, logger };
+		ASSERT_TRUE (ledger.flags.topo_index);
+		auto txn = ledger.tx_begin_write ();
+		auto open = builder.open ()
+					.source (send->hash ())
+					.representative (key2.pub)
+					.account (key2.pub)
+					.sign (key2.prv, key2.pub)
+					.work (*pool.generate (key2.pub))
+					.build ();
+		ASSERT_EQ (nano::block_status::progress, ledger.process (txn, open));
+
+		// Source has topo=0 → propagates regardless of flag state
+		ASSERT_EQ (0, open->sideband ().topo_height);
+		ASSERT_FALSE (store->topology.exists (txn, { 0, open->hash () }));
+	}
+}
+
+/*
+ * When the topology index is disabled (e.g. an older ledger that hasn't been migrated yet),
+ * the processor must not compute topo_heights and must not write to the topology table
+ */
+TEST (ledger, topo_height_disabled_flag_skips_indexing)
 {
 	nano::logger logger;
 	nano::stats stats{ logger };
 	auto store = nano::test::make_store (logger, stats);
 
+	// Initialize the ledger with topo index disabled
 	{
-		// Fresh ledger: `ledger_store::initialize` sets the flag → loaded as true.
-		nano::ledger ledger (*store, nano::dev::network_params, stats, logger);
-		ASSERT_TRUE (ledger.flags.topo_index);
-
-		// Flipping the flag while the ledger is alive does NOT mutate the cached value.
-		{
-			auto txn = store->tx_begin_write ();
-			store->version.put_flag (txn, nano::store::meta_key::topo_index_enabled, false);
-		}
-		ASSERT_TRUE (ledger.flags.topo_index);
+		nano::ledger ledger{ *store, nano::dev::network_params, stats, logger };
+	}
+	{
+		auto txn = store->tx_begin_write ();
+		store->version.put_flag (txn, nano::store::meta_key::topo_index_enabled, false);
 	}
 
-	// A subsequently-constructed ledger picks up the new value.
-	{
-		nano::ledger ledger (*store, nano::dev::network_params, stats, logger);
-		ASSERT_FALSE (ledger.flags.topo_index);
-	}
+	nano::ledger ledger{ *store, nano::dev::network_params, stats, logger };
+	ASSERT_FALSE (ledger.flags.topo_index);
+
+	auto txn = ledger.tx_begin_write ();
+	nano::work_pool pool{ nano::dev::network_params.network, 1 };
+	auto info1 = ledger.any.account_get (txn, nano::dev::genesis_key.pub);
+	ASSERT_TRUE (info1);
+	nano::keypair key2;
+	nano::block_builder builder;
+
+	auto send = builder.send ()
+				.previous (info1->head)
+				.destination (key2.pub)
+				.balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*pool.generate (info1->head))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send));
+
+	// Zero topo_height; no topology row written
+	ASSERT_EQ (0, send->sideband ().topo_height);
+	ASSERT_FALSE (store->topology.exists (txn, { 0, send->hash () }));
 }

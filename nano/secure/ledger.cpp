@@ -745,11 +745,18 @@ uint64_t nano::ledger::pruning_action (secure::write_transaction & transaction_a
 		if (block_l != nullptr)
 		{
 			release_assert (cemented.block_exists (transaction_a, hash));
+
 			store.block.del (transaction_a, hash);
 			store.pruned.put (transaction_a, hash);
+			if (block_l->sideband ().topo_height != 0)
+			{
+				store.topology.del (transaction_a, { block_l->sideband ().topo_height, hash });
+			}
+
 			hash = block_l->previous ();
 			++pruned_count;
 			++cache.pruned_count;
+
 			if (pruned_count % batch_size_a == 0)
 			{
 				transaction_a.commit ();

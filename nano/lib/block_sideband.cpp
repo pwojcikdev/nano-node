@@ -93,20 +93,22 @@ std::string nano::state_subtype (nano::block_details const details_a)
  * block_sideband
  */
 
-nano::block_sideband::block_sideband (nano::account const & account_a, nano::amount const & balance_a, uint64_t const height_a, nano::seconds_t const timestamp_a, nano::block_details const & details_a, nano::epoch const source_epoch_a) :
+nano::block_sideband::block_sideband (nano::account const & account_a, nano::amount const & balance_a, uint64_t const height_a, nano::seconds_t const timestamp_a, nano::block_details const & details_a, nano::epoch const source_epoch_a, uint64_t const topo_height_a) :
 	account (account_a),
 	balance (balance_a),
 	height (height_a),
+	topo_height (topo_height_a),
 	timestamp (timestamp_a),
 	details (details_a),
 	source_epoch (source_epoch_a)
 {
 }
 
-nano::block_sideband::block_sideband (nano::account const & account_a, nano::amount const & balance_a, uint64_t const height_a, nano::seconds_t const timestamp_a, nano::epoch const epoch_a, bool const is_send, bool const is_receive, bool const is_epoch, nano::epoch const source_epoch_a) :
+nano::block_sideband::block_sideband (nano::account const & account_a, nano::amount const & balance_a, uint64_t const height_a, nano::seconds_t const timestamp_a, nano::epoch const epoch_a, bool const is_send, bool const is_receive, bool const is_epoch, nano::epoch const source_epoch_a, uint64_t const topo_height_a) :
 	account (account_a),
 	balance (balance_a),
 	height (height_a),
+	topo_height (topo_height_a),
 	timestamp (timestamp_a),
 	details (epoch_a, is_send, is_receive, is_epoch),
 	source_epoch (source_epoch_a)
