@@ -1187,6 +1187,7 @@ void nano::json_handler::block_info ()
 			auto balance = block->balance ();
 			response_l.put ("balance", balance.number ().convert_to<std::string> ());
 			response_l.put ("height", std::to_string (block->sideband ().height));
+			response_l.put ("topo_height", std::to_string (block->sideband ().topo_height));
 			response_l.put ("local_timestamp", std::to_string (block->sideband ().timestamp));
 			response_l.put ("successor", node.store.successor.get (transaction, hash).value_or (nano::block_hash{ 0 }).to_string ());
 			auto confirmed (node.ledger.cemented.block_exists_or_pruned (transaction, hash));
@@ -1357,6 +1358,7 @@ void nano::json_handler::blocks_info ()
 					auto balance = block->balance ();
 					entry.put ("balance", balance.number ().convert_to<std::string> ());
 					entry.put ("height", std::to_string (block->sideband ().height));
+					entry.put ("topo_height", std::to_string (block->sideband ().topo_height));
 					entry.put ("local_timestamp", std::to_string (block->sideband ().timestamp));
 					entry.put ("successor", node.store.successor.get (transaction, hash).value_or (nano::block_hash{ 0 }).to_string ());
 					auto confirmed (node.ledger.cemented.block_exists_or_pruned (transaction, hash));
@@ -2722,6 +2724,7 @@ void nano::json_handler::account_history ()
 					}
 					entry.put ("local_timestamp", std::to_string (block->sideband ().timestamp));
 					entry.put ("height", std::to_string (block->sideband ().height));
+					entry.put ("topo_height", std::to_string (block->sideband ().topo_height));
 					entry.put ("hash", hash.to_string ());
 					entry.put ("confirmed", node.ledger.cemented.block_exists_or_pruned (transaction, hash));
 					if (output_raw)
