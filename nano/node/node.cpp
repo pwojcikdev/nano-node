@@ -438,6 +438,7 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 
 	if (ledger.pruning)
 	{
+		// Gated on !flags.inactive_node so CLI utilities can still open the ledger
 		if (config.enable_voting && !flags.inactive_node)
 		{
 			logger.critical (nano::log::type::node, "Incompatibility detected between config node.enable_voting and existing pruned blocks");
@@ -446,6 +447,11 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 		if (!flags.enable_pruning && !flags.inactive_node)
 		{
 			logger.critical (nano::log::type::node, "To start node with existing pruned blocks use launch flag --enable_pruning");
+			std::exit (1);
+		}
+		if (ledger.flags.topo_index && !flags.inactive_node)
+		{
+			logger.critical (nano::log::type::node, "Incompatibility detected between topological index and ledger pruning. To proceed, either disable pruning, or run the node with --drop_topo_index to remove the topology index.");
 			std::exit (1);
 		}
 

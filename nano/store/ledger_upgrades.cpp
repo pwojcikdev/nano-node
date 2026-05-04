@@ -256,7 +256,7 @@ void ledger_store::upgrade_v24_to_v25 ()
 	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v24 to v25 completed");
 }
 
-// Remove successor from block sideband
+// Remove successor from block sideband and add topo_height placeholder sideband field
 void ledger_store::upgrade_v25_to_v26 ()
 {
 	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v25 to v26...");

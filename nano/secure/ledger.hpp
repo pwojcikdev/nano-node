@@ -120,6 +120,18 @@ public:
 
 	void verify_consistency (secure::transaction const &) const;
 
+	/**
+	 * Walk every block in the ledger, compute and persist its topology height, then enable the topology index flag
+	 * Intended as a one-time offline upgrade for ledgers initialized before the topology index existed
+	 */
+	void populate_topo_index ();
+
+	/**
+	 * Drop the topology index table and disable the topology index flag.
+	 * Intended for users who need to enable pruning, which is incompatible with the topology index.
+	 */
+	void drop_topo_index ();
+
 	nano::container_info container_info () const;
 
 public:
