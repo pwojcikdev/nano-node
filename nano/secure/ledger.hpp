@@ -37,6 +37,14 @@ private:
 	std::atomic<uint64_t> account_count{ 0 };
 };
 
+struct ledger_options
+{
+	nano::generate_cache_flags generate_cache{};
+	nano::uint128_t min_rep_weight{ 0 };
+	uint64_t max_backlog{ 0 };
+	bool enable_topo_index{ true };
+};
+
 struct ledger_flags
 {
 	bool topo_index{ false };
@@ -48,7 +56,7 @@ class ledger final
 	friend class receivable_iterator;
 
 public:
-	ledger (nano::store::ledger_store &, nano::network_params const &, nano::stats &, nano::logger &, nano::generate_cache_flags = {}, nano::uint128_t min_rep_weight = 0, uint64_t max_backlog = 0);
+	ledger (nano::store::ledger_store &, nano::network_params const &, nano::stats &, nano::logger &, ledger_options = {});
 	~ledger ();
 
 	/** Start read-write transaction */
@@ -144,6 +152,7 @@ public:
 	nano::logger & logger;
 
 public:
+	nano::ledger_options const options;
 	nano::ledger_flags flags;
 	nano::ledger_cache cache;
 	nano::rep_weights rep_weights;
@@ -154,8 +163,14 @@ public:
 
 	nano::bootstrap_weights bootstrap_weights{};
 
+public:
+	/**
+	 * Seed a fresh ledger store with genesis state. Aborts if the store is not empty.
+	 */
+	static void seed_genesis (nano::store::ledger_store &, nano::store::write_transaction const &, nano::ledger_constants const &, ledger_options const & = {});
+
 private:
-	void initialize (nano::generate_cache_flags const &);
+	void initialize ();
 	void cement_one (secure::write_transaction &, nano::block const & block);
 
 	std::unique_ptr<ledger_set_any> any_impl;

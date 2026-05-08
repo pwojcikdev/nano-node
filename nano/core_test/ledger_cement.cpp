@@ -767,7 +767,8 @@ TEST (ledger_cement, pruned_source)
 	auto path (nano::unique_path ());
 	auto store = nano::test::make_store (system.logger, system.stats, path);
 
-	nano::ledger ledger (*store, nano::dev::network_params, system.stats, system.logger);
+	// Topo index is incompatible with pruning
+	nano::ledger ledger (*store, nano::dev::network_params, system.stats, system.logger, nano::ledger_options{ .enable_topo_index = false });
 	ledger.pruning = true;
 	nano::store::write_queue write_queue;
 	nano::work_pool pool{ nano::dev::network_params.network, std::numeric_limits<unsigned>::max () };

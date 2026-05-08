@@ -1238,6 +1238,7 @@ TEST (rpc, history_pruning)
 	node_config.enable_voting = false; // Remove after allowing pruned voting
 	nano::node_flags node_flags;
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 	auto node0 = add_ipc_enabled_node (system, node_config, node_flags);
 	std::vector<std::shared_ptr<nano::block>> blocks;
 
@@ -2361,6 +2362,7 @@ TEST (rpc, block_count_pruning)
 	node_config.enable_voting = false; // Remove after allowing pruned voting
 	nano::node_flags node_flags;
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 	auto node1 = add_ipc_enabled_node (system, node_config, node_flags);
 	auto latest (node1->latest (nano::dev::genesis_key.pub));
 	nano::block_builder builder;
@@ -4343,6 +4345,7 @@ TEST (rpc, block_info_pruning)
 	node_config1.enable_voting = false; // Remove after allowing pruned voting
 	nano::node_flags node_flags;
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 	auto node1 = add_ipc_enabled_node (system, node_config1, node_flags);
 	auto latest (node1->latest (nano::dev::genesis_key.pub));
 	nano::block_builder builder;
@@ -4409,6 +4412,7 @@ TEST (rpc, pruned_exists)
 	node_config1.enable_voting = false; // Remove after allowing pruned voting
 	nano::node_flags node_flags;
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 	auto node1 = add_ipc_enabled_node (system, node_config1, node_flags);
 	auto latest (node1->latest (nano::dev::genesis_key.pub));
 	nano::block_builder builder;
@@ -6698,6 +6702,7 @@ TEST (rpc, receive_pruned)
 	node_config.enable_voting = false; // Remove after allowing pruned voting
 	nano::node_flags node_flags;
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 	auto node2 = add_ipc_enabled_node (system, node_config, node_flags);
 	auto wallet1 = system.wallet (0);
 	auto wallet2 = system.wallet (1);

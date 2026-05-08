@@ -7,6 +7,7 @@
 #include <nano/node/make_store.hpp>
 #include <nano/node/migrations.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/secure/ledger.hpp>
 #include <nano/secure/pending_info.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
@@ -194,7 +195,7 @@ TEST (migrations, lmdb_to_rocksdb)
 		auto store = nano::test::make_store (data_path);
 
 		// Initialize with genesis block
-		store->initialize (store->tx_begin_write (), nano::dev::constants);
+		nano::ledger::seed_genesis (*store, store->tx_begin_write (), nano::dev::constants);
 
 		// Populate ledger and get expected data
 		expected = populate_ledger_for_migration (*store);

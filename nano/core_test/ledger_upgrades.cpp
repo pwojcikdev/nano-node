@@ -8,6 +8,7 @@
 #include <nano/node/make_store.hpp>
 #include <nano/secure/account_info.hpp>
 #include <nano/secure/common.hpp>
+#include <nano/secure/ledger.hpp>
 #include <nano/secure/network_params.hpp>
 #include <nano/store/backend.hpp>
 #include <nano/store/db_val_templ.hpp>
@@ -172,7 +173,7 @@ TEST (ledger_upgrades, current_version_read_only)
 		nano::test::default_logger ());
 
 		auto tx = store.tx_begin_write ();
-		store.initialize (tx, nano::dev::constants);
+		nano::ledger::seed_genesis (store, tx, nano::dev::constants);
 	}
 
 	// Open in read-only mode - should succeed since no upgrade needed
@@ -205,7 +206,7 @@ TEST (ledger_upgrades, current_version_no_upgrade)
 		nano::test::default_logger ());
 
 		auto tx = store.tx_begin_write ();
-		store.initialize (tx, nano::dev::constants);
+		nano::ledger::seed_genesis (store, tx, nano::dev::constants);
 	}
 
 	// Open again - should not require any upgrade

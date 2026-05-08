@@ -27,7 +27,6 @@ public:
 	nano::store::read_transaction tx_begin_read () const;
 
 	bool empty (nano::store::transaction const &) const;
-	void initialize (nano::store::write_transaction const &, nano::ledger_constants const &);
 	void perform_upgrades (nano::store::backend_meta);
 
 	uint64_t count (nano::store::transaction const &, nano::store::table) const;

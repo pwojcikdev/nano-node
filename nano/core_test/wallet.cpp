@@ -1258,6 +1258,7 @@ TEST (wallet, receive_pruned)
 	node_flags.disable_request_loop = true;
 	auto & node1 = *system.add_node (node_flags);
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 	nano::node_config config = system.default_config ();
 	config.enable_voting = false; // Remove after allowing pruned voting
 	auto & node2 = *system.add_node (config, node_flags);

@@ -509,6 +509,7 @@ TEST (history, pruned_source)
 	nano::stats stats{ logger };
 	auto store = nano::test::make_store (logger, stats);
 	nano::ledger ledger (*store, nano::dev::network_params, stats, logger);
+	ledger.drop_topo_index (); // Topo index is incompatible with pruning
 	ledger.pruning = true;
 	nano::block_hash next_pruning;
 	// Basic pruning for legacy blocks. Previous block is pruned, source is pruned

@@ -37,20 +37,21 @@
 
 #include <cryptopp/words.h>
 
-nano::ledger::ledger (nano::store::ledger_store & store_a, nano::network_params const & params_a, nano::stats & stats_a, nano::logger & logger_a, nano::generate_cache_flags generate_cache_flags_a, nano::uint128_t min_rep_weight_a, uint64_t max_backlog_a) :
+nano::ledger::ledger (nano::store::ledger_store & store_a, nano::network_params const & params_a, nano::stats & stats_a, nano::logger & logger_a, ledger_options options_a) :
 	constants{ params_a.ledger },
 	work{ params_a.work },
 	store{ store_a },
 	stats{ stats_a },
 	logger{ logger_a },
-	rep_weights{ store_a.rep_weight, min_rep_weight_a },
-	max_backlog_size{ max_backlog_a },
+	options{ options_a },
+	rep_weights{ store_a.rep_weight, options_a.min_rep_weight },
+	max_backlog_size{ options_a.max_backlog },
 	any_impl{ std::make_unique<ledger_set_any> (*this) },
 	cemented_impl{ std::make_unique<ledger_set_cemented> (*this) },
 	any{ *any_impl },
 	cemented{ *cemented_impl }
 {
-	initialize (generate_cache_flags_a);
+	initialize ();
 }
 
 nano::ledger::~ledger ()
@@ -69,7 +70,38 @@ auto nano::ledger::tx_begin_read () const -> secure::read_transaction
 	return secure::read_transaction{ store.tx_begin_read () };
 }
 
-void nano::ledger::initialize (nano::generate_cache_flags const & generate_cache_flags)
+void nano::ledger::seed_genesis (nano::store::ledger_store & store, nano::store::write_transaction const & txn, nano::ledger_constants const & constants, ledger_options const & options)
+{
+	release_assert (store.empty (txn), "attempt to seed a non-empty ledger store");
+	release_assert (constants.genesis->has_sideband ());
+
+	store.block.put (txn, constants.genesis->hash (), *constants.genesis);
+
+	store.confirmation_height.put (txn, constants.genesis->account (),
+	nano::confirmation_height_info{ /* height */ 1, /* frontier */ constants.genesis->hash () });
+
+	store.account.put (txn, constants.genesis->account (),
+	nano::account_info{
+	/* head */ constants.genesis->hash (),
+	/* representative */ constants.genesis->account (),
+	/* open_block */ constants.genesis->hash (),
+	/* balance */ std::numeric_limits<nano::uint128_t>::max (),
+	/* modified */ nano::seconds_since_epoch (),
+	/* block_count */ 1,
+	/* epoch */ nano::epoch::epoch_0 });
+
+	store.rep_weight.put (txn, constants.genesis->account (), std::numeric_limits<nano::uint128_t>::max ());
+
+	if (options.enable_topo_index)
+	{
+		store.topology.put (txn, { /* topo_height */ 1, /* hash */ constants.genesis->hash () });
+		store.version.put_flag (txn, nano::store::meta_key::topo_index_enabled, true);
+	}
+
+	store.version.put_version (txn, nano::store::ledger_store::version_current);
+}
+
+void nano::ledger::initialize ()
 {
 	debug_assert (rep_weights.empty ());
 
@@ -82,10 +114,11 @@ void nano::ledger::initialize (nano::generate_cache_flags const & generate_cache
 	}
 	if (!is_initialized && store.get_mode () != nano::store::open_mode::read_only)
 	{
-		// Store was empty meaning we just created it, add the genesis block
-		logger.info (nano::log::type::ledger, "Initializing ledger with genesis block: {}", constants.genesis->hash ());
-		auto const transaction = store.tx_begin_write ();
-		store.initialize (transaction, constants);
+		// Store was empty meaning we just created it, seed it with genesis state
+		logger.info (nano::log::type::ledger, "Initializing ledger with genesis: {}", constants.genesis->hash ());
+
+		auto transaction = store.tx_begin_write ();
+		seed_genesis (store, transaction, constants, options);
 	}
 
 	// Load ledger flags
@@ -95,6 +128,8 @@ void nano::ledger::initialize (nano::generate_cache_flags const & generate_cache
 
 		logger.debug (nano::log::type::ledger, "Ledger flags loaded: topo_index={}", flags.topo_index);
 	}
+
+	auto const & generate_cache_flags = options.generate_cache;
 
 	if (generate_cache_flags.account_count || generate_cache_flags.block_count)
 	{

@@ -131,6 +131,7 @@ void nano::add_node_flag_options (boost::program_options::options_description & 
 		("disable_bootstrap_bulk_push_client", "Disables the legacy bulk push client for bootstrap operations")
 		("disable_tcp_realtime", "Disables TCP realtime connections")
 		("disable_search_pending", "Disables the periodic search for pending transactions")
+		("disable_topo_index", "Initialize a fresh ledger without the topology index. Required for pruning. Has no effect on an existing ledger; use --drop_topo_index to disable on an existing ledger.")
 		("enable_pruning", "Enable experimental ledger pruning")
 		("enable_rpc", "Enable RPC")
 		("enable_voting", "Enable voting")
@@ -172,6 +173,7 @@ void nano::update_flags (nano::node_flags & flags_a, boost::program_options::var
 	}
 	flags_a.disable_providing_telemetry_metrics = (vm.count ("disable_providing_telemetry_metrics") > 0);
 	flags_a.disable_block_processor_unchecked_deletion = (vm.count ("disable_block_processor_unchecked_deletion") > 0);
+	flags_a.disable_topo_index = (vm.count ("disable_topo_index") > 0);
 	flags_a.enable_pruning = (vm.count ("enable_pruning") > 0);
 	flags_a.enable_rpc = (vm.count ("enable_rpc") > 0);
 	flags_a.enable_voting = (vm.count ("enable_voting") > 0);

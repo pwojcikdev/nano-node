@@ -417,6 +417,7 @@ TEST (node, search_receivable_pruned)
 	auto node1 = system.add_node (node_config);
 	nano::node_flags node_flags;
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 	nano::node_config config;
 	config.peering_port = system.get_available_port ();
 	config.enable_voting = false; // Remove after allowing pruned voting
@@ -2744,7 +2745,7 @@ TEST (node, dont_write_lock_node)
 		auto store = nano::test::make_store (path);
 		{
 			auto transaction (store->tx_begin_write ());
-			store->initialize (transaction, nano::dev::constants);
+			nano::ledger::seed_genesis (*store, transaction, nano::dev::constants);
 		}
 
 		// Hold write lock open until main thread is done needing it
@@ -3528,6 +3529,7 @@ TEST (node, pruning_automatic)
 
 	nano::node_flags node_flags{};
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 
 	auto & node1 = *system.add_node (node_config, node_flags);
 	nano::keypair key1{};
@@ -3581,6 +3583,7 @@ TEST (node, pruning_age)
 
 	nano::node_flags node_flags{};
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 
 	auto & node1 = *system.add_node (node_config, node_flags);
 	nano::keypair key1{};
@@ -3643,6 +3646,7 @@ TEST (node, pruning_depth)
 
 	nano::node_flags node_flags{};
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 
 	auto & node1 = *system.add_node (node_config, node_flags);
 	nano::keypair key1{};

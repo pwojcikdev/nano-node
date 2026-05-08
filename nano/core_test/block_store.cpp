@@ -373,7 +373,7 @@ TEST (block_store, genesis)
 {
 	auto store = nano::test::make_store ();
 	auto transaction (store->tx_begin_write ());
-	store->initialize (transaction, nano::dev::constants);
+	nano::ledger::seed_genesis (*store, transaction, nano::dev::constants);
 	nano::account_info info;
 	ASSERT_FALSE (store->account.get (transaction, nano::dev::genesis_key.pub, info));
 	ASSERT_EQ (nano::dev::genesis->hash (), info.head);
@@ -811,7 +811,7 @@ TEST (block_store, pruned_random)
 	auto hash1 (block->hash ());
 	{
 		auto transaction (store->tx_begin_write ());
-		store->initialize (transaction, nano::dev::constants);
+		nano::ledger::seed_genesis (*store, transaction, nano::dev::constants);
 		store->pruned.put (transaction, hash1);
 	}
 	auto transaction (store->tx_begin_read ());
@@ -839,7 +839,7 @@ TEST (block_store, state_block)
 	block1->sideband_set ({});
 	{
 		auto transaction (store->tx_begin_write ());
-		store->initialize (transaction, nano::dev::constants);
+		nano::ledger::seed_genesis (*store, transaction, nano::dev::constants);
 		ASSERT_EQ (nano::block_type::state, block1->type ());
 		store->block.put (transaction, block1->hash (), *block1);
 		ASSERT_TRUE (store->block.exists (transaction, block1->hash ()));
@@ -1533,7 +1533,7 @@ TEST (block_store, rocksdb_tombstone_count)
 	nano::store::ledger_store store (std::move (backend), nano::store::open_mode::read_write, stats, logger);
 
 	auto tx = store.tx_begin_write ();
-	store.initialize (tx, nano::dev::constants);
+	nano::ledger::seed_genesis (store, tx, nano::dev::constants);
 
 	nano::account account{ 1 };
 	store.account.put (tx, account, nano::account_info{});

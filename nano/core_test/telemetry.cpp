@@ -376,6 +376,7 @@ TEST (telemetry, maker_pruning)
 	nano::node_flags node_flags;
 	auto node_client = system.add_node (node_flags);
 	node_flags.enable_pruning = true;
+	node_flags.disable_topo_index = true; // Topo index is incompatible with pruning
 	nano::node_config config;
 	config.enable_voting = false;
 	auto node_server = system.add_node (config, node_flags);

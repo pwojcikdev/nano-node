@@ -118,7 +118,14 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 	store{ *store_impl },
 	wallets_backend_impl{ std::make_unique<nano::wallet::lmdb::wallets_backend_lmdb> (application_path_a / "wallets.ldb", config_a.lmdb_config) },
 	wallets_backend{ *wallets_backend_impl },
-	ledger_impl{ std::make_unique<nano::ledger> (store, network_params, stats, logger, flags_a.generate_cache, config.representative_vote_weight_minimum.number (), config.max_backlog) },
+	ledger_impl{ std::make_unique<nano::ledger> (store, network_params, stats, logger,
+	nano::ledger_options{
+	.generate_cache = flags_a.generate_cache,
+	.min_rep_weight = config.representative_vote_weight_minimum.number (),
+	.max_backlog = config.max_backlog,
+	// Topo index is incompatible with pruning, so disable it on fresh ledgers when pruning is on
+	// For existing ledgers the persisted meta flag wins, so this only affects first-init
+	.enable_topo_index = !(flags_a.enable_pruning || flags_a.disable_topo_index) }) },
 	ledger{ *ledger_impl },
 	runner_impl{ std::make_unique<nano::thread_runner> (io_ctx_shared, logger, config.io_threads) },
 	runner{ *runner_impl },
