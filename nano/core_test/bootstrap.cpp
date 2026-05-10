@@ -133,6 +133,7 @@ TEST (bootstrap, frontier_scan)
 	// Disable other bootstrap strategies
 	config.bootstrap->enable_priorities = false;
 	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_topology = false;
 	// Disable election activation
 	config.backlog_scan->enable = false;
 	config.priority_scheduler->enable = false;
@@ -229,6 +230,7 @@ TEST (bootstrap, frontier_scan_pending)
 	// Disable other bootstrap strategies
 	config.bootstrap->enable_priorities = false;
 	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_topology = false;
 	// Disable election activation
 	config.backlog_scan->enable = false;
 	config.priority_scheduler->enable = false;
@@ -311,6 +313,7 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 	// Disable other bootstrap strategies
 	config.bootstrap->enable_priorities = false;
 	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_topology = false;
 	// Disable election activation
 	config.backlog_scan->enable = false;
 	config.priority_scheduler->enable = false;
