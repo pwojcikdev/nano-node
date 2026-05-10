@@ -21,6 +21,8 @@ enum class query_type
 	blocks_by_account,
 	account_info_by_hash,
 	frontiers,
+	blocks_random,
+	topo_index,
 };
 
 enum class query_source
@@ -30,6 +32,8 @@ enum class query_source
 	database,
 	dependencies,
 	frontiers,
+	topology_index,
+	topology_blocks,
 };
 
 nano::stat::detail to_stat_detail (nano::bootstrap::query_type);
