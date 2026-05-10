@@ -13,7 +13,9 @@
 #include <nano/node/bootstrap/frontier_scan_index.hpp>
 #include <nano/node/bootstrap/peer_scoring.hpp>
 #include <nano/node/bootstrap/throttle.hpp>
+#include <nano/node/bootstrap/topo_scan_index.hpp>
 #include <nano/node/fwd.hpp>
+#include <nano/secure/common.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/member.hpp>
@@ -33,6 +35,7 @@ class priority_strategy;
 class database_strategy;
 class dependency_strategy;
 class frontier_strategy;
+class topo_strategy;
 
 struct blocks_tag_payload
 {
@@ -50,7 +53,18 @@ struct frontier_tag_payload
 	nano::account start{ 0 };
 };
 
-using async_tag_payload = std::variant<blocks_tag_payload, dependency_tag_payload, frontier_tag_payload>;
+struct topo_index_tag_payload
+{
+	nano::topo_key cursor{};
+	std::size_t head{ 0 }; // scanning head that issued the request
+};
+
+struct blocks_random_tag_payload
+{
+	std::deque<nano::block_hash> hashes;
+};
+
+using async_tag_payload = std::variant<blocks_tag_payload, dependency_tag_payload, frontier_tag_payload, topo_index_tag_payload, blocks_random_tag_payload>;
 
 struct async_tag
 {
@@ -99,8 +113,8 @@ public:
 	/* Placeholder channel used as a fair-queue partition key so the block processor equalizes ingest across strategies */
 	std::shared_ptr<nano::transport::channel> const & block_processor_channel (nano::bootstrap::strategy) const;
 
-	/* Waits for a channel that is not full. Applies the per-strategy rate limiter. */
-	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy);
+	/* Waits for a channel that is not full, optionally restricted to channels accepted by `filter`. Applies the per-strategy rate limiter. */
+	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy, nano::bootstrap::peer_scoring::channel_filter const & filter = nullptr);
 
 	bool request (nano::account, size_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool send (std::shared_ptr<nano::transport::channel> const &, nano::messages::asc_pull_req && message, async_tag tag);
@@ -120,6 +134,7 @@ private:
 	bool process (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag);
 	bool process (nano::messages::asc_pull_ack::account_info_payload const & response, async_tag const & tag);
 	bool process (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag);
+	bool process (nano::messages::asc_pull_ack::topo_index_payload const & response, async_tag const & tag);
 	bool process (nano::messages::empty_payload const & response, async_tag const & tag);
 
 	verify_result verify (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag) const;
@@ -151,11 +166,14 @@ public: // Strategies
 	nano::bootstrap::dependency_strategy & dependency_strat;
 	std::unique_ptr<nano::bootstrap::frontier_strategy> frontier_strat_impl;
 	nano::bootstrap::frontier_strategy & frontier_strat;
+	std::unique_ptr<nano::bootstrap::topo_strategy> topo_strat_impl;
+	nano::bootstrap::topo_strategy & topo_strat;
 
 public: // Shared state
 	nano::bootstrap::account_sets_index accounts;
 	nano::bootstrap::database_scan_index database_scan;
 	nano::bootstrap::frontier_scan_index frontiers;
+	nano::bootstrap::topo_scan_index topology;
 	nano::bootstrap::throttle throttle;
 	nano::bootstrap::peer_scoring scoring;
 
@@ -183,6 +201,7 @@ public: // Shared state
 	nano::rate_limiter database_limiter;
 	nano::rate_limiter dependency_limiter;
 	nano::rate_limiter frontier_limiter;
+	nano::rate_limiter topology_limiter;
 
 	// Per-strategy placeholder channels. Tagging block_processor submissions with a distinct
 	// channel per strategy gives each its own fair-queue bucket, so the processor round-robins

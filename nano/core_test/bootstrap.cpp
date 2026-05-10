@@ -136,6 +136,7 @@ TEST (bootstrap, priority_filters_known_blocks)
 	config.bootstrap->enable_database_scan = false;
 	config.bootstrap->enable_dependency_walker = false;
 	config.bootstrap->enable_frontier_scan = false;
+	config.bootstrap->enable_topology = false;
 	// Force safe requests (start from the confirmed frontier) so responses include blocks we
 	// already hold above the confirmed frontier
 	config.bootstrap->optimistic_request_percentage = 0;
@@ -170,6 +171,10 @@ TEST (bootstrap, priority_filters_known_blocks)
 	// frontier. The response is [genesis, send1]: genesis is the echoed cursor and send1 is
 	// already in node1's ledger, so the early filter drops it instead of submitting it.
 	ASSERT_TIMELY (10s, node1.stats.count (nano::stat::type::bootstrap, nano::stat::detail::filtered_blocks) >= 3);
+
+	// Because the known block was filtered, it never reached the block processor, so the priority
+	// inspect path recorded no `old` results.
+	ASSERT_EQ (0, node1.stats.count (nano::stat::type::bootstrap_inspect_priority, nano::stat::detail::old));
 }
 
 /*
@@ -185,6 +190,7 @@ TEST (bootstrap, frontier_scan)
 	// Disable other bootstrap strategies
 	config.bootstrap->enable_priorities = false;
 	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_topology = false;
 	// Disable election activation
 	config.backlog_scan->enable = false;
 	config.priority_scheduler->enable = false;
@@ -281,6 +287,7 @@ TEST (bootstrap, frontier_scan_pending)
 	// Disable other bootstrap strategies
 	config.bootstrap->enable_priorities = false;
 	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_topology = false;
 	// Disable election activation
 	config.backlog_scan->enable = false;
 	config.priority_scheduler->enable = false;
@@ -363,6 +370,7 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 	// Disable other bootstrap strategies
 	config.bootstrap->enable_priorities = false;
 	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_topology = false;
 	// Disable election activation
 	config.backlog_scan->enable = false;
 	config.priority_scheduler->enable = false;

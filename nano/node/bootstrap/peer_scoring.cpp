@@ -80,7 +80,7 @@ void nano::bootstrap::peer_scoring::received_message (std::shared_ptr<nano::tran
 	}
 }
 
-std::shared_ptr<nano::transport::channel> nano::bootstrap::peer_scoring::channel ()
+std::shared_ptr<nano::transport::channel> nano::bootstrap::peer_scoring::channel (channel_filter const & filter)
 {
 	// Iterate channels in ascending order of outstanding requests
 	auto & index = scoring.get<tag_outstanding> ();
@@ -89,6 +89,10 @@ std::shared_ptr<nano::transport::channel> nano::bootstrap::peer_scoring::channel
 		auto channel = entry.channel.lock ();
 		if (channel && !channel->max (traffic_type))
 		{
+			if (filter && !filter (channel))
+			{
+				continue;
+			}
 			if (try_send_message (channel))
 			{
 				return channel;

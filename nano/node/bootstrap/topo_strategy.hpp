@@ -1,0 +1,67 @@
+#pragma once
+
+#include <nano/node/bootstrap/bootstrap_context.hpp>
+
+#include <chrono>
+#include <cstddef>
+#include <deque>
+#include <memory>
+#include <optional>
+#include <thread>
+#include <utility>
+
+namespace nano::bootstrap
+{
+class topo_strategy
+{
+public:
+	explicit topo_strategy (bootstrap_context &);
+
+	void start ();
+	void stop ();
+
+	void inspect (nano::secure::transaction const &, nano::block_status const &, nano::block_context const &);
+
+	bool process (nano::messages::asc_pull_ack::topo_index_payload const & response, async_tag const & tag);
+	bool process_blocks (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag);
+
+	verify_result verify (nano::messages::asc_pull_ack::topo_index_payload const & response, async_tag const & tag) const;
+
+private:
+	// A SINGLE thread serves all heads (head 0 is the spear, the rest are repair heads),
+	// weighting the spear at ~half the requests and sharing the other half across the
+	// repair heads round-robin.
+	void run_scan ();
+	void run_blocks ();
+	void run_one_blocks ();
+	void run_processing ();
+	void run_one_processing ();
+
+	// Pick the next head to query this tick, weighting the spear (head 0) at ~half and
+	// round-robining the repair heads through the other half; falls back to any other
+	// head with work so one idle head can't stall the thread. Returns the chosen head
+	// and its next cursor, or nullopt if no head currently has work. Must be called under
+	// the context mutex (it calls topology.next); commits only the returned head.
+	std::optional<std::pair<std::size_t, nano::topo_key>> pick_scan_head (std::chrono::steady_clock::time_point now);
+	// Waits (with backoff) until some head has work and returns it, or nullopt once the
+	// topology stops indexing / is caught up.
+	std::optional<std::pair<std::size_t, nano::topo_key>> wait_scan_head ();
+	// Blocks until there are member hashes to fetch, or all work is done.
+	std::deque<nano::block_hash> wait_block_batch ();
+	// Blocks until there are blocks ready to submit, or all work is done.
+	std::deque<std::shared_ptr<nano::block>> wait_submit_batch ();
+	// Waits for a channel whose peer advertises the topo_index capability.
+	std::shared_ptr<nano::transport::channel> wait_topo_index_channel ();
+
+	bool request_index (std::size_t head, nano::topo_key cursor, std::shared_ptr<nano::transport::channel> const & channel);
+	bool request_blocks (std::deque<nano::block_hash> hashes, std::shared_ptr<nano::transport::channel> const & channel);
+
+private:
+	bootstrap_context & ctx;
+
+	std::thread thread_scan; // single thread serving all heads (spear weighted ~half)
+	std::thread thread_blocks;
+	std::thread thread_processing;
+	std::size_t scan_tick{ 0 }; // round-robin counter for weighted head selection
+};
+}
