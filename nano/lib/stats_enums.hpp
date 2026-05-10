@@ -85,6 +85,7 @@ enum class type
 	bootstrap_verify,
 	bootstrap_verify_blocks,
 	bootstrap_verify_frontiers,
+	bootstrap_verify_topo,
 	bootstrap_process,
 	bootstrap_request,
 	bootstrap_request_ec,
@@ -94,6 +95,7 @@ enum class type
 	bootstrap_frontiers,
 	bootstrap_account_sets,
 	bootstrap_frontier_scan,
+	bootstrap_topo,
 	bootstrap_timeout,
 	bootstrap_server,
 	bootstrap_server_request,
@@ -277,7 +279,7 @@ enum class detail
 	initiate_lazy,
 	initiate_wallet_lazy,
 
-	// bootstrap specific
+	// bootstrap
 	bulk_pull,
 	bulk_pull_account,
 	bulk_pull_error_starting_request,
@@ -287,6 +289,7 @@ enum class detail
 	frontier_req,
 	frontier_confirmation_failed,
 	error_socket_close,
+	topo_indexes,
 
 	// vote result
 	vote,
@@ -669,10 +672,22 @@ enum class detail
 	blocks_by_hash,
 	blocks_by_account,
 	account_info_by_hash,
+	blocks_random,
+	topo_index,
 
 	// query_source
 	database,
 	dependencies,
+	topology_index,
+	topology_blocks,
+
+	// bootstrap_topo_scan
+	loop_topo_index,
+	loop_topo_blocks,
+	loop_topo_processing,
+	next_topo_index,
+	next_topo_block,
+	received,
 
 	// bounded backlog,
 	gathered_targets,
