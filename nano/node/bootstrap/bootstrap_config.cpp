@@ -54,6 +54,42 @@ nano::error nano::frontier_scan_config::serialize (nano::tomlconfig & toml) cons
 }
 
 /*
+ * topo_scan_config
+ */
+
+nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
+{
+	toml.get ("consideration_count", consideration_count);
+	toml.get_duration ("cooldown", cooldown);
+	toml.get_duration ("block_retry", block_retry);
+	toml.get ("candidates", candidates);
+	toml.get ("block_batch_size", block_batch_size);
+	toml.get ("max_blocks_outstanding", max_blocks_outstanding);
+	toml.get ("max_blocks_queued", max_blocks_queued);
+	toml.get_duration ("poisoning_timeout", poisoning_timeout);
+	toml.get ("rollback_min", rollback_min);
+	toml.get ("rollback_max", rollback_max);
+
+	return toml.get_error ();
+}
+
+nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
+{
+	toml.put ("consideration_count", consideration_count, "Number of peer responses required at each cursor before advancing the index scan.\ntype:uint64");
+	toml.put ("cooldown", cooldown.count (), "Delay before re-querying the same cursor when consideration_count requests are in flight.\ntype:milliseconds");
+	toml.put ("block_retry", block_retry.count (), "Retry timeout for in-flight block hashes.\ntype:milliseconds");
+	toml.put ("candidates", candidates, "Maximum number of topo index entries requested per call.\ntype:uint64");
+	toml.put ("block_batch_size", block_batch_size, "Maximum number of hashes requested per blocks_random call.\ntype:uint64");
+	toml.put ("max_blocks_outstanding", max_blocks_outstanding, "Pause block fetching when this many blocks are actively in-flight.\ntype:uint64");
+	toml.put ("max_blocks_queued", max_blocks_queued, "Pause index scanning when total queue size hits this number.\ntype:uint64");
+	toml.put ("poisoning_timeout", poisoning_timeout.count (), "Roll back discovery when the queue has outstanding work but nothing drains for this long.\ntype:milliseconds");
+	toml.put ("rollback_min", rollback_min, "Initial topo-height rewind distance when an unproductive poisoning reset escalates.\ntype:uint64");
+	toml.put ("rollback_max", rollback_max, "Upper bound on the doubling rewind distance for escalating poisoning rollback.\ntype:uint64");
+
+	return toml.get_error ();
+}
+
+/*
  * bootstrap_config
  */
 
@@ -64,6 +100,7 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("enable_database_scan", enable_database_scan);
 	toml.get ("enable_dependency_walker", enable_dependency_walker);
 	toml.get ("enable_frontier_scan", enable_frontier_scan);
+	toml.get ("enable_topology", enable_topology);
 
 	toml.get ("channel_limit", channel_limit);
 	toml.get ("rate_limit", rate_limit);
@@ -90,6 +127,12 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 		frontier_scan.deserialize (config_l);
 	}
 
+	if (toml.has_key ("topo_scan"))
+	{
+		auto config_l = toml.get_required_child ("topo_scan");
+		topo_scan.deserialize (config_l);
+	}
+
 	return toml.get_error ();
 }
 
@@ -100,6 +143,7 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("enable_database_scan", enable_database_scan, "Enable or disable the 'database scan` strategy for the ascending bootstrap.\ntype:bool");
 	toml.put ("enable_dependency_walker", enable_dependency_walker, "Enable or disable the 'dependency walker` strategy for the ascending bootstrap.\ntype:bool");
 	toml.put ("enable_frontier_scan", enable_frontier_scan, "Enable or disable the 'frontier scan` strategy for the ascending bootstrap.\ntype:bool");
+	toml.put ("enable_topology", enable_topology, "Enable or disable the 'topology` strategy for the ascending bootstrap.\ntype:bool");
 
 	toml.put ("channel_limit", channel_limit, "Maximum number of un-responded requests per channel.\nNote: changing to unlimited (0) is not recommended.\ntype:uint64");
 	toml.put ("rate_limit", rate_limit, "Rate limit on requests.\nNote: changing to unlimited (0) is not recommended as this operation competes for resources with realtime traffic.\ntype:uint64");
@@ -121,6 +165,10 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	nano::tomlconfig frontier_scan_l;
 	frontier_scan.serialize (frontier_scan_l);
 	toml.put_child ("frontier_scan", frontier_scan_l);
+
+	nano::tomlconfig topo_scan_l;
+	topo_scan.serialize (topo_scan_l);
+	toml.put_child ("topo_scan", topo_scan_l);
 
 	return toml.get_error ();
 }
