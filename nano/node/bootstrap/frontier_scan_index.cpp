@@ -68,6 +68,7 @@ nano::account frontier_scan_index::next ()
 
 bool frontier_scan_index::process (nano::account start, std::deque<std::pair<nano::account, nano::block_hash>> const & response)
 {
+	// Accounts in response must be in ascending order
 	debug_assert (std::all_of (response.begin (), response.end (), [&] (auto const & pair) { return pair.first.number () >= start.number (); }));
 
 	stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::process);

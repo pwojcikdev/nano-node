@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/errors.hpp>
+#include <nano/lib/fwd.hpp>
 #include <nano/lib/timer.hpp>
 #include <nano/node/bootstrap/bootstrap_server.hpp>
 
@@ -8,13 +9,11 @@ using namespace std::chrono_literals;
 
 namespace nano
 {
-class tomlconfig;
-
 class account_sets_config final
 {
 public:
-	nano::error deserialize (nano::tomlconfig & toml);
-	nano::error serialize (nano::tomlconfig & toml) const;
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
 
 public:
 	std::size_t consideration_count{ 4 };
@@ -27,8 +26,8 @@ public:
 class frontier_scan_config final
 {
 public:
-	nano::error deserialize (nano::tomlconfig & toml);
-	nano::error serialize (nano::tomlconfig & toml) const;
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
 
 public:
 	unsigned head_parallelism{ 128 };
@@ -38,11 +37,27 @@ public:
 	std::size_t max_pending{ 16 };
 };
 
+class topo_scan_config final
+{
+public:
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
+
+public:
+	unsigned consideration_count{ 4 };
+	std::size_t candidates{ 1000 };
+	std::chrono::milliseconds cooldown{ 1000 * 3 };
+	std::chrono::milliseconds block_retry{ 1000 * 5 };
+	std::size_t block_batch_size{ 128 };
+	std::size_t max_blocks_outstanding{ 10000 };
+	std::size_t max_blocks_queued{ 40000 };
+};
+
 class bootstrap_config final
 {
 public:
-	nano::error deserialize (nano::tomlconfig & toml);
-	nano::error serialize (nano::tomlconfig & toml) const;
+	nano::error deserialize (nano::tomlconfig &);
+	nano::error serialize (nano::tomlconfig &) const;
 
 public:
 	bool enable{ true };
@@ -50,6 +65,7 @@ public:
 	bool enable_database_scan{ false };
 	bool enable_dependency_walker{ true };
 	bool enable_frontier_scan{ true };
+	bool enable_topology{ true };
 
 	// Maximum number of un-responded requests per channel, should be lower or equal to bootstrap server max queue size
 	std::size_t channel_limit{ 16 };
@@ -67,5 +83,6 @@ public:
 
 	account_sets_config account_sets;
 	frontier_scan_config frontier_scan;
+	topo_scan_config topo_scan;
 };
 }

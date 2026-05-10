@@ -133,6 +133,12 @@ std::string nano::thread_role::get_string (nano::thread_role::name role)
 		case nano::thread_role::name::bootstrap_frontier_scan:
 			thread_role_name_string = "Bootstrap front";
 			break;
+		case nano::thread_role::name::bootstrap_topo_index:
+			thread_role_name_string = "Topo index";
+			break;
+		case nano::thread_role::name::bootstrap_topo_blocks:
+			thread_role_name_string = "Topo blocks";
+			break;
 		case nano::thread_role::name::bootstrap_cleanup:
 			thread_role_name_string = "Bootstrap clean";
 			break;

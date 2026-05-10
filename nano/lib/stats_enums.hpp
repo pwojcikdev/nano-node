@@ -94,6 +94,7 @@ enum class type
 	bootstrap_frontiers,
 	bootstrap_account_sets,
 	bootstrap_frontier_scan,
+	bootstrap_topo_scan,
 	bootstrap_timeout,
 	bootstrap_server,
 	bootstrap_server_request,
@@ -669,10 +670,21 @@ enum class detail
 	blocks_by_hash,
 	blocks_by_account,
 	account_info_by_hash,
+	blocks_random,
+	topo_index,
 
 	// query_source
 	database,
 	dependencies,
+	topology_index,
+	topology_blocks,
+
+	// bootstrap_topo_scan
+	loop_topo_index,
+	loop_topo_blocks,
+	next_topo_index,
+	next_topo_block,
+	received,
 
 	// bounded backlog,
 	gathered_targets,

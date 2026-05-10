@@ -1,0 +1,42 @@
+#pragma once
+
+#include <nano/node/bootstrap/bootstrap_context.hpp>
+
+#include <deque>
+#include <memory>
+#include <thread>
+
+namespace nano::bootstrap
+{
+class topo_strategy
+{
+public:
+	explicit topo_strategy (bootstrap_context &);
+
+	void start ();
+	void stop ();
+
+	bool process (nano::messages::asc_pull_ack::topo_index_payload const & response, async_tag const & tag);
+	bool process_blocks (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag);
+
+private:
+	void run_index ();
+	void run_one_index ();
+	void run_blocks ();
+	void run_one_blocks ();
+
+	// Blocks until the topology scan offers a cursor to query, or indexing finishes.
+	std::optional<nano::topo_key> wait_position ();
+	// Blocks until the topology scan offers a non-empty batch of hashes, or all work is done.
+	std::deque<nano::block_hash> wait_block_batch ();
+
+	bool request_index (nano::topo_key cursor, std::shared_ptr<nano::transport::channel> const & channel);
+	bool request_blocks (std::deque<nano::block_hash> hashes, std::shared_ptr<nano::transport::channel> const & channel);
+
+private:
+	bootstrap_context & ctx;
+
+	std::thread thread_index;
+	std::thread thread_blocks;
+};
+}

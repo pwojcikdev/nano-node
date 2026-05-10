@@ -145,3 +145,76 @@ TEST (bootstrap, profile)
 	server->stop ();
 	client->stop ();
 }
+
+TEST (bootstrap, profile_topo)
+{
+	nano::test::system system;
+	nano::thread_runner runner{ system.io_ctx, system.logger, 2 };
+	nano::network_type network = nano::network_type::nano_live_network;
+	nano::network_params network_params{ network };
+
+	// Server: only serve bootstrap traffic; everything else off.
+	nano::node_config config_server{ network_params };
+	config_server.preconfigured_peers.clear ();
+	config_server.bandwidth_limit = 0;
+	config_server.bootstrap->enable = false;
+	nano::node_flags flags_server;
+	flags_server.disable_legacy_bootstrap = true;
+	flags_server.disable_wallet_bootstrap = true;
+	flags_server.disable_add_initial_peers = true;
+	flags_server.disable_ongoing_bootstrap = true;
+	auto data_path_server = nano::working_path (network);
+	auto server = std::make_shared<nano::node> (data_path_server, config_server, system.work, flags_server);
+	system.nodes.push_back (server);
+	server->start ();
+
+	// Client: enable only the topology strategy.
+	nano::node_config config_client{ network_params };
+	config_client.preconfigured_peers.clear ();
+	config_client.bandwidth_limit = 0;
+
+	config_client.bootstrap->enable_priorities = false;
+	config_client.bootstrap->enable_database_scan = false;
+	config_client.bootstrap->enable_dependency_walker = false;
+	config_client.bootstrap->enable_frontier_scan = false;
+	config_client.bootstrap->enable_topology = true;
+
+	nano::node_flags flags_client;
+	flags_client.disable_legacy_bootstrap = true;
+	flags_client.disable_wallet_bootstrap = true;
+	flags_client.disable_add_initial_peers = true;
+	flags_client.disable_ongoing_bootstrap = true;
+	config_client.ipc_config->transport_tcp.enabled = true;
+	config_client.lmdb_config->sync = nano::lmdb_config::sync_strategy::nosync_unsafe;
+
+	auto data_path_client = nano::unique_path ();
+	auto client = std::make_shared<nano::node> (data_path_client, config_client, system.work, flags_client);
+	system.nodes.push_back (client);
+	client->start ();
+
+	std::cout << "server count: " << server->ledger.block_count () << std::endl;
+
+	nano::test::rate_observer rate;
+	rate.observe ("count", [&] () { return client->ledger.block_count (); });
+	rate.observe ("unchecked", [&] () { return client->unchecked.count (); });
+	rate.observe ("block_processor", [&] () { return client->block_processor.size (); });
+	rate.observe (*client, nano::stat::type::bootstrap, nano::stat::detail::request);
+	rate.observe (*client, nano::stat::type::bootstrap, nano::stat::detail::reply);
+	rate.observe (*client, nano::stat::type::bootstrap, nano::stat::detail::blocks, nano::stat::dir::in);
+	rate.observe (*server, nano::stat::type::bootstrap_server, nano::stat::detail::blocks, nano::stat::dir::out);
+	rate.observe (*client, nano::stat::type::bootstrap_topo_scan, nano::stat::detail::next_topo_index);
+	rate.observe (*client, nano::stat::type::bootstrap_topo_scan, nano::stat::detail::next_topo_block);
+	rate.observe (*client, nano::stat::type::bootstrap_topo_scan, nano::stat::detail::process);
+	rate.observe (*client, nano::stat::type::bootstrap_topo_scan, nano::stat::detail::received);
+	rate.observe (*client, nano::stat::type::block_processor_source, nano::stat::detail::bootstrap);
+	rate.background_print (3s);
+
+	while (true)
+	{
+		nano::test::establish_tcp (system, *client, server->network.endpoint ());
+		std::this_thread::sleep_for (10s);
+	}
+
+	server->stop ();
+	client->stop ();
+}
