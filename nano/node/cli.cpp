@@ -567,6 +567,8 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 	}
 	else if (vm.count ("populate_topo_index"))
 	{
+		nano::logger::initialize (nano::log_config::daemon_default (), data_path);
+
 		auto node_flags = nano::inactive_node_flag_defaults ();
 		node_flags.read_only = false;
 		nano::update_flags (node_flags, vm);
@@ -591,6 +593,8 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 	}
 	else if (vm.count ("drop_topo_index"))
 	{
+		nano::logger::initialize (nano::log_config::daemon_default (), data_path);
+
 		auto node_flags = nano::inactive_node_flag_defaults ();
 		node_flags.read_only = false;
 		nano::update_flags (node_flags, vm);
