@@ -569,52 +569,90 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 	{
 		nano::logger::initialize (nano::log_config::daemon_default (), data_path);
 
-		auto node_flags = nano::inactive_node_flag_defaults ();
-		node_flags.read_only = false;
-		nano::update_flags (node_flags, vm);
-		try
+		nano::network_params network_params{ nano::get_active_network () };
+		nano::daemon_config daemon_config{ data_path, network_params };
+
+		auto config_arg (vm.find ("config"));
+		std::vector<std::string> config_overrides;
+		if (config_arg != vm.end ())
 		{
-			nano::inactive_node node (data_path, node_flags);
-			if (node.node->ledger.flags.topo_index)
-			{
-				std::cout << "Topology index is already populated" << std::endl;
-			}
-			else
-			{
-				node.node->ledger.populate_topo_index ();
-				std::cout << "Topology index populated" << std::endl;
-			}
+			config_overrides = nano::config_overrides (config_arg->second.as<std::vector<nano::config_key_value_pair>> ());
 		}
-		catch (std::exception const & e)
+
+		if (auto error = nano::read_node_config_toml (data_path, daemon_config, config_overrides))
 		{
-			std::cerr << "Failed to populate topology index: " << e.what () << std::endl;
-			ec = nano::error_cli::generic;
+			std::cerr << "Error reading config: " << error.get_message () << std::endl;
+			ec = nano::error_cli::reading_config;
+		}
+		else
+		{
+			try
+			{
+				auto & logger = nano::default_logger ();
+				nano::stats stats{ logger };
+				auto store = nano::make_store (logger, stats, data_path, network_params.ledger, false, true, daemon_config.node);
+				nano::ledger ledger{ *store, network_params, stats, logger };
+
+				if (ledger.flags.topo_index)
+				{
+					std::cout << "Topology index is already populated" << std::endl;
+				}
+				else
+				{
+					ledger.populate_topo_index ();
+					std::cout << "Topology index populated" << std::endl;
+				}
+			}
+			catch (std::exception const & e)
+			{
+				std::cerr << "Failed to populate topology index: " << e.what () << std::endl;
+				ec = nano::error_cli::generic;
+			}
 		}
 	}
 	else if (vm.count ("drop_topo_index"))
 	{
 		nano::logger::initialize (nano::log_config::daemon_default (), data_path);
 
-		auto node_flags = nano::inactive_node_flag_defaults ();
-		node_flags.read_only = false;
-		nano::update_flags (node_flags, vm);
-		try
+		nano::network_params network_params{ nano::get_active_network () };
+		nano::daemon_config daemon_config{ data_path, network_params };
+
+		auto config_arg (vm.find ("config"));
+		std::vector<std::string> config_overrides;
+		if (config_arg != vm.end ())
 		{
-			nano::inactive_node node (data_path, node_flags);
-			if (!node.node->ledger.flags.topo_index)
-			{
-				std::cout << "Topology index is not enabled" << std::endl;
-			}
-			else
-			{
-				node.node->ledger.drop_topo_index ();
-				std::cout << "Topology index dropped" << std::endl;
-			}
+			config_overrides = nano::config_overrides (config_arg->second.as<std::vector<nano::config_key_value_pair>> ());
 		}
-		catch (std::exception const & e)
+
+		if (auto error = nano::read_node_config_toml (data_path, daemon_config, config_overrides))
 		{
-			std::cerr << "Failed to drop topology index: " << e.what () << std::endl;
-			ec = nano::error_cli::generic;
+			std::cerr << "Error reading config: " << error.get_message () << std::endl;
+			ec = nano::error_cli::reading_config;
+		}
+		else
+		{
+			try
+			{
+				auto & logger = nano::default_logger ();
+				nano::stats stats{ logger };
+				auto store = nano::make_store (logger, stats, data_path, network_params.ledger, false, true, daemon_config.node);
+				nano::ledger ledger{ *store, network_params, stats, logger };
+
+				if (!ledger.flags.topo_index)
+				{
+					std::cout << "Topology index is not enabled" << std::endl;
+				}
+				else
+				{
+					ledger.drop_topo_index ();
+					std::cout << "Topology index dropped" << std::endl;
+				}
+			}
+			catch (std::exception const & e)
+			{
+				std::cerr << "Failed to drop topology index: " << e.what () << std::endl;
+				ec = nano::error_cli::generic;
+			}
 		}
 	}
 	else if (vm.count ("rollback"))
