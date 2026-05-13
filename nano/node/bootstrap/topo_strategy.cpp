@@ -186,15 +186,16 @@ void topo_strategy::run_processing ()
 void topo_strategy::run_one_processing ()
 {
 	ctx.wait_block_processor ();
+
 	auto ordered = wait_ordered_blocks ();
 	if (ordered.empty ())
 	{
 		return;
 	}
-	// Tag each submitted block with `topology_index` so that the inspect
-	// callback can route it back to this strategy and advance the closed-loop
-	// cursor via `mark_indexed`.
-	ctx.block_processor.add_many (ordered, nano::block_source::bootstrap, /* channel */ nullptr, /* last_callback */ {}, std::any{ query_source::topology_index });
+
+	// Tag each submitted block with `topology_index` so that the inspect callback can route it back to this strategy and advance the closed-loop cursor
+	auto submitted = ctx.block_processor.add_many (ordered, nano::block_source::bootstrap, /* channel */ nullptr, /* last_callback */ {}, std::any{ query_source::topology_index });
+	debug_assert (submitted == ordered.size ()); // We wait for capacity before, so all should be submitted.
 }
 
 std::optional<nano::topo_key> topo_strategy::wait_position ()
