@@ -382,16 +382,22 @@ std::size_t topo_scan_index::count_submitted () const
 
 nano::container_info topo_scan_index::container_info () const
 {
+	auto collect_cursors = [&] () {
+		nano::container_info info;
+		info.put ("cursor", head.cursor.topo_height);
+		info.put ("indexed", indexed.topo_height);
+		return info;
+	};
+
 	nano::container_info info;
 	info.put ("blocks_outstanding", blocks.size ());
 	info.put ("blocks_pending", pending_count);
 	info.put ("blocks_in_flight", in_flight_count);
 	info.put ("blocks_received", received_count);
 	info.put ("blocks_submitted", submitted_count);
-	info.put ("cursor_height", head.cursor.topo_height);
-	info.put ("indexed_height", indexed.topo_height);
 	info.put ("indexing_done", head.done ? std::size_t{ 1 } : std::size_t{ 0 });
 	info.put ("candidates", head.candidates.size ());
+	info.add ("cursors", collect_cursors ());
 	return info;
 }
 }
