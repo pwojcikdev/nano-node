@@ -16,7 +16,8 @@ void topo_scan_index::reset ()
 	blocks.clear ();
 	pending_count = 0;
 	in_flight_count = 0;
-	completed_count = 0;
+	received_count = 0;
+	submitted_count = 0;
 }
 
 std::optional<nano::topo_key> topo_scan_index::next (std::chrono::steady_clock::time_point now)
@@ -148,7 +149,8 @@ void topo_scan_index::reset_discovery ()
 	blocks.clear ();
 	pending_count = 0;
 	in_flight_count = 0;
-	completed_count = 0;
+	received_count = 0;
+	submitted_count = 0;
 	// The indexed cursor itself is preserved — that's the whole point: we trust
 	// the closed-loop position and resume open-loop discovery from there.
 }
@@ -212,9 +214,15 @@ void topo_scan_index::block_received (nano::block_hash const & hash, std::shared
 	auto & by_hash = blocks.get<tag_hash> ();
 	if (auto it = by_hash.find (hash); it != by_hash.end ())
 	{
-		state_change (it->state, block_state::completed);
+		// Once a block has been drained to the processor, it doesn't matter
+		// what a tardy peer delivers — we don't backtrack to `received`.
+		if (it->state == block_state::submitted || it->state == block_state::received)
+		{
+			return;
+		}
+		state_change (it->state, block_state::received);
 		by_hash.modify (it, [&block] (block_entry & entry) {
-			entry.state = block_state::completed;
+			entry.state = block_state::received;
 			entry.block = block;
 		});
 	}
@@ -224,16 +232,31 @@ std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_ordered_blocks (s
 {
 	std::deque<std::shared_ptr<nano::block>> result;
 	auto & by_seq = blocks.get<tag_sequenced> ();
-	while (!by_seq.empty () && result.size () < max_count)
+	for (auto it = by_seq.begin (); it != by_seq.end () && result.size () < max_count; ++it)
 	{
-		auto it = by_seq.begin ();
-		if (it->state != block_state::completed)
+		// Already handed to the processor on a prior call — skip past it but
+		// don't stop. Its topological predecessor (if any) is also submitted, so
+		// subsequent `received` entries are safe to drain in order.
+		if (it->state == block_state::submitted)
 		{
-			break; // Stop at first non-completed to maintain topological order
+			continue;
+		}
+		// Stop at the first not-yet-received (pending / in_flight) entry —
+		// preserves the topological-order guarantee.
+		if (it->state != block_state::received)
+		{
+			break;
 		}
 		result.push_back (it->block);
-		--completed_count;
-		by_seq.erase (it);
+		// Transition into `submitted` rather than erasing: keep the slot in the
+		// queue so it still counts toward `count_outstanding` (backpressure)
+		// and so a re-discovered topo_key doesn't trigger a redundant fetch.
+		// `block_done` (fired by the inspect callback) is what finally evicts
+		// the entry once the block_processor confirms.
+		state_change (block_state::received, block_state::submitted);
+		by_seq.modify (it, [] (block_entry & entry) {
+			entry.state = block_state::submitted;
+		});
 	}
 	return result;
 }
@@ -251,8 +274,11 @@ void topo_scan_index::block_done (nano::block_hash const & hash)
 			case block_state::in_flight:
 				--in_flight_count;
 				break;
-			case block_state::completed:
-				--completed_count;
+			case block_state::received:
+				--received_count;
+				break;
+			case block_state::submitted:
+				--submitted_count;
 				break;
 		}
 		by_hash.erase (it);
@@ -290,8 +316,11 @@ void topo_scan_index::state_change (block_state old_state, block_state new_state
 		case block_state::in_flight:
 			--in_flight_count;
 			break;
-		case block_state::completed:
-			--completed_count;
+		case block_state::received:
+			--received_count;
+			break;
+		case block_state::submitted:
+			--submitted_count;
 			break;
 	}
 	switch (new_state)
@@ -302,8 +331,11 @@ void topo_scan_index::state_change (block_state old_state, block_state new_state
 		case block_state::in_flight:
 			++in_flight_count;
 			break;
-		case block_state::completed:
-			++completed_count;
+		case block_state::received:
+			++received_count;
+			break;
+		case block_state::submitted:
+			++submitted_count;
 			break;
 	}
 }
@@ -338,9 +370,14 @@ std::size_t topo_scan_index::count_in_flight () const
 	return in_flight_count;
 }
 
-std::size_t topo_scan_index::count_completed () const
+std::size_t topo_scan_index::count_received () const
 {
-	return completed_count;
+	return received_count;
+}
+
+std::size_t topo_scan_index::count_submitted () const
+{
+	return submitted_count;
 }
 
 nano::container_info topo_scan_index::container_info () const
@@ -349,7 +386,8 @@ nano::container_info topo_scan_index::container_info () const
 	info.put ("blocks_outstanding", blocks.size ());
 	info.put ("blocks_pending", pending_count);
 	info.put ("blocks_in_flight", in_flight_count);
-	info.put ("blocks_completed", completed_count);
+	info.put ("blocks_received", received_count);
+	info.put ("blocks_submitted", submitted_count);
 	info.put ("cursor_height", head.cursor.topo_height);
 	info.put ("indexed_height", indexed.topo_height);
 	info.put ("indexing_done", head.done ? std::size_t{ 1 } : std::size_t{ 0 });

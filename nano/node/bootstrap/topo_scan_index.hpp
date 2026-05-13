@@ -35,9 +35,10 @@ namespace nano::bootstrap
  *   `max_blocks_queued` backpressure check in `next()` bounds how far ahead
  *   discovery can get from processing.
  *
- * Phase 2 (block fetching): tracks per-block state (pending, in_flight, completed)
- *   and exposes both a topologically-ordered drain (`next_ordered_blocks`) and an
- *   unconditional cleanup (`received`) for blocks delivered via other channels.
+ * Phase 2 (block fetching): tracks per-block state (pending, in_flight, received,
+ *   submitted) and exposes both a topologically-ordered drain (`next_ordered_blocks`)
+ *   and an unconditional eviction (`block_done`) for blocks delivered or completed
+ *   via other channels.
  *
  * Phase 3 (ledger feedback): `mark_indexed` records a (hash, topo_height) pair
  *   for blocks that successfully entered the ledger. The highest such key is
@@ -115,10 +116,15 @@ public:
 	// on peer responses to keep the pipeline saturated.)
 	nano::topo_key cursor () const;
 	bool has_blocks_pending () const;
+	// Total queue depth across every state (pending + in_flight + received +
+	// submitted). Drives the discovery backpressure check — submitted entries
+	// (drained but not yet confirmed processed) are deliberately counted so
+	// discovery can't race past blocks still in the processor's pipeline.
 	std::size_t count_outstanding () const;
 	std::size_t count_pending () const;
 	std::size_t count_in_flight () const;
-	std::size_t count_completed () const;
+	std::size_t count_received () const;
+	std::size_t count_submitted () const;
 	void reset ();
 
 	nano::container_info container_info () const;
@@ -169,9 +175,12 @@ private:
 
 	enum class block_state
 	{
-		pending,
-		in_flight,
-		completed,
+		pending, // Known but not requested yet.
+		in_flight, // Request sent to a peer, awaiting response.
+		received, // Received from a peer, awaiting topological-order drain.
+		submitted, // Drained and handed off to the block processor, awaiting
+		// confirmation via `block_done` (fired by the inspect callback).
+		// Held in the queue so backpressure accounts for in-flight processing.
 	};
 
 	struct block_entry
@@ -200,7 +209,8 @@ private:
 	// O(1) counters, kept in sync with state transitions
 	std::size_t pending_count{ 0 };
 	std::size_t in_flight_count{ 0 };
-	std::size_t completed_count{ 0 };
+	std::size_t received_count{ 0 };
+	std::size_t submitted_count{ 0 };
 
 	void state_change (block_state old_state, block_state new_state);
 };

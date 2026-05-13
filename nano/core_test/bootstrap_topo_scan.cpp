@@ -381,7 +381,7 @@ TEST (bootstrap_topo_scan, block_received_and_drain)
 
 	std::shared_ptr<nano::block> stub; // The drain-order semantics don't depend on actual block contents.
 
-	// Receive the middle block first - drain stops because the head is not completed.
+	// Receive the middle block first - drain stops because the head is not received.
 	scan.block_received (nano::block_hash{ 200 }, stub);
 	auto drained = scan.next_ordered_blocks (10);
 	ASSERT_TRUE (drained.empty ());
@@ -670,14 +670,14 @@ TEST (bootstrap_topo_scan, cleanup_resets_stale)
 	ASSERT_EQ (scan.count_in_flight (), 3);
 
 	std::shared_ptr<nano::block> stub;
-	scan.block_received (nano::block_hash{ 200 }, stub); // 200 -> completed
+	scan.block_received (nano::block_hash{ 200 }, stub); // 200 -> received
 	ASSERT_EQ (scan.count_in_flight (), 2);
 
 	// Well past the retry cutoff: only the in_flight entries (100, 300) should reset.
 	ASSERT_EQ (scan.cleanup (t0 + 1s), 2);
 	ASSERT_EQ (scan.count_pending (), 2);
 	ASSERT_EQ (scan.count_in_flight (), 0);
-	ASSERT_EQ (scan.count_completed (), 1);
+	ASSERT_EQ (scan.count_received (), 1);
 }
 
 TEST (bootstrap_topo_scan, cleanup_unjams_backpressure)
@@ -948,6 +948,177 @@ TEST (bootstrap_topo_scan, check_poisoning_held_off_by_progress)
 	ASSERT_FALSE (scan.check_poisoning (t0 + 1500ms)); // 700ms since progress < 1s timeout
 	ASSERT_EQ (scan.count_outstanding (), 3); // Queue intact, no rollback
 	ASSERT_EQ (scan.cursor (), key (1, 100));
+}
+
+// --- Submitted state (drained-but-not-confirmed handoff) ---
+
+// `next_ordered_blocks` transitions `received` entries into `submitted` rather
+// than erasing them — the queue depth (and backpressure signal) is preserved
+// until `block_done` confirms processing.
+TEST (bootstrap_topo_scan, submitted_state_preserves_outstanding)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
+	scan.next_blocks (10);
+
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ 100 }, stub);
+	scan.block_received (nano::block_hash{ 200 }, stub);
+	scan.block_received (nano::block_hash{ 300 }, stub);
+	ASSERT_EQ (scan.count_received (), 3);
+	ASSERT_EQ (scan.count_outstanding (), 3);
+
+	auto drained = scan.next_ordered_blocks (10);
+	ASSERT_EQ (drained.size (), 3);
+
+	// After draining: blocks are now `submitted`, still counted as outstanding.
+	ASSERT_EQ (scan.count_received (), 0);
+	ASSERT_EQ (scan.count_submitted (), 3);
+	ASSERT_EQ (scan.count_outstanding (), 3);
+	ASSERT_TRUE (scan.has_blocks_pending ());
+
+	// `block_done` (fired by the inspect callback) is what finally evicts.
+	scan.block_done (nano::block_hash{ 100 });
+	ASSERT_EQ (scan.count_submitted (), 2);
+	ASSERT_EQ (scan.count_outstanding (), 2);
+}
+
+// A second drain call must not re-emit blocks that have already transitioned
+// to `submitted` — the strategy would otherwise re-submit them to the
+// processor on every loop iteration.
+TEST (bootstrap_topo_scan, next_ordered_blocks_skips_submitted)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200) });
+	scan.next_blocks (10);
+
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ 100 }, stub);
+	scan.block_received (nano::block_hash{ 200 }, stub);
+
+	auto first = scan.next_ordered_blocks (10);
+	ASSERT_EQ (first.size (), 2);
+
+	// Both are submitted now; nothing else received — drain yields nothing.
+	auto second = scan.next_ordered_blocks (10);
+	ASSERT_TRUE (second.empty ());
+	ASSERT_EQ (scan.count_submitted (), 2);
+}
+
+// Drain logic must walk past `submitted` entries (already in the processor)
+// to find subsequent `received` ones — once a topological predecessor is
+// submitted it's safe to submit successors.
+TEST (bootstrap_topo_scan, next_ordered_blocks_drains_past_submitted)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
+	scan.next_blocks (10);
+
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ 100 }, stub);
+	auto first = scan.next_ordered_blocks (10);
+	ASSERT_EQ (first.size (), 1); // Only 100 was received
+	ASSERT_EQ (scan.count_submitted (), 1);
+
+	// Later blocks complete in order; drain must skip over the head's
+	// `submitted` slot to reach them.
+	scan.block_received (nano::block_hash{ 200 }, stub);
+	scan.block_received (nano::block_hash{ 300 }, stub);
+	auto second = scan.next_ordered_blocks (10);
+	ASSERT_EQ (second.size (), 2);
+	ASSERT_EQ (scan.count_submitted (), 3);
+	ASSERT_EQ (scan.count_received (), 0);
+}
+
+// In-flight retry must not pick up a block that's already been drained —
+// `submitted` is a terminal state until `block_done` fires.
+TEST (bootstrap_topo_scan, submitted_blocks_not_refetched)
+{
+	auto cfg = default_config ();
+	cfg.block_retry = 100ms;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100) });
+	scan.next_blocks (10, t0);
+
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ 100 }, stub);
+	scan.next_ordered_blocks (10); // 100 → submitted
+	ASSERT_EQ (scan.count_submitted (), 1);
+
+	// Well past the retry cutoff: `next_blocks` must not re-issue a fetch.
+	auto retry = scan.next_blocks (10, t0 + 5s);
+	ASSERT_TRUE (retry.empty ());
+	ASSERT_EQ (scan.count_submitted (), 1);
+	ASSERT_EQ (scan.count_in_flight (), 0);
+
+	// `cleanup` (in-flight retry path) must also leave submitted entries alone.
+	ASSERT_EQ (scan.cleanup (t0 + 5s), 0);
+	ASSERT_EQ (scan.count_submitted (), 1);
+}
+
+// A late `block_received` (e.g. delayed peer response after we already drained
+// the block from another peer) must not demote the entry back to `received`.
+TEST (bootstrap_topo_scan, block_received_no_op_on_submitted)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100) });
+	scan.next_blocks (10);
+
+	std::shared_ptr<nano::block> stub_first, stub_second;
+	scan.block_received (nano::block_hash{ 100 }, stub_first);
+	scan.next_ordered_blocks (10);
+	ASSERT_EQ (scan.count_submitted (), 1);
+
+	// Second arrival: must be ignored.
+	scan.block_received (nano::block_hash{ 100 }, stub_second);
+	ASSERT_EQ (scan.count_submitted (), 1);
+	ASSERT_EQ (scan.count_received (), 0);
+}
+
+// Backpressure triggers off the total outstanding count, which now includes
+// submitted blocks — discovery can't race past entries still in the processor.
+TEST (bootstrap_topo_scan, submitted_state_engages_backpressure)
+{
+	auto cfg = default_config ();
+	cfg.max_blocks_queued = 3;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
+	scan.next_blocks (10);
+
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ 100 }, stub);
+	scan.block_received (nano::block_hash{ 200 }, stub);
+	scan.block_received (nano::block_hash{ 300 }, stub);
+	scan.next_ordered_blocks (10);
+
+	ASSERT_EQ (scan.count_submitted (), 3);
+	ASSERT_EQ (scan.count_outstanding (), 3); // At the cap
+
+	// Backpressure engaged via submitted blocks alone.
+	ASSERT_FALSE (scan.next ().has_value ());
+
+	// `block_done` (inspect callback) is what relieves the pressure.
+	scan.block_done (nano::block_hash{ 100 });
+	ASSERT_EQ (scan.count_outstanding (), 2);
+	ASSERT_TRUE (scan.next ().has_value ());
 }
 
 // After a rollback, the safeguard re-arms — a second stall will trigger
