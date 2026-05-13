@@ -11,6 +11,7 @@ topo_scan_index::topo_scan_index (nano::topo_scan_config const & config_a) :
 void topo_scan_index::reset ()
 {
 	head.reset ();
+	indexed = {};
 	blocks.clear ();
 	pending_count = 0;
 	in_flight_count = 0;
@@ -42,7 +43,7 @@ std::optional<nano::topo_key> topo_scan_index::next (std::chrono::steady_clock::
 	head.requests += 1;
 	head.timestamp = now;
 
-	return head.cursor;
+	return indexed;
 }
 
 bool topo_scan_index::process (nano::topo_key const start, std::deque<nano::topo_key> const & entries)
@@ -50,10 +51,12 @@ bool topo_scan_index::process (nano::topo_key const start, std::deque<nano::topo
 	// Keys in response must be in ascending order
 	debug_assert (std::is_sorted (entries.begin (), entries.end ()));
 
-	// Reject stale responses (cursor already advanced past `start`)
-	if (start != head.cursor)
+	// Reject responses whose start doesn't match the current cursor.
+	// `indexed` advances only via `mark_indexed`, so a mismatch means the
+	// response was issued before a block confirmation moved the cursor.
+	if (start != indexed)
 	{
-		return false; // Not advanced
+		return false; // Stale
 	}
 
 	head.completed += 1;
@@ -61,7 +64,7 @@ bool topo_scan_index::process (nano::topo_key const start, std::deque<nano::topo
 	// Accumulate union of strictly-post-cursor entries
 	for (auto const & entry : entries)
 	{
-		if (entry > head.cursor)
+		if (entry > indexed)
 		{
 			head.candidates.insert (entry);
 		}
@@ -70,29 +73,35 @@ bool topo_scan_index::process (nano::topo_key const start, std::deque<nano::topo
 	// Wait for full quorum of responses before finalizing
 	if (head.completed < config.consideration_count)
 	{
-		return false; // Not advanced
+		return false; // Not finalized
 	}
 
-	// All consideration_count responses received - finalize
+	// Every queried peer reported nothing past the cursor: topology end
 	if (head.candidates.empty () && head.completed >= config.consideration_count * 2)
 	{
-		// Every queried peer reported nothing past the cursor: topology end
 		head.done = true;
 		return true; // Advanced (to end)
 	}
 
+	// Quorum reached but no candidates yet — keep accumulating across subsequent
+	// rounds (head.completed continues to climb toward the end-of-topology
+	// threshold). Allow the next round to start fresh.
 	if (head.candidates.empty ())
 	{
-		return false; // Not advanced (not enough candidates, but not enough responses to conclude end)
+		head.requests = 0;
+		head.timestamp = {};
+		return false;
 	}
 
-	// Insert kept entries into the block-fetch queue, deduped against existing by multiindex constraints
-	nano::topo_key last_inserted{};
-	size_t kept_count = 0;
+	// Insert kept entries into the block-fetch queue. Already-queued entries
+	// (carried over because the cursor hasn't advanced) are skipped via the
+	// hash dedup in the multi-index — we only count newly inserted entries
+	// toward the trim budget so closed-loop discovery isn't starved by
+	// peer responses that re-list still-queued entries.
+	size_t new_count = 0;
 	for (auto const & candidate : head.candidates)
 	{
-		// Trim union to only the first `candidates` entries
-		if (kept_count >= config.candidates)
+		if (new_count >= config.candidates)
 		{
 			break;
 		}
@@ -106,21 +115,51 @@ bool topo_scan_index::process (nano::topo_key const start, std::deque<nano::topo
 		if (inserted)
 		{
 			++pending_count;
+			++new_count;
 		}
-
-		last_inserted = candidate;
-		++kept_count;
 	}
 
-	// Advance cursor to the last kept entry
-	debug_assert (head.cursor < last_inserted);
-	head.cursor = last_inserted;
+	head.candidates.clear ();
+	head.completed = 0;
+
+	if (new_count > 0)
+	{
+		// Round produced new work; full reset so the next batch starts immediately.
+		head.requests = 0;
+		head.timestamp = {};
+		return true; // Advanced (new entries queued)
+	}
+
+	// Round produced nothing new — cursor hasn't moved and peers keep returning
+	// already-queued entries. Hold the request budget so cooldown gates the
+	// next batch (prevents spinning while waiting for `mark_indexed`).
+	return false;
+}
+
+void topo_scan_index::mark_indexed (nano::block_hash const & hash, uint64_t topo_height)
+{
+	debug_assert (topo_height > 0); // topo_height=0 is reserved for "not in topology"
+
+	nano::topo_key const new_key{ topo_height, hash };
+	if (new_key <= indexed)
+	{
+		return; // Already at or past this position
+	}
+
+	indexed = new_key;
+
+	// Per-round state was tied to the old cursor; reset so a fresh batch can
+	// start at the new position. Resetting the timestamp lets the next request
+	// go out immediately since closed-loop progress is the rate-limiter.
 	head.requests = 0;
 	head.completed = 0;
 	head.timestamp = {};
 	head.candidates.clear ();
 
-	return true; // Advanced
+	// If we'd previously declared end-of-topology at an earlier cursor position
+	// but processing has now advanced past it, re-open discovery — peers may
+	// have new entries past the new cursor.
+	head.done = false;
 }
 
 std::deque<nano::block_hash> topo_scan_index::next_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now)
@@ -263,7 +302,7 @@ bool topo_scan_index::indexing () const
 
 nano::topo_key topo_scan_index::cursor () const
 {
-	return head.cursor;
+	return indexed;
 }
 
 bool topo_scan_index::has_blocks_pending () const
@@ -298,7 +337,7 @@ nano::container_info topo_scan_index::container_info () const
 	info.put ("blocks_pending", pending_count);
 	info.put ("blocks_in_flight", in_flight_count);
 	info.put ("blocks_completed", completed_count);
-	info.put ("cursor_height", head.cursor.topo_height);
+	info.put ("indexed_height", indexed.topo_height);
 	info.put ("indexing_done", head.done ? std::size_t{ 1 } : std::size_t{ 0 });
 	info.put ("candidates", head.candidates.size ());
 	return info;
