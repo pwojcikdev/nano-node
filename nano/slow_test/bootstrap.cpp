@@ -216,6 +216,8 @@ TEST (bootstrap, profile_topo)
 	rate.observe (*client, nano::stat::type::block_processor_result, nano::stat::detail::gap_source);
 	rate.observe (*client, nano::stat::type::block_processor_result, nano::stat::detail::gap_previous);
 
+	rate.observe (*client, nano::stat::type::block_processor_source, nano::stat::detail::live);
+	rate.observe (*client, nano::stat::type::block_processor_source, nano::stat::detail::unchecked);
 	rate.observe (*client, nano::stat::type::block_processor_source, nano::stat::detail::bootstrap);
 
 	rate.observe (*server, nano::stat::type::bootstrap_server, nano::stat::detail::blocks, nano::stat::dir::out);
