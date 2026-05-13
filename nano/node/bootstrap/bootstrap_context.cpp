@@ -499,6 +499,22 @@ void bootstrap_context::cleanup ()
 		stats.inc (nano::stat::type::bootstrap_timeout, to_stat_detail (tag.type));
 		tags_by_order.pop_front ();
 	}
+
+	// Topology bootstrap maintenance:
+	//   1. Reclaim stale in-flight block hashes (slots that timed out without a
+	//      response and would otherwise be held forever under backpressure).
+	//   2. Detect stalled / poisoned discovery — when the open-loop cursor sits
+	//      ahead of the indexed (confirmed) cursor for too long with no ledger
+	//      progress, roll discovery back to the indexed cursor.
+	if (auto reclaimed = topology.cleanup (now); reclaimed > 0)
+	{
+		stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::timeout, reclaimed);
+	}
+	if (topology.check_poisoning (now))
+	{
+		stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::reset);
+		logger.warn (nano::log::type::bootstrap, "Topology discovery stalled — rolling back to indexed cursor topo_height={}", topology.cursor ().topo_height);
+	}
 }
 
 void bootstrap_context::run_cleanup ()

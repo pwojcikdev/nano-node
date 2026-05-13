@@ -51,6 +51,12 @@ public:
 	std::size_t block_batch_size{ 128 };
 	std::size_t max_blocks_outstanding{ 10000 };
 	std::size_t max_blocks_queued{ 40000 };
+	// If the discovery cursor stays ahead of the confirmed (indexed) cursor for
+	// longer than this without any ledger progress, the discovery state is
+	// considered poisoned (malicious peer, unprocessable blocks, ...) and the
+	// pipeline is rewound to the indexed cursor. Acts as a fail-safe when the
+	// verify / dedup / backpressure safeguards don't prevent the gap.
+	std::chrono::milliseconds poisoning_timeout{ 1000 * 60 };
 };
 
 class bootstrap_config final

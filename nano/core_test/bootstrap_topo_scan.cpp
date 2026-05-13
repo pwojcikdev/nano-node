@@ -488,16 +488,10 @@ TEST (bootstrap_topo_scan, convergence_trim_to_batch_size)
 	ASSERT_TRUE (seen.count (nano::block_hash{ 2 }));
 	ASSERT_TRUE (seen.count (nano::block_hash{ 3 }));
 
-	// Closed-loop: cursor stays at the origin until mark_indexed is called.
+	// Discovery cursor advances open-loop to the highest queued entry.
 	auto p3 = scan.next ();
 	ASSERT_TRUE (p3.has_value ());
-	ASSERT_EQ (*p3, nano::topo_key{});
-
-	// After mark_indexed for the 3rd entry, the cursor advances and next() returns it.
-	scan.mark_indexed (nano::block_hash{ 3 }, 3);
-	auto p4 = scan.next ();
-	ASSERT_TRUE (p4.has_value ());
-	ASSERT_EQ (*p4, key (3, 3));
+	ASSERT_EQ (*p3, key (3, 3));
 }
 
 TEST (bootstrap_topo_scan, convergence_poison_resistance)
@@ -750,8 +744,9 @@ TEST (bootstrap_topo_scan, mark_indexed_monotonic)
 	ASSERT_EQ (scan.cursor (), key (2, 250));
 }
 
-// next() returns the closed-loop cursor (latest indexed), not whatever was last queued.
-TEST (bootstrap_topo_scan, mark_indexed_drives_next)
+// `cursor()` follows `mark_indexed` (closed-loop tracking), independent of
+// the open-loop discovery cursor that drives `next()`.
+TEST (bootstrap_topo_scan, mark_indexed_independent_of_discovery)
 {
 	auto cfg = default_config ();
 	nano::bootstrap::topo_scan_index scan{ cfg };
@@ -760,131 +755,60 @@ TEST (bootstrap_topo_scan, mark_indexed_drives_next)
 	ASSERT_TRUE (pos1.has_value ());
 	ASSERT_EQ (*pos1, nano::topo_key{});
 
-	// Queue blocks via a peer response; the cursor must still report origin.
+	// Discovery cursor advances on quorum; `indexed` stays put.
 	scan.process (*pos1, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
-	ASSERT_EQ (scan.cursor (), nano::topo_key{});
+	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // `indexed` untouched by process()
+	ASSERT_EQ (*scan.next (), key (3, 300)); // Discovery cursor advanced
 
-	auto pos2 = scan.next ();
-	ASSERT_TRUE (pos2.has_value ());
-	ASSERT_EQ (*pos2, nano::topo_key{}); // Still origin — peers' responses don't move the cursor
-
-	// Ledger feedback advances the cursor; next() picks up the new position.
+	// Ledger feedback advances `indexed`. Discovery cursor unchanged.
 	scan.mark_indexed (nano::block_hash{ 200 }, 2);
-	auto pos3 = scan.next ();
-	ASSERT_TRUE (pos3.has_value ());
-	ASSERT_EQ (*pos3, key (2, 200));
+	ASSERT_EQ (scan.cursor (), key (2, 200));
 }
 
-// mark_indexed resets per-round state so a fresh discovery batch can start
-// at the new cursor without waiting for cooldown.
-TEST (bootstrap_topo_scan, mark_indexed_resets_round_state)
+// Discovery proceeds open-loop with backpressure as the coupling point:
+// when the queue is full the indexer pauses until processing drains it.
+TEST (bootstrap_topo_scan, discovery_paused_by_backpressure)
 {
 	auto cfg = default_config ();
-	cfg.consideration_count = 3;
-	cfg.cooldown = 1s;
-	nano::bootstrap::topo_scan_index scan{ cfg };
-
-	auto const t0 = std::chrono::steady_clock::now ();
-
-	// Burn through the per-round request budget.
-	for (unsigned i = 0; i < cfg.consideration_count; ++i)
-	{
-		auto pos = scan.next (t0);
-		ASSERT_TRUE (pos.has_value ());
-	}
-
-	// Budget exhausted, cooldown not yet elapsed → next() yields nothing.
-	ASSERT_FALSE (scan.next (t0).has_value ());
-
-	// mark_indexed advances the cursor and resets the budget, so the next
-	// request is immediately eligible at the new position.
-	scan.mark_indexed (nano::block_hash{ 500 }, 5);
-	auto pos = scan.next (t0);
-	ASSERT_TRUE (pos.has_value ());
-	ASSERT_EQ (*pos, key (5, 500));
-}
-
-// After mark_indexed advances past a `done` position, indexing re-opens —
-// peers may have new entries past the new cursor.
-TEST (bootstrap_topo_scan, mark_indexed_reopens_done)
-{
-	auto cfg = default_config ();
-	cfg.cooldown = 100ms;
-	nano::bootstrap::topo_scan_index scan{ cfg };
-
-	auto const t0 = std::chrono::steady_clock::now ();
-	std::deque<nano::topo_key> empty;
-
-	// Two empty responses at origin → end-of-topology.
-	ASSERT_FALSE (scan.process (*scan.next (t0), empty));
-	ASSERT_TRUE (scan.process (*scan.next (t0 + 200ms), empty));
-	ASSERT_FALSE (scan.indexing ());
-
-	// Queue some entries (e.g., from a peer that responded earlier) — irrelevant
-	// to the test, but real-world fact: blocks may still be in the pipeline.
-
-	// Ledger feedback past the done position re-opens indexing.
-	scan.mark_indexed (nano::block_hash{ 100 }, 1);
-	ASSERT_TRUE (scan.indexing ());
-}
-
-// `process(start, ...)` where `start` doesn't match the current cursor is stale.
-TEST (bootstrap_topo_scan, process_rejects_stale_start)
-{
-	auto cfg = default_config ();
+	cfg.candidates = 4;
+	cfg.max_blocks_queued = 4;
 	nano::bootstrap::topo_scan_index scan{ cfg };
 
 	auto pos = scan.next ();
-	ASSERT_EQ (*pos, nano::topo_key{});
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300), key (4, 400) });
+	ASSERT_EQ (scan.count_outstanding (), 4);
 
-	// Advance the cursor; the previously-captured `pos` is now stale.
+	// Queue is full → discovery pauses regardless of cursor / cooldown state.
+	ASSERT_FALSE (scan.next ().has_value ());
+
+	// Drain a block via the normal pipeline. mark_indexed alone doesn't drain
+	// the queue (that's block_done's job); call both like the real strategy.
+	scan.block_done (nano::block_hash{ 100 });
 	scan.mark_indexed (nano::block_hash{ 100 }, 1);
+	ASSERT_EQ (scan.count_outstanding (), 3);
 
-	// Replaying the stale `pos` against the new cursor must be rejected.
-	std::deque<nano::topo_key> entries{ key (2, 200), key (3, 300) };
-	ASSERT_FALSE (scan.process (*pos, entries));
-	ASSERT_EQ (scan.count_pending (), 0); // Nothing queued — response was discarded
+	// Below the cap → discovery resumes.
+	ASSERT_TRUE (scan.next ().has_value ());
 }
 
-// Closed loop should not starve when peers re-list still-queued entries.
-// Filter `> indexed` admits the entries, but the trim path only counts
-// newly-inserted entries toward the budget so new heights aren't lost.
-TEST (bootstrap_topo_scan, process_skips_already_queued_in_trim)
+// End-to-end hybrid flow: discovery cursor races ahead, `indexed` lags behind,
+// and `cursor()` reports the closed-loop position throughout.
+TEST (bootstrap_topo_scan, hybrid_end_to_end)
 {
 	auto cfg = default_config ();
 	cfg.candidates = 3;
 	nano::bootstrap::topo_scan_index scan{ cfg };
 
-	auto p1 = scan.next ();
-	scan.process (*p1, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
-	ASSERT_EQ (scan.count_pending (), 3);
-
-	// Cursor still at origin (mark_indexed not called). Peer re-lists earlier
-	// entries plus three new ones. Trim must keep the new heights, skipping
-	// the duplicates.
-	auto p2 = scan.next ();
-	ASSERT_EQ (*p2, nano::topo_key{});
-
-	ASSERT_TRUE (scan.process (*p2, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300), key (4, 400), key (5, 500), key (6, 600) }));
-	ASSERT_EQ (scan.count_pending (), 6); // 3 originals + 3 new (4, 5, 6) past the duplicates
-}
-
-// Closed-loop end-to-end: cursor advances only after blocks are confirmed
-// processed; subsequent requests target the advanced cursor.
-TEST (bootstrap_topo_scan, closed_loop_end_to_end)
-{
-	auto cfg = default_config ();
-	cfg.candidates = 3;
-	nano::bootstrap::topo_scan_index scan{ cfg };
-
-	// Discovery round 1
+	// Discovery round 1 — peers' response advances the discovery cursor.
 	auto pos1 = scan.next ();
 	ASSERT_EQ (*pos1, nano::topo_key{});
 	scan.process (*pos1, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
+	ASSERT_EQ (*scan.next (), key (3, 300)); // Discovery cursor advanced
+	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // Indexed still at origin
+
+	// Fetch and drain blocks.
 	auto fetched = scan.next_blocks (10);
 	ASSERT_EQ (fetched.size (), 3);
-
-	// Blocks process in order; mark_indexed each as it completes.
 	std::shared_ptr<nano::block> stub;
 	scan.block_received (nano::block_hash{ 100 }, stub);
 	scan.block_received (nano::block_hash{ 200 }, stub);
@@ -892,7 +816,7 @@ TEST (bootstrap_topo_scan, closed_loop_end_to_end)
 	auto drained = scan.next_ordered_blocks (10);
 	ASSERT_EQ (drained.size (), 3);
 
-	// Each successful processing event advances the closed-loop cursor.
+	// Block processor confirms each block — `indexed` catches up.
 	scan.block_done (nano::block_hash{ 100 });
 	scan.mark_indexed (nano::block_hash{ 100 }, 1);
 	scan.block_done (nano::block_hash{ 200 });
@@ -900,13 +824,8 @@ TEST (bootstrap_topo_scan, closed_loop_end_to_end)
 	scan.block_done (nano::block_hash{ 300 });
 	scan.mark_indexed (nano::block_hash{ 300 }, 3);
 
-	ASSERT_EQ (scan.cursor (), key (3, 300));
+	ASSERT_EQ (scan.cursor (), key (3, 300)); // Indexed reached discovery cursor
 	ASSERT_FALSE (scan.has_blocks_pending ());
-
-	// Discovery round 2 starts at the new cursor.
-	auto pos2 = scan.next ();
-	ASSERT_TRUE (pos2.has_value ());
-	ASSERT_EQ (*pos2, key (3, 300));
 }
 
 // reset() clears the indexed cursor along with all other discovery state.
@@ -920,4 +839,138 @@ TEST (bootstrap_topo_scan, reset_clears_indexed)
 
 	scan.reset ();
 	ASSERT_EQ (scan.cursor (), nano::topo_key{});
+}
+
+// --- Poisoning safeguard ---
+
+// reset_discovery rolls discovery back to `indexed` and drops queued blocks
+// while preserving the indexed cursor.
+TEST (bootstrap_topo_scan, reset_discovery_rolls_back_to_indexed)
+{
+	auto cfg = default_config ();
+	cfg.candidates = 5;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	// Discover and queue some entries; advance indexed only partway.
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300), key (4, 400), key (5, 500) });
+	ASSERT_EQ (scan.count_outstanding (), 5);
+	scan.mark_indexed (nano::block_hash{ 100 }, 1);
+	scan.mark_indexed (nano::block_hash{ 200 }, 2);
+	ASSERT_EQ (scan.cursor (), key (2, 200));
+
+	scan.reset_discovery ();
+
+	// Indexed preserved, head + queue rewound.
+	ASSERT_EQ (scan.cursor (), key (2, 200));
+	ASSERT_EQ (scan.count_outstanding (), 0);
+	ASSERT_FALSE (scan.has_blocks_pending ());
+
+	// next() now offers the indexed cursor — fresh discovery starts from there.
+	auto fresh = scan.next ();
+	ASSERT_TRUE (fresh.has_value ());
+	ASSERT_EQ (*fresh, key (2, 200));
+}
+
+// check_poisoning is a no-op while discovery and indexed are aligned, even
+// far past the timeout.
+TEST (bootstrap_topo_scan, check_poisoning_noop_when_aligned)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 100ms;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+	ASSERT_FALSE (scan.check_poisoning (t0 + 10s));
+	ASSERT_EQ (scan.cursor (), nano::topo_key{});
+}
+
+// check_poisoning holds off while discovery is ahead but the timeout hasn't
+// elapsed yet — a healthy fast-discovery / slow-processing window must not
+// trip the safeguard.
+TEST (bootstrap_topo_scan, check_poisoning_waits_for_timeout)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
+	ASSERT_EQ (scan.count_outstanding (), 3);
+
+	// Within the timeout window: no rollback.
+	ASSERT_FALSE (scan.check_poisoning (t0 + 500ms));
+	ASSERT_EQ (scan.count_outstanding (), 3);
+}
+
+// check_poisoning fires when discovery is ahead and no mark_indexed has
+// advanced the closed-loop cursor within the timeout. Discovery is rewound
+// and the queue is purged.
+TEST (bootstrap_topo_scan, check_poisoning_rolls_back_on_stall)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
+	ASSERT_EQ (scan.count_outstanding (), 3);
+
+	// Past the timeout with no mark_indexed progress → rollback.
+	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // Indexed preserved (was at origin)
+	ASSERT_EQ (scan.count_outstanding (), 0); // Queue purged
+	ASSERT_FALSE (scan.has_blocks_pending ());
+
+	// Subsequent rollback within the new window: held off.
+	ASSERT_FALSE (scan.check_poisoning (t0 + 2s + 500ms));
+}
+
+// mark_indexed progress resets the poisoning clock; sustained progress keeps
+// the safeguard from firing even with a small timeout.
+TEST (bootstrap_topo_scan, check_poisoning_held_off_by_progress)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
+
+	// Progress arrives within the timeout window — the poisoning clock resets.
+	scan.mark_indexed (nano::block_hash{ 100 }, 1, t0 + 800ms);
+	ASSERT_FALSE (scan.check_poisoning (t0 + 1500ms)); // 700ms since progress < 1s timeout
+	ASSERT_EQ (scan.count_outstanding (), 3); // Queue intact, no rollback
+	ASSERT_EQ (scan.cursor (), key (1, 100));
+}
+
+// After a rollback, the safeguard re-arms — a second stall will trigger
+// another rollback after another full timeout window.
+TEST (bootstrap_topo_scan, check_poisoning_rearms)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100) });
+	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+
+	// Repopulate the queue; no ledger progress.
+	auto pos2 = scan.next (t0 + 2s);
+	ASSERT_TRUE (pos2.has_value ());
+	scan.process (*pos2, std::deque<nano::topo_key>{ key (1, 100) });
+	ASSERT_EQ (scan.count_outstanding (), 1);
+
+	// Second timeout window → second rollback.
+	ASSERT_TRUE (scan.check_poisoning (t0 + 4s));
+	ASSERT_EQ (scan.count_outstanding (), 0);
 }
