@@ -16,6 +16,8 @@ public:
 	void start ();
 	void stop ();
 
+	void inspect (nano::secure::transaction const &, nano::block_status const &, nano::block_context const &);
+
 	bool process (nano::messages::asc_pull_ack::topo_index_payload const & response, async_tag const & tag);
 	bool process_blocks (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag);
 

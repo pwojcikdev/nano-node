@@ -7,6 +7,8 @@
 #include <nano/node/bootstrap/topo_strategy.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/transport/formatting.hpp>
+#include <nano/secure/ledger.hpp>
+#include <nano/secure/ledger_set_any.hpp>
 
 using namespace std::chrono_literals;
 
@@ -44,6 +46,48 @@ void topo_strategy::stop ()
 	join_or_pass (thread_index);
 	join_or_pass (thread_blocks);
 	join_or_pass (thread_processing);
+}
+
+void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_status const & status, nano::block_context const & context)
+{
+	debug_assert (!ctx.mutex.try_lock ());
+	debug_assert (std::any_cast<query_source> (context.tag) == query_source::topology_index);
+
+	auto const & hash = context.block->hash ();
+
+	switch (status)
+	{
+		case nano::block_status::progress:
+		{
+			// Newly inserted blocks carry the sideband set by ledger.process(); its
+			// topo_height is the authoritative source for closed-loop cursor advance.
+			debug_assert (context.block->has_sideband ());
+			auto const topo_height = context.block->sideband ().topo_height;
+			debug_assert (topo_height > 0);
+
+			ctx.topology.mark_indexed (hash, topo_height);
+			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::indexed);
+		}
+		break;
+		case nano::block_status::old:
+		{
+			// The network block has no sideband for "old" results — ledger.process()
+			// doesn't set one when the block is already stored. Look up the stored
+			// block to read the authoritative topo_height.
+			if (auto stored = ctx.ledger.any.block_get (txn, hash))
+			{
+				debug_assert (stored->has_sideband ());
+				auto const topo_height = stored->sideband ().topo_height;
+				debug_assert (topo_height > 0);
+
+				ctx.topology.mark_indexed (hash, topo_height);
+				ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::indexed);
+			}
+		}
+		break;
+		default:
+			break;
+	}
 }
 
 void topo_strategy::run_index ()
@@ -147,7 +191,10 @@ void topo_strategy::run_one_processing ()
 	{
 		return;
 	}
-	ctx.block_processor.add_many (ordered, nano::block_source::bootstrap);
+	// Tag each submitted block with `topology_index` so that the inspect
+	// callback can route it back to this strategy and advance the closed-loop
+	// cursor via `mark_indexed`.
+	ctx.block_processor.add_many (ordered, nano::block_source::bootstrap, /* channel */ nullptr, /* last_callback */ {}, std::any{ query_source::topology_index });
 }
 
 std::optional<nano::topo_key> topo_strategy::wait_position ()
@@ -246,26 +293,24 @@ verify_result topo_strategy::verify (nano::messages::asc_pull_ack::topo_index_pa
 	auto const & payload = std::get<topo_index_tag_payload> (tag.payload);
 	auto const & entries = response.entries;
 
-	if (entries.empty ())
+	// Non-empty entries must be sorted strictly ascending and start at or past the requested cursor.
+	// Empty entries are valid: they signal "peer has nothing past cursor" and feed end-of-topology detection.
+	if (!entries.empty ())
 	{
-		return verify_result::nothing_new;
-	}
-
-	// Entries must be larger or equal to the requested cursor
-	if (entries.front () < payload.cursor)
-	{
-		return verify_result::invalid;
-	}
-
-	// Entries must be strictly increasing
-	nano::topo_key previous{};
-	for (auto const & entry : entries)
-	{
-		if (entry <= previous)
+		if (entries.front () < payload.cursor)
 		{
 			return verify_result::invalid;
 		}
-		previous = entry;
+
+		nano::topo_key previous{};
+		for (auto const & entry : entries)
+		{
+			if (entry <= previous)
+			{
+				return verify_result::invalid;
+			}
+			previous = entry;
+		}
 	}
 
 	return verify_result::ok;

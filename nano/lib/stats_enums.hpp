@@ -688,6 +688,7 @@ enum class detail
 	next_topo_index,
 	next_topo_block,
 	received,
+	indexed,
 
 	// bounded backlog,
 	gathered_targets,

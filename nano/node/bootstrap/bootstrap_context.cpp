@@ -369,7 +369,7 @@ bool bootstrap_context::request (nano::account account, size_t count, std::share
  * - Marks an account as blocked if the result code is gap source as there is no reason request additional blocks for this account until the dependency is resolved
  * - Marks an account as forwarded if it has been recently referenced by a block that has been inserted
  */
-void bootstrap_context::inspect (secure::transaction const & tx, nano::block_status const & result, nano::block_context const & context)
+void bootstrap_context::inspect (secure::transaction const & txn, nano::block_status const & result, nano::block_context const & context)
 {
 	debug_assert (!mutex.try_lock ());
 	debug_assert (context.block != nullptr);
@@ -414,7 +414,7 @@ void bootstrap_context::inspect (secure::transaction const & tx, nano::block_sta
 			// Prevent malicious live traffic from filling up the blocked set
 			if (source == nano::block_source::bootstrap)
 			{
-				const auto account = block.previous ().is_zero () ? block.account_field ().value () : ledger.any.block_account (tx, block.previous ()).value_or (0);
+				const auto account = block.previous ().is_zero () ? block.account_field ().value () : ledger.any.block_account (txn, block.previous ()).value_or (0);
 				const auto source_hash = block.source_field ().value_or (block.link_field ().value_or (0).as_block_hash ());
 
 				if (!account.is_zero () && !source_hash.is_zero ())
@@ -449,6 +449,28 @@ void bootstrap_context::inspect (secure::transaction const & tx, nano::block_sta
 		default: // No need to handle other cases
 			// TODO: If we receive blocks that are invalid (bad signature, fork, etc.), we should penalize the peer that sent them
 			break;
+	}
+
+	auto extract_tag_source = [] (nano::block_context const & context) -> query_source {
+		if (auto const * tag_source = std::any_cast<query_source> (&context.tag))
+		{
+			return *tag_source;
+		}
+		return query_source::invalid;
+	};
+
+	// Route blocks that originated from the topology bootstrap pipeline so the
+	// topology strategy can advance its closed-loop cursor on confirmed processing.
+	auto const tag_source = extract_tag_source (context);
+	switch (tag_source)
+	{
+		case query_source::topology_index:
+		{
+			topo_strat.inspect (txn, result, context);
+		}
+		break;
+		default:
+			break; // No need to handle other cases;
 	}
 }
 
