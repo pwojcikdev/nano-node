@@ -390,7 +390,7 @@ nano::container_info topo_scan_index::container_info () const
 	};
 
 	nano::container_info info;
-	info.put ("blocks_outstanding", blocks.size ());
+	info.put ("blocks", blocks.size ());
 	info.put ("blocks_pending", pending_count);
 	info.put ("blocks_in_flight", in_flight_count);
 	info.put ("blocks_received", received_count);
