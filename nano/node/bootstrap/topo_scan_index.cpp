@@ -13,8 +13,8 @@ void topo_scan_index::reset ()
 {
 	head.reset ();
 	indexed = {};
+	indexed_at_reset = {};
 	drained_at = std::chrono::steady_clock::now ();
-	progressed_since_reset = false;
 	rollback_distance = config.rollback_min;
 	blocks.clear ();
 	pending_count = 0;
@@ -162,10 +162,10 @@ void topo_scan_index::reset_discovery ()
 	in_flight_count = 0;
 	received_count = 0;
 	submitted_count = 0;
-	// A fresh cycle starts unproven. The indexed cursor itself is preserved —
-	// rewinding it (when warranted) is `check_poisoning`'s job, done *before*
-	// calling this.
-	progressed_since_reset = false;
+	// Baseline the new cycle's progress check against wherever `indexed` is now
+	// (post-rewind, if `check_poisoning` rewound it before calling this).
+	// Forward progress == `indexed` moving strictly past this snapshot.
+	indexed_at_reset = indexed;
 }
 
 bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now)
@@ -184,19 +184,24 @@ bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now
 	}
 
 	// Stuck: outstanding work, but no tracked block has drained for a full
-	// timeout window.
-	if (progressed_since_reset)
+	// timeout window. Decide based on *real forward progress* — did `indexed`
+	// advance since this cycle started? Re-chewing already-known blocks as
+	// `old` keeps the queue moving (and was holding the trigger off) but does
+	// not advance `indexed`, so it does not count here.
+	bool const advanced = indexed > indexed_at_reset;
+	if (advanced)
 	{
-		// This cycle did drain at least one block before stalling — the anchor
-		// is workable, so just clear the queue and retry from `indexed`. Re-arm
-		// the escalation step.
+		// The frontier genuinely moved — the anchor is workable. Clear the
+		// stuck tail and retry from the new (higher) `indexed`. Re-arm the
+		// escalation step.
 		reset_discovery ();
 		rollback_distance = config.rollback_min;
 	}
 	else
 	{
-		// Nothing drained since the previous reset either: `indexed` sits past
-		// a gap the ledger can't bridge. Rewind it, then widen the next step.
+		// No frontier progress at all: `indexed` sits past a gap the ledger
+		// can't bridge. Rewind it, then widen the next step so consecutive
+		// failures walk back through history in O(log n) steps.
 		rewind (rollback_distance);
 		rollback_distance = std::min (rollback_distance * 2, config.rollback_max);
 		reset_discovery ();
@@ -320,10 +325,10 @@ void topo_scan_index::block_done (nano::block_hash const & hash, std::chrono::st
 	}
 	by_hash.erase (it);
 
-	// Drain heartbeat: a tracked block actually left the queue. This is the
-	// signal `check_poisoning` keys off of.
+	// Drain heartbeat: a tracked block actually left the queue. Refreshes the
+	// poisoning *trigger* clock only — this fires for `old` re-processing too,
+	// so it must NOT be treated as forward progress (that's `indexed`'s job).
 	drained_at = now;
-	progressed_since_reset = true;
 }
 
 std::size_t topo_scan_index::cleanup (std::chrono::steady_clock::time_point now)

@@ -1156,8 +1156,10 @@ TEST (bootstrap_topo_scan, escalating_rollback_doubles)
 
 	auto const t0 = std::chrono::steady_clock::now ();
 
-	// Park the indexed cursor up high so there's room to rewind.
+	// Park the indexed cursor up high, then baseline the cycle so this position
+	// is "no progress yet" (a stall here must escalate, not be seen as advance).
 	scan.mark_indexed (nano::block_hash{ 42 }, 10000);
+	scan.reset_discovery ();
 	ASSERT_EQ (scan.cursor (), key (10000, 42));
 
 	auto seed = [&] (std::chrono::steady_clock::time_point t) {
@@ -1167,17 +1169,17 @@ TEST (bootstrap_topo_scan, escalating_rollback_doubles)
 		ASSERT_GT (scan.count_outstanding (), 0u);
 	};
 
-	// Stall 1: rewind by rollback_min (100): 10000 -> 9900.
+	// Stall 1: no `indexed` advance → rewind by rollback_min (100): 10000 -> 9900.
 	seed (t0);
 	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
 	ASSERT_EQ (scan.cursor (), key (9900, 0));
 
-	// Stall 2: distance doubled to 200: 9900 -> 9700.
+	// Stall 2: still no advance → distance doubled to 200: 9900 -> 9700.
 	seed (t0 + 2s);
 	ASSERT_TRUE (scan.check_poisoning (t0 + 4s));
 	ASSERT_EQ (scan.cursor (), key (9700, 0));
 
-	// Stall 3: distance doubled to 400: 9700 -> 9300.
+	// Stall 3: still no advance → distance doubled to 400: 9700 -> 9300.
 	seed (t0 + 4s);
 	ASSERT_TRUE (scan.check_poisoning (t0 + 6s));
 	ASSERT_EQ (scan.cursor (), key (9300, 0));
@@ -1194,6 +1196,7 @@ TEST (bootstrap_topo_scan, escalating_rollback_clamps_at_genesis)
 	auto const t0 = std::chrono::steady_clock::now ();
 
 	scan.mark_indexed (nano::block_hash{ 7 }, 500); // below rollback_min
+	scan.reset_discovery (); // baseline so the stall counts as no-progress
 	ASSERT_EQ (scan.cursor (), key (500, 7));
 
 	auto pos = scan.next (t0);
@@ -1205,9 +1208,10 @@ TEST (bootstrap_topo_scan, escalating_rollback_clamps_at_genesis)
 	ASSERT_EQ (scan.cursor (), nano::topo_key{});
 }
 
-// A productive cycle (at least one tracked block drained) makes the next stall
-// a *gentle* reset: indexed is preserved and the escalation step is re-armed.
-TEST (bootstrap_topo_scan, productive_cycle_is_gentle_and_rearms)
+// A cycle that genuinely advances `indexed` makes the next stall a *gentle*
+// reset: indexed is preserved and the escalation step is re-armed. Progress is
+// `mark_indexed` advancing the frontier — NOT merely a block draining.
+TEST (bootstrap_topo_scan, advancing_cycle_is_gentle_and_rearms)
 {
 	auto cfg = default_config ();
 	cfg.poisoning_timeout = 1s;
@@ -1217,8 +1221,10 @@ TEST (bootstrap_topo_scan, productive_cycle_is_gentle_and_rearms)
 	auto const t0 = std::chrono::steady_clock::now ();
 
 	scan.mark_indexed (nano::block_hash{ 42 }, 5000);
+	scan.reset_discovery (); // baseline at (5000, 42)
 
-	// First stall is unproductive → escalate-rewind (5000 -> 4900) and double.
+	// First stall makes no frontier progress → escalate-rewind (5000 -> 4900),
+	// distance doubles to 200.
 	{
 		auto pos = scan.next (t0);
 		scan.process (*pos, std::deque<nano::topo_key>{ key (5001, 1) });
@@ -1226,24 +1232,69 @@ TEST (bootstrap_topo_scan, productive_cycle_is_gentle_and_rearms)
 		ASSERT_EQ (scan.cursor (), key (4900, 0));
 	}
 
-	// Next cycle: queue, fetch, and actually drain one tracked block.
+	// Next cycle queues work AND the frontier genuinely advances (a new block
+	// extends `indexed` past the cycle baseline of 4900).
 	auto pos = scan.next (t0 + 2s);
 	scan.process (*pos, std::deque<nano::topo_key>{ key (4901, 10), key (4902, 11) });
-	scan.next_blocks (10, t0 + 2s);
-	scan.block_done (nano::block_hash{ 10 }, t0 + 3s); // productive drain
+	scan.mark_indexed (nano::block_hash{ 50 }, 4950);
 
-	// It then stalls again (the other block is stuck).
+	// It then stalls again (the rest is stuck).
 	ASSERT_TRUE (scan.check_poisoning (t0 + 5s));
-	// Gentle: indexed preserved (not rewound), queue cleared.
-	ASSERT_EQ (scan.cursor (), key (4900, 0));
+	// Gentle: indexed preserved at the advanced position, queue cleared.
+	ASSERT_EQ (scan.cursor (), key (4950, 50));
 	ASSERT_EQ (scan.count_outstanding (), 0);
 
-	// And the escalation step was re-armed: the *next* unproductive stall
-	// rewinds by rollback_min (100) again, not the doubled distance.
+	// Escalation step re-armed: the next no-progress stall rewinds by
+	// rollback_min (100) from the advanced position, not the doubled distance.
 	auto pos2 = scan.next (t0 + 5s);
-	scan.process (*pos2, std::deque<nano::topo_key>{ key (4901, 20) });
+	scan.process (*pos2, std::deque<nano::topo_key>{ key (4951, 20) });
 	ASSERT_TRUE (scan.check_poisoning (t0 + 7s));
-	ASSERT_EQ (scan.cursor (), key (4800, 0)); // 4900 - 100, not - 200
+	ASSERT_EQ (scan.cursor (), key (4850, 0)); // 4950 - 100, not - 200
+}
+
+// The reported bug: a stuck cycle that re-chews already-known blocks as `old`
+// (block_done fires, queue moves) but never advances `indexed` must keep
+// escalating — the rollback distance must NOT snap back to rollback_min.
+TEST (bootstrap_topo_scan, old_reprocessing_keeps_escalating)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 100;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	scan.mark_indexed (nano::block_hash{ 42 }, 10000);
+	scan.reset_discovery (); // baseline at (10000, 42)
+
+	// One stuck cycle: queue work, one entry re-processes as `old`
+	// (block_done evicts it — queue moves, drained_at refreshes) but `indexed`
+	// never advances. Returns the post-rollback cursor height.
+	auto stuck_with_old_reprocessing = [&] (std::chrono::steady_clock::time_point t_seed,
+									   std::chrono::steady_clock::time_point t_drain,
+									   std::chrono::steady_clock::time_point t_check) {
+		auto pos = scan.next (t_seed);
+		ASSERT_TRUE (pos.has_value ());
+		scan.process (*pos, std::deque<nano::topo_key>{ key (99990001, 1), key (99990002, 2) });
+		scan.next_blocks (10, t_seed);
+		// Block 1 re-processes as `old`: tracked → block_done evicts it,
+		// refreshing the drain heartbeat. NO mark_indexed (height <= indexed).
+		scan.block_done (nano::block_hash{ 1 }, t_drain);
+		// Block 2 stays stuck. Heartbeat goes stale `poisoning_timeout` after
+		// t_drain → check_poisoning fires.
+		ASSERT_TRUE (scan.check_poisoning (t_check));
+	};
+
+	// Each consecutive stuck cycle must rewind by a *doubling* distance —
+	// the stray `old` block_done must not re-arm it.
+	stuck_with_old_reprocessing (t0, t0 + 500ms, t0 + 2s);
+	ASSERT_EQ (scan.cursor (), key (9900, 0)); // 10000 - 100
+
+	stuck_with_old_reprocessing (t0 + 2s, t0 + 2500ms, t0 + 4s);
+	ASSERT_EQ (scan.cursor (), key (9700, 0)); // 9900 - 200 (doubled, NOT re-armed)
+
+	stuck_with_old_reprocessing (t0 + 4s, t0 + 4500ms, t0 + 6s);
+	ASSERT_EQ (scan.cursor (), key (9300, 0)); // 9700 - 400 (doubled again)
 }
 
 // After a rollback the queue is empty so the safeguard is held off until work
@@ -1258,6 +1309,7 @@ TEST (bootstrap_topo_scan, check_poisoning_rearms)
 	auto const t0 = std::chrono::steady_clock::now ();
 
 	scan.mark_indexed (nano::block_hash{ 9 }, 1000);
+	scan.reset_discovery (); // baseline at (1000, 9)
 
 	auto pos = scan.next (t0);
 	scan.process (*pos, std::deque<nano::topo_key>{ key (1001, 1) });

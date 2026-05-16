@@ -47,13 +47,18 @@ namespace nano::bootstrap
  *   most the queue depth. `cursor()` returns this value, not the discovery
  *   cursor, so external observers see the genuinely-processed position.
  *
- * Phase 4 (stall recovery): `check_poisoning` watches the queue's drain
- *   heartbeat (`block_done` actually evicting a tracked entry). If the queue
- *   has outstanding work but nothing drains for `poisoning_timeout`, it rolls
- *   the pipeline back. The first reset just clears the queue and retries from
- *   `indexed`; if that retry also drains nothing (the anchor sits past a gap
- *   the ledger can't bridge), successive resets rewind `indexed` by a doubling
- *   distance until a workable position is found, then re-arm.
+ * Phase 4 (stall recovery): `check_poisoning` fires when the queue has
+ *   outstanding work but its drain heartbeat (`block_done` evicting a tracked
+ *   entry) has been silent for `poisoning_timeout`. The recovery action then
+ *   hinges on whether the cycle made *real forward progress* — i.e. whether
+ *   `indexed` advanced since the cycle started. Re-chewing already-known
+ *   blocks as `old` moves the queue (refreshes the heartbeat) but does NOT
+ *   advance `indexed`, so it is not progress. If `indexed` advanced: gentle
+ *   reset (clear queue, retry from the new `indexed`) and re-arm the rollback
+ *   step. If it did not (the anchor sits past a gap the ledger can't bridge):
+ *   rewind `indexed` by a doubling distance and reset, so successive stuck
+ *   cycles walk back through history in O(log n) steps until a workable
+ *   position is found.
  *
  * This class is not internally synchronized; callers must hold the bootstrap
  * context mutex when invoking its methods.
@@ -83,10 +88,12 @@ public:
 	std::deque<std::shared_ptr<nano::block>> next_ordered_blocks (std::size_t max_count);
 	// Evict a tracked block once the processor confirms it (the inspect callback
 	// fires for any source/result). When the hash is actually found in the queue
-	// this is the pipeline's drain heartbeat — it refreshes the poisoning clock
-	// and marks the current reset cycle as productive. A miss (hash not tracked,
-	// e.g. a ghost of a pre-reset submission) is a no-op and does NOT count as
-	// progress. `now` is injectable for deterministic testing.
+	// this is the pipeline's drain heartbeat — it refreshes the poisoning
+	// *trigger* clock (`drained_at`). It does NOT by itself count as forward
+	// progress for the gentle-vs-escalate decision (re-processing a known block
+	// as `old` evicts an entry but doesn't advance `indexed`). A miss (hash not
+	// tracked, e.g. a ghost of a pre-reset submission) is a full no-op. `now` is
+	// injectable for deterministic testing.
 	void block_done (nano::block_hash const & hash, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	// --- Phase 3: ledger feedback ---
@@ -109,14 +116,14 @@ public:
 
 	// Clear everything queued and resume discovery from the current `indexed`
 	// cursor (`head.cursor = indexed`). The indexed cursor itself is preserved.
-	// Marks the new reset cycle as not-yet-productive. Used by `check_poisoning`
-	// and available for any other externally-decided trigger.
+	// Snapshots `indexed` as the new cycle's progress baseline. Used by
+	// `check_poisoning` and available for any other externally-decided trigger.
 	void reset_discovery ();
 
 	// Stall recovery. Fires when the queue has outstanding work but no tracked
-	// block has drained for `poisoning_timeout`. If the cycle since the previous
-	// reset drained at least one block, performs a gentle `reset_discovery` and
-	// re-arms the rollback step. Otherwise the `indexed` anchor is past an
+	// block has drained for `poisoning_timeout`. If `indexed` advanced since the
+	// previous reset (real forward progress), performs a gentle `reset_discovery`
+	// and re-arms the rollback step. Otherwise the `indexed` anchor is past an
 	// unbridgeable gap: rewinds `indexed` by the current rollback distance (then
 	// doubles it, capped at `rollback_max`) before resetting, so successive
 	// failures walk back through history in O(log n) steps. Returns true if any
@@ -184,15 +191,20 @@ private:
 	nano::topo_key indexed{};
 
 	// Drain heartbeat: timestamp of the last `block_done` that actually evicted
-	// a tracked entry (or construction / reset). This is the poisoning clock —
-	// keyed on OUR queue, not on `mark_indexed`, so ghost completions of
-	// pre-reset submissions can't mask a stalled queue.
+	// a tracked entry (or construction / reset). This is the poisoning *trigger*
+	// clock — keyed on OUR queue, not on `mark_indexed`, so ghost completions of
+	// pre-reset submissions can't mask a stalled queue. Note: re-processing an
+	// already-known block as `old` also refreshes this (the queue *is* moving),
+	// which is why it can't be used for the gentle-vs-escalate *decision*.
 	std::chrono::steady_clock::time_point drained_at{ std::chrono::steady_clock::now () };
 
-	// Whether the current reset cycle has drained at least one tracked block.
-	// Cleared by `reset_discovery`, set by a productive `block_done`. Decides
-	// gentle-retry vs. escalating-rewind in `check_poisoning`.
-	bool progressed_since_reset{ false };
+	// Snapshot of `indexed` taken at the start of the current reset cycle
+	// (construction / reset / reset_discovery). `check_poisoning` compares the
+	// live `indexed` against this to decide real forward progress: only a
+	// genuine ledger-frontier advance (`mark_indexed` with a strictly greater
+	// key) counts — re-chewing already-known blocks as `old` does not, because
+	// their topo_height is <= indexed and `mark_indexed` early-returns.
+	nano::topo_key indexed_at_reset{};
 
 	// Current escalating-rollback step (topo-heights). Starts at
 	// `config.rollback_min`, doubles (capped at `config.rollback_max`) on every
