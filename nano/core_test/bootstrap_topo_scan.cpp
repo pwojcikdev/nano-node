@@ -841,6 +841,156 @@ TEST (bootstrap_topo_scan, reset_clears_indexed)
 	ASSERT_EQ (scan.cursor (), nano::topo_key{});
 }
 
+// --- Redundant short-circuit (already-in-ledger blocks) ---
+
+// mark_redundant only TAGS the entry — it must not advance the cursor (that's
+// deferred to the in-order drain). The entry stays queued (counts toward
+// backpressure) but won't be fetched.
+TEST (bootstrap_topo_scan, mark_redundant_tags_no_cursor_advance)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200) });
+	ASSERT_EQ (scan.count_outstanding (), 2);
+
+	scan.mark_redundant (nano::block_hash{ 100 }, 1);
+
+	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // NOT advanced here
+	ASSERT_EQ (scan.count_redundant (), 1);
+	ASSERT_EQ (scan.count_outstanding (), 2); // still queued
+}
+
+// A redundant entry is never handed out for fetching.
+TEST (bootstrap_topo_scan, redundant_not_fetched)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200) });
+
+	scan.mark_redundant (nano::block_hash{ 100 }, 1);
+
+	auto to_fetch = scan.next_blocks (10);
+	ASSERT_EQ (to_fetch.size (), 1);
+	ASSERT_EQ (to_fetch[0], nano::block_hash{ 200 }); // 100 skipped (redundant)
+}
+
+// A contiguous `redundant` prefix at the head is drained in topological order,
+// advancing the cursor to the last prefix entry's ledger topo_height.
+TEST (bootstrap_topo_scan, redundant_prefix_drains_in_order)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
+
+	// First two are already in our ledger (peer height ≠ ledger height is fine).
+	scan.mark_redundant (nano::block_hash{ 100 }, 11);
+	scan.mark_redundant (nano::block_hash{ 200 }, 22);
+	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // still deferred
+
+	auto drained = scan.next_ordered_blocks (10);
+	ASSERT_TRUE (drained.empty ()); // nothing to submit (3rd is still pending)
+	ASSERT_EQ (scan.cursor (), key (22, 200)); // advanced through the prefix
+	ASSERT_EQ (scan.count_outstanding (), 1); // only the pending 3rd remains
+}
+
+// A redundant entry sitting BEHIND an unconfirmed (pending) entry must NOT
+// advance the cursor — gap-safety. It is deferred until it reaches the
+// contiguous head once the blocker clears.
+TEST (bootstrap_topo_scan, interior_redundant_deferred_until_head)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200) });
+	scan.mark_redundant (nano::block_hash{ 200 }, 22); // interior, behind pending 100
+
+	// Head is pending(100) → prefix drain can't touch the interior redundant.
+	auto d1 = scan.next_ordered_blocks (10);
+	ASSERT_TRUE (d1.empty ());
+	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // NOT advanced — gap-safe
+
+	// Resolve the blocker: fetch, receive, drain, confirm 100.
+	scan.next_blocks (10);
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ 100 }, stub);
+	auto d2 = scan.next_ordered_blocks (10);
+	ASSERT_EQ (d2.size (), 1); // 100 submitted
+	scan.block_done (nano::block_hash{ 100 });
+
+	// Now the redundant 200 is at the head → it advances the cursor in order.
+	auto d3 = scan.next_ordered_blocks (10);
+	ASSERT_TRUE (d3.empty ());
+	ASSERT_EQ (scan.cursor (), key (22, 200));
+	ASSERT_EQ (scan.count_outstanding (), 0);
+}
+
+// Draining the redundant prefix refreshes the drain heartbeat AND advances the
+// cursor — so a subsequent stall is treated as real progress (gentle reset),
+// not an escalating rewind.
+TEST (bootstrap_topo_scan, redundant_prefix_is_progress_and_refreshes_clock)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 100;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	scan.mark_indexed (nano::block_hash{ 42 }, 5000);
+	scan.reset_discovery (); // baseline indexed_at_reset = (5000, 42)
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (6001, 1), key (6002, 2) });
+	scan.mark_redundant (nano::block_hash{ 1 }, 6000); // head redundant
+
+	// Prefix drain at t0: advances cursor to (6000,1), refreshes drained_at.
+	scan.next_ordered_blocks (10, t0);
+	ASSERT_EQ (scan.cursor (), key (6000, 1));
+	ASSERT_GT (scan.count_outstanding (), 0u); // pending 2 remains
+
+	// Stall: real progress was made (cursor advanced past baseline) AND the
+	// clock was refreshed → gentle reset, cursor preserved (NOT rewound).
+	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+	ASSERT_EQ (scan.cursor (), key (6000, 1));
+	ASSERT_EQ (scan.count_outstanding (), 0);
+}
+
+// mark_redundant on a hash we don't track is a no-op (a concurrent live
+// block_done may have evicted it).
+TEST (bootstrap_topo_scan, mark_redundant_untracked_noop)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	scan.mark_redundant (nano::block_hash{ 777 }, 50);
+	ASSERT_EQ (scan.cursor (), nano::topo_key{});
+	ASSERT_EQ (scan.count_redundant (), 0);
+	ASSERT_EQ (scan.count_outstanding (), 0);
+}
+
+// A pre-topo-index redundant block (ledger topo_height == 0) is still evicted
+// by the prefix drain but cannot anchor the cursor.
+TEST (bootstrap_topo_scan, redundant_zero_height_evicts_only)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto pos = scan.next ();
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100) });
+	scan.mark_redundant (nano::block_hash{ 100 }, 0);
+
+	scan.next_ordered_blocks (10);
+	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // no anchor
+	ASSERT_EQ (scan.count_outstanding (), 0); // still evicted
+}
+
 // --- Poisoning safeguard ---
 
 // reset_discovery rolls discovery back to `indexed` and drops queued blocks

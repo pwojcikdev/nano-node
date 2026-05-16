@@ -10,6 +10,8 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 
+#include <utility>
+
 using namespace std::chrono_literals;
 
 namespace nano::bootstrap
@@ -159,7 +161,48 @@ void topo_strategy::run_one_blocks ()
 	{
 		return;
 	}
-	request_blocks (std::move (hashes), channel);
+
+	// Pre-fetch redundancy filter: never spend a network fetch on a block we
+	// already have. The ledger reads run WITHOUT ctx.mutex (DB I/O must not
+	// stall the other strategies); only the tiny in-memory state tag takes the
+	// lock. We do NOT advance the cursor here — `mark_redundant` just tags the
+	// entry; the cursor advance is deferred to `next_ordered_blocks`, which
+	// applies it strictly in topological order (gap-safe) regardless of the
+	// parallel fetch order.
+	std::deque<nano::block_hash> to_fetch;
+	std::deque<std::pair<nano::block_hash, uint64_t>> redundant;
+	{
+		auto tx = ctx.ledger.tx_begin_read ();
+		for (auto const & hash : hashes)
+		{
+			if (auto existing = ctx.ledger.any.block_get (tx, hash))
+			{
+				debug_assert (existing->has_sideband ());
+				redundant.emplace_back (hash, existing->sideband ().topo_height);
+			}
+			else
+			{
+				to_fetch.push_back (hash);
+			}
+		}
+	}
+
+	if (!redundant.empty ())
+	{
+		nano::lock_guard<nano::mutex> guard{ ctx.mutex };
+		for (auto const & [hash, topo_height] : redundant)
+		{
+			ctx.topology.mark_redundant (hash, topo_height);
+			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::redundant);
+		}
+	}
+
+	if (to_fetch.empty ())
+	{
+		return;
+	}
+
+	request_blocks (std::move (to_fetch), channel);
 }
 
 void topo_strategy::run_processing ()
@@ -193,7 +236,10 @@ void topo_strategy::run_one_processing ()
 		return;
 	}
 
-	// Tag each submitted block with `topology_index` so that the inspect callback can route it back to this strategy and advance the closed-loop cursor
+	// Tag each submitted block with `topology_index` so that the inspect callback can route it back to this strategy and advance the closed-loop cursor.
+	// Redundant (already-in-ledger) blocks were filtered out pre-fetch in
+	// run_one_blocks, so `ordered` is genuinely-new work; the inspect `old`
+	// path still covers the rare race where a block became old after fetch.
 	auto submitted = ctx.block_processor.add_many (ordered, nano::block_source::bootstrap, /* channel */ nullptr, /* last_callback */ {}, std::any{ query_source::topology_index });
 	debug_assert (submitted == ordered.size ()); // We wait for capacity before, so all should be submitted.
 }

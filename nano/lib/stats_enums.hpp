@@ -689,6 +689,7 @@ enum class detail
 	next_topo_block,
 	received,
 	indexed,
+	redundant,
 
 	// bounded backlog,
 	gathered_targets,

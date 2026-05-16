@@ -36,9 +36,12 @@ namespace nano::bootstrap
  *   discovery can get from processing.
  *
  * Phase 2 (block fetching): tracks per-block state (pending, in_flight, received,
- *   submitted) and exposes both a topologically-ordered drain (`next_ordered_blocks`)
- *   and an unconditional eviction (`block_done`) for blocks delivered or completed
- *   via other channels.
+ *   submitted, redundant). A pre-fetch ledger check tags blocks we already have
+ *   as `redundant` (via `mark_redundant`) so they are never fetched. The
+ *   topologically-ordered drain (`next_ordered_blocks`) handles a contiguous
+ *   `redundant` prefix at the head — advancing the cursor in order — then
+ *   collects `received` blocks for submission. `block_done` is the
+ *   unconditional eviction for blocks delivered/completed via other channels.
  *
  * Phase 3 (ledger feedback): `mark_indexed` records a (hash, topo_height) pair
  *   for blocks that successfully entered the ledger. The highest such key is
@@ -46,6 +49,10 @@ namespace nano::bootstrap
  *   is closed-loop with ledger processing and lags the discovery cursor by at
  *   most the queue depth. `cursor()` returns this value, not the discovery
  *   cursor, so external observers see the genuinely-processed position.
+ *   Redundant (already-in-ledger) blocks advance `indexed` too, but via the
+ *   deferred in-order prefix drain in `next_ordered_blocks` rather than at
+ *   detection time — critical for rollback recovery, where most re-fetched
+ *   keys are blocks we already have and must not be re-downloaded.
  *
  * Phase 4 (stall recovery): `check_poisoning` fires when the queue has
  *   outstanding work but its drain heartbeat (`block_done` evicting a tracked
@@ -85,7 +92,11 @@ public:
 	// `now` is injectable for deterministic testing of in-flight retry timing.
 	std::deque<nano::block_hash> next_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 	void block_received (nano::block_hash const & hash, std::shared_ptr<nano::block> const & block);
-	std::deque<std::shared_ptr<nano::block>> next_ordered_blocks (std::size_t max_count);
+	// Drains in two phases (see .cpp): (1) the strictly-contiguous `redundant`
+	// prefix at the head — advancing the cursor in topological order, gap-safe;
+	// (2) up to `max_count` `received` blocks for submission. `now` refreshes
+	// the drain heartbeat for phase 1 and is injectable for tests.
+	std::deque<std::shared_ptr<nano::block>> next_ordered_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 	// Evict a tracked block once the processor confirms it (the inspect callback
 	// fires for any source/result). When the hash is actually found in the queue
 	// this is the pipeline's drain heartbeat — it refreshes the poisoning
@@ -103,6 +114,16 @@ public:
 	// supplied (topo_height, hash) when it strictly exceeds the current value.
 	// No-op otherwise. Does not affect the discovery cursor or per-round state.
 	void mark_indexed (nano::block_hash const & hash, uint64_t topo_height);
+
+	// Tag a still-queued entry as already present in our ledger (discovered by
+	// the pre-fetch check) so it is NEVER fetched from the network. This only
+	// records the state + ledger topo_height; it deliberately does NOT advance
+	// the cursor. The cursor advance is deferred to `next_ordered_blocks`,
+	// which applies it strictly in topological order at the contiguous queue
+	// head — so this is safe to call in any order (fetch order is parallel by
+	// design) without re-exposing gap stalls. No-op if the hash isn't tracked
+	// (a concurrent live `block_done` may have evicted it).
+	void mark_redundant (nano::block_hash const & hash, uint64_t ledger_topo_height);
 
 	// Reset in-flight requests whose timestamp is older than `block_retry` back to
 	// pending so they can be retried via the standard pending-pickup path. This is
@@ -148,6 +169,7 @@ public:
 	std::size_t count_in_flight () const;
 	std::size_t count_received () const;
 	std::size_t count_submitted () const;
+	std::size_t count_redundant () const;
 	void reset ();
 
 	nano::container_info container_info () const;
@@ -222,6 +244,9 @@ private:
 		submitted, // Drained and handed off to the block processor, awaiting
 		// confirmation via `block_done` (fired by the inspect callback).
 		// Held in the queue so backpressure accounts for in-flight processing.
+		redundant, // Found already in our ledger during the pre-fetch check, so
+		// never fetched. Carries `ledger_topo_height`; the cursor advance for it
+		// is deferred to the in-order `next_ordered_blocks` drain (gap-safe).
 	};
 
 	struct block_entry
@@ -231,6 +256,10 @@ private:
 		block_state state{ block_state::pending };
 		std::chrono::steady_clock::time_point timestamp{};
 		std::shared_ptr<nano::block> block;
+		// Our ledger's topo_height for this block, captured by the pre-fetch
+		// redundancy check. Only meaningful while state == redundant; used as
+		// the `mark_indexed` anchor when the entry reaches the contiguous head.
+		uint64_t ledger_topo_height{ 0 };
 	};
 
 	// clang-format off
@@ -252,7 +281,12 @@ private:
 	std::size_t in_flight_count{ 0 };
 	std::size_t received_count{ 0 };
 	std::size_t submitted_count{ 0 };
+	std::size_t redundant_count{ 0 };
 
 	void state_change (block_state old_state, block_state new_state);
+
+	// Remove a tracked entry by hash, keeping the O(1) state counters in sync.
+	// Returns true if an entry was actually found and erased.
+	bool erase_tracked (nano::block_hash const & hash);
 };
 }

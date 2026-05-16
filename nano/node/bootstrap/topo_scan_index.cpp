@@ -21,6 +21,7 @@ void topo_scan_index::reset ()
 	in_flight_count = 0;
 	received_count = 0;
 	submitted_count = 0;
+	redundant_count = 0;
 }
 
 std::optional<nano::topo_key> topo_scan_index::next (std::chrono::steady_clock::time_point now)
@@ -162,6 +163,7 @@ void topo_scan_index::reset_discovery ()
 	in_flight_count = 0;
 	received_count = 0;
 	submitted_count = 0;
+	redundant_count = 0;
 	// Baseline the new cycle's progress check against wherever `indexed` is now
 	// (post-rewind, if `check_poisoning` rewound it before calling this).
 	// Forward progress == `indexed` moving strictly past this snapshot.
@@ -249,9 +251,10 @@ void topo_scan_index::block_received (nano::block_hash const & hash, std::shared
 	auto & by_hash = blocks.get<tag_hash> ();
 	if (auto it = by_hash.find (hash); it != by_hash.end ())
 	{
-		// Once a block has been drained to the processor, it doesn't matter
-		// what a tardy peer delivers — we don't backtrack to `received`.
-		if (it->state == block_state::submitted || it->state == block_state::received)
+		// Once a block has been drained to the processor (submitted), already
+		// received, or tagged redundant (it's in our ledger — never fetch it),
+		// a tardy peer delivery must not backtrack the state.
+		if (it->state == block_state::submitted || it->state == block_state::received || it->state == block_state::redundant)
 		{
 			return;
 		}
@@ -263,16 +266,45 @@ void topo_scan_index::block_received (nano::block_hash const & hash, std::shared
 	}
 }
 
-std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_ordered_blocks (std::size_t max_count)
+std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_ordered_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now)
 {
-	std::deque<std::shared_ptr<nano::block>> result;
 	auto & by_seq = blocks.get<tag_sequenced> ();
+
+	// Phase 1: drain the strictly-contiguous `redundant` prefix at the head.
+	// Because we only ever consume the head and stop at the first
+	// non-redundant entry, the cursor advance stays in topological order and
+	// can't jump past unconfirmed work — this is the gap-safe equivalent of
+	// the processor `old` path, without the network/processor round trip.
+	// Unbounded by `max_count`: a rollback re-walk can have a huge prefix of
+	// already-known blocks and we want the cursor to catch up in one pass.
+	while (!by_seq.empty ())
+	{
+		auto it = by_seq.begin ();
+		if (it->state != block_state::redundant)
+		{
+			break;
+		}
+		// (topo_height==0 ⇒ pre-topo-index block: still redundant/evicted, just
+		// not a cursor anchor.) `mark_indexed` is monotonic.
+		if (it->ledger_topo_height > 0)
+		{
+			mark_indexed (it->hash, it->ledger_topo_height);
+		}
+		--redundant_count;
+		by_seq.erase (it);
+		// Genuine queue movement — keep the poisoning trigger from mistaking a
+		// fast redundant-prefix drain (rollback recovery) for a stall.
+		drained_at = now;
+	}
+
+	// Phase 2: collect up to `max_count` `received` blocks for submission.
+	std::deque<std::shared_ptr<nano::block>> result;
 	for (auto it = by_seq.begin (); it != by_seq.end () && result.size () < max_count; ++it)
 	{
-		// Already handed to the processor on a prior call — skip past it but
-		// don't stop. Its topological predecessor (if any) is also submitted, so
-		// subsequent `received` entries are safe to drain in order.
-		if (it->state == block_state::submitted)
+		// Already handed to the processor on a prior call, or a redundant entry
+		// not (yet) at the contiguous head — skip past it but don't stop, so
+		// later `received` blocks can still be submitted for throughput.
+		if (it->state == block_state::submitted || it->state == block_state::redundant)
 		{
 			continue;
 		}
@@ -296,18 +328,14 @@ std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_ordered_blocks (s
 	return result;
 }
 
-void topo_scan_index::block_done (nano::block_hash const & hash, std::chrono::steady_clock::time_point now)
+bool topo_scan_index::erase_tracked (nano::block_hash const & hash)
 {
 	auto & by_hash = blocks.get<tag_hash> ();
 	auto it = by_hash.find (hash);
 	if (it == by_hash.end ())
 	{
-		// Not a tracked block (e.g. a ghost completion of a pre-reset / dropped
-		// submission). Deliberately NOT counted as progress — otherwise stalled
-		// queues would be masked by unrelated ledger activity.
-		return;
+		return false;
 	}
-
 	switch (it->state)
 	{
 		case block_state::pending:
@@ -322,13 +350,54 @@ void topo_scan_index::block_done (nano::block_hash const & hash, std::chrono::st
 		case block_state::submitted:
 			--submitted_count;
 			break;
+		case block_state::redundant:
+			--redundant_count;
+			break;
 	}
 	by_hash.erase (it);
+	return true;
+}
+
+void topo_scan_index::block_done (nano::block_hash const & hash, std::chrono::steady_clock::time_point now)
+{
+	if (!erase_tracked (hash))
+	{
+		// Not a tracked block (e.g. a ghost completion of a pre-reset / dropped
+		// submission). Deliberately NOT counted as progress — otherwise stalled
+		// queues would be masked by unrelated ledger activity.
+		return;
+	}
 
 	// Drain heartbeat: a tracked block actually left the queue. Refreshes the
 	// poisoning *trigger* clock only — this fires for `old` re-processing too,
 	// so it must NOT be treated as forward progress (that's `indexed`'s job).
 	drained_at = now;
+}
+
+void topo_scan_index::mark_redundant (nano::block_hash const & hash, uint64_t ledger_topo_height)
+{
+	auto & by_hash = blocks.get<tag_hash> ();
+	auto it = by_hash.find (hash);
+	if (it == by_hash.end ())
+	{
+		// Raced away (e.g. concurrent live `block_done` evicted it). The block
+		// is in the ledger anyway, so nothing to do — discovery won't re-list
+		// it past the cursor.
+		return;
+	}
+	if (it->state == block_state::redundant)
+	{
+		return; // Already tagged.
+	}
+	// Tag only — do NOT advance the cursor here. The cursor advance is applied
+	// strictly in topological order at the contiguous queue head by
+	// `next_ordered_blocks`, which keeps it gap-safe regardless of the
+	// (parallel, unordered) fetch order this is called from.
+	state_change (it->state, block_state::redundant);
+	by_hash.modify (it, [ledger_topo_height] (block_entry & entry) {
+		entry.state = block_state::redundant;
+		entry.ledger_topo_height = ledger_topo_height;
+	});
 }
 
 std::size_t topo_scan_index::cleanup (std::chrono::steady_clock::time_point now)
@@ -368,6 +437,9 @@ void topo_scan_index::state_change (block_state old_state, block_state new_state
 		case block_state::submitted:
 			--submitted_count;
 			break;
+		case block_state::redundant:
+			--redundant_count;
+			break;
 	}
 	switch (new_state)
 	{
@@ -382,6 +454,9 @@ void topo_scan_index::state_change (block_state old_state, block_state new_state
 			break;
 		case block_state::submitted:
 			++submitted_count;
+			break;
+		case block_state::redundant:
+			++redundant_count;
 			break;
 	}
 }
@@ -426,6 +501,11 @@ std::size_t topo_scan_index::count_submitted () const
 	return submitted_count;
 }
 
+std::size_t topo_scan_index::count_redundant () const
+{
+	return redundant_count;
+}
+
 nano::container_info topo_scan_index::container_info () const
 {
 	auto collect_cursors = [&] () {
@@ -441,6 +521,7 @@ nano::container_info topo_scan_index::container_info () const
 	info.put ("blocks_in_flight", in_flight_count);
 	info.put ("blocks_received", received_count);
 	info.put ("blocks_submitted", submitted_count);
+	info.put ("blocks_redundant", redundant_count);
 	info.put ("indexing_done", head.done ? std::size_t{ 1 } : std::size_t{ 0 });
 	info.put ("candidates", head.candidates.size ());
 	info.put ("rollback_distance", rollback_distance);
