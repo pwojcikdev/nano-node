@@ -67,6 +67,8 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("max_blocks_outstanding", max_blocks_outstanding);
 	toml.get ("max_blocks_queued", max_blocks_queued);
 	toml.get_duration ("poisoning_timeout", poisoning_timeout);
+	toml.get ("rollback_min", rollback_min);
+	toml.get ("rollback_max", rollback_max);
 
 	return toml.get_error ();
 }
@@ -80,7 +82,9 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("block_batch_size", block_batch_size, "Maximum number of hashes requested per blocks_random call.\ntype:uint64");
 	toml.put ("max_blocks_outstanding", max_blocks_outstanding, "Pause block fetching when this many blocks are actively in-flight.\ntype:uint64");
 	toml.put ("max_blocks_queued", max_blocks_queued, "Pause index scanning when total queue size hits this number.\ntype:uint64");
-	toml.put ("poisoning_timeout", poisoning_timeout.count (), "Roll back discovery to the indexed cursor when no ledger progress is observed for this long while the discovery cursor is ahead.\ntype:milliseconds");
+	toml.put ("poisoning_timeout", poisoning_timeout.count (), "Roll back discovery when the queue has outstanding work but nothing drains for this long.\ntype:milliseconds");
+	toml.put ("rollback_min", rollback_min, "Initial topo-height rewind distance when an unproductive poisoning reset escalates.\ntype:uint64");
+	toml.put ("rollback_max", rollback_max, "Upper bound on the doubling rewind distance for escalating poisoning rollback.\ntype:uint64");
 
 	return toml.get_error ();
 }

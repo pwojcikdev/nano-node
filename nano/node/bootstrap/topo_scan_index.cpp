@@ -4,7 +4,8 @@
 namespace nano::bootstrap
 {
 topo_scan_index::topo_scan_index (nano::topo_scan_config const & config_a) :
-	config{ config_a }
+	config{ config_a },
+	rollback_distance{ config_a.rollback_min }
 {
 }
 
@@ -12,7 +13,9 @@ void topo_scan_index::reset ()
 {
 	head.reset ();
 	indexed = {};
-	indexed_advanced_at = std::chrono::steady_clock::now ();
+	drained_at = std::chrono::steady_clock::now ();
+	progressed_since_reset = false;
+	rollback_distance = config.rollback_min;
 	blocks.clear ();
 	pending_count = 0;
 	in_flight_count = 0;
@@ -128,7 +131,7 @@ bool topo_scan_index::process (nano::topo_key const start, std::deque<nano::topo
 	return true; // Advanced
 }
 
-void topo_scan_index::mark_indexed (nano::block_hash const & hash, uint64_t topo_height, std::chrono::steady_clock::time_point now)
+void topo_scan_index::mark_indexed (nano::block_hash const & hash, uint64_t topo_height)
 {
 	debug_assert (topo_height > 0); // topo_height=0 is reserved for "not in topology"
 
@@ -139,7 +142,15 @@ void topo_scan_index::mark_indexed (nano::block_hash const & hash, uint64_t topo
 	}
 
 	indexed = new_key;
-	indexed_advanced_at = now;
+}
+
+void topo_scan_index::rewind (uint64_t distance)
+{
+	auto const height = indexed.topo_height;
+	auto const target = height > distance ? height - distance : 0;
+	// Drop the hash: we want the peer to walk from the start of `target`, not
+	// from some specific (and now meaningless) block at the old height.
+	indexed = nano::topo_key{ target, nano::block_hash{ 0 } };
 }
 
 void topo_scan_index::reset_discovery ()
@@ -151,29 +162,48 @@ void topo_scan_index::reset_discovery ()
 	in_flight_count = 0;
 	received_count = 0;
 	submitted_count = 0;
-	// The indexed cursor itself is preserved — that's the whole point: we trust
-	// the closed-loop position and resume open-loop discovery from there.
+	// A fresh cycle starts unproven. The indexed cursor itself is preserved —
+	// rewinding it (when warranted) is `check_poisoning`'s job, done *before*
+	// calling this.
+	progressed_since_reset = false;
 }
 
 bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now)
 {
-	// Healthy state: discovery cursor is at or behind the indexed cursor. Nothing
-	// to roll back to.
-	if (head.cursor <= indexed)
+	// Nothing queued → nothing can be stuck.
+	if (count_outstanding () == 0)
 	{
 		return false;
 	}
 
-	auto const since_progress = now - indexed_advanced_at;
-	if (since_progress < config.poisoning_timeout)
+	// The queue drained recently → healthy, even if slow.
+	auto const since_drain = now - drained_at;
+	if (since_drain < config.poisoning_timeout)
 	{
 		return false;
 	}
 
-	reset_discovery ();
-	// Reset the progress clock so the next round of attempts gets a full timeout
-	// window before we give up again.
-	indexed_advanced_at = now;
+	// Stuck: outstanding work, but no tracked block has drained for a full
+	// timeout window.
+	if (progressed_since_reset)
+	{
+		// This cycle did drain at least one block before stalling — the anchor
+		// is workable, so just clear the queue and retry from `indexed`. Re-arm
+		// the escalation step.
+		reset_discovery ();
+		rollback_distance = config.rollback_min;
+	}
+	else
+	{
+		// Nothing drained since the previous reset either: `indexed` sits past
+		// a gap the ledger can't bridge. Rewind it, then widen the next step.
+		rewind (rollback_distance);
+		rollback_distance = std::min (rollback_distance * 2, config.rollback_max);
+		reset_discovery ();
+	}
+
+	// Give the new attempt a full timeout window before judging it again.
+	drained_at = now;
 	return true;
 }
 
@@ -261,28 +291,39 @@ std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_ordered_blocks (s
 	return result;
 }
 
-void topo_scan_index::block_done (nano::block_hash const & hash)
+void topo_scan_index::block_done (nano::block_hash const & hash, std::chrono::steady_clock::time_point now)
 {
 	auto & by_hash = blocks.get<tag_hash> ();
-	if (auto it = by_hash.find (hash); it != by_hash.end ())
+	auto it = by_hash.find (hash);
+	if (it == by_hash.end ())
 	{
-		switch (it->state)
-		{
-			case block_state::pending:
-				--pending_count;
-				break;
-			case block_state::in_flight:
-				--in_flight_count;
-				break;
-			case block_state::received:
-				--received_count;
-				break;
-			case block_state::submitted:
-				--submitted_count;
-				break;
-		}
-		by_hash.erase (it);
+		// Not a tracked block (e.g. a ghost completion of a pre-reset / dropped
+		// submission). Deliberately NOT counted as progress — otherwise stalled
+		// queues would be masked by unrelated ledger activity.
+		return;
 	}
+
+	switch (it->state)
+	{
+		case block_state::pending:
+			--pending_count;
+			break;
+		case block_state::in_flight:
+			--in_flight_count;
+			break;
+		case block_state::received:
+			--received_count;
+			break;
+		case block_state::submitted:
+			--submitted_count;
+			break;
+	}
+	by_hash.erase (it);
+
+	// Drain heartbeat: a tracked block actually left the queue. This is the
+	// signal `check_poisoning` keys off of.
+	drained_at = now;
+	progressed_since_reset = true;
 }
 
 std::size_t topo_scan_index::cleanup (std::chrono::steady_clock::time_point now)
@@ -397,6 +438,7 @@ nano::container_info topo_scan_index::container_info () const
 	info.put ("blocks_submitted", submitted_count);
 	info.put ("indexing_done", head.done ? std::size_t{ 1 } : std::size_t{ 0 });
 	info.put ("candidates", head.candidates.size ());
+	info.put ("rollback_distance", rollback_distance);
 	info.add ("cursors", collect_cursors ());
 	return info;
 }

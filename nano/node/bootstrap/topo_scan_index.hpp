@@ -47,6 +47,14 @@ namespace nano::bootstrap
  *   most the queue depth. `cursor()` returns this value, not the discovery
  *   cursor, so external observers see the genuinely-processed position.
  *
+ * Phase 4 (stall recovery): `check_poisoning` watches the queue's drain
+ *   heartbeat (`block_done` actually evicting a tracked entry). If the queue
+ *   has outstanding work but nothing drains for `poisoning_timeout`, it rolls
+ *   the pipeline back. The first reset just clears the queue and retries from
+ *   `indexed`; if that retry also drains nothing (the anchor sits past a gap
+ *   the ledger can't bridge), successive resets rewind `indexed` by a doubling
+ *   distance until a workable position is found, then re-arm.
+ *
  * This class is not internally synchronized; callers must hold the bootstrap
  * context mutex when invoking its methods.
  */
@@ -73,7 +81,13 @@ public:
 	std::deque<nano::block_hash> next_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 	void block_received (nano::block_hash const & hash, std::shared_ptr<nano::block> const & block);
 	std::deque<std::shared_ptr<nano::block>> next_ordered_blocks (std::size_t max_count);
-	void block_done (nano::block_hash const & hash);
+	// Evict a tracked block once the processor confirms it (the inspect callback
+	// fires for any source/result). When the hash is actually found in the queue
+	// this is the pipeline's drain heartbeat — it refreshes the poisoning clock
+	// and marks the current reset cycle as productive. A miss (hash not tracked,
+	// e.g. a ghost of a pre-reset submission) is a no-op and does NOT count as
+	// progress. `now` is injectable for deterministic testing.
+	void block_done (nano::block_hash const & hash, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	// --- Phase 3: ledger feedback ---
 
@@ -81,9 +95,7 @@ public:
 	// Monotonically advances the externally-reported `indexed` cursor to the
 	// supplied (topo_height, hash) when it strictly exceeds the current value.
 	// No-op otherwise. Does not affect the discovery cursor or per-round state.
-	// `now` is the wall-clock used to reset the poisoning-detection timer;
-	// injectable for deterministic testing.
-	void mark_indexed (nano::block_hash const & hash, uint64_t topo_height, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
+	void mark_indexed (nano::block_hash const & hash, uint64_t topo_height);
 
 	// Reset in-flight requests whose timestamp is older than `block_retry` back to
 	// pending so they can be retried via the standard pending-pickup path. This is
@@ -95,15 +107,19 @@ public:
 	// this on its own. `now` is injectable for deterministic testing.
 	std::size_t cleanup (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// Roll the discovery cursor back to the `indexed` cursor and drop everything
-	// queued past it. Use this when discovery is observably stuck — peers feeding
-	// us unfetchable / unprocessable entries, or some other failure of the
-	// upstream safeguards (verify, dedup, backpressure). The caller decides the
-	// trigger; the `poisoning_timeout` cleanup branch is the standard one.
+	// Clear everything queued and resume discovery from the current `indexed`
+	// cursor (`head.cursor = indexed`). The indexed cursor itself is preserved.
+	// Marks the new reset cycle as not-yet-productive. Used by `check_poisoning`
+	// and available for any other externally-decided trigger.
 	void reset_discovery ();
 
-	// Detect the standard poisoning condition: `head.cursor > indexed` and no
-	// `mark_indexed` advance for at least `poisoning_timeout`. Returns true if a
+	// Stall recovery. Fires when the queue has outstanding work but no tracked
+	// block has drained for `poisoning_timeout`. If the cycle since the previous
+	// reset drained at least one block, performs a gentle `reset_discovery` and
+	// re-arms the rollback step. Otherwise the `indexed` anchor is past an
+	// unbridgeable gap: rewinds `indexed` by the current rollback distance (then
+	// doubles it, capped at `rollback_max`) before resetting, so successive
+	// failures walk back through history in O(log n) steps. Returns true if any
 	// rollback was performed. `now` is injectable for deterministic testing.
 	bool check_poisoning (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
@@ -167,11 +183,24 @@ private:
 	// Exposed via `cursor()`; used for telemetry and (future) persistence.
 	nano::topo_key indexed{};
 
-	// Timestamp of the last `mark_indexed` advance (or construction). Used by
-	// `check_poisoning` to detect stalled discovery: if the gap between this
-	// timestamp and `now` exceeds `poisoning_timeout` while the discovery
-	// cursor is ahead, the discovery state is rolled back to `indexed`.
-	std::chrono::steady_clock::time_point indexed_advanced_at{ std::chrono::steady_clock::now () };
+	// Drain heartbeat: timestamp of the last `block_done` that actually evicted
+	// a tracked entry (or construction / reset). This is the poisoning clock —
+	// keyed on OUR queue, not on `mark_indexed`, so ghost completions of
+	// pre-reset submissions can't mask a stalled queue.
+	std::chrono::steady_clock::time_point drained_at{ std::chrono::steady_clock::now () };
+
+	// Whether the current reset cycle has drained at least one tracked block.
+	// Cleared by `reset_discovery`, set by a productive `block_done`. Decides
+	// gentle-retry vs. escalating-rewind in `check_poisoning`.
+	bool progressed_since_reset{ false };
+
+	// Current escalating-rollback step (topo-heights). Starts at
+	// `config.rollback_min`, doubles (capped at `config.rollback_max`) on every
+	// unproductive reset, snaps back to `config.rollback_min` on a productive one.
+	uint64_t rollback_distance;
+
+	// Rewind `indexed` back by `distance` topo-heights (clamped at genesis).
+	void rewind (uint64_t distance);
 
 	enum class block_state
 	{

@@ -872,22 +872,22 @@ TEST (bootstrap_topo_scan, reset_discovery_rolls_back_to_indexed)
 	ASSERT_EQ (*fresh, key (2, 200));
 }
 
-// check_poisoning is a no-op while discovery and indexed are aligned, even
-// far past the timeout.
-TEST (bootstrap_topo_scan, check_poisoning_noop_when_aligned)
+// check_poisoning is a no-op when there's no outstanding work, regardless of
+// how long it's been since the last drain.
+TEST (bootstrap_topo_scan, check_poisoning_noop_when_idle)
 {
 	auto cfg = default_config ();
 	cfg.poisoning_timeout = 100ms;
 	nano::bootstrap::topo_scan_index scan{ cfg };
 
 	auto const t0 = std::chrono::steady_clock::now ();
+	ASSERT_EQ (scan.count_outstanding (), 0);
 	ASSERT_FALSE (scan.check_poisoning (t0 + 10s));
 	ASSERT_EQ (scan.cursor (), nano::topo_key{});
 }
 
-// check_poisoning holds off while discovery is ahead but the timeout hasn't
-// elapsed yet — a healthy fast-discovery / slow-processing window must not
-// trip the safeguard.
+// Outstanding work that hasn't yet exceeded the timeout must not trip the
+// safeguard — a healthy fast-discovery / slow-processing window is fine.
 TEST (bootstrap_topo_scan, check_poisoning_waits_for_timeout)
 {
 	auto cfg = default_config ();
@@ -900,14 +900,13 @@ TEST (bootstrap_topo_scan, check_poisoning_waits_for_timeout)
 	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
 	ASSERT_EQ (scan.count_outstanding (), 3);
 
-	// Within the timeout window: no rollback.
+	// Within the timeout window since construction (the initial drain clock): no rollback.
 	ASSERT_FALSE (scan.check_poisoning (t0 + 500ms));
 	ASSERT_EQ (scan.count_outstanding (), 3);
 }
 
-// check_poisoning fires when discovery is ahead and no mark_indexed has
-// advanced the closed-loop cursor within the timeout. Discovery is rewound
-// and the queue is purged.
+// First stall with no progress at all: indexed was at origin, escalate-rewind
+// clamps at genesis, queue is purged.
 TEST (bootstrap_topo_scan, check_poisoning_rolls_back_on_stall)
 {
 	auto cfg = default_config ();
@@ -920,19 +919,19 @@ TEST (bootstrap_topo_scan, check_poisoning_rolls_back_on_stall)
 	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
 	ASSERT_EQ (scan.count_outstanding (), 3);
 
-	// Past the timeout with no mark_indexed progress → rollback.
+	// Past the timeout with nothing drained → rollback.
 	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
-	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // Indexed preserved (was at origin)
+	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // indexed was 0; rewind clamps at genesis
 	ASSERT_EQ (scan.count_outstanding (), 0); // Queue purged
 	ASSERT_FALSE (scan.has_blocks_pending ());
 
-	// Subsequent rollback within the new window: held off.
+	// Queue empty now → held off (nothing outstanding).
 	ASSERT_FALSE (scan.check_poisoning (t0 + 2s + 500ms));
 }
 
-// mark_indexed progress resets the poisoning clock; sustained progress keeps
-// the safeguard from firing even with a small timeout.
-TEST (bootstrap_topo_scan, check_poisoning_held_off_by_progress)
+// A tracked block draining (block_done) refreshes the poisoning clock; while
+// the queue keeps draining the safeguard never fires.
+TEST (bootstrap_topo_scan, check_poisoning_held_off_by_drain)
 {
 	auto cfg = default_config ();
 	cfg.poisoning_timeout = 1s;
@@ -942,12 +941,35 @@ TEST (bootstrap_topo_scan, check_poisoning_held_off_by_progress)
 
 	auto pos = scan.next (t0);
 	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
+	scan.next_blocks (10, t0);
 
-	// Progress arrives within the timeout window — the poisoning clock resets.
-	scan.mark_indexed (nano::block_hash{ 100 }, 1, t0 + 800ms);
-	ASSERT_FALSE (scan.check_poisoning (t0 + 1500ms)); // 700ms since progress < 1s timeout
-	ASSERT_EQ (scan.count_outstanding (), 3); // Queue intact, no rollback
-	ASSERT_EQ (scan.cursor (), key (1, 100));
+	// A tracked block drains within the window — clock resets to t0+800ms.
+	scan.block_done (nano::block_hash{ 100 }, t0 + 800ms);
+	ASSERT_FALSE (scan.check_poisoning (t0 + 1500ms)); // 700ms since drain < 1s timeout
+	ASSERT_EQ (scan.count_outstanding (), 2); // Two still queued, no rollback
+}
+
+// A ghost completion (block_done for a hash we don't track — e.g. a pre-reset
+// submission) must NOT refresh the clock or mark the cycle productive.
+TEST (bootstrap_topo_scan, check_poisoning_ignores_ghost_block_done)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200) });
+	ASSERT_EQ (scan.count_outstanding (), 2);
+
+	// Ghost: hash 999 isn't in our queue. Even though it lands inside the
+	// window, it must not refresh the drain clock.
+	scan.block_done (nano::block_hash{ 999 }, t0 + 800ms);
+
+	// Still stuck (clock unchanged since construction ~ t0) → fires.
+	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+	ASSERT_EQ (scan.count_outstanding (), 0);
 }
 
 // --- Submitted state (drained-but-not-confirmed handoff) ---
@@ -1121,27 +1143,139 @@ TEST (bootstrap_topo_scan, submitted_state_engages_backpressure)
 	ASSERT_TRUE (scan.next ().has_value ());
 }
 
-// After a rollback, the safeguard re-arms — a second stall will trigger
-// another rollback after another full timeout window.
-TEST (bootstrap_topo_scan, check_poisoning_rearms)
+// --- Escalating rollback ---
+
+// Consecutive unproductive stalls rewind `indexed` by a doubling distance.
+TEST (bootstrap_topo_scan, escalating_rollback_doubles)
 {
 	auto cfg = default_config ();
 	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 100;
+	cfg.rollback_max = 100000;
 	nano::bootstrap::topo_scan_index scan{ cfg };
 
 	auto const t0 = std::chrono::steady_clock::now ();
 
-	auto pos = scan.next (t0);
-	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100) });
-	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+	// Park the indexed cursor up high so there's room to rewind.
+	scan.mark_indexed (nano::block_hash{ 42 }, 10000);
+	ASSERT_EQ (scan.cursor (), key (10000, 42));
 
-	// Repopulate the queue; no ledger progress.
-	auto pos2 = scan.next (t0 + 2s);
+	auto seed = [&] (std::chrono::steady_clock::time_point t) {
+		auto pos = scan.next (t);
+		ASSERT_TRUE (pos.has_value ());
+		scan.process (*pos, std::deque<nano::topo_key>{ key (10001, 1), key (10002, 2) });
+		ASSERT_GT (scan.count_outstanding (), 0u);
+	};
+
+	// Stall 1: rewind by rollback_min (100): 10000 -> 9900.
+	seed (t0);
+	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+	ASSERT_EQ (scan.cursor (), key (9900, 0));
+
+	// Stall 2: distance doubled to 200: 9900 -> 9700.
+	seed (t0 + 2s);
+	ASSERT_TRUE (scan.check_poisoning (t0 + 4s));
+	ASSERT_EQ (scan.cursor (), key (9700, 0));
+
+	// Stall 3: distance doubled to 400: 9700 -> 9300.
+	seed (t0 + 4s);
+	ASSERT_TRUE (scan.check_poisoning (t0 + 6s));
+	ASSERT_EQ (scan.cursor (), key (9300, 0));
+}
+
+// The doubling rewind clamps the cursor at genesis instead of underflowing.
+TEST (bootstrap_topo_scan, escalating_rollback_clamps_at_genesis)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 1000;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	scan.mark_indexed (nano::block_hash{ 7 }, 500); // below rollback_min
+	ASSERT_EQ (scan.cursor (), key (500, 7));
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (600, 1) });
+	ASSERT_GT (scan.count_outstanding (), 0u);
+
+	// Rewind distance (1000) exceeds indexed height (500) → genesis.
+	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+	ASSERT_EQ (scan.cursor (), nano::topo_key{});
+}
+
+// A productive cycle (at least one tracked block drained) makes the next stall
+// a *gentle* reset: indexed is preserved and the escalation step is re-armed.
+TEST (bootstrap_topo_scan, productive_cycle_is_gentle_and_rearms)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 100;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	scan.mark_indexed (nano::block_hash{ 42 }, 5000);
+
+	// First stall is unproductive → escalate-rewind (5000 -> 4900) and double.
+	{
+		auto pos = scan.next (t0);
+		scan.process (*pos, std::deque<nano::topo_key>{ key (5001, 1) });
+		ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+		ASSERT_EQ (scan.cursor (), key (4900, 0));
+	}
+
+	// Next cycle: queue, fetch, and actually drain one tracked block.
+	auto pos = scan.next (t0 + 2s);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (4901, 10), key (4902, 11) });
+	scan.next_blocks (10, t0 + 2s);
+	scan.block_done (nano::block_hash{ 10 }, t0 + 3s); // productive drain
+
+	// It then stalls again (the other block is stuck).
+	ASSERT_TRUE (scan.check_poisoning (t0 + 5s));
+	// Gentle: indexed preserved (not rewound), queue cleared.
+	ASSERT_EQ (scan.cursor (), key (4900, 0));
+	ASSERT_EQ (scan.count_outstanding (), 0);
+
+	// And the escalation step was re-armed: the *next* unproductive stall
+	// rewinds by rollback_min (100) again, not the doubled distance.
+	auto pos2 = scan.next (t0 + 5s);
+	scan.process (*pos2, std::deque<nano::topo_key>{ key (4901, 20) });
+	ASSERT_TRUE (scan.check_poisoning (t0 + 7s));
+	ASSERT_EQ (scan.cursor (), key (4800, 0)); // 4900 - 100, not - 200
+}
+
+// After a rollback the queue is empty so the safeguard is held off until work
+// is re-queued and a fresh timeout window elapses.
+TEST (bootstrap_topo_scan, check_poisoning_rearms)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 10;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	scan.mark_indexed (nano::block_hash{ 9 }, 1000);
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1001, 1) });
+	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+	ASSERT_EQ (scan.cursor (), key (990, 0)); // 1000 - 10
+	ASSERT_EQ (scan.count_outstanding (), 0);
+
+	// Empty queue → no fire even past the timeout.
+	ASSERT_FALSE (scan.check_poisoning (t0 + 4s));
+
+	// Repopulate; no progress.
+	auto pos2 = scan.next (t0 + 4s);
 	ASSERT_TRUE (pos2.has_value ());
-	scan.process (*pos2, std::deque<nano::topo_key>{ key (1, 100) });
+	scan.process (*pos2, std::deque<nano::topo_key>{ key (991, 2) });
 	ASSERT_EQ (scan.count_outstanding (), 1);
 
-	// Second timeout window → second rollback.
-	ASSERT_TRUE (scan.check_poisoning (t0 + 4s));
+	// Fresh timeout window → second rollback (distance doubled to 20).
+	ASSERT_TRUE (scan.check_poisoning (t0 + 6s));
+	ASSERT_EQ (scan.cursor (), key (970, 0)); // 990 - 20
 	ASSERT_EQ (scan.count_outstanding (), 0);
 }
