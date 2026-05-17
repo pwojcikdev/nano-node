@@ -11,6 +11,7 @@
 #include <boost/multi_index_container.hpp>
 
 #include <deque>
+#include <functional>
 #include <memory>
 
 namespace mi = boost::multi_index;
@@ -23,6 +24,8 @@ class peer_scoring
 public:
 	static nano::transport::traffic_type constexpr traffic_type = nano::transport::traffic_type::bootstrap_requests;
 
+	using channel_filter = std::function<bool (std::shared_ptr<nano::transport::channel> const &)>;
+
 public:
 	peer_scoring (bootstrap_config const &, nano::network_constants const &);
 
@@ -34,7 +37,8 @@ public:
 	bool try_send_message (std::shared_ptr<nano::transport::channel> const & channel);
 	void received_message (std::shared_ptr<nano::transport::channel> const & channel);
 
-	std::shared_ptr<nano::transport::channel> channel ();
+	// Returns an available channel, optionally restricted to channels accepted by `filter`
+	std::shared_ptr<nano::transport::channel> channel (channel_filter const & filter = nullptr);
 
 	// Synchronize channels with the network, passed channels should be shuffled
 	void sync (std::deque<std::shared_ptr<nano::transport::channel>> const & list);

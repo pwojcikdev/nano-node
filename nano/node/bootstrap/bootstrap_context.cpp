@@ -233,7 +233,7 @@ void bootstrap_context::wait_block_processor () const
 	});
 }
 
-std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel ()
+std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::peer_scoring::channel_filter const & filter)
 {
 	// Limit the number of in-flight requests
 	wait ([this] () {
@@ -247,8 +247,8 @@ std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel ()
 
 	// Wait until a channel is available
 	std::shared_ptr<nano::transport::channel> channel;
-	wait ([this, &channel] () {
-		channel = scoring.channel ();
+	wait ([this, &channel, &filter] () {
+		channel = scoring.channel (filter);
 		return channel != nullptr; // Wait until a channel is available
 	});
 	return channel;

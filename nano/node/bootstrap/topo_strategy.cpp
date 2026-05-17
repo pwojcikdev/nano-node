@@ -6,6 +6,7 @@
 #include <nano/node/block_processor.hpp>
 #include <nano/node/bootstrap/topo_strategy.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/node/transport/channel.hpp>
 #include <nano/node/transport/formatting.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
@@ -115,7 +116,7 @@ void topo_strategy::run_index ()
 
 void topo_strategy::run_one_index ()
 {
-	auto channel = ctx.wait_channel ();
+	auto channel = wait_topo_index_channel ();
 	if (!channel)
 	{
 		return;
@@ -151,7 +152,10 @@ void topo_strategy::run_blocks ()
 
 void topo_strategy::run_one_blocks ()
 {
-	auto channel = ctx.wait_channel ();
+	auto const min_version = ctx.network_constants.topo_bootstrap_protocol_version_min;
+	auto channel = ctx.wait_channel ([min_version] (std::shared_ptr<nano::transport::channel> const & channel) {
+		return channel->get_network_version () >= min_version;
+	});
 	if (!channel)
 	{
 		return;
@@ -280,6 +284,13 @@ std::deque<std::shared_ptr<nano::block>> topo_strategy::wait_ordered_blocks ()
 		return !result.empty () || (!ctx.topology.has_blocks_pending () && !ctx.topology.indexing ());
 	});
 	return result;
+}
+
+std::shared_ptr<nano::transport::channel> topo_strategy::wait_topo_index_channel ()
+{
+	return ctx.wait_channel ([] (std::shared_ptr<nano::transport::channel> const & channel) {
+		return channel->get_flags ().test (nano::node_capabilities::topo_index);
+	});
 }
 
 bool topo_strategy::request_index (nano::topo_key cursor, std::shared_ptr<nano::transport::channel> const & channel)
