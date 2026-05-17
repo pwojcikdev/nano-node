@@ -47,7 +47,8 @@ TEST (consensus, construction_seeds_initial_candidate)
 	ASSERT_EQ (1, engine.candidate_count ());
 	ASSERT_EQ (h1, engine.winner ());
 	ASSERT_TRUE (engine.contains_candidate (h1));
-	ASSERT_EQ (nano::consensus::election_state::passive, engine.state ());
+	ASSERT_EQ (nano::consensus::election_phase::no_quorum, engine.phase ());
+	ASSERT_FALSE (engine.quorum_latched ());
 	ASSERT_FALSE (engine.confirmed ());
 	ASSERT_FALSE (engine.has_quorum ()); // margin 0 - 0 < delta
 }
@@ -175,7 +176,7 @@ TEST (consensus, final_quorum_confirms_and_freezes)
 
 	ASSERT_TRUE (fx.on_final_quorum_reached.has_value ());
 	ASSERT_EQ (h1, fx.on_final_quorum_reached->winner);
-	ASSERT_EQ (nano::consensus::election_state::confirmed, engine.state ());
+	ASSERT_EQ (nano::consensus::election_phase::final_quorum_reached, engine.phase ());
 	ASSERT_TRUE (engine.confirmed ());
 
 	// Once confirmed, further ballots are not evaluated.
@@ -279,28 +280,42 @@ TEST (consensus, register_candidate_is_idempotent)
 	ASSERT_FALSE (engine.register_candidate (h1)); // initial candidate already present
 }
 
-TEST (consensus, state_transitions_match_valid_change)
+// Walks the only progression the engine has: no_quorum -> quorum_reached -> final_quorum_reached.
+TEST (consensus, phase_progresses_no_quorum_quorum_final)
 {
 	fixture f;
+	f.delta = 100;
 	auto h1 = bh (1);
+	nano::consensus::engine engine{ f.ports (), h1 };
 
-	{
-		nano::consensus::engine engine{ f.ports (), h1 };
-		// state_change returns true on FAILURE, false on success.
-		ASSERT_FALSE (engine.state_change (nano::consensus::election_state::passive, nano::consensus::election_state::active));
-		ASSERT_EQ (nano::consensus::election_state::active, engine.state ());
-		ASSERT_FALSE (engine.state_change (nano::consensus::election_state::active, nano::consensus::election_state::confirmed));
-		ASSERT_TRUE (engine.confirmed ());
-		ASSERT_FALSE (engine.state_change (nano::consensus::election_state::confirmed, nano::consensus::election_state::expired_confirmed));
-		// No transitions are valid out of a terminal state.
-		ASSERT_TRUE (engine.state_change (nano::consensus::election_state::expired_confirmed, nano::consensus::election_state::active));
-	}
-	{
-		nano::consensus::engine engine{ f.ports (), h1 };
-		// Invalid direct transition (passive -> expired_confirmed is not in the table).
-		ASSERT_TRUE (engine.state_change (nano::consensus::election_state::passive, nano::consensus::election_state::expired_confirmed));
-		ASSERT_EQ (nano::consensus::election_state::passive, engine.state ());
-		ASSERT_FALSE (engine.state_change (nano::consensus::election_state::passive, nano::consensus::election_state::cancelled));
-		ASSERT_EQ (nano::consensus::election_state::cancelled, engine.state ());
-	}
+	ASSERT_EQ (nano::consensus::election_phase::no_quorum, engine.phase ());
+	ASSERT_FALSE (engine.quorum_latched ());
+
+	nano::keypair rep1;
+	f.weights[rep1.pub] = 100;
+
+	// Normal vote reaches margin quorum -> quorum_reached (announced once).
+	auto fx1 = engine.vote (rep1.pub, h1, 1);
+	ASSERT_EQ (nano::consensus::election_phase::quorum_reached, engine.phase ());
+	ASSERT_TRUE (engine.quorum_latched ());
+	ASSERT_FALSE (engine.confirmed ());
+	ASSERT_TRUE (fx1.on_quorum_reached.has_value ());
+	ASSERT_FALSE (fx1.on_final_quorum_reached.has_value ());
+
+	// Same rep upgrades to a final vote -> final-quorum -> decided. Quorum is NOT re-announced.
+	auto fx2 = engine.vote (rep1.pub, h1, nano::consensus::ballot::final_timestamp);
+	ASSERT_EQ (nano::consensus::election_phase::final_quorum_reached, engine.phase ());
+	ASSERT_TRUE (engine.confirmed ());
+	ASSERT_FALSE (fx2.on_quorum_reached.has_value ());
+	ASSERT_TRUE (fx2.on_final_quorum_reached.has_value ());
+	ASSERT_EQ (h1, fx2.on_final_quorum_reached->winner);
+
+	// Decided: further ballots are ignored.
+	nano::keypair rep2;
+	f.weights[rep2.pub] = 100;
+	auto fx3 = engine.vote (rep2.pub, h1, 5);
+	ASSERT_FALSE (fx3.on_quorum_reached.has_value ());
+	ASSERT_FALSE (fx3.on_winner_changed.has_value ());
+	ASSERT_FALSE (fx3.on_final_quorum_reached.has_value ());
+	ASSERT_TRUE (engine.confirmed ());
 }

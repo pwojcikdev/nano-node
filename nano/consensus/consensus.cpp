@@ -3,7 +3,7 @@
 
 nano::consensus::engine::engine (consensus::ports ports_a, nano::block_hash initial_candidate) :
 	ports_{ std::move (ports_a) },
-	winner_hash_{ initial_candidate }
+	state_{ no_quorum_state{ initial_candidate } }
 {
 	// Seed a zero-weight ballot from the null account pointing at the initial candidate. The null
 	// account never has weight, so this only pins the candidate into the tally — the election
@@ -73,53 +73,77 @@ bool nano::consensus::engine::has_quorum () const
 	return has_quorum (tally_l);
 }
 
-bool nano::consensus::engine::quorum_latched () const
+nano::consensus::engine::assessment nano::consensus::engine::assess () const
 {
-	return quorum_latched_;
-}
-
-nano::consensus::effects nano::consensus::engine::evaluate ()
-{
-	// Every decision below is taken from this ONE tally snapshot. A winner flip's vote removal is
-	// performed by the caller afterwards (forget_voters), so it can only affect the NEXT
-	// evaluate — never the quorum check within this one.
-	effects out;
+	// One fresh tally reading drives every decision for this vote.
 	auto tally_l = tally ();
 	release_assert (!tally_l.empty ());
-	auto leading_hash = tally_l.begin ()->second;
 	winner_weight_ = tally_l.begin ()->first;
-
-	// Sum-gated relock: only switch the locked winner once enough total weight has been cast
-	// (>= delta) AND the leader is a different block. This prevents thrashing the winner on
-	// early, sparse votes.
 	nano::uint128_t sum{ 0 };
 	for (auto const & [weight, hash] : tally_l)
 	{
 		sum += weight;
 	}
-	if (sum >= ports_.delta () && leading_hash != winner_hash_)
+	return assessment{ tally_l.begin ()->second, tally_l.begin ()->first, sum, has_quorum (tally_l), final_weight_ };
+}
+
+nano::block_hash nano::consensus::engine::relock (nano::block_hash locked, assessment const & a, effects & out) const
+{
+	// Only switch the locked winner once enough total weight has been cast (>= delta) AND the
+	// leader is a different block. This prevents thrashing the winner on early, sparse votes.
+	if (a.sum >= ports_.delta () && a.leading != locked)
 	{
-		auto previous = winner_hash_;
-		winner_hash_ = leading_hash;
-		out.on_winner_changed = effects::winner_changed{ previous, leading_hash };
+		out.on_winner_changed = effects::winner_changed{ locked, a.leading };
+		return a.leading;
 	}
-	if (has_quorum (tally_l))
+	return locked;
+}
+
+auto nano::consensus::engine::vote_visitor::operator() (no_quorum_state const & s) const -> result
+{
+	effects out;
+	auto a = engine_.assess ();
+	auto winner = engine_.relock (s.winner, a, out);
+	if (a.quorum)
 	{
-		// One-shot: latch on the first margin quorum so the caller broadcasts final votes exactly
-		// once. The latch flips regardless of voting being enabled.
-		if (!quorum_latched_)
+		// First time margin quorum is satisfied: latch by leaving no_quorum.
+		out.on_quorum_reached = effects::quorum_reached{ winner };
+		if (a.final_weight >= engine_.ports_.delta ())
 		{
-			quorum_latched_ = true;
-			out.on_quorum_reached = effects::quorum_reached{ winner_hash_ };
+			out.on_final_quorum_reached = effects::final_quorum_reached{ a.leading };
+			return { out, final_quorum_reached_state{ winner } };
 		}
-		// Decided once the winner's final-vote weight also clears delta.
-		if (final_weight_ >= ports_.delta ())
-		{
-			state_ = election_state::confirmed;
-			out.on_final_quorum_reached = effects::final_quorum_reached{ leading_hash };
-		}
+		return { out, quorum_reached_state{ winner } };
 	}
-	return out;
+	if (winner != s.winner)
+	{
+		return { out, no_quorum_state{ winner } }; // relocked but still no quorum
+	}
+	return { out, std::nullopt };
+}
+
+auto nano::consensus::engine::vote_visitor::operator() (quorum_reached_state const & s) const -> result
+{
+	effects out;
+	auto a = engine_.assess ();
+	auto winner = engine_.relock (s.winner, a, out);
+	// Quorum is already latched, so it is never re-announced. The winner can still flip, and the
+	// election is decided once the winner's final-vote weight also clears delta.
+	if (a.quorum && a.final_weight >= engine_.ports_.delta ())
+	{
+		out.on_final_quorum_reached = effects::final_quorum_reached{ a.leading };
+		return { out, final_quorum_reached_state{ winner } };
+	}
+	if (winner != s.winner)
+	{
+		return { out, quorum_reached_state{ winner } };
+	}
+	return { out, std::nullopt };
+}
+
+auto nano::consensus::engine::vote_visitor::operator() (final_quorum_reached_state const &) const -> result
+{
+	return { {}, std::nullopt }; // decided; further votes are ignored
 }
 
 nano::consensus::effects nano::consensus::engine::vote (nano::account const & representative, nano::block_hash const & hash, uint64_t timestamp)
@@ -127,11 +151,12 @@ nano::consensus::effects nano::consensus::engine::vote (nano::account const & re
 	// The caller already enforced replay/cooldown/minimum-principal-weight; an accepted ballot
 	// unconditionally replaces this representative's previous one.
 	votes_[representative] = ballot{ hash, timestamp };
-	if (confirmed ())
+	auto [out, next] = std::visit (vote_visitor{ *this }, state_);
+	if (next)
 	{
-		return {};
+		state_ = std::move (*next);
 	}
-	return evaluate ();
+	return out;
 }
 
 bool nano::consensus::engine::register_candidate (nano::block_hash const & hash_a)
@@ -151,7 +176,7 @@ void nano::consensus::engine::remove_candidate (nano::block_hash const & hash_a)
 {
 	// The locked winner is never removed. Removing a candidate also drops the now-orphaned
 	// ballots that pointed at it so they stop contributing weight.
-	if (winner_hash_ != hash_a && candidates_.erase (hash_a) > 0)
+	if (winner () != hash_a && candidates_.erase (hash_a) > 0)
 	{
 		std::erase_if (votes_, [&hash_a] (auto const & entry) {
 			return entry.second.hash == hash_a;
@@ -176,82 +201,22 @@ std::unordered_map<nano::block_hash, nano::uint128_t> const & nano::consensus::e
 
 nano::block_hash nano::consensus::engine::winner () const
 {
-	return winner_hash_;
+	return std::visit ([] (auto const & s) { return s.winner; }, state_);
 }
 
-nano::consensus::election_state nano::consensus::engine::state () const
+nano::consensus::election_phase nano::consensus::engine::phase () const
 {
-	return state_;
+	return std::visit ([] (auto const & s) { return s.phase; }, state_);
 }
 
 bool nano::consensus::engine::confirmed () const
 {
-	return state_ == election_state::confirmed || state_ == election_state::expired_confirmed;
+	return std::holds_alternative<final_quorum_reached_state> (state_);
 }
 
-bool nano::consensus::engine::failed () const
+bool nano::consensus::engine::quorum_latched () const
 {
-	return state_ == election_state::expired_unconfirmed;
-}
-
-bool nano::consensus::engine::valid_change (election_state expected_a, election_state desired_a) const
-{
-	switch (expected_a)
-	{
-		case election_state::passive:
-			switch (desired_a)
-			{
-				case election_state::active:
-				case election_state::confirmed:
-				case election_state::expired_unconfirmed:
-				case election_state::cancelled:
-					return true;
-				default:
-					break;
-			}
-			break;
-		case election_state::active:
-			switch (desired_a)
-			{
-				case election_state::confirmed:
-				case election_state::expired_unconfirmed:
-				case election_state::cancelled:
-					return true;
-				default:
-					break;
-			}
-			break;
-		case election_state::confirmed:
-			switch (desired_a)
-			{
-				case election_state::expired_confirmed:
-					return true;
-				default:
-					break;
-			}
-			break;
-		case election_state::expired_unconfirmed:
-		case election_state::expired_confirmed:
-		case election_state::cancelled:
-			break;
-	}
-	return false;
-}
-
-bool nano::consensus::engine::state_change (election_state expected_a, election_state desired_a)
-{
-	// Returns true on failure (no transition). The wall-clock state-start timestamp and any
-	// notification posting are caller concerns and stay outside the rule.
-	bool result = true;
-	if (valid_change (expected_a, desired_a))
-	{
-		if (state_ == expected_a)
-		{
-			state_ = desired_a;
-			result = false;
-		}
-	}
-	return result;
+	return !std::holds_alternative<no_quorum_state> (state_);
 }
 
 std::unordered_map<nano::account, nano::consensus::ballot> const & nano::consensus::engine::votes () const
