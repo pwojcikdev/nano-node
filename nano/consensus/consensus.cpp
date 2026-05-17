@@ -17,8 +17,8 @@ nano::consensus::tally_t nano::consensus::engine::tally () const
 	// Sum live representative weight per voted hash. Two snapshots are produced:
 	//  - tally_snapshot_: weight per hash across ALL ballots (used by the caller for eviction).
 	//  - the returned tally: restricted to registered candidates and ordered by weight.
-	// final_weight_ is the winner's weight among final votes only, and is STICKY: it is updated
-	// solely when the current winner has final votes, so a transient winner flip can never lower
+	// final_weight_ is the leader's weight among final votes only, and is STICKY: it is updated
+	// solely when the current leader has final votes, so a transient leader flip can never lower
 	// an already-reached final tally (which would otherwise un-confirm a decided election).
 	std::unordered_map<nano::block_hash, nano::uint128_t> block_weights;
 	std::unordered_map<nano::block_hash, nano::uint128_t> final_weights;
@@ -42,8 +42,8 @@ nano::consensus::tally_t nano::consensus::engine::tally () const
 	}
 	if (!final_weights.empty () && !result.empty ())
 	{
-		auto winner_hash = result.begin ()->second;
-		if (auto it = final_weights.find (winner_hash); it != final_weights.end ())
+		auto leader_hash = result.begin ()->second;
+		if (auto it = final_weights.find (leader_hash); it != final_weights.end ())
 		{
 			final_weight_ = it->second;
 		}
@@ -78,7 +78,7 @@ nano::consensus::engine::assessment nano::consensus::engine::assess () const
 	// One fresh tally reading drives every decision for this vote.
 	auto tally_l = tally ();
 	release_assert (!tally_l.empty ());
-	winner_weight_ = tally_l.begin ()->first;
+	leader_weight_ = tally_l.begin ()->first;
 	nano::uint128_t sum{ 0 };
 	for (auto const & [weight, hash] : tally_l)
 	{
@@ -89,11 +89,11 @@ nano::consensus::engine::assessment nano::consensus::engine::assess () const
 
 nano::block_hash nano::consensus::engine::relock (nano::block_hash locked, assessment const & a, effects & out) const
 {
-	// Only switch the locked winner once enough total weight has been cast (>= delta) AND the
-	// leader is a different block. This prevents thrashing the winner on early, sparse votes.
+	// Only switch the locked leader once enough total weight has been cast (>= delta) AND the
+	// tally leader is a different block. This prevents thrashing on early, sparse votes.
 	if (a.sum >= ports_.delta () && a.leading != locked)
 	{
-		out.on_winner_changed = effects::winner_changed{ locked, a.leading };
+		out.on_leader_changed = effects::leader_changed{ locked, a.leading };
 		return a.leading;
 	}
 	return locked;
@@ -103,21 +103,21 @@ auto nano::consensus::engine::vote_visitor::operator() (no_quorum_state const & 
 {
 	effects out;
 	auto a = engine_.assess ();
-	auto winner = engine_.relock (s.winner, a, out);
+	auto leader = engine_.relock (s.leader, a, out);
 	if (a.quorum)
 	{
 		// First time margin quorum is satisfied: latch by leaving no_quorum.
-		out.on_quorum_reached = effects::quorum_reached{ winner };
+		out.on_quorum_reached = effects::quorum_reached{ leader };
 		if (a.final_weight >= engine_.ports_.delta ())
 		{
 			out.on_final_quorum_reached = effects::final_quorum_reached{ a.leading };
-			return { out, final_quorum_reached_state{ winner } };
+			return { out, final_quorum_reached_state{ leader } };
 		}
-		return { out, quorum_reached_state{ winner } };
+		return { out, quorum_reached_state{ leader } };
 	}
-	if (winner != s.winner)
+	if (leader != s.leader)
 	{
-		return { out, no_quorum_state{ winner } }; // relocked but still no quorum
+		return { out, no_quorum_state{ leader } }; // relocked but still no quorum
 	}
 	return { out, std::nullopt };
 }
@@ -126,17 +126,17 @@ auto nano::consensus::engine::vote_visitor::operator() (quorum_reached_state con
 {
 	effects out;
 	auto a = engine_.assess ();
-	auto winner = engine_.relock (s.winner, a, out);
-	// Quorum is already latched, so it is never re-announced. The winner can still flip, and the
-	// election is decided once the winner's final-vote weight also clears delta.
+	auto leader = engine_.relock (s.leader, a, out);
+	// Quorum is already latched, so it is never re-announced. The leader can still flip, and the
+	// election is decided once the leader's final-vote weight also clears delta.
 	if (a.quorum && a.final_weight >= engine_.ports_.delta ())
 	{
 		out.on_final_quorum_reached = effects::final_quorum_reached{ a.leading };
-		return { out, final_quorum_reached_state{ winner } };
+		return { out, final_quorum_reached_state{ leader } };
 	}
-	if (winner != s.winner)
+	if (leader != s.leader)
 	{
-		return { out, quorum_reached_state{ winner } };
+		return { out, quorum_reached_state{ leader } };
 	}
 	return { out, std::nullopt };
 }
@@ -174,9 +174,9 @@ void nano::consensus::engine::forget_voters (std::vector<nano::account> const & 
 
 void nano::consensus::engine::remove_candidate (nano::block_hash const & hash_a)
 {
-	// The locked winner is never removed. Removing a candidate also drops the now-orphaned
+	// The current leader is never removed. Removing a candidate also drops the now-orphaned
 	// ballots that pointed at it so they stop contributing weight.
-	if (winner () != hash_a && candidates_.erase (hash_a) > 0)
+	if (leader () != hash_a && candidates_.erase (hash_a) > 0)
 	{
 		std::erase_if (votes_, [&hash_a] (auto const & entry) {
 			return entry.second.hash == hash_a;
@@ -184,9 +184,9 @@ void nano::consensus::engine::remove_candidate (nano::block_hash const & hash_a)
 	}
 }
 
-nano::uint128_t nano::consensus::engine::winner_weight () const
+nano::uint128_t nano::consensus::engine::leader_weight () const
 {
-	return winner_weight_;
+	return leader_weight_;
 }
 
 nano::uint128_t nano::consensus::engine::final_weight () const
@@ -199,9 +199,44 @@ std::unordered_map<nano::block_hash, nano::uint128_t> const & nano::consensus::e
 	return tally_snapshot_;
 }
 
-nano::block_hash nano::consensus::engine::winner () const
+nano::block_hash nano::consensus::engine::leader () const
 {
-	return std::visit ([] (auto const & s) { return s.winner; }, state_);
+	struct extract
+	{
+		nano::block_hash operator() (no_quorum_state const & s) const
+		{
+			return s.leader;
+		}
+		nano::block_hash operator() (quorum_reached_state const & s) const
+		{
+			return s.leader;
+		}
+		nano::block_hash operator() (final_quorum_reached_state const & s) const
+		{
+			return s.winner; // the leader that won
+		}
+	};
+	return std::visit (extract{}, state_);
+}
+
+std::optional<nano::block_hash> nano::consensus::engine::winner () const
+{
+	struct extract
+	{
+		std::optional<nano::block_hash> operator() (no_quorum_state const &) const
+		{
+			return std::nullopt;
+		}
+		std::optional<nano::block_hash> operator() (quorum_reached_state const &) const
+		{
+			return std::nullopt;
+		}
+		std::optional<nano::block_hash> operator() (final_quorum_reached_state const & s) const
+		{
+			return s.winner;
+		}
+	};
+	return std::visit (extract{}, state_);
 }
 
 nano::consensus::election_phase nano::consensus::engine::phase () const

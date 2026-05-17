@@ -466,19 +466,19 @@ void nano::election::apply_consensus_outcome (nano::consensus::effects const & f
 		return existing->second;
 	};
 
-	status.tally = consensus_.winner_weight ();
+	status.tally = consensus_.leader_weight ();
 	status.final_tally = consensus_.final_weight ();
 
-	if (fx.on_winner_changed)
+	if (fx.on_leader_changed)
 	{
-		auto const & previous_winner = fx.on_winner_changed->previous_winner;
-		auto new_winner = resolve (fx.on_winner_changed->new_winner);
-		status.winner = new_winner;
-		remove_votes (previous_winner);
+		auto const & previous_leader = fx.on_leader_changed->previous_leader;
+		auto new_leader = resolve (fx.on_leader_changed->new_leader);
+		status.winner = new_leader;
+		remove_votes (previous_leader);
 
 		node.logger.debug (nano::log::type::election, "Winning fork changed from {} to {} for root: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
-		previous_winner,
-		new_winner->hash (),
+		previous_leader,
+		new_leader->hash (),
 		qualified_root,
 		to_string (behavior_m),
 		to_string (state_m),
@@ -486,7 +486,7 @@ void nano::election::apply_consensus_outcome (nano::consensus::effects const & f
 		status.block_count,
 		duration ().count ());
 
-		node.block_processor.force (new_winner);
+		node.block_processor.force (new_leader);
 	}
 	if (fx.on_quorum_reached)
 	{
@@ -755,7 +755,7 @@ void nano::election::remove_block (nano::block_hash const & hash_a)
 			last_blocks.erase (hash_a);
 		}
 	}
-	consensus_.remove_candidate (hash_a); // applies its own winner guard
+	consensus_.remove_candidate (hash_a); // applies its own leader guard
 }
 
 bool nano::election::replace_by_weight (nano::unique_lock<nano::mutex> & lock_a, nano::block_hash const & hash_a)

@@ -8,7 +8,7 @@
 
 // Pure unit tests for the ORV consensus engine. No node/system: representative weight and the
 // quorum delta are injected, so each test is a deterministic function of the ballots. These tests
-// pin the rules (margin quorum, live weight, sticky winner-specific final weight, sum-gated winner
+// pin the rules (margin quorum, live weight, sticky leader-specific final weight, sum-gated leader
 // flip, one-shot quorum latch, candidate restriction). The engine is hash-only, so the tests need
 // no blocks at all.
 
@@ -45,7 +45,7 @@ TEST (consensus, construction_seeds_initial_candidate)
 
 	ASSERT_EQ (1, engine.voter_count ()); // seeded null-account ballot
 	ASSERT_EQ (1, engine.candidate_count ());
-	ASSERT_EQ (h1, engine.winner ());
+	ASSERT_EQ (h1, engine.leader ());
 	ASSERT_TRUE (engine.contains_candidate (h1));
 	ASSERT_EQ (nano::consensus::election_phase::no_quorum, engine.phase ());
 	ASSERT_FALSE (engine.quorum_latched ());
@@ -66,7 +66,7 @@ TEST (consensus, margin_quorum_single_block)
 
 	ASSERT_TRUE (engine.has_quorum ()); // (delta - 0) >= delta
 	ASSERT_TRUE (fx.on_quorum_reached.has_value ());
-	ASSERT_EQ (h1, fx.on_quorum_reached->winner);
+	ASSERT_EQ (h1, fx.on_quorum_reached->leader);
 	ASSERT_FALSE (fx.on_final_quorum_reached.has_value ()); // no final votes
 }
 
@@ -88,7 +88,7 @@ TEST (consensus, margin_is_not_absolute_with_fork)
 	engine.vote (rep1.pub, h1, 1);
 	engine.vote (rep2.pub, h2, 1);
 
-	// winner h1=150, runner-up h2=60, margin 90 < 100 -> NO quorum
+	// leader h1=150, runner-up h2=60, margin 90 < 100 -> NO quorum
 	ASSERT_FALSE (engine.has_quorum ());
 
 	f.weights[rep1.pub] = 170; // margin 170 - 60 = 110 >= 100
@@ -110,7 +110,7 @@ TEST (consensus, live_weight_is_recomputed_not_frozen)
 	ASSERT_FALSE (engine.has_quorum ()); // recomputed from live weight, not a cast-time snapshot
 }
 
-TEST (consensus, sticky_winner_specific_final_weight)
+TEST (consensus, sticky_leader_specific_final_weight)
 {
 	fixture f;
 	f.delta = 100;
@@ -127,7 +127,7 @@ TEST (consensus, sticky_winner_specific_final_weight)
 	engine.vote (rep1.pub, h2, nano::consensus::ballot::final_timestamp);
 	ASSERT_EQ (50, engine.final_weight ());
 
-	// rep2 normal-votes h1, making h1 the leader. h1 has no final votes, so the winner-specific
+	// rep2 normal-votes h1, making h1 the leader. h1 has no final votes, so the leader-specific
 	// final weight stays sticky at 50 (NOT reset to 0).
 	engine.vote (rep2.pub, h1, 1);
 	auto tally = engine.tally ();
@@ -135,13 +135,13 @@ TEST (consensus, sticky_winner_specific_final_weight)
 	ASSERT_EQ (50, engine.final_weight ()); // sticky
 }
 
-TEST (consensus, sum_gated_winner_flip)
+TEST (consensus, sum_gated_leader_flip)
 {
 	fixture f;
 	f.delta = 100;
 	auto h1 = bh (1);
 	auto h2 = bh (2);
-	nano::consensus::engine engine{ f.ports (), h1 }; // initial winner = h1
+	nano::consensus::engine engine{ f.ports (), h1 }; // initial leader = h1
 	ASSERT_TRUE (engine.register_candidate (h2));
 
 	nano::keypair rep1, rep2;
@@ -149,18 +149,18 @@ TEST (consensus, sum_gated_winner_flip)
 	// Leader is h2 but total cast weight < delta -> NO flip yet (sum gate).
 	f.weights[rep1.pub] = 60;
 	auto fx1 = engine.vote (rep1.pub, h2, 1);
-	ASSERT_FALSE (fx1.on_winner_changed.has_value ());
-	ASSERT_EQ (h1, engine.winner ());
+	ASSERT_FALSE (fx1.on_leader_changed.has_value ());
+	ASSERT_EQ (h1, engine.leader ());
 
-	// Now sum >= delta and the leader (h2) differs from the locked winner (h1) -> flip.
+	// Now sum >= delta and the tally leader (h2) differs from the locked leader (h1) -> flip.
 	f.weights[rep2.pub] = 80;
 	auto fx2 = engine.vote (rep2.pub, h2, 1);
-	ASSERT_TRUE (fx2.on_winner_changed.has_value ());
-	ASSERT_EQ (h1, fx2.on_winner_changed->previous_winner);
-	ASSERT_EQ (h2, fx2.on_winner_changed->new_winner);
-	ASSERT_EQ (h2, engine.winner ());
+	ASSERT_TRUE (fx2.on_leader_changed.has_value ());
+	ASSERT_EQ (h1, fx2.on_leader_changed->previous_leader);
+	ASSERT_EQ (h2, fx2.on_leader_changed->new_leader);
+	ASSERT_EQ (h2, engine.leader ());
 	ASSERT_TRUE (fx2.on_quorum_reached.has_value ()); // margin 140 - 0 >= 100
-	ASSERT_EQ (h2, fx2.on_quorum_reached->winner);
+	ASSERT_EQ (h2, fx2.on_quorum_reached->leader);
 }
 
 TEST (consensus, final_quorum_confirms_and_freezes)
@@ -184,7 +184,7 @@ TEST (consensus, final_quorum_confirms_and_freezes)
 	f.weights[rep2.pub] = f.delta;
 	auto fx2 = engine.vote (rep2.pub, h1, 5);
 	ASSERT_FALSE (fx2.on_quorum_reached.has_value ());
-	ASSERT_FALSE (fx2.on_winner_changed.has_value ());
+	ASSERT_FALSE (fx2.on_leader_changed.has_value ());
 	ASSERT_FALSE (fx2.on_final_quorum_reached.has_value ());
 }
 
@@ -227,19 +227,19 @@ TEST (consensus, equal_weight_tally_collision)
 	ASSERT_EQ (nano::uint128_t{ 50 }, tally.begin ()->first);
 }
 
-TEST (consensus, remove_candidate_guards_winner_and_orphans_ballots)
+TEST (consensus, remove_candidate_guards_leader_and_orphans_ballots)
 {
 	fixture f;
 	auto h1 = bh (1);
 	auto h2 = bh (2);
-	nano::consensus::engine engine{ f.ports (), h1 }; // winner = h1
+	nano::consensus::engine engine{ f.ports (), h1 }; // leader = h1
 	ASSERT_TRUE (engine.register_candidate (h2));
 
 	nano::keypair rep1;
 	f.weights[rep1.pub] = 10;
 	engine.vote (rep1.pub, h2, 1);
 
-	engine.remove_candidate (h1); // guarded: h1 is the winner -> no-op
+	engine.remove_candidate (h1); // guarded: h1 is the leader -> no-op
 	ASSERT_EQ (2, engine.candidate_count ());
 	ASSERT_TRUE (engine.contains_candidate (h1));
 
@@ -299,6 +299,7 @@ TEST (consensus, phase_progresses_no_quorum_quorum_final)
 	ASSERT_EQ (nano::consensus::election_phase::quorum_reached, engine.phase ());
 	ASSERT_TRUE (engine.quorum_latched ());
 	ASSERT_FALSE (engine.confirmed ());
+	ASSERT_FALSE (engine.winner ().has_value ()); // no winner until decided
 	ASSERT_TRUE (fx1.on_quorum_reached.has_value ());
 	ASSERT_FALSE (fx1.on_final_quorum_reached.has_value ());
 
@@ -309,13 +310,15 @@ TEST (consensus, phase_progresses_no_quorum_quorum_final)
 	ASSERT_FALSE (fx2.on_quorum_reached.has_value ());
 	ASSERT_TRUE (fx2.on_final_quorum_reached.has_value ());
 	ASSERT_EQ (h1, fx2.on_final_quorum_reached->winner);
+	ASSERT_TRUE (engine.winner ().has_value ());
+	ASSERT_EQ (h1, *engine.winner ());
 
 	// Decided: further ballots are ignored.
 	nano::keypair rep2;
 	f.weights[rep2.pub] = 100;
 	auto fx3 = engine.vote (rep2.pub, h1, 5);
 	ASSERT_FALSE (fx3.on_quorum_reached.has_value ());
-	ASSERT_FALSE (fx3.on_winner_changed.has_value ());
+	ASSERT_FALSE (fx3.on_leader_changed.has_value ());
 	ASSERT_FALSE (fx3.on_final_quorum_reached.has_value ());
 	ASSERT_TRUE (engine.confirmed ());
 }
