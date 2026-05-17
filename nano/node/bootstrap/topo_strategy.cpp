@@ -273,9 +273,9 @@ std::deque<std::shared_ptr<nano::block>> topo_strategy::wait_ordered_blocks ()
 	std::deque<std::shared_ptr<nano::block>> result;
 	ctx.wait ([this, &result] () {
 		debug_assert (!ctx.mutex.try_lock ());
-		// Bound the drain so we can't overshoot block_processor's per-source queue cap (max_system_queue).
-		// result = ctx.topology.next_ordered_blocks (ctx.config.block_processor_threshold);
-		result = ctx.topology.next_ordered_blocks (std::numeric_limits<size_t>::max ());
+		// Bound the drain so a single add_many can't overshoot the block
+		// processor's per-source queue cap and silently drop blocks.
+		result = ctx.topology.next_ordered_blocks (ctx.config.block_processor_threshold);
 		// Wake up if we have blocks to submit, or there's nothing left to do.
 		return !result.empty () || (!ctx.topology.has_blocks_pending () && !ctx.topology.indexing ());
 	});

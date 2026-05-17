@@ -23,147 +23,111 @@ namespace mi = boost::multi_index;
 namespace nano::bootstrap
 {
 /*
- * Tracks the in-memory topology scan state for the bootstrap topology strategy.
+ * In-memory state for the topology bootstrap strategy. Not internally
+ * synchronized: callers hold the bootstrap context mutex.
  *
- * Phase 1 (index discovery): walks a `discovery cursor` across the topology
- *   space. At each cursor position the head accumulates a deduplicated union
- *   of candidate `topo_key` entries from `consideration_count` peer responses.
- *   After enough responses arrive, the union is trimmed to `candidates` entries
- *   and queued for block fetching, and the cursor advances to the last queued
- *   key. The discovery cursor is open-loop with respect to ledger processing
- *   so the pipeline can keep peers busy ahead of the block processor; the
- *   `max_blocks_queued` backpressure check in `next()` bounds how far ahead
- *   discovery can get from processing.
+ * Pipeline: discover -> fetch -> submit -> confirm.
  *
- * Phase 2 (block fetching): tracks per-block state (pending, in_flight, received,
- *   submitted, redundant). A pre-fetch ledger check tags blocks we already have
- *   as `redundant` (via `mark_redundant`) so they are never fetched. The
- *   topologically-ordered drain (`next_ordered_blocks`) handles a contiguous
- *   `redundant` prefix at the head — advancing the cursor in order — then
- *   collects `received` blocks for submission. `block_done` is the
- *   unconditional eviction for blocks delivered/completed via other channels.
+ * Discovery (`next` / `process`): an open-loop `head.cursor` walks the
+ *   topology space. Each cursor position gathers a quorum of candidate
+ *   `topo_key`s from `consideration_count` peer responses, queues the first
+ *   `candidates` of them, and advances the cursor to the last queued key.
+ *   Backpressure (`max_blocks_queued` in `next`) bounds how far discovery
+ *   runs ahead of processing.
  *
- * Phase 3 (ledger feedback): `mark_indexed` records a (hash, topo_height) pair
- *   for blocks that successfully entered the ledger. The highest such key is
- *   the `indexed` cursor — the externally-reported topological position. This
- *   is closed-loop with ledger processing and lags the discovery cursor by at
- *   most the queue depth. `cursor()` returns this value, not the discovery
- *   cursor, so external observers see the genuinely-processed position.
- *   Redundant (already-in-ledger) blocks advance `indexed` too, but via the
- *   deferred in-order prefix drain in `next_ordered_blocks` rather than at
- *   detection time — critical for rollback recovery, where most re-fetched
- *   keys are blocks we already have and must not be re-downloaded.
+ * Block queue: every queued entry moves pending -> in_flight -> received ->
+ *   submitted, then is evicted by `block_done` once the processor confirms it.
+ *   Entries already in our ledger are tagged `redundant` by the pre-fetch
+ *   check and never fetched. `next_ordered_blocks` drains in strict
+ *   topological order.
  *
- * Phase 4 (stall recovery): `check_poisoning` fires when the queue has
- *   outstanding work but its drain heartbeat (`block_done` evicting a tracked
- *   entry) has been silent for `poisoning_timeout`. The recovery action then
- *   hinges on whether the cycle made *real forward progress* — i.e. whether
- *   `indexed` advanced since the cycle started. Re-chewing already-known
- *   blocks as `old` moves the queue (refreshes the heartbeat) but does NOT
- *   advance `indexed`, so it is not progress. If `indexed` advanced: gentle
- *   reset (clear queue, retry from the new `indexed`) and re-arm the rollback
- *   step. If it did not (the anchor sits past a gap the ledger can't bridge):
- *   rewind `indexed` by a doubling distance and reset, so successive stuck
- *   cycles walk back through history in O(log n) steps until a workable
- *   position is found.
+ * Indexed cursor: `indexed` is the highest topo_key whose block reached the
+ *   ledger (`mark_indexed`). It is the externally-reported position
+ *   (`cursor()`), closed-loop with processing. Redundant entries advance it
+ *   only via the in-order prefix drain in `next_ordered_blocks`, so it never
+ *   skips past unconfirmed work (a gap).
  *
- * This class is not internally synchronized; callers must hold the bootstrap
- * context mutex when invoking its methods.
+ * Stall recovery (`check_poisoning`): if the queue is non-empty but nothing
+ *   has drained for `poisoning_timeout`, recover. A stall where no block was
+ *   ever fetched this cycle is a connectivity problem (unreachable peers), not
+ *   a bad anchor — it is a no-op (`cleanup` retries in-flight requests when
+ *   the network returns; `indexed` is left untouched). Otherwise, if `indexed`
+ *   advanced this cycle the anchor is good: clear the queue and retry from
+ *   `indexed`. If it did not, the anchor sits past a gap the ledger can't
+ *   bridge: rewind `indexed` by an exponentially growing distance so repeated
+ *   stalls bisect back to a workable position.
  */
 class topo_scan_index
 {
 public:
 	explicit topo_scan_index (nano::topo_scan_config const &);
 
-	// --- Phase 1: index discovery ---
+	// --- Discovery ---
 
-	// Returns the next position to query, or nullopt when the discovery cursor
-	// is in cooldown, topology end has been reached, or block-fetch backpressure
-	// is engaged.
-	// `now` is injectable for deterministic testing of cooldown behavior.
+	// Next position to query, or nullopt under cooldown / topology-end /
+	// backpressure. `now` injectable for tests.
 	std::optional<nano::topo_key> next (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// Accumulate a peer response. Returns true when the discovery cursor advances
-	// (new entries queued or end-of-topology detected). Does not affect `indexed`.
+	// Accumulate a peer response. Returns true when the discovery cursor
+	// advances (entries queued or topology end). Does not touch `indexed`.
 	bool process (nano::topo_key start, std::deque<nano::topo_key> const & entries);
 
-	// --- Phase 2: block fetching ---
+	// --- Block queue ---
 
-	// `now` is injectable for deterministic testing of in-flight retry timing.
+	// Hashes to fetch (pending, or in_flight past `block_retry`), topological
+	// order, transitioned to in_flight. `now` injectable for tests.
 	std::deque<nano::block_hash> next_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 	void block_received (nano::block_hash const & hash, std::shared_ptr<nano::block> const & block);
-	// Drains in two phases (see .cpp): (1) the strictly-contiguous `redundant`
-	// prefix at the head — advancing the cursor in topological order, gap-safe;
-	// (2) up to `max_count` `received` blocks for submission. `now` refreshes
-	// the drain heartbeat for phase 1 and is injectable for tests.
+	// Two phases: (1) advance the cursor through the strictly-contiguous
+	// `redundant` prefix at the head (in-order, gap-safe); (2) return up to
+	// `max_count` `received` blocks for submission. `now` injectable for tests.
 	std::deque<std::shared_ptr<nano::block>> next_ordered_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
-	// Evict a tracked block once the processor confirms it (the inspect callback
-	// fires for any source/result). When the hash is actually found in the queue
-	// this is the pipeline's drain heartbeat — it refreshes the poisoning
-	// *trigger* clock (`drained_at`). It does NOT by itself count as forward
-	// progress for the gentle-vs-escalate decision (re-processing a known block
-	// as `old` evicts an entry but doesn't advance `indexed`). A miss (hash not
-	// tracked, e.g. a ghost of a pre-reset submission) is a full no-op. `now` is
-	// injectable for deterministic testing.
+	// Evict a confirmed block (inspect callback, any source/result). A hit
+	// refreshes the drain heartbeat; a miss (untracked hash) is a no-op. Note:
+	// this is queue movement, not frontier progress — re-processing a known
+	// block as `old` evicts an entry without advancing `indexed`.
 	void block_done (nano::block_hash const & hash, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// --- Phase 3: ledger feedback ---
+	// --- Ledger feedback ---
 
-	// Record that a block has been confirmed processed into the ledger.
-	// Monotonically advances the externally-reported `indexed` cursor to the
-	// supplied (topo_height, hash) when it strictly exceeds the current value.
-	// No-op otherwise. Does not affect the discovery cursor or per-round state.
+	// A block reached the ledger. Monotonically advances `indexed` to
+	// (topo_height, hash) when it strictly exceeds the current value.
 	void mark_indexed (nano::block_hash const & hash, uint64_t topo_height);
 
-	// Tag a still-queued entry as already present in our ledger (discovered by
-	// the pre-fetch check) so it is NEVER fetched from the network. This only
-	// records the state + ledger topo_height; it deliberately does NOT advance
-	// the cursor. The cursor advance is deferred to `next_ordered_blocks`,
-	// which applies it strictly in topological order at the contiguous queue
-	// head — so this is safe to call in any order (fetch order is parallel by
-	// design) without re-exposing gap stalls. No-op if the hash isn't tracked
-	// (a concurrent live `block_done` may have evicted it).
+	// Tag a queued entry as already in our ledger so it is never fetched. Only
+	// records the state + ledger topo_height; the cursor advance is deferred to
+	// `next_ordered_blocks` (in topological order), so this is safe to call in
+	// any order. No-op if the hash isn't tracked.
 	void mark_redundant (nano::block_hash const & hash, uint64_t ledger_topo_height);
 
-	// Reset in-flight requests whose timestamp is older than `block_retry` back to
-	// pending so they can be retried via the standard pending-pickup path. This is
-	// a fail-safe: when `count_in_flight()` reaches `max_blocks_outstanding`, the
-	// retry branch in `next_blocks` is gated by backpressure and never runs, so
-	// stale slots would otherwise be held indefinitely. Returns the number of
-	// entries reset, so the caller can record a "timed out" stat. Intended to be
-	// invoked periodically by an external scheduler — `next_blocks` does not call
-	// this on its own. `now` is injectable for deterministic testing.
+	// Return in_flight entries older than `block_retry` to pending so they can
+	// be retried. Fail-safe for slots stranded when the in-flight cap gates the
+	// `next_blocks` retry path. Returns the count reset. Driven externally;
+	// `next_blocks` does not call it. `now` injectable for tests.
 	std::size_t cleanup (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// Clear everything queued and resume discovery from the current `indexed`
-	// cursor (`head.cursor = indexed`). The indexed cursor itself is preserved.
-	// Snapshots `indexed` as the new cycle's progress baseline. Used by
-	// `check_poisoning` and available for any other externally-decided trigger.
+	// Clear the queue and resume discovery from `indexed` (preserved).
+	// Snapshots `indexed` as the cycle's progress baseline.
 	void reset_discovery ();
 
-	// Stall recovery. Fires when the queue has outstanding work but no tracked
-	// block has drained for `poisoning_timeout`. If `indexed` advanced since the
-	// previous reset (real forward progress), performs a gentle `reset_discovery`
-	// and re-arms the rollback step. Otherwise the `indexed` anchor is past an
-	// unbridgeable gap: rewinds `indexed` by the current rollback distance (then
-	// doubles it, capped at `rollback_max`) before resetting, so successive
-	// failures walk back through history in O(log n) steps. Returns true if any
-	// rollback was performed. `now` is injectable for deterministic testing.
+	// Stall recovery. No-op unless the queue is non-empty and nothing has
+	// drained for `poisoning_timeout`. Then: if no block was fetched this cycle
+	// the stall is a connectivity problem — no-op (don't rewind a good anchor
+	// during an outage). Else if `indexed` advanced this cycle, gentle
+	// `reset_discovery` and re-arm the rollback step; otherwise rewind
+	// `indexed` by the rollback distance (doubled, capped at `rollback_max`)
+	// before resetting. Returns true if it rolled back. `now` injectable for tests.
 	bool check_poisoning (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	// --- Lifecycle / queries ---
 
 	bool indexing () const;
-	// The externally-reported topological position: the highest topo_key whose
-	// block has been confirmed processed into the ledger via `mark_indexed`.
-	// (Distinct from the internal discovery cursor, which advances open-loop
-	// on peer responses to keep the pipeline saturated.)
+	// The externally-reported position: highest topo_key confirmed into the
+	// ledger (`indexed`). Distinct from the open-loop discovery cursor.
 	nano::topo_key cursor () const;
 	bool has_blocks_pending () const;
-	// Total queue depth across every state (pending + in_flight + received +
-	// submitted). Drives the discovery backpressure check — submitted entries
-	// (drained but not yet confirmed processed) are deliberately counted so
-	// discovery can't race past blocks still in the processor's pipeline.
+	// Total queue depth (all states). Drives discovery backpressure; submitted
+	// entries are counted so discovery can't race past in-flight processing.
 	std::size_t count_outstanding () const;
 	std::size_t count_pending () const;
 	std::size_t count_in_flight () const;
@@ -178,9 +142,8 @@ private: // Dependencies
 	nano::topo_scan_config const & config;
 
 private:
-	// Open-loop discovery state. The `cursor` advances on each quorum-reached
-	// peer response to the highest queued entry; the head accumulates candidates
-	// from peers at the current cursor position until the round completes.
+	// Open-loop discovery state: the `cursor` and the candidate quorum being
+	// accumulated at it.
 	struct topo_head
 	{
 		nano::topo_key cursor{};
@@ -206,31 +169,31 @@ private:
 
 	topo_head head;
 
-	// The closed-loop tracking cursor: highest topo_key whose block has been
-	// confirmed processed into the ledger (via `mark_indexed`). Lags
-	// `head.cursor` by at most the queue depth (bounded by `max_blocks_queued`).
-	// Exposed via `cursor()`; used for telemetry and (future) persistence.
+	// Closed-loop tracking cursor: highest topo_key confirmed into the ledger
+	// (`mark_indexed`). Lags `head.cursor` by at most the queue depth. Exposed
+	// via `cursor()`.
 	nano::topo_key indexed{};
 
-	// Drain heartbeat: timestamp of the last `block_done` that actually evicted
-	// a tracked entry (or construction / reset). This is the poisoning *trigger*
-	// clock — keyed on OUR queue, not on `mark_indexed`, so ghost completions of
-	// pre-reset submissions can't mask a stalled queue. Note: re-processing an
-	// already-known block as `old` also refreshes this (the queue *is* moving),
-	// which is why it can't be used for the gentle-vs-escalate *decision*.
+	// Drain heartbeat: time of the last `block_done` that evicted a tracked
+	// entry (or construction / reset). The poisoning trigger clock — keyed on
+	// our queue, not on `mark_indexed`, so unrelated ledger activity can't mask
+	// a stalled queue.
 	std::chrono::steady_clock::time_point drained_at{ std::chrono::steady_clock::now () };
 
-	// Snapshot of `indexed` taken at the start of the current reset cycle
-	// (construction / reset / reset_discovery). `check_poisoning` compares the
-	// live `indexed` against this to decide real forward progress: only a
-	// genuine ledger-frontier advance (`mark_indexed` with a strictly greater
-	// key) counts — re-chewing already-known blocks as `old` does not, because
-	// their topo_height is <= indexed and `mark_indexed` early-returns.
+	// `indexed` snapshot at the start of the current cycle. `check_poisoning`
+	// treats `indexed > indexed_at_reset` as real forward progress (re-chewing
+	// known blocks as `old` doesn't advance `indexed`, so it doesn't count).
 	nano::topo_key indexed_at_reset{};
 
-	// Current escalating-rollback step (topo-heights). Starts at
-	// `config.rollback_min`, doubles (capped at `config.rollback_max`) on every
-	// unproductive reset, snaps back to `config.rollback_min` on a productive one.
+	// Set when a block is fetched from a peer (reaches `received`) this cycle;
+	// cleared on every reset. A stall with this still false means no peer
+	// delivered anything — a connectivity outage, not a poisoned anchor — so
+	// `check_poisoning` must not rewind `indexed`.
+	bool fetched_since_reset{ false };
+
+	// Escalating-rollback step (topo-heights): `config.rollback_min`, doubled
+	// (capped at `config.rollback_max`) per unproductive stall, reset to the
+	// minimum on a productive one.
 	uint64_t rollback_distance;
 
 	// Rewind `indexed` back by `distance` topo-heights (clamped at genesis).
@@ -241,12 +204,10 @@ private:
 		pending, // Known but not requested yet.
 		in_flight, // Request sent to a peer, awaiting response.
 		received, // Received from a peer, awaiting topological-order drain.
-		submitted, // Drained and handed off to the block processor, awaiting
-		// confirmation via `block_done` (fired by the inspect callback).
-		// Held in the queue so backpressure accounts for in-flight processing.
-		redundant, // Found already in our ledger during the pre-fetch check, so
-		// never fetched. Carries `ledger_topo_height`; the cursor advance for it
-		// is deferred to the in-order `next_ordered_blocks` drain (gap-safe).
+		submitted, // Handed to the block processor, held until `block_done`
+		// confirms it (so backpressure accounts for in-flight processing).
+		redundant, // Already in our ledger (pre-fetch check); never fetched.
+		// Cursor advance deferred to the in-order `next_ordered_blocks` drain.
 	};
 
 	struct block_entry
@@ -256,9 +217,8 @@ private:
 		block_state state{ block_state::pending };
 		std::chrono::steady_clock::time_point timestamp{};
 		std::shared_ptr<nano::block> block;
-		// Our ledger's topo_height for this block, captured by the pre-fetch
-		// redundancy check. Only meaningful while state == redundant; used as
-		// the `mark_indexed` anchor when the entry reaches the contiguous head.
+		// Our ledger's topo_height; only meaningful while state == redundant,
+		// used as the `mark_indexed` anchor at the contiguous head.
 		uint64_t ledger_topo_height{ 0 };
 	};
 

@@ -16,6 +16,7 @@ void topo_scan_index::reset ()
 	indexed_at_reset = {};
 	drained_at = std::chrono::steady_clock::now ();
 	rollback_distance = config.rollback_min;
+	fetched_since_reset = false;
 	blocks.clear ();
 	pending_count = 0;
 	in_flight_count = 0;
@@ -31,9 +32,8 @@ std::optional<nano::topo_key> topo_scan_index::next (std::chrono::steady_clock::
 		return std::nullopt;
 	}
 
-	// Pause indexing under block-fetch backpressure. This is what couples
-	// discovery to processing: when the queue is full because `mark_indexed`
-	// hasn't caught up, discovery pauses until blocks drain.
+	// Backpressure: pause discovery while the queue is full. This is the
+	// coupling between discovery and processing.
 	if (count_outstanding () >= config.max_blocks_queued)
 	{
 		return std::nullopt;
@@ -164,9 +164,8 @@ void topo_scan_index::reset_discovery ()
 	received_count = 0;
 	submitted_count = 0;
 	redundant_count = 0;
-	// Baseline the new cycle's progress check against wherever `indexed` is now
-	// (post-rewind, if `check_poisoning` rewound it before calling this).
-	// Forward progress == `indexed` moving strictly past this snapshot.
+	fetched_since_reset = false;
+	// Baseline for the next cycle's progress check (post-rewind, if any).
 	indexed_at_reset = indexed;
 }
 
@@ -185,31 +184,34 @@ bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now
 		return false;
 	}
 
-	// Stuck: outstanding work, but no tracked block has drained for a full
-	// timeout window. Decide based on *real forward progress* — did `indexed`
-	// advance since this cycle started? Re-chewing already-known blocks as
-	// `old` keeps the queue moving (and was holding the trigger off) but does
-	// not advance `indexed`, so it does not count here.
-	bool const advanced = indexed > indexed_at_reset;
-	if (advanced)
+	// Stuck. The frontier moved this cycle ⇒ the anchor is workable: clear the
+	// stuck tail and retry from the higher `indexed`, re-arming the escalation.
+	// This branch is non-destructive (no rewind), so it is taken regardless of
+	// connectivity.
+	if (indexed > indexed_at_reset)
 	{
-		// The frontier genuinely moved — the anchor is workable. Clear the
-		// stuck tail and retry from the new (higher) `indexed`. Re-arm the
-		// escalation step.
 		reset_discovery ();
 		rollback_distance = config.rollback_min;
-	}
-	else
-	{
-		// No frontier progress at all: `indexed` sits past a gap the ledger
-		// can't bridge. Rewind it, then widen the next step so consecutive
-		// failures walk back through history in O(log n) steps.
-		rewind (rollback_distance);
-		rollback_distance = std::min (rollback_distance * 2, config.rollback_max);
-		reset_discovery ();
+		drained_at = now;
+		return true;
 	}
 
-	// Give the new attempt a full timeout window before judging it again.
+	// No frontier progress. Rewinding `indexed` is destructive, so only do it
+	// with evidence the data itself is bad — we fetched blocks but they
+	// wouldn't connect. If no peer delivered anything this cycle the stall is a
+	// connectivity outage: leave `indexed` alone (rewinding here would discard
+	// correct progress and keep doubling for the whole outage); `cleanup`
+	// retries the in-flight requests when the network returns.
+	if (!fetched_since_reset)
+	{
+		return false;
+	}
+
+	// `indexed` sits past a gap the ledger can't bridge. Rewind it and widen
+	// the next step so repeated stalls bisect back in O(log n).
+	rewind (rollback_distance);
+	rollback_distance = std::min (rollback_distance * 2, config.rollback_max);
+	reset_discovery ();
 	drained_at = now;
 	return true;
 }
@@ -251,13 +253,16 @@ void topo_scan_index::block_received (nano::block_hash const & hash, std::shared
 	auto & by_hash = blocks.get<tag_hash> ();
 	if (auto it = by_hash.find (hash); it != by_hash.end ())
 	{
-		// Once a block has been drained to the processor (submitted), already
-		// received, or tagged redundant (it's in our ledger — never fetch it),
-		// a tardy peer delivery must not backtrack the state.
+		// A peer actually delivered a block: this cycle has network reach, so a
+		// later stall (if any) is a real anchor problem, not an outage.
+		fetched_since_reset = true;
+
+		// A tardy peer delivery must not backtrack a block past `received`.
 		if (it->state == block_state::submitted || it->state == block_state::received || it->state == block_state::redundant)
 		{
 			return;
 		}
+
 		state_change (it->state, block_state::received);
 		by_hash.modify (it, [&block] (block_entry & entry) {
 			entry.state = block_state::received;
@@ -270,13 +275,11 @@ std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_ordered_blocks (s
 {
 	auto & by_seq = blocks.get<tag_sequenced> ();
 
-	// Phase 1: drain the strictly-contiguous `redundant` prefix at the head.
-	// Because we only ever consume the head and stop at the first
-	// non-redundant entry, the cursor advance stays in topological order and
-	// can't jump past unconfirmed work — this is the gap-safe equivalent of
-	// the processor `old` path, without the network/processor round trip.
-	// Unbounded by `max_count`: a rollback re-walk can have a huge prefix of
-	// already-known blocks and we want the cursor to catch up in one pass.
+	// Phase 1: drain the contiguous `redundant` prefix at the head, advancing
+	// the cursor. Consuming only the head and stopping at the first
+	// non-redundant entry keeps the advance in topological order — it can't
+	// skip past unconfirmed work. Unbounded by `max_count` so a rollback
+	// re-walk's long known-block prefix catches up in one pass.
 	while (!by_seq.empty ())
 	{
 		auto it = by_seq.begin ();
@@ -284,42 +287,35 @@ std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_ordered_blocks (s
 		{
 			break;
 		}
-		// (topo_height==0 ⇒ pre-topo-index block: still redundant/evicted, just
-		// not a cursor anchor.) `mark_indexed` is monotonic.
+		// topo_height==0: pre-topo-index block — evicted, but not a cursor
+		// anchor. `mark_indexed` is monotonic.
 		if (it->ledger_topo_height > 0)
 		{
 			mark_indexed (it->hash, it->ledger_topo_height);
 		}
 		--redundant_count;
 		by_seq.erase (it);
-		// Genuine queue movement — keep the poisoning trigger from mistaking a
-		// fast redundant-prefix drain (rollback recovery) for a stall.
-		drained_at = now;
+		drained_at = now; // queue moved — don't mistake a fast drain for a stall
 	}
 
 	// Phase 2: collect up to `max_count` `received` blocks for submission.
 	std::deque<std::shared_ptr<nano::block>> result;
 	for (auto it = by_seq.begin (); it != by_seq.end () && result.size () < max_count; ++it)
 	{
-		// Already handed to the processor on a prior call, or a redundant entry
-		// not (yet) at the contiguous head — skip past it but don't stop, so
-		// later `received` blocks can still be submitted for throughput.
+		// Skip past (don't stop on) submitted entries and interior redundant
+		// entries so later `received` blocks can still be submitted.
 		if (it->state == block_state::submitted || it->state == block_state::redundant)
 		{
 			continue;
 		}
-		// Stop at the first not-yet-received (pending / in_flight) entry —
-		// preserves the topological-order guarantee.
+		// Stop at the first not-yet-received entry — preserves topological order.
 		if (it->state != block_state::received)
 		{
 			break;
 		}
 		result.push_back (it->block);
-		// Transition into `submitted` rather than erasing: keep the slot in the
-		// queue so it still counts toward `count_outstanding` (backpressure)
-		// and so a re-discovered topo_key doesn't trigger a redundant fetch.
-		// `block_done` (fired by the inspect callback) is what finally evicts
-		// the entry once the block_processor confirms.
+		// Transition to `submitted` (not erase) so the slot still counts toward
+		// backpressure; `block_done` evicts it once the processor confirms.
 		state_change (block_state::received, block_state::submitted);
 		by_seq.modify (it, [] (block_entry & entry) {
 			entry.state = block_state::submitted;
@@ -362,15 +358,13 @@ void topo_scan_index::block_done (nano::block_hash const & hash, std::chrono::st
 {
 	if (!erase_tracked (hash))
 	{
-		// Not a tracked block (e.g. a ghost completion of a pre-reset / dropped
-		// submission). Deliberately NOT counted as progress — otherwise stalled
-		// queues would be masked by unrelated ledger activity.
+		// Untracked hash (e.g. a dropped/pre-reset submission). Not queue
+		// movement — must not refresh the heartbeat, or unrelated ledger
+		// activity would mask a stalled queue.
 		return;
 	}
 
-	// Drain heartbeat: a tracked block actually left the queue. Refreshes the
-	// poisoning *trigger* clock only — this fires for `old` re-processing too,
-	// so it must NOT be treated as forward progress (that's `indexed`'s job).
+	// A tracked block left the queue: refresh the drain heartbeat.
 	drained_at = now;
 }
 
@@ -380,19 +374,14 @@ void topo_scan_index::mark_redundant (nano::block_hash const & hash, uint64_t le
 	auto it = by_hash.find (hash);
 	if (it == by_hash.end ())
 	{
-		// Raced away (e.g. concurrent live `block_done` evicted it). The block
-		// is in the ledger anyway, so nothing to do — discovery won't re-list
-		// it past the cursor.
-		return;
+		return; // Raced away (e.g. concurrent live `block_done`).
 	}
 	if (it->state == block_state::redundant)
 	{
 		return; // Already tagged.
 	}
-	// Tag only — do NOT advance the cursor here. The cursor advance is applied
-	// strictly in topological order at the contiguous queue head by
-	// `next_ordered_blocks`, which keeps it gap-safe regardless of the
-	// (parallel, unordered) fetch order this is called from.
+	// Tag only. The cursor advance is applied in topological order at the
+	// contiguous head by `next_ordered_blocks`, so this is order-independent.
 	state_change (it->state, block_state::redundant);
 	by_hash.modify (it, [ledger_topo_height] (block_entry & entry) {
 		entry.state = block_state::redundant;
@@ -408,6 +397,7 @@ std::size_t topo_scan_index::cleanup (std::chrono::steady_clock::time_point now)
 	auto & by_seq = blocks.get<tag_sequenced> ();
 	for (auto it = by_seq.begin (); it != by_seq.end (); ++it)
 	{
+		// Eligible for refetch if in-flight but past the retry cutoff
 		if (it->state == block_state::in_flight && it->timestamp < stale_cutoff)
 		{
 			state_change (it->state, block_state::pending);
@@ -525,6 +515,7 @@ nano::container_info topo_scan_index::container_info () const
 	info.put ("indexing_done", head.done ? std::size_t{ 1 } : std::size_t{ 0 });
 	info.put ("candidates", head.candidates.size ());
 	info.put ("rollback_distance", rollback_distance);
+	info.put ("fetched_since_reset", fetched_since_reset ? std::size_t{ 1 } : std::size_t{ 0 });
 	info.add ("cursors", collect_cursors ());
 	return info;
 }

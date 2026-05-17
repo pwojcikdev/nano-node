@@ -21,6 +21,18 @@ nano::topo_key key (uint64_t height, uint64_t hash_value)
 {
 	return nano::topo_key{ height, nano::block_hash{ hash_value } };
 }
+
+// Simulate the cycle successfully reaching peers and fetching a block: issue
+// the queued hashes (-> in_flight) and deliver one (-> received). This marks
+// the cycle as having network reach, so a subsequent stall is treated as a
+// poisoned anchor rather than a connectivity outage. The block stays
+// `received`, keeping the queue outstanding.
+void fetch_one (nano::bootstrap::topo_scan_index & scan, uint64_t hash_value, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ())
+{
+	scan.next_blocks (1000, now);
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ hash_value }, stub);
+}
 }
 
 TEST (bootstrap_topo_scan, construction)
@@ -214,6 +226,10 @@ TEST (bootstrap_topo_scan, reset)
 	ASSERT_TRUE (scan.indexing ());
 	ASSERT_TRUE (scan.has_blocks_pending ());
 
+	// Advance the indexed cursor too, so reset is verified to clear it.
+	scan.mark_indexed (nano::block_hash{ 100 }, 1);
+	ASSERT_EQ (scan.cursor (), key (1, 100));
+
 	// Drive indexing to completion (consideration_count*2 empty responses) so we reset from a fully-done state
 	std::deque<nano::topo_key> empty;
 	scan.process (*scan.next (t0 + 200ms), empty);
@@ -224,7 +240,7 @@ TEST (bootstrap_topo_scan, reset)
 
 	ASSERT_TRUE (scan.indexing ());
 	ASSERT_FALSE (scan.has_blocks_pending ());
-	ASSERT_EQ (scan.cursor (), nano::topo_key{});
+	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // indexed cleared
 
 	auto pos2 = scan.next (t0 + 600ms);
 	ASSERT_TRUE (pos2.has_value ());
@@ -744,55 +760,10 @@ TEST (bootstrap_topo_scan, mark_indexed_monotonic)
 	ASSERT_EQ (scan.cursor (), key (2, 250));
 }
 
-// `cursor()` follows `mark_indexed` (closed-loop tracking), independent of
-// the open-loop discovery cursor that drives `next()`.
-TEST (bootstrap_topo_scan, mark_indexed_independent_of_discovery)
-{
-	auto cfg = default_config ();
-	nano::bootstrap::topo_scan_index scan{ cfg };
-
-	auto pos1 = scan.next ();
-	ASSERT_TRUE (pos1.has_value ());
-	ASSERT_EQ (*pos1, nano::topo_key{});
-
-	// Discovery cursor advances on quorum; `indexed` stays put.
-	scan.process (*pos1, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
-	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // `indexed` untouched by process()
-	ASSERT_EQ (*scan.next (), key (3, 300)); // Discovery cursor advanced
-
-	// Ledger feedback advances `indexed`. Discovery cursor unchanged.
-	scan.mark_indexed (nano::block_hash{ 200 }, 2);
-	ASSERT_EQ (scan.cursor (), key (2, 200));
-}
-
-// Discovery proceeds open-loop with backpressure as the coupling point:
-// when the queue is full the indexer pauses until processing drains it.
-TEST (bootstrap_topo_scan, discovery_paused_by_backpressure)
-{
-	auto cfg = default_config ();
-	cfg.candidates = 4;
-	cfg.max_blocks_queued = 4;
-	nano::bootstrap::topo_scan_index scan{ cfg };
-
-	auto pos = scan.next ();
-	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300), key (4, 400) });
-	ASSERT_EQ (scan.count_outstanding (), 4);
-
-	// Queue is full → discovery pauses regardless of cursor / cooldown state.
-	ASSERT_FALSE (scan.next ().has_value ());
-
-	// Drain a block via the normal pipeline. mark_indexed alone doesn't drain
-	// the queue (that's block_done's job); call both like the real strategy.
-	scan.block_done (nano::block_hash{ 100 });
-	scan.mark_indexed (nano::block_hash{ 100 }, 1);
-	ASSERT_EQ (scan.count_outstanding (), 3);
-
-	// Below the cap → discovery resumes.
-	ASSERT_TRUE (scan.next ().has_value ());
-}
-
-// End-to-end hybrid flow: discovery cursor races ahead, `indexed` lags behind,
-// and `cursor()` reports the closed-loop position throughout.
+// `indexed` is closed-loop and independent of the open-loop discovery cursor:
+// `process` advances discovery (visible via `next`) but never `cursor()`;
+// `mark_indexed` advances `cursor()` and `indexed` only catches up as blocks
+// confirm.
 TEST (bootstrap_topo_scan, hybrid_end_to_end)
 {
 	auto cfg = default_config ();
@@ -826,19 +797,6 @@ TEST (bootstrap_topo_scan, hybrid_end_to_end)
 
 	ASSERT_EQ (scan.cursor (), key (3, 300)); // Indexed reached discovery cursor
 	ASSERT_FALSE (scan.has_blocks_pending ());
-}
-
-// reset() clears the indexed cursor along with all other discovery state.
-TEST (bootstrap_topo_scan, reset_clears_indexed)
-{
-	auto cfg = default_config ();
-	nano::bootstrap::topo_scan_index scan{ cfg };
-
-	scan.mark_indexed (nano::block_hash{ 500 }, 5);
-	ASSERT_EQ (scan.cursor (), key (5, 500));
-
-	scan.reset ();
-	ASSERT_EQ (scan.cursor (), nano::topo_key{});
 }
 
 // --- Redundant short-circuit (already-in-ledger blocks) ---
@@ -1055,27 +1013,33 @@ TEST (bootstrap_topo_scan, check_poisoning_waits_for_timeout)
 	ASSERT_EQ (scan.count_outstanding (), 3);
 }
 
-// First stall with no progress at all: indexed was at origin, escalate-rewind
-// clamps at genesis, queue is purged.
+// No-progress stall: rewind `indexed`, clamping at genesis when the rollback
+// distance exceeds the current height; queue is purged; then held off because
+// nothing is outstanding.
 TEST (bootstrap_topo_scan, check_poisoning_rolls_back_on_stall)
 {
 	auto cfg = default_config ();
 	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 1000;
 	nano::bootstrap::topo_scan_index scan{ cfg };
 
 	auto const t0 = std::chrono::steady_clock::now ();
 
-	auto pos = scan.next (t0);
-	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
-	ASSERT_EQ (scan.count_outstanding (), 3);
+	scan.mark_indexed (nano::block_hash{ 7 }, 500); // below rollback_min
+	scan.reset_discovery (); // baseline so the stall counts as no-progress
 
-	// Past the timeout with nothing drained → rollback.
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (600, 1), key (601, 2) });
+	fetch_one (scan, 1, t0); // peers reachable, but the chain won't connect
+	ASSERT_EQ (scan.count_outstanding (), 2);
+
+	// Past the timeout, nothing drained, no progress → rewind clamps at genesis.
 	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
-	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // indexed was 0; rewind clamps at genesis
-	ASSERT_EQ (scan.count_outstanding (), 0); // Queue purged
+	ASSERT_EQ (scan.cursor (), nano::topo_key{}); // 500 - 1000 clamped to 0
+	ASSERT_EQ (scan.count_outstanding (), 0); // queue purged
 	ASSERT_FALSE (scan.has_blocks_pending ());
 
-	// Queue empty now → held off (nothing outstanding).
+	// Nothing outstanding → held off.
 	ASSERT_FALSE (scan.check_poisoning (t0 + 2s + 500ms));
 }
 
@@ -1111,6 +1075,7 @@ TEST (bootstrap_topo_scan, check_poisoning_ignores_ghost_block_done)
 
 	auto pos = scan.next (t0);
 	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200) });
+	fetch_one (scan, 100, t0); // peers reachable
 	ASSERT_EQ (scan.count_outstanding (), 2);
 
 	// Ghost: hash 999 isn't in our queue. Even though it lands inside the
@@ -1122,14 +1087,52 @@ TEST (bootstrap_topo_scan, check_poisoning_ignores_ghost_block_done)
 	ASSERT_EQ (scan.count_outstanding (), 0);
 }
 
-// --- Submitted state (drained-but-not-confirmed handoff) ---
-
-// `next_ordered_blocks` transitions `received` entries into `submitted` rather
-// than erasing them — the queue depth (and backpressure signal) is preserved
-// until `block_done` confirms processing.
-TEST (bootstrap_topo_scan, submitted_state_preserves_outstanding)
+// A connectivity outage (peers unreachable: requests issued, nothing
+// delivered) must NOT rewind `indexed`, no matter how long it lasts —
+// otherwise a transient outage would discard correct progress and keep
+// doubling the rewind for its whole duration. Recovery is left to `cleanup`'s
+// in-flight retry once the network returns.
+TEST (bootstrap_topo_scan, check_poisoning_ignores_connectivity_stall)
 {
 	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 100;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	scan.mark_indexed (nano::block_hash{ 42 }, 10000);
+	scan.reset_discovery (); // baseline (10000, 42) — a rewind would be visible
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (10001, 1), key (10002, 2) });
+	scan.next_blocks (10, t0); // requests issued (-> in_flight), but no peer responds
+
+	// Outage persists across many timeout windows: never rolls back, `indexed`
+	// and the queue are left intact for `cleanup` to retry.
+	for (int i = 2; i <= 16; i += 2)
+	{
+		ASSERT_FALSE (scan.check_poisoning (t0 + std::chrono::seconds (i)));
+		ASSERT_EQ (scan.cursor (), key (10000, 42));
+		ASSERT_EQ (scan.count_outstanding (), 2);
+	}
+
+	// Network returns: a block is delivered but the chain still won't connect.
+	// The guard is not latched — a genuine fetched-but-stuck stall now rolls back.
+	fetch_one (scan, 1, t0 + 16s);
+	ASSERT_TRUE (scan.check_poisoning (t0 + 18s));
+	ASSERT_EQ (scan.cursor (), key (9900, 0)); // 10000 - rollback_min
+}
+
+// --- Submitted state (drained-but-not-confirmed handoff) ---
+
+// `next_ordered_blocks` moves `received` entries to `submitted` (not erase),
+// so they still count toward `count_outstanding` and keep discovery
+// backpressured until `block_done` evicts them.
+TEST (bootstrap_topo_scan, submitted_state_holds_backpressure_until_done)
+{
+	auto cfg = default_config ();
+	cfg.max_blocks_queued = 3;
 	nano::bootstrap::topo_scan_index scan{ cfg };
 
 	auto pos = scan.next ();
@@ -1141,21 +1144,21 @@ TEST (bootstrap_topo_scan, submitted_state_preserves_outstanding)
 	scan.block_received (nano::block_hash{ 200 }, stub);
 	scan.block_received (nano::block_hash{ 300 }, stub);
 	ASSERT_EQ (scan.count_received (), 3);
-	ASSERT_EQ (scan.count_outstanding (), 3);
 
-	auto drained = scan.next_ordered_blocks (10);
-	ASSERT_EQ (drained.size (), 3);
+	ASSERT_EQ (scan.next_ordered_blocks (10).size (), 3);
 
-	// After draining: blocks are now `submitted`, still counted as outstanding.
+	// Drained → submitted, but still outstanding and at the cap.
 	ASSERT_EQ (scan.count_received (), 0);
 	ASSERT_EQ (scan.count_submitted (), 3);
 	ASSERT_EQ (scan.count_outstanding (), 3);
 	ASSERT_TRUE (scan.has_blocks_pending ());
+	ASSERT_FALSE (scan.next ().has_value ()); // backpressure held by submitted
 
-	// `block_done` (fired by the inspect callback) is what finally evicts.
+	// `block_done` (inspect callback) is the only thing that evicts/relieves.
 	scan.block_done (nano::block_hash{ 100 });
 	ASSERT_EQ (scan.count_submitted (), 2);
 	ASSERT_EQ (scan.count_outstanding (), 2);
+	ASSERT_TRUE (scan.next ().has_value ());
 }
 
 // A second drain call must not re-emit blocks that have already transitioned
@@ -1263,36 +1266,6 @@ TEST (bootstrap_topo_scan, block_received_no_op_on_submitted)
 	ASSERT_EQ (scan.count_received (), 0);
 }
 
-// Backpressure triggers off the total outstanding count, which now includes
-// submitted blocks — discovery can't race past entries still in the processor.
-TEST (bootstrap_topo_scan, submitted_state_engages_backpressure)
-{
-	auto cfg = default_config ();
-	cfg.max_blocks_queued = 3;
-	nano::bootstrap::topo_scan_index scan{ cfg };
-
-	auto pos = scan.next ();
-	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
-	scan.next_blocks (10);
-
-	std::shared_ptr<nano::block> stub;
-	scan.block_received (nano::block_hash{ 100 }, stub);
-	scan.block_received (nano::block_hash{ 200 }, stub);
-	scan.block_received (nano::block_hash{ 300 }, stub);
-	scan.next_ordered_blocks (10);
-
-	ASSERT_EQ (scan.count_submitted (), 3);
-	ASSERT_EQ (scan.count_outstanding (), 3); // At the cap
-
-	// Backpressure engaged via submitted blocks alone.
-	ASSERT_FALSE (scan.next ().has_value ());
-
-	// `block_done` (inspect callback) is what relieves the pressure.
-	scan.block_done (nano::block_hash{ 100 });
-	ASSERT_EQ (scan.count_outstanding (), 2);
-	ASSERT_TRUE (scan.next ().has_value ());
-}
-
 // --- Escalating rollback ---
 
 // Consecutive unproductive stalls rewind `indexed` by a doubling distance.
@@ -1316,6 +1289,7 @@ TEST (bootstrap_topo_scan, escalating_rollback_doubles)
 		auto pos = scan.next (t);
 		ASSERT_TRUE (pos.has_value ());
 		scan.process (*pos, std::deque<nano::topo_key>{ key (10001, 1), key (10002, 2) });
+		fetch_one (scan, 1, t); // peers reachable; the chain just won't connect
 		ASSERT_GT (scan.count_outstanding (), 0u);
 	};
 
@@ -1333,29 +1307,6 @@ TEST (bootstrap_topo_scan, escalating_rollback_doubles)
 	seed (t0 + 4s);
 	ASSERT_TRUE (scan.check_poisoning (t0 + 6s));
 	ASSERT_EQ (scan.cursor (), key (9300, 0));
-}
-
-// The doubling rewind clamps the cursor at genesis instead of underflowing.
-TEST (bootstrap_topo_scan, escalating_rollback_clamps_at_genesis)
-{
-	auto cfg = default_config ();
-	cfg.poisoning_timeout = 1s;
-	cfg.rollback_min = 1000;
-	nano::bootstrap::topo_scan_index scan{ cfg };
-
-	auto const t0 = std::chrono::steady_clock::now ();
-
-	scan.mark_indexed (nano::block_hash{ 7 }, 500); // below rollback_min
-	scan.reset_discovery (); // baseline so the stall counts as no-progress
-	ASSERT_EQ (scan.cursor (), key (500, 7));
-
-	auto pos = scan.next (t0);
-	scan.process (*pos, std::deque<nano::topo_key>{ key (600, 1) });
-	ASSERT_GT (scan.count_outstanding (), 0u);
-
-	// Rewind distance (1000) exceeds indexed height (500) → genesis.
-	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
-	ASSERT_EQ (scan.cursor (), nano::topo_key{});
 }
 
 // A cycle that genuinely advances `indexed` makes the next stall a *gentle*
@@ -1378,6 +1329,7 @@ TEST (bootstrap_topo_scan, advancing_cycle_is_gentle_and_rearms)
 	{
 		auto pos = scan.next (t0);
 		scan.process (*pos, std::deque<nano::topo_key>{ key (5001, 1) });
+		fetch_one (scan, 1, t0); // peers reachable; chain won't connect
 		ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
 		ASSERT_EQ (scan.cursor (), key (4900, 0));
 	}
@@ -1398,13 +1350,14 @@ TEST (bootstrap_topo_scan, advancing_cycle_is_gentle_and_rearms)
 	// rollback_min (100) from the advanced position, not the doubled distance.
 	auto pos2 = scan.next (t0 + 5s);
 	scan.process (*pos2, std::deque<nano::topo_key>{ key (4951, 20) });
+	fetch_one (scan, 20, t0 + 5s); // peers reachable; chain won't connect
 	ASSERT_TRUE (scan.check_poisoning (t0 + 7s));
 	ASSERT_EQ (scan.cursor (), key (4850, 0)); // 4950 - 100, not - 200
 }
 
-// The reported bug: a stuck cycle that re-chews already-known blocks as `old`
-// (block_done fires, queue moves) but never advances `indexed` must keep
-// escalating — the rollback distance must NOT snap back to rollback_min.
+// A stuck cycle that re-chews already-known blocks as `old` moves the queue
+// (block_done fires) but never advances `indexed`. That is not progress: the
+// escalation must keep doubling, not snap back to rollback_min.
 TEST (bootstrap_topo_scan, old_reprocessing_keeps_escalating)
 {
 	auto cfg = default_config ();
@@ -1426,7 +1379,7 @@ TEST (bootstrap_topo_scan, old_reprocessing_keeps_escalating)
 		auto pos = scan.next (t_seed);
 		ASSERT_TRUE (pos.has_value ());
 		scan.process (*pos, std::deque<nano::topo_key>{ key (99990001, 1), key (99990002, 2) });
-		scan.next_blocks (10, t_seed);
+		fetch_one (scan, 1, t_seed); // peers reachable; block 1 delivered
 		// Block 1 re-processes as `old`: tracked → block_done evicts it,
 		// refreshing the drain heartbeat. NO mark_indexed (height <= indexed).
 		scan.block_done (nano::block_hash{ 1 }, t_drain);
@@ -1435,8 +1388,8 @@ TEST (bootstrap_topo_scan, old_reprocessing_keeps_escalating)
 		ASSERT_TRUE (scan.check_poisoning (t_check));
 	};
 
-	// Each consecutive stuck cycle must rewind by a *doubling* distance —
-	// the stray `old` block_done must not re-arm it.
+	// Each consecutive stuck cycle rewinds by a doubling distance; the `old`
+	// block_done must not re-arm the step.
 	stuck_with_old_reprocessing (t0, t0 + 500ms, t0 + 2s);
 	ASSERT_EQ (scan.cursor (), key (9900, 0)); // 10000 - 100
 
@@ -1447,8 +1400,8 @@ TEST (bootstrap_topo_scan, old_reprocessing_keeps_escalating)
 	ASSERT_EQ (scan.cursor (), key (9300, 0)); // 9700 - 400 (doubled again)
 }
 
-// After a rollback the queue is empty so the safeguard is held off until work
-// is re-queued and a fresh timeout window elapses.
+// The escalation step survives the empty-queue gap between a rollback and the
+// next re-queue: a fresh stall still rewinds by the doubled distance.
 TEST (bootstrap_topo_scan, check_poisoning_rearms)
 {
 	auto cfg = default_config ();
@@ -1463,6 +1416,7 @@ TEST (bootstrap_topo_scan, check_poisoning_rearms)
 
 	auto pos = scan.next (t0);
 	scan.process (*pos, std::deque<nano::topo_key>{ key (1001, 1) });
+	fetch_one (scan, 1, t0); // peers reachable
 	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
 	ASSERT_EQ (scan.cursor (), key (990, 0)); // 1000 - 10
 	ASSERT_EQ (scan.count_outstanding (), 0);
@@ -1474,6 +1428,7 @@ TEST (bootstrap_topo_scan, check_poisoning_rearms)
 	auto pos2 = scan.next (t0 + 4s);
 	ASSERT_TRUE (pos2.has_value ());
 	scan.process (*pos2, std::deque<nano::topo_key>{ key (991, 2) });
+	fetch_one (scan, 2, t0 + 4s); // peers reachable
 	ASSERT_EQ (scan.count_outstanding (), 1);
 
 	// Fresh timeout window → second rollback (distance doubled to 20).
