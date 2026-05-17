@@ -24,6 +24,7 @@ add_executable(
   crawler.cpp
   cementing_set.cpp
   conflicts.cpp
+  consensus.cpp
   difficulty.cpp
   distributed_work.cpp
   election.cpp
@@ -96,7 +97,7 @@ target_compile_definitions(
   core_test PRIVATE -DTAG_VERSION_STRING=${TAG_VERSION_STRING}
                     -DGIT_COMMIT_HASH=${GIT_COMMIT_HASH})
 
-target_link_libraries(core_test test_common)
+target_link_libraries(core_test test_common nano_consensus)
 
 include_directories(${CMAKE_SOURCE_DIR}/submodules)
 include_directories(${CMAKE_SOURCE_DIR}/submodules/gtest/googletest/include)

@@ -233,6 +233,7 @@ add_library(
 target_link_libraries(
   node
   nano_lib
+  nano_consensus
   nano_messages
   nano_store
   wallet

@@ -67,7 +67,7 @@ bool nano::confirmation_solicitor::add (nano::election const & election_a)
 		auto rep (*i);
 		auto existing (election_a.last_votes.find (rep.account));
 		bool const exists (existing != election_a.last_votes.end ());
-		bool const is_final (exists && (!election_a.is_quorum.load () || existing->second.timestamp == std::numeric_limits<uint64_t>::max ()));
+		bool const is_final (exists && (!election_a.is_quorum_reached () || existing->second.timestamp == std::numeric_limits<uint64_t>::max ()));
 		bool const different (exists && existing->second.hash != hash);
 		if (!exists || !is_final || different)
 		{

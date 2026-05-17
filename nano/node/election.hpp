@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/consensus/consensus.hpp>
 #include <nano/lib/id_dispenser.hpp>
 #include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
@@ -110,7 +111,8 @@ public: // Status
 	std::atomic<unsigned> vote_broadcast_count{ 0 };
 
 	nano::tally_t tally () const;
-	bool have_quorum (nano::tally_t const &) const;
+	// One-shot: whether normal (margin) quorum has ever been reached. Used by confirmation_solicitor.
+	bool is_quorum_reached () const;
 
 	// Guarded by mutex
 	nano::election_status status;
@@ -207,9 +209,21 @@ private:
 private:
 	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> last_blocks;
 	std::unordered_map<nano::account, nano::vote_info> last_votes;
-	std::atomic<bool> is_quorum{ false };
-	mutable nano::uint128_t final_weight{ 0 };
-	mutable std::unordered_map<nano::block_hash, nano::uint128_t> last_tally;
+
+	// nano::consensus is authoritative for all ORV decisions (tally, margin quorum, sticky final
+	// weight, winner flip, final-quorum). The adapter keeps last_blocks/last_votes only for
+	// admission, status reporting and replace_by_weight eviction. The accepted vote is deferred
+	// and drained into the lib inside confirm_if_quorum so it evaluates with the same post-
+	// vote_action online weight / delta (the canonical "must run before tally" ordering).
+	struct pending_vote
+	{
+		nano::account rep;
+		nano::block_hash hash;
+		uint64_t timestamp;
+	};
+	static nano::consensus::ports make_consensus_ports (nano::node &);
+	nano::consensus::election consensus_;
+	std::optional<pending_vote> pending_vote_;
 
 	nano::election_behavior behavior_m;
 	std::chrono::steady_clock::time_point const election_start{ std::chrono::steady_clock::now () };
