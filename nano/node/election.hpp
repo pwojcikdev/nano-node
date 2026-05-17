@@ -134,8 +134,6 @@ public: // Interface
 	 */
 	nano::vote_code vote (nano::account const & representative, uint64_t timestamp, nano::block_hash const & block_hash, nano::vote_source);
 	bool publish (std::shared_ptr<nano::block> const & block_a);
-	// Confirm this block if quorum is met
-	void confirm_if_quorum (nano::unique_lock<nano::mutex> &);
 	void try_confirm (nano::block_hash const & hash);
 
 	/**
@@ -185,6 +183,8 @@ private:
 	nano::election_extended_status current_status_locked () const;
 	// lock_a does not own the mutex on return
 	void confirm_once (nano::unique_lock<nano::mutex> & lock_a);
+	// Executes the consensus engine's decisions (resolving hashes to blocks); may confirm_once.
+	void apply_consensus_outcome (nano::consensus::effects const &, nano::unique_lock<nano::mutex> & lock_a);
 	bool broadcast_block_predicate () const;
 	void broadcast_block (nano::confirmation_solicitor &);
 	void send_confirm_req (nano::confirmation_solicitor &);
@@ -210,20 +210,12 @@ private:
 	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> last_blocks;
 	std::unordered_map<nano::account, nano::vote_info> last_votes;
 
-	// nano::consensus is authoritative for all ORV decisions (tally, margin quorum, sticky final
-	// weight, winner flip, final-quorum). The adapter keeps last_blocks/last_votes only for
-	// admission, status reporting and replace_by_weight eviction. The accepted vote is deferred
-	// and drained into the lib inside confirm_if_quorum so it evaluates with the same post-
-	// vote_action online weight / delta (the canonical "must run before tally" ordering).
-	struct pending_vote
-	{
-		nano::account rep;
-		nano::block_hash hash;
-		uint64_t timestamp;
-	};
+	// nano::consensus::engine is authoritative for all ORV decisions (tally, margin quorum,
+	// sticky final weight, winner flip, final-quorum). The engine works purely in block hashes;
+	// the adapter keeps last_blocks/last_votes for admission, status reporting, eviction, and to
+	// resolve the engine's winner hashes back to block objects.
 	static nano::consensus::ports make_consensus_ports (nano::node &);
-	nano::consensus::election consensus_;
-	std::optional<pending_vote> pending_vote_;
+	nano::consensus::engine consensus_;
 
 	nano::election_behavior behavior_m;
 	std::chrono::steady_clock::time_point const election_start{ std::chrono::steady_clock::now () };

@@ -6,64 +6,65 @@
 #include <boost/multiprecision/cpp_int.hpp>
 
 #include <functional>
+#include <limits>
 #include <map>
-#include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
-
-namespace nano
-{
-class block;
-}
 
 namespace nano::consensus
 {
-// Same concrete type as nano::tally_t (nano/node/election.hpp). Declaring the alias here keeps the
-// library free of node headers; both names denote the identical std::map specialization, so the
-// adapter passes values across the boundary without conversion.
-using tally_t = std::map<nano::uint128_t, std::shared_ptr<nano::block>, std::greater<nano::uint128_t>>;
+// Weighted tally, highest weight first. Keyed by weight: two blocks with exactly equal weight
+// collide on the same key and only the first inserted survives. That collapse is an intentional,
+// preserved property of the rule, not an accident — every consumer sees a single block per
+// weight. The engine works purely in block hashes; resolving a hash to a block is the caller's
+// job.
+using tally_t = std::map<nano::uint128_t, nano::block_hash, std::greater<nano::uint128_t>>;
 
-// Per-representative vote state the core needs. The adapter keeps its own richer record (with the
-// steady-clock time used for cooldown); the core only needs hash + timestamp.
-struct vote_record final
+// One representative's current ballot in an election. A representative has at most one ballot at
+// a time; a newer ballot replaces the older one. The sentinel timestamp marks a final
+// (irreversible) vote — only final votes count toward final-quorum confirmation.
+struct ballot final
 {
 	nano::block_hash hash;
 	uint64_t timestamp;
+
+	static uint64_t constexpr final_timestamp = std::numeric_limits<uint64_t>::max ();
 };
 
-// Injected pure queries. The library never includes node headers; all node coupling crosses here.
-// Each call may return a different value and the core re-queries everywhere develop re-reads
-// (live ledger weight, dynamic delta), which is how exact parity is achieved without coupling.
+// Injected pure queries. The engine never includes node headers; all node coupling crosses this
+// boundary. Each query is re-invoked every time the rule re-reads it, so the engine always sees
+// live representative weight and the current online quorum delta without depending on the node.
 struct ports final
 {
-	std::function<nano::uint128_t (nano::account const &)> weight; // -> node.ledger.weight
-	std::function<nano::uint128_t ()> delta; // -> node.online_reps.delta (uint256 math left in online_reps)
+	std::function<nano::uint128_t (nano::account const &)> weight; // a representative's voting weight
+	std::function<nano::uint128_t ()> delta; // the current online quorum delta
 };
 
-// Decisions the core returns; the adapter executes the side effects, in this order.
+// Decisions the engine produces from a vote; the caller performs the side effects in this order.
+// Each is engaged at most once per vote.
 struct effects final
 {
-	// sum(candidate-restricted tally) >= delta && tally winner != current status winner.
-	// Adapter: set status.winner, remove_votes(previous_winner) via the node.history handshake
-	// (-> apply_removed_votes), block_processor.force(new_winner).
+	// Total weight cast across candidates reached delta and the leading block is no longer the
+	// locked winner, so the engine relocked onto new_winner. The caller forgets the previous
+	// winner's generated votes and forces the new winner block into processing.
 	struct winner_changed final
 	{
 		nano::block_hash previous_winner;
-		std::shared_ptr<nano::block> new_winner;
+		nano::block_hash new_winner;
 	};
-	// First time margin quorum is reached (one-shot, latched even if voting is disabled — matches
-	// is_quorum.exchange). Adapter, iff enable_voting && reps().voting > 0: ++vote_broadcast_count,
-	// vote_generator.vote_final(qualified_root, winner, bucket).
+	// Margin quorum was reached for the first time. Latched: fires exactly once for the lifetime
+	// of the election, even if voting is disabled and even before any final votes arrive.
 	struct quorum_reached final
 	{
 		nano::block_hash winner;
 	};
-	// Margin quorum AND the winner's final weight >= delta. The core has already set state =
-	// confirmed. Adapter: block_processor.add(winner, election) then confirm_once.
+	// The winner additionally reached quorum among final votes: the election is decided and the
+	// engine has moved to the confirmed state. The caller cements the winner.
 	struct final_quorum_reached final
 	{
-		std::shared_ptr<nano::block> winner;
+		nano::block_hash winner;
 	};
 
 	std::optional<winner_changed> on_winner_changed;
@@ -71,7 +72,6 @@ struct effects final
 	std::optional<final_quorum_reached> on_final_quorum_reached;
 };
 
-// Mirrors nano::election_state (nano/node/election.hpp) exactly.
 enum class election_state
 {
 	passive,
@@ -82,76 +82,73 @@ enum class election_state
 	cancelled,
 };
 
-// Pure ORV consensus core. Single-threaded and caller-serialized: it performs NO internal locking
-// and is NOT thread-safe; the nano::election adapter holds its mutex across every call. The core
-// receives only already-admitted votes for this election — routing (qualified_root matching),
-// min-principal-weight, replay and cooldown stay in the adapter, unchanged from develop.
-class election final
+// The ORV (Open Representative Voting) decision engine for a single election. It owns the per-
+// representative ballots and the candidate hash set, computes the weighted tally, and drives the
+// no-quorum -> quorum -> final-quorum progression, returning the decisions the caller must act
+// on. It is the canonical implementation of these rules.
+//
+// Single-threaded and caller-serialized: it performs NO internal locking and is NOT thread-safe;
+// the caller holds its own mutex across every call. It only ever sees votes already admitted for
+// this election — vote routing, minimum-principal-weight filtering, replay and cooldown are the
+// caller's responsibility and are deliberately outside the consensus rule.
+class engine final
 {
 public:
-	election (consensus::ports, std::shared_ptr<nano::block> const & initial_block);
+	engine (consensus::ports, nano::block_hash initial_candidate);
 
-	// Apply an already-admitted vote, then evaluate quorum from a single tally snapshot. Mirrors
-	// the consensus portion of nano::election::vote + confirm_if_quorum (election.cpp:551-626,
-	// 476-524). evaluate() is skipped once confirmed, matching `if (!confirmed_locked())`.
-	void vote (nano::account const & representative, nano::block_hash const &, uint64_t timestamp, effects & out);
+	// Record an already-admitted ballot for a representative (replacing any previous one), then,
+	// unless the election is already confirmed, re-evaluate the quorum progression from a single
+	// fresh tally snapshot and return the resulting decisions.
+	effects vote (nano::account const & representative, nano::block_hash const &, uint64_t timestamp);
 
-	// Consensus portion of nano::election::publish (election.cpp:628-667). The confirmed guard and
-	// replace_by_weight eviction stay in the adapter. Returns true if the block already existed
-	// (content replaced), false if newly added — same sense as the canonical `result`.
-	bool publish (std::shared_ptr<nano::block> const &);
+	// Make a block hash eligible to appear in the tally. Returns true if it was newly added.
+	bool register_candidate (nano::block_hash const &);
 
-	// Winner-flip handshake: the adapter resolves node.history.votes(root, previous_winner) into
-	// accounts and calls this to erase them (nano::election::remove_votes, election.cpp:738-752).
-	void apply_removed_votes (std::vector<nano::account> const &);
+	// Drop a candidate (never the locked winner) and any ballots that pointed at it.
+	void remove_candidate (nano::block_hash const &);
 
-	// nano::election::remove_block (election.cpp:754-769) minus the node-side filter/winner guard,
-	// which stay in the adapter. Erases the block and its orphan votes.
-	void remove_block (nano::block_hash const &);
+	// Winner-flip handshake: when the winner changes the caller resolves which representatives'
+	// generated votes were discarded and asks the engine to forget those ballots.
+	void forget_voters (std::vector<nano::account> const &);
 
-	tally_t tally () const; // live weight, candidate-restricted; refreshes last_tally / final_weight
-	nano::uint128_t final_tally () const; // winner-specific, sticky
-	bool has_quorum () const; // margin rule over the current tally
-	bool quorum_latched () const; // one-shot: has margin quorum ever been reached (sticky)
+	tally_t tally () const; // live weighted tally, restricted to candidates; refreshes the snapshots below
+	nano::uint128_t winner_weight () const; // weight of the leading block at the last evaluate
+	nano::uint128_t final_weight () const; // winner's final-vote weight; sticky (see tally())
+	bool has_quorum () const; // does the current tally satisfy the margin rule
+	bool quorum_latched () const; // sticky one-shot: has the margin rule ever been satisfied
+	nano::block_hash winner () const; // the currently locked winner hash
 
-	// Aggregated weight per voted hash (ALL votes, not candidate-restricted) from the last tally().
-	// Drives the adapter's replace_by_weight (election.cpp:777-779).
-	std::unordered_map<nano::block_hash, nano::uint128_t> const & last_tally () const;
-
-	nano::uint128_t status_tally () const; // tally winner weight from the last evaluate -> status.tally
-	nano::uint128_t status_final_tally () const; // -> status.final_tally
-	std::shared_ptr<nano::block> status_winner () const;
+	// Total weight per voted hash across ALL ballots (not candidate-restricted) from the last
+	// tally(). The caller uses this to decide block eviction.
+	std::unordered_map<nano::block_hash, nano::uint128_t> const & tally_snapshot () const;
 
 	election_state state () const;
 	bool confirmed () const; // confirmed || expired_confirmed
 	bool failed () const; // expired_unconfirmed
-	// valid_change-gated (election.cpp:112-180). Returns true on FAILURE (no transition), false on
-	// success — same inverted sense as nano::election::state_change.
+	// Attempt expected -> desired if the transition is valid and the current state matches.
+	// Returns true on FAILURE (no transition), false on success.
 	bool state_change (election_state expected, election_state desired);
 
-	std::unordered_map<nano::account, vote_record> const & votes () const;
-	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> const & blocks () const;
-	std::size_t voter_count () const; // includes the seeded null-account vote, matching develop
-	std::size_t block_count () const;
-	bool contains_block (nano::block_hash const &) const;
+	std::unordered_map<nano::account, ballot> const & votes () const;
+	std::unordered_set<nano::block_hash> const & candidates () const;
+	std::size_t voter_count () const; // includes the seeded null-account ballot
+	std::size_t candidate_count () const;
+	bool contains_candidate (nano::block_hash const &) const;
 	bool contains_voter (nano::account const &) const;
-	std::shared_ptr<nano::block> find (nano::block_hash const &) const;
 
 private:
 	bool has_quorum (tally_t const &) const;
-	tally_t tally_impl () const;
-	void evaluate (effects & out); // == confirm_if_quorum consensus body (election.cpp:476-524)
+	effects evaluate ();
 	bool valid_change (election_state, election_state) const;
 
 	consensus::ports ports_;
-	std::unordered_map<nano::account, vote_record> last_votes_;
-	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> last_blocks_;
-	nano::block_hash status_winner_hash_;
-	std::shared_ptr<nano::block> status_winner_block_;
+	std::unordered_map<nano::account, ballot> votes_;
+	std::unordered_set<nano::block_hash> candidates_;
+	nano::block_hash winner_hash_;
 	election_state state_{ election_state::passive };
-	bool is_quorum_latched_{ false };
+	bool quorum_latched_{ false };
 	mutable nano::uint128_t final_weight_{ 0 };
-	mutable nano::uint128_t status_tally_{ 0 };
-	mutable std::unordered_map<nano::block_hash, nano::uint128_t> last_tally_;
+	mutable nano::uint128_t winner_weight_{ 0 };
+	mutable std::unordered_map<nano::block_hash, nano::uint128_t> tally_snapshot_;
 };
 }

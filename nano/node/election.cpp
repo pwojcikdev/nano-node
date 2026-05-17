@@ -50,7 +50,7 @@ nano::election::election (nano::node & node_a, std::shared_ptr<nano::block> cons
 	qualified_root (block_a->qualified_root ()),
 	account (block_a->account ()),
 	bucket (bucket_a),
-	consensus_ (make_consensus_ports (node_a), block_a)
+	consensus_ (make_consensus_ports (node_a), block_a->hash ())
 {
 	last_votes.emplace (nano::account::null (), nano::vote_info{ std::chrono::steady_clock::now (), 0, block_a->hash () });
 	last_blocks.emplace (block_a->hash (), block_a);
@@ -437,42 +437,48 @@ nano::tally_t nano::election::tally () const
 
 nano::tally_t nano::election::tally_impl () const
 {
-	return consensus_.tally ();
+	// The engine works in block hashes; resolve each to its block here. Every tallied hash is a
+	// registered candidate, so it is always present in last_blocks.
+	nano::tally_t result;
+	for (auto const & [weight, hash] : consensus_.tally ())
+	{
+		auto block = last_blocks.find (hash);
+		release_assert (block != last_blocks.end ());
+		result.emplace (weight, block->second);
+	}
+	return result;
 }
 
 bool nano::election::is_quorum_reached () const
 {
 	// No internal lock: confirmation_solicitor calls this via send_confirm_req, which already
-	// holds the election mutex (same access pattern as the previous atomic is_quorum flag).
+	// holds the election mutex.
 	return consensus_.quorum_latched ();
 }
 
-void nano::election::confirm_if_quorum (nano::unique_lock<nano::mutex> & lock_a)
+void nano::election::apply_consensus_outcome (nano::consensus::effects const & fx, nano::unique_lock<nano::mutex> & lock_a)
 {
 	debug_assert (lock_a.owns_lock ());
 
-	// nano::consensus is authoritative for all ORV decisions. The accepted vote was deferred
-	// until here (after vote_action) so the lib evaluates with the same online weight / delta.
-	nano::consensus::effects fx;
-	if (pending_vote_)
-	{
-		consensus_.vote (pending_vote_->rep, pending_vote_->hash, pending_vote_->timestamp, fx);
-		pending_vote_.reset ();
-	}
+	auto resolve = [this] (nano::block_hash const & hash) -> std::shared_ptr<nano::block> {
+		auto existing = last_blocks.find (hash);
+		release_assert (existing != last_blocks.end ());
+		return existing->second;
+	};
 
-	status.tally = consensus_.status_tally ();
-	status.final_tally = consensus_.final_tally ();
+	status.tally = consensus_.winner_weight ();
+	status.final_tally = consensus_.final_weight ();
 
 	if (fx.on_winner_changed)
 	{
-		auto const previous_winner = fx.on_winner_changed->previous_winner;
-		auto block_l = fx.on_winner_changed->new_winner;
-		status.winner = block_l;
+		auto const & previous_winner = fx.on_winner_changed->previous_winner;
+		auto new_winner = resolve (fx.on_winner_changed->new_winner);
+		status.winner = new_winner;
 		remove_votes (previous_winner);
 
 		node.logger.debug (nano::log::type::election, "Winning fork changed from {} to {} for root: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
 		previous_winner,
-		block_l->hash (),
+		new_winner->hash (),
 		qualified_root,
 		to_string (behavior_m),
 		to_string (state_m),
@@ -480,7 +486,7 @@ void nano::election::confirm_if_quorum (nano::unique_lock<nano::mutex> & lock_a)
 		status.block_count,
 		duration ().count ());
 
-		node.block_processor.force (block_l);
+		node.block_processor.force (new_winner);
 	}
 	if (fx.on_quorum_reached)
 	{
@@ -493,7 +499,7 @@ void nano::election::confirm_if_quorum (nano::unique_lock<nano::mutex> & lock_a)
 	if (fx.on_final_quorum_reached)
 	{
 		// In some edge cases block might get rolled back while the election is confirming, reprocess it to ensure it's present in the ledger
-		node.block_processor.add (fx.on_final_quorum_reached->winner, nano::block_source::election);
+		node.block_processor.add (resolve (fx.on_final_quorum_reached->winner), nano::block_source::election);
 		confirm_once (lock_a);
 		debug_assert (!lock_a.owns_lock ());
 	}
@@ -566,10 +572,6 @@ nano::vote_code nano::election::vote (nano::account const & rep, uint64_t timest
 	// Update voter list entry
 	last_votes[rep] = { std::chrono::steady_clock::now (), timestamp_a, block_hash_a };
 
-	// Defer feeding the lib until confirm_if_quorum, after vote_action, so it evaluates with the
-	// same online weight / delta (this is the canonical "must run before tally" ordering).
-	pending_vote_ = pending_vote{ rep, block_hash_a, timestamp_a };
-
 	node.stats.inc (nano::stat::type::election, nano::stat::detail::vote);
 	node.stats.inc (nano::stat::type::election_vote, to_stat_detail (vote_source_a));
 
@@ -599,7 +601,9 @@ nano::vote_code nano::election::vote (nano::account const & rep, uint64_t timest
 
 	if (!confirmed_locked ())
 	{
-		confirm_if_quorum (lock);
+		// Fed after vote_action so the engine evaluates with up-to-date online weight / delta.
+		auto fx = consensus_.vote (rep, block_hash_a, timestamp_a);
+		apply_consensus_outcome (fx, lock);
 	}
 
 	return vote_code::vote;
@@ -636,7 +640,7 @@ bool nano::election::publish (std::shared_ptr<nano::block> const & block_a)
 				status.winner = block_a;
 			}
 		}
-		consensus_.publish (block_a);
+		consensus_.register_candidate (block_a->hash ());
 	}
 	/*
 	Result is true if:
@@ -730,7 +734,7 @@ void nano::election::remove_votes (nano::block_hash const & hash_a)
 			last_votes.erase (vote->account);
 			removed.push_back (vote->account);
 		}
-		consensus_.apply_removed_votes (removed);
+		consensus_.forget_voters (removed);
 		// Clear votes cache
 		node.history.erase (root);
 	}
@@ -751,7 +755,7 @@ void nano::election::remove_block (nano::block_hash const & hash_a)
 			last_blocks.erase (hash_a);
 		}
 	}
-	consensus_.remove_block (hash_a); // applies its own winner guard
+	consensus_.remove_candidate (hash_a); // applies its own winner guard
 }
 
 bool nano::election::replace_by_weight (nano::unique_lock<nano::mutex> & lock_a, nano::block_hash const & hash_a)
@@ -760,7 +764,7 @@ bool nano::election::replace_by_weight (nano::unique_lock<nano::mutex> & lock_a,
 	nano::block_hash replaced_block (0);
 	auto winner_hash (status.winner->hash ());
 	// Sort existing blocks tally
-	auto const & last_tally = consensus_.last_tally ();
+	auto const & last_tally = consensus_.tally_snapshot ();
 	std::vector<std::pair<nano::block_hash, nano::uint128_t>> sorted;
 	sorted.reserve (last_tally.size ());
 	std::copy (last_tally.begin (), last_tally.end (), std::back_inserter (sorted));
