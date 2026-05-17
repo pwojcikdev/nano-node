@@ -115,17 +115,19 @@ public:
 	// generated votes were discarded and asks the engine to forget those ballots.
 	void forget_voters (std::vector<nano::account> const &);
 
-	tally_t tally () const; // live weighted tally, restricted to candidates; refreshes the snapshots below
-	nano::uint128_t leader_weight () const; // weight of the leading block at the last evaluate
-	nano::uint128_t final_weight () const; // leader's final-vote weight; sticky (see tally())
+	// All read-only views are pure functions of the current ballots, candidates and injected
+	// weights — the engine caches nothing.
+	tally_t tally () const; // weighted tally, restricted to candidates, highest first
+	nano::uint128_t leader_weight () const; // weight of the current leading block
+	nano::uint128_t final_weight () const; // the leading block's current final-vote weight (0 if none)
 	bool has_quorum () const; // does the current tally satisfy the margin rule
 	bool quorum_latched () const; // sticky one-shot: has the margin rule ever been satisfied
 	nano::block_hash leader () const; // the block this node currently backs (always present)
 	std::optional<nano::block_hash> winner () const; // the decided block; empty until final quorum
 
-	// Total weight per voted hash across ALL ballots (not candidate-restricted) from the last
-	// tally(). The caller uses this to decide block eviction.
-	std::unordered_map<nano::block_hash, nano::uint128_t> const & tally_snapshot () const;
+	// Weight per voted hash across ALL ballots (not candidate-restricted). The caller uses this
+	// to decide block eviction. Computed on demand.
+	std::unordered_map<nano::block_hash, nano::uint128_t> ballot_weights () const;
 
 	election_phase phase () const;
 	bool confirmed () const; // phase == final_quorum_reached
@@ -158,21 +160,22 @@ private:
 	};
 	using state_variant = std::variant<no_quorum_state, quorum_reached_state, final_quorum_reached_state>;
 
-	// A single fresh reading of the tally that every per-phase decision is taken from.
+	// A single fresh reading of the tally that every per-phase decision is taken from. Purely
+	// derived from the current ballots — nothing here is carried between votes.
 	struct assessment
 	{
 		nano::block_hash leading; // highest-weight candidate
 		nano::uint128_t leading_weight;
 		nano::uint128_t sum; // total candidate weight
 		bool quorum; // margin rule satisfied right now
-		nano::uint128_t final_weight; // leader's sticky final-vote weight
+		nano::uint128_t final_weight; // leading block's current final-vote weight (0 if it has none)
 	};
 
 	// Per-phase vote behavior. Returns the decisions plus, if the phase or locked leader changed,
 	// the next state. Defined out-of-line in consensus.cpp.
 	struct vote_visitor
 	{
-		engine & engine_;
+		engine const & engine_;
 		using result = std::pair<effects, std::optional<state_variant>>;
 		result operator() (no_quorum_state const &) const;
 		result operator() (quorum_reached_state const &) const;
@@ -189,8 +192,5 @@ private:
 	std::unordered_map<nano::account, ballot> votes_;
 	std::unordered_set<nano::block_hash> candidates_;
 	state_variant state_;
-	mutable nano::uint128_t final_weight_{ 0 };
-	mutable nano::uint128_t leader_weight_{ 0 };
-	mutable std::unordered_map<nano::block_hash, nano::uint128_t> tally_snapshot_;
 };
 }

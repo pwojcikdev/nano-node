@@ -12,40 +12,27 @@ nano::consensus::engine::engine (consensus::ports ports_a, nano::block_hash init
 	candidates_.insert (initial_candidate);
 }
 
-nano::consensus::tally_t nano::consensus::engine::tally () const
+std::unordered_map<nano::block_hash, nano::uint128_t> nano::consensus::engine::ballot_weights () const
 {
-	// Sum live representative weight per voted hash. Two snapshots are produced:
-	//  - tally_snapshot_: weight per hash across ALL ballots (used by the caller for eviction).
-	//  - the returned tally: restricted to registered candidates and ordered by weight.
-	// final_weight_ is the leader's weight among final votes only, and is STICKY: it is updated
-	// solely when the current leader has final votes, so a transient leader flip can never lower
-	// an already-reached final tally (which would otherwise un-confirm a decided election).
-	std::unordered_map<nano::block_hash, nano::uint128_t> block_weights;
-	std::unordered_map<nano::block_hash, nano::uint128_t> final_weights;
+	// Live representative weight summed per voted hash, across ALL ballots (not candidate-
+	// restricted). Pure: derived entirely from the current ballots and injected weights.
+	std::unordered_map<nano::block_hash, nano::uint128_t> result;
 	for (auto const & [account, ballot] : votes_)
 	{
-		auto weight = ports_.weight (account);
-		block_weights[ballot.hash] += weight;
-		if (ballot.timestamp == ballot::final_timestamp)
-		{
-			final_weights[ballot.hash] += weight;
-		}
+		result[ballot.hash] += ports_.weight (account);
 	}
-	tally_snapshot_ = block_weights;
+	return result;
+}
+
+nano::consensus::tally_t nano::consensus::engine::tally () const
+{
+	// The candidate-restricted tally, ordered by weight (highest first). Pure.
 	consensus::tally_t result;
-	for (auto const & [hash, weight] : block_weights)
+	for (auto const & [hash, weight] : ballot_weights ())
 	{
 		if (candidates_.contains (hash))
 		{
 			result.emplace (weight, hash);
-		}
-	}
-	if (!final_weights.empty () && !result.empty ())
-	{
-		auto leader_hash = result.begin ()->second;
-		if (auto it = final_weights.find (leader_hash); it != final_weights.end ())
-		{
-			final_weight_ = it->second;
 		}
 	}
 	return result;
@@ -78,13 +65,24 @@ nano::consensus::engine::assessment nano::consensus::engine::assess () const
 	// One fresh tally reading drives every decision for this vote.
 	auto tally_l = tally ();
 	release_assert (!tally_l.empty ());
-	leader_weight_ = tally_l.begin ()->first;
+	auto leading = tally_l.begin ()->second;
+	auto leading_weight = tally_l.begin ()->first;
 	nano::uint128_t sum{ 0 };
 	for (auto const & [weight, hash] : tally_l)
 	{
 		sum += weight;
 	}
-	return assessment{ tally_l.begin ()->second, tally_l.begin ()->first, sum, has_quorum (tally_l), final_weight_ };
+	// The leading block's final-vote weight, recomputed fresh from the current final ballots —
+	// no carried/sticky state.
+	nano::uint128_t final_weight{ 0 };
+	for (auto const & [account, ballot] : votes_)
+	{
+		if (ballot.timestamp == ballot::final_timestamp && ballot.hash == leading)
+		{
+			final_weight += ports_.weight (account);
+		}
+	}
+	return assessment{ leading, leading_weight, sum, has_quorum (tally_l), final_weight };
 }
 
 nano::block_hash nano::consensus::engine::relock (nano::block_hash locked, assessment const & a, effects & out) const
@@ -186,17 +184,12 @@ void nano::consensus::engine::remove_candidate (nano::block_hash const & hash_a)
 
 nano::uint128_t nano::consensus::engine::leader_weight () const
 {
-	return leader_weight_;
+	return assess ().leading_weight;
 }
 
 nano::uint128_t nano::consensus::engine::final_weight () const
 {
-	return final_weight_;
-}
-
-std::unordered_map<nano::block_hash, nano::uint128_t> const & nano::consensus::engine::tally_snapshot () const
-{
-	return tally_snapshot_;
+	return assess ().final_weight;
 }
 
 nano::block_hash nano::consensus::engine::leader () const

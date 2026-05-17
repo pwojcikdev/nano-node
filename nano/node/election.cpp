@@ -764,7 +764,7 @@ bool nano::election::replace_by_weight (nano::unique_lock<nano::mutex> & lock_a,
 	nano::block_hash replaced_block (0);
 	auto winner_hash (status.winner->hash ());
 	// Sort existing blocks tally
-	auto const & last_tally = consensus_.tally_snapshot ();
+	auto const last_tally = consensus_.ballot_weights ();
 	std::vector<std::pair<nano::block_hash, nano::uint128_t>> sorted;
 	sorted.reserve (last_tally.size ());
 	std::copy (last_tally.begin (), last_tally.end (), std::back_inserter (sorted));
