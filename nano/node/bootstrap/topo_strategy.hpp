@@ -37,6 +37,9 @@ private:
 	std::deque<nano::block_hash> wait_block_batch ();
 	// Blocks until completed blocks are ready to drain (head of queue completed), or all work is done.
 	std::deque<std::shared_ptr<nano::block>> wait_ordered_blocks ();
+	// Waits for a channel whose peer advertises the topo_index capability.
+	// `topo_index` requests can only be served by peers that maintain the topo index.
+	std::shared_ptr<nano::transport::channel> wait_topo_index_channel ();
 
 	bool request_index (nano::topo_key cursor, std::shared_ptr<nano::transport::channel> const & channel);
 	bool request_blocks (std::deque<nano::block_hash> hashes, std::shared_ptr<nano::transport::channel> const & channel);
