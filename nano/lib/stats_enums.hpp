@@ -603,8 +603,10 @@ enum class detail
 	dependency_synced,
 
 	request_blocks,
+	request_blocks_failed,
 	request_account_info,
 	request_index,
+	request_index_failed,
 
 	safe,
 	base,

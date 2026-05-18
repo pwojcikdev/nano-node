@@ -317,7 +317,15 @@ bool topo_strategy::request_index (nano::topo_key cursor, std::shared_ptr<nano::
 	ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::request_index);
 	ctx.logger.debug (nano::log::type::bootstrap, "Requesting topo index from cursor topo_height={} hash={} from: {}", cursor.topo_height, cursor.hash.to_string (), channel);
 
-	return ctx.send (channel, std::move (message), tag);
+	bool sent = ctx.send (channel, std::move (message), tag);
+	if (sent)
+	{
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::request_index);
+	}
+	else
+	{
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::request_index_failed);
+	}
 }
 
 bool topo_strategy::request_blocks (std::deque<nano::block_hash> hashes, std::shared_ptr<nano::transport::channel> const & channel)
@@ -342,10 +350,18 @@ bool topo_strategy::request_blocks (std::deque<nano::block_hash> hashes, std::sh
 	message.payload = std::move (msg_pld);
 	message.update_header ();
 
-	ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::request_blocks);
+	// ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::request_blocks);
 	ctx.logger.debug (nano::log::type::bootstrap, "Requesting {} random topology blocks from: {}", payload.hashes.size (), channel);
 
-	return ctx.send (channel, std::move (message), tag);
+	bool sent = ctx.send (channel, std::move (message), tag);
+	if (sent)
+	{
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::request_blocks);
+	}
+	else
+	{
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::request_blocks_failed);
+	}
 }
 
 verify_result topo_strategy::verify (nano::messages::asc_pull_ack::topo_index_payload const & response, async_tag const & tag) const
