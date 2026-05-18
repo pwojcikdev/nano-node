@@ -604,6 +604,7 @@ enum class detail
 
 	request_blocks,
 	request_account_info,
+	request_index,
 
 	safe,
 	base,

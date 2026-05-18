@@ -107,7 +107,7 @@ void topo_strategy::run_index ()
 
 		lock.unlock ();
 
-		ctx.stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_topo_index);
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::loop_topo_index);
 		run_one_index ();
 
 		lock.lock ();
@@ -143,7 +143,7 @@ void topo_strategy::run_blocks ()
 
 		lock.unlock ();
 
-		ctx.stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_topo_blocks);
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::loop_topo_blocks);
 		run_one_blocks ();
 
 		lock.lock ();
@@ -223,7 +223,7 @@ void topo_strategy::run_processing ()
 
 		lock.unlock ();
 
-		ctx.stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_topo_processing);
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::loop_topo_processing);
 		run_one_processing ();
 
 		lock.lock ();
@@ -314,6 +314,7 @@ bool topo_strategy::request_index (nano::topo_key cursor, std::shared_ptr<nano::
 	message.payload = msg_pld;
 	message.update_header ();
 
+	ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::request_index);
 	ctx.logger.debug (nano::log::type::bootstrap, "Requesting topo index from cursor topo_height={} hash={} from: {}", cursor.topo_height, cursor.hash.to_string (), channel);
 
 	return ctx.send (channel, std::move (message), tag);
@@ -341,6 +342,7 @@ bool topo_strategy::request_blocks (std::deque<nano::block_hash> hashes, std::sh
 	message.payload = std::move (msg_pld);
 	message.update_header ();
 
+	ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::request_blocks);
 	ctx.logger.debug (nano::log::type::bootstrap, "Requesting {} random topology blocks from: {}", payload.hashes.size (), channel);
 
 	return ctx.send (channel, std::move (message), tag);
