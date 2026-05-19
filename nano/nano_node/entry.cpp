@@ -188,6 +188,15 @@ int main (int argc, char * const * argv)
 	auto ec = nano::handle_node_options (vm);
 	if (ec == nano::error_cli::unknown_command)
 	{
+		if (vm.count ("print_backtrace_dumps"))
+		{
+			auto printed = nano::output_stacktrace_dumps (data_path, std::cout, /* include_archived */ true, /* archive_after */ false);
+			if (printed == 0)
+			{
+				std::cout << "No crash backtrace dumps found" << std::endl;
+			}
+		}
+
 		if (vm.count ("daemon") > 0)
 		{
 			nano::daemon daemon;
@@ -343,14 +352,6 @@ int main (int argc, char * const * argv)
 			{
 				std::cout << "Not available for the dev network" << std::endl;
 				result = -1;
-			}
-		}
-		else if (vm.count ("print_backtrace_dumps"))
-		{
-			auto printed = nano::output_stacktrace_dumps (data_path, std::cout, /* include_archived */ true, /* archive_after */ false);
-			if (printed == 0)
-			{
-				std::cout << "No crash backtrace dumps found" << std::endl;
 			}
 		}
 		else if (vm.count ("debug_block_dump"))
