@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -22,6 +23,10 @@
 #include <dlfcn.h>
 #include <unistd.h>
 #include <unwind.h>
+#endif
+
+#if defined(__linux__)
+#include <ucontext.h>
 #endif
 
 namespace
@@ -334,9 +339,104 @@ void write_stderr (std::string const & text)
 	}
 #endif
 }
+
+#ifndef _WIN32
+char const * signal_name (int signum)
+{
+	switch (signum)
+	{
+		case SIGSEGV:
+			return "SIGSEGV";
+		case SIGABRT:
+			return "SIGABRT";
+		case SIGBUS:
+			return "SIGBUS";
+		case SIGILL:
+			return "SIGILL";
+		case SIGFPE:
+			return "SIGFPE";
+		default:
+			return "signal";
+	}
 }
 
-void nano::dump_crash_stacktrace_readable ()
+// Symbolicate and append one frame. `innermost` (the exact crash instruction)
+// is used as-is; for return addresses we step back one byte so file/line map
+// to the call site rather than the line after it.
+void format_frame (std::ostream & out, int index, void * pc, bool innermost)
+{
+	auto raw = reinterpret_cast<std::uintptr_t> (pc);
+	boost::stacktrace::frame frame (reinterpret_cast<void *> (innermost ? raw : raw - 1));
+
+	out << ' ' << index << "# ";
+	if (auto name = frame.name (); !name.empty ())
+	{
+		out << name;
+	}
+	else
+	{
+		out << "0x" << std::uppercase << std::hex << raw << std::nouppercase << std::dec;
+	}
+	if (auto source_file = frame.source_file (); !source_file.empty ())
+	{
+		out << " at " << source_file << ':' << frame.source_line ();
+	}
+	else if (Dl_info info; dladdr (pc, &info) != 0 && info.dli_fname != nullptr)
+	{
+		out << " in " << info.dli_fname;
+	}
+	out << '\n';
+}
+#endif
+
+#if defined(__linux__) && defined(__x86_64__)
+// Recover the call stack directly from the signal's saved register state. This
+// avoids unwinding through the signal trampoline (which libgcc's fallback fails
+// to cross on some glibc versions). Frame 0 is the exact faulting instruction;
+// the rest is a defensively-validated frame-pointer walk (only as good as the
+// build's frame pointers, but the crash site itself is always recovered).
+int capture_from_ucontext (ucontext_t * uc, void ** frames, int max)
+{
+	int count = 0;
+	auto const ip = static_cast<std::uintptr_t> (uc->uc_mcontext.gregs[REG_RIP]);
+	auto const sp = static_cast<std::uintptr_t> (uc->uc_mcontext.gregs[REG_RSP]);
+	if (ip != 0)
+	{
+		frames[count++] = reinterpret_cast<void *> (ip);
+	}
+
+	// [fp] = saved frame pointer, [fp + 8] = return address
+	auto fp = static_cast<std::uintptr_t> (uc->uc_mcontext.gregs[REG_RBP]);
+	std::uintptr_t previous = 0;
+	auto const stack_limit = sp + (std::uintptr_t{ 64 } << 20); // sanity bound
+	for (int guard = 0; guard < max - 1; ++guard)
+	{
+		// Frame pointers must be aligned and strictly ascending within the stack
+		if (fp < sp || fp >= stack_limit || (fp & (sizeof (std::uintptr_t) - 1)) != 0 || fp <= previous)
+		{
+			break;
+		}
+		auto const next = *reinterpret_cast<std::uintptr_t const *> (fp);
+		auto const ret = *reinterpret_cast<std::uintptr_t const *> (fp + sizeof (std::uintptr_t));
+		if (ret == 0)
+		{
+			break;
+		}
+		// Only trust the return address if it points into a mapped module
+		if (Dl_info info; dladdr (reinterpret_cast<void *> (ret), &info) == 0 || info.dli_fname == nullptr)
+		{
+			break;
+		}
+		frames[count++] = reinterpret_cast<void *> (ret);
+		previous = fp;
+		fp = next;
+	}
+	return count;
+}
+#endif
+}
+
+void nano::dump_crash_stacktrace_readable (void * ucontext, int signum, void const * fault_address)
 {
 	// Best-effort. Runs after the async-safe binary dump, in the crashing
 	// process. Not async-signal-safe, but we are aborting anyway and the binary
@@ -344,50 +444,57 @@ void nano::dump_crash_stacktrace_readable ()
 	std::ostringstream trace;
 
 #ifdef _WIN32
+	(void)ucontext;
+	(void)signum;
+	(void)fault_address;
 	trace << boost::stacktrace::stacktrace ();
 #else
-	// boost::stacktrace's libbacktrace backend stops at the signal trampoline,
-	// hiding the actual crash site. _Unwind_Backtrace (the unwinder C++
-	// exceptions use) steps through the signal frame into the crashing code; we
-	// then symbolicate each frame with boost::stacktrace::frame (libbacktrace).
-	unwind_capture capture;
-	_Unwind_Backtrace (&unwind_collect, &capture);
-
-	int index = 0;
-	for (int i = 0; i < capture.count; ++i)
+	if (signum != 0)
 	{
-		// Return addresses point just past the call; step back one byte (except
-		// the innermost frame) so file/line map to the call site.
-		auto raw = reinterpret_cast<std::uintptr_t> (capture.frames[i]);
-		boost::stacktrace::frame frame (reinterpret_cast<void *> (i == 0 ? raw : raw - 1));
-
-		auto name = frame.name ();
-		// Drop this helper itself so the trace starts at the crash handler/site
-		if (index == 0 && name.find ("dump_crash_stacktrace_readable") != std::string::npos)
+		trace << "Fatal signal: " << signal_name (signum) << " (" << signum << ')';
+		if (signum == SIGSEGV || signum == SIGBUS || fault_address != nullptr)
 		{
-			continue;
-		}
-
-		trace << ' ' << index << "# ";
-		if (!name.empty ())
-		{
-			trace << name;
-		}
-		else
-		{
-			trace << "0x" << std::uppercase << std::hex << raw << std::nouppercase << std::dec;
-		}
-
-		if (auto source_file = frame.source_file (); !source_file.empty ())
-		{
-			trace << " at " << source_file << ':' << frame.source_line ();
-		}
-		else if (Dl_info info; dladdr (capture.frames[i], &info) != 0 && info.dli_fname != nullptr)
-		{
-			trace << " in " << info.dli_fname;
+			trace << ", fault address 0x" << std::hex << reinterpret_cast<std::uintptr_t> (fault_address) << std::dec;
 		}
 		trace << '\n';
-		++index;
+	}
+
+	bool captured = false;
+
+#if defined(__linux__) && defined(__x86_64__)
+	if (ucontext != nullptr)
+	{
+		// Recover the real crash site from the saved registers
+		constexpr int max_frames = 256;
+		void * frames[max_frames];
+		int const count = capture_from_ucontext (static_cast<ucontext_t *> (ucontext), frames, max_frames);
+		for (int i = 0; i < count; ++i)
+		{
+			format_frame (trace, i, frames[i], /* innermost */ i == 0);
+		}
+		captured = count > 0;
+	}
+#endif
+
+	if (!captured)
+	{
+		// No ucontext (e.g. called outside a signal handler): unwind from here.
+		// May stop at the signal trampoline, but better than nothing.
+		unwind_capture capture;
+		_Unwind_Backtrace (&unwind_collect, &capture);
+
+		int index = 0;
+		for (int i = 0; i < capture.count; ++i)
+		{
+			boost::stacktrace::frame frame (capture.frames[i]);
+			// Drop this helper itself so the trace starts at the caller
+			if (index == 0 && frame.name ().find ("dump_crash_stacktrace_readable") != std::string::npos)
+			{
+				continue;
+			}
+			format_frame (trace, index, capture.frames[i], /* innermost */ i == 0);
+			++index;
+		}
 	}
 #endif
 

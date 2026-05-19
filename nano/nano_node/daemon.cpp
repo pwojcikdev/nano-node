@@ -29,12 +29,11 @@
 
 namespace
 {
+#ifdef _WIN32
 void nano_abort_signal_handler (int signum)
 {
 	// remove `signum` from signal handling when under Windows
-#ifdef _WIN32
 	std::signal (signum, SIG_DFL);
-#endif
 
 	// create some debugging log files
 	nano::dump_crash_stacktrace ();
@@ -46,6 +45,22 @@ void nano_abort_signal_handler (int signum)
 	// re-raise signal to call the default handler and exit
 	raise (signum);
 }
+#else
+void nano_abort_signal_handler (int signum, siginfo_t * info, void * ucontext)
+{
+	// create some debugging log files
+	nano::dump_crash_stacktrace ();
+	nano::create_load_memory_address_files ();
+
+	// best-effort symbolicated dump, must come last (not async-signal-safe).
+	// The ucontext holds the exact register state at the fault, letting us
+	// recover the real crash site instead of unwinding the signal trampoline.
+	nano::dump_crash_stacktrace_readable (ucontext, signum, info != nullptr ? info->si_addr : nullptr);
+
+	// re-raise signal to call the default handler and exit
+	raise (signum);
+}
+#endif
 
 void install_abort_signal_handler ()
 {
@@ -56,9 +71,10 @@ void install_abort_signal_handler ()
 	std::signal (SIGABRT, nano_abort_signal_handler);
 #else
 	struct sigaction sa = {};
-	sa.sa_handler = nano_abort_signal_handler;
+	sa.sa_sigaction = nano_abort_signal_handler;
 	sigemptyset (&sa.sa_mask);
-	sa.sa_flags = SA_RESETHAND;
+	// SA_SIGINFO so the handler receives siginfo_t and the ucontext (saved registers at the fault)
+	sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
 	sigaction (SIGSEGV, &sa, NULL);
 	sigaction (SIGABRT, &sa, NULL);
 #endif

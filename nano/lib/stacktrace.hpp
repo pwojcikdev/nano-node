@@ -17,11 +17,17 @@ void dump_crash_stacktrace ();
 
 /**
  * Writes a human-readable, already-symbolicated stacktrace next to the binary
- * dump. Not async-signal-safe (allocates), so it must be called only as a
- * best-effort step *after* dump_crash_stacktrace() has already succeeded, while
- * still in the address space of the crashing process.
+ * dump and also emits it to stderr. Not async-signal-safe (allocates), so it
+ * must be called only as a best-effort step *after* dump_crash_stacktrace() has
+ * already succeeded, while still in the crashing process.
+ *
+ * When called from a signal handler, pass the handler's `ucontext` (a
+ * `ucontext_t *`), the signal number and the faulting address
+ * (`siginfo_t::si_addr`). The crash site is then recovered directly from the
+ * saved register state, which is far more reliable than trying to unwind
+ * through the kernel/libc signal trampoline.
  */
-void dump_crash_stacktrace_readable ();
+void dump_crash_stacktrace_readable (void * ucontext = nullptr, int signum = 0, void const * fault_address = nullptr);
 
 /**
  * Generates the current stacktrace
