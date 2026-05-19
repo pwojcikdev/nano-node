@@ -97,7 +97,7 @@ int main (int argc, char * const * argv)
 		("rpcconfig", boost::program_options::value<std::vector<nano::config_key_value_pair>>()->multitoken(), "Pass rpc configuration values. This takes precedence over any values in the configuration file. This option can be repeated multiple times.")
 		("daemon", "Start node daemon")
 		("compare_rep_weights", "Display a summarized comparison between the hardcoded bootstrap weights and representative weights from the ledger. Full comparison is output to logs")
-		("print_backtrace_dumps", "Scan known locations (current directory and data path) for crash backtrace dump files and print their stacktraces to standard output, no symbolication required")
+		("print_backtrace_dumps", "Scan known locations (current directory and data path) for crash backtrace dumps and print them to standard output using the advanced addr2line decoding")
 		("debug_block_dump", "Display all the blocks in the ledger in text format")
 		("debug_block_count", "Display the number of blocks")
 		("debug_bootstrap_generate", "Generate bootstrap sequence of blocks")
@@ -188,9 +188,12 @@ int main (int argc, char * const * argv)
 	auto ec = nano::handle_node_options (vm);
 	if (ec == nano::error_cli::unknown_command)
 	{
+		// This must be handled before the daemon starts, to show previous crash dumps
 		if (vm.count ("print_backtrace_dumps"))
 		{
-			auto printed = nano::output_stacktrace_dumps (data_path, std::cout, /* include_archived */ true, /* archive_after */ false);
+			std::cout << "Scanning for crash backtrace dumps..." << std::endl;
+
+			auto printed = nano::output_stacktrace_dumps (data_path, std::cout, /* include_archived */ true, /* archive_after */ false, /* prefer_advanced_decode */ true);
 			if (printed == 0)
 			{
 				std::cout << "No crash backtrace dumps found" << std::endl;

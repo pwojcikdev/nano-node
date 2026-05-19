@@ -48,7 +48,7 @@ TEST (stacktrace, output_dumps_scans_data_path)
 	ASSERT_TRUE (std::filesystem::exists (dump_path));
 
 	std::ostringstream out;
-	auto printed = nano::output_stacktrace_dumps (data_path, out, /* include_archived */ true, /* archive_after */ false);
+	auto printed = nano::output_stacktrace_dumps (data_path, out, /* include_archived */ true, /* archive_after */ false, /* prefer_advanced_decode */ false);
 
 	ASSERT_GE (printed, 1);
 	ASSERT_NE (out.str ().find (dump_path.string ()), std::string::npos);
@@ -72,7 +72,7 @@ TEST (stacktrace, output_dumps_prefers_readable)
 	boost::stacktrace::safe_dump_to (binary_path.string ().c_str ());
 
 	std::ostringstream out;
-	auto printed = nano::output_stacktrace_dumps (data_path, out, /* include_archived */ false, /* archive_after */ true);
+	auto printed = nano::output_stacktrace_dumps (data_path, out, /* include_archived */ false, /* archive_after */ true, /* prefer_advanced_decode */ false);
 
 	ASSERT_EQ (printed, 1);
 	ASSERT_NE (out.str ().find ("MARKER_READABLE_TRACE"), std::string::npos);
@@ -100,6 +100,30 @@ TEST (stacktrace, output_dumps_prefers_readable)
 	ASSERT_TRUE (binary_archived);
 }
 
+// prefer_advanced_decode reconstructs from the binary dump and ignores the readable text
+TEST (stacktrace, output_dumps_prefer_advanced_skips_readable)
+{
+	auto data_path = nano::unique_path ();
+	std::filesystem::create_directories (data_path);
+	auto readable_path = data_path / "nano_node_backtrace.txt";
+	auto binary_path = data_path / "nano_node_backtrace.dump";
+
+	{
+		std::ofstream ofs (readable_path);
+		ofs << "MARKER_READABLE_TRACE\n";
+	}
+	boost::stacktrace::safe_dump_to (binary_path.string ().c_str ());
+
+	std::ostringstream out;
+	auto printed = nano::output_stacktrace_dumps (data_path, out, /* include_archived */ false, /* archive_after */ false, /* prefer_advanced_decode */ true);
+
+	ASSERT_EQ (printed, 1);
+	// The readable text must not be used when advanced decoding is forced
+	ASSERT_EQ (out.str ().find ("MARKER_READABLE_TRACE"), std::string::npos);
+	// Output is reconstructed from the binary dump
+	ASSERT_NE (out.str ().find (binary_path.string ()), std::string::npos);
+}
+
 // With archive_after, the active dump is renamed aside so it is reported only once
 TEST (stacktrace, output_dumps_archives_after)
 {
@@ -109,7 +133,7 @@ TEST (stacktrace, output_dumps_archives_after)
 	boost::stacktrace::safe_dump_to (dump_path.string ().c_str ());
 
 	std::ostringstream out;
-	auto printed = nano::output_stacktrace_dumps (data_path, out, /* include_archived */ false, /* archive_after */ true);
+	auto printed = nano::output_stacktrace_dumps (data_path, out, /* include_archived */ false, /* archive_after */ true, /* prefer_advanced_decode */ false);
 	ASSERT_GE (printed, 1);
 
 	// Active dump has been moved aside
@@ -126,6 +150,6 @@ TEST (stacktrace, output_dumps_archives_after)
 
 	// A second scan does not re-report the archived dump when include_archived is false
 	std::ostringstream out2;
-	auto printed2 = nano::output_stacktrace_dumps (data_path, out2, /* include_archived */ false, /* archive_after */ true);
+	auto printed2 = nano::output_stacktrace_dumps (data_path, out2, /* include_archived */ false, /* archive_after */ true, /* prefer_advanced_decode */ false);
 	ASSERT_EQ (printed2, 0);
 }

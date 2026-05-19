@@ -88,7 +88,7 @@ void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flag
 
 	// Print and archive any crash stacktrace dumps left by a previous run so they
 	// show up on stdout (e.g. `docker logs`) automatically, with no manual steps
-	if (auto dumps = nano::output_stacktrace_dumps (data_path, std::cout, /* include_archived */ false, /* archive_after */ true); dumps > 0)
+	if (auto dumps = nano::output_stacktrace_dumps (data_path, std::cout, /* include_archived */ false, /* archive_after */ true, /* prefer_advanced_decode */ false); dumps > 0)
 	{
 		logger.warn (nano::log::type::daemon, "Detected and printed {} crash stacktrace dump(s) from a previous run", dumps);
 	}

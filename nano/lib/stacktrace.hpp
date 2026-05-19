@@ -53,6 +53,9 @@ char const * crash_stacktrace_directory ();
  *
  * @param include_archived also report previously archived dumps, not just the active one
  * @param archive_after rename each active dump aside after printing so it is reported exactly once
+ * @param prefer_advanced_decode reconstruct from the binary dump via the advanced addr2line
+ *        ceremony instead of the crash-time readable text; the readable text is only used as a
+ *        fallback when no binary dump exists for a crash
  */
-std::size_t output_stacktrace_dumps (std::filesystem::path const & data_path, std::ostream & out, bool include_archived, bool archive_after);
+std::size_t output_stacktrace_dumps (std::filesystem::path const & data_path, std::ostream & out, bool include_archived, bool archive_after, bool prefer_advanced_decode);
 }

@@ -426,7 +426,7 @@ char const * nano::crash_stacktrace_directory ()
 	return crash_directory;
 }
 
-std::size_t nano::output_stacktrace_dumps (std::filesystem::path const & data_path, std::ostream & out, bool include_archived, bool archive_after)
+std::size_t nano::output_stacktrace_dumps (std::filesystem::path const & data_path, std::ostream & out, bool include_archived, bool archive_after, bool prefer_advanced_decode)
 {
 	std::string const binary_name = backtrace_binary_filename;
 	std::string const readable_name = backtrace_readable_filename;
@@ -504,31 +504,40 @@ std::size_t nano::output_stacktrace_dumps (std::filesystem::path const & data_pa
 	std::size_t printed = 0;
 	for (auto const & [suffix, group] : groups)
 	{
-		bool emitted = false;
+		auto emit = [&out] (std::filesystem::path const & path, std::string const & body) {
+			out << "==== Crash stacktrace dump: " << path.string () << " ====\n"
+				<< body;
+			if (body.empty () || body.back () != '\n')
+			{
+				out << '\n';
+			}
+			out << "==== End of crash stacktrace dump ====" << std::endl;
+		};
 
-		// Prefer the human-readable, already-symbolicated stacktrace
-		if (!group.readable.empty ())
-		{
+		// The crash-time, already-symbolicated readable text
+		auto print_readable = [&] () -> bool {
+			if (group.readable.empty ())
+			{
+				return false;
+			}
 			std::ifstream ifs (group.readable);
 			std::stringstream contents;
 			contents << ifs.rdbuf ();
-			if (!contents.str ().empty ())
+			if (contents.str ().empty ())
 			{
-				out << "==== Crash stacktrace dump: " << group.readable.string () << " ====\n"
-					<< contents.str ();
-				if (contents.str ().back () != '\n')
-				{
-					out << '\n';
-				}
-				out << "==== End of crash stacktrace dump ====" << std::endl;
-				emitted = true;
+				return false;
 			}
-		}
+			emit (group.readable, contents.str ());
+			return true;
+		};
 
-		// Otherwise reconstruct from the binary dump: first try the advanced
-		// addr2line + load-address ceremony, then fall back to raw addresses
-		if (!emitted && !group.binary.empty ())
-		{
+		// Reconstruct from the binary dump: first the advanced addr2line +
+		// load-address ceremony, then fall back to raw addresses
+		auto print_binary = [&] () -> bool {
+			if (group.binary.empty ())
+			{
+				return false;
+			}
 			std::ostringstream body;
 			bool resolved = symbolicate_binary_dump (group.binary, body);
 			if (!resolved)
@@ -544,18 +553,19 @@ std::size_t nano::output_stacktrace_dumps (std::filesystem::path const & data_pa
 					}
 				}
 			}
-			if (resolved && !body.str ().empty ())
+			if (!resolved || body.str ().empty ())
 			{
-				out << "==== Crash stacktrace dump: " << group.binary.string () << " ====\n"
-					<< body.str ();
-				if (body.str ().back () != '\n')
-				{
-					out << '\n';
-				}
-				out << "==== End of crash stacktrace dump ====" << std::endl;
-				emitted = true;
+				return false;
 			}
-		}
+			emit (group.binary, body.str ());
+			return true;
+		};
+
+		// prefer_advanced_decode flips the order: advanced binary decoding first,
+		// readable text only as a fallback when there is no binary dump
+		bool emitted = prefer_advanced_decode
+		? (print_binary () || print_readable ())
+		: (print_readable () || print_binary ());
 
 		if (emitted)
 		{
