@@ -8,9 +8,20 @@
 namespace nano
 {
 /**
- * Dumps a stacktrace file which can be read using the --debug_output_last_backtrace_dump CLI command
+ * Dumps an async-signal-safe binary stacktrace file. The companion
+ * dump_crash_stacktrace_readable() should be called right after to also write a
+ * human-readable version (the binary dump alone cannot be symbolicated from a
+ * different process once ASLR has relocated the binary).
  */
 void dump_crash_stacktrace ();
+
+/**
+ * Writes a human-readable, already-symbolicated stacktrace next to the binary
+ * dump. Not async-signal-safe (allocates), so it must be called only as a
+ * best-effort step *after* dump_crash_stacktrace() has already succeeded, while
+ * still in the address space of the crashing process.
+ */
+void dump_crash_stacktrace_readable ();
 
 /**
  * Generates the current stacktrace
@@ -18,19 +29,19 @@ void dump_crash_stacktrace ();
 std::string generate_stacktrace ();
 
 /**
- * Sets the directory that dump_crash_stacktrace() writes the crash dump into.
- * Must be called once during single-threaded startup, before the abort signal
- * handler can fire. When unset, the dump is written to the current working
- * directory (legacy behaviour). Used so crash dumps land on the persistent data
- * volume rather than an ephemeral container working directory.
+ * Sets the directory that the crash dumps are written into. Must be called once
+ * during single-threaded startup, before the abort signal handler can fire.
+ * When unset, the dumps are written to the current working directory (legacy
+ * behaviour). Used so crash dumps land on the persistent data volume rather than
+ * an ephemeral container working directory.
  */
 void set_crash_stacktrace_path (std::filesystem::path const & directory);
 
 /**
  * Scans known locations (the current working directory and the data path) for
- * crash stacktrace dump files written by dump_crash_stacktrace(), decodes them
- * and writes the resulting stacktraces to `out`. Returns the number of dumps
- * printed.
+ * crash stacktrace dumps and writes them to `out`, preferring the human-readable
+ * version and falling back to decoding the binary dump. Returns the number of
+ * crashes printed.
  *
  * @param include_archived also report previously archived dumps, not just the active one
  * @param archive_after rename each active dump aside after printing so it is reported exactly once

@@ -40,6 +40,9 @@ void nano_abort_signal_handler (int signum)
 	nano::dump_crash_stacktrace ();
 	nano::create_load_memory_address_files ();
 
+	// best-effort symbolicated dump, must come last (not async-signal-safe)
+	nano::dump_crash_stacktrace_readable ();
+
 	// re-raise signal to call the default handler and exit
 	raise (signum);
 }
