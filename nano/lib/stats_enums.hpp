@@ -199,6 +199,8 @@ enum class detail
 	close,
 	read,
 	oversize,
+	submitted,
+	ordered,
 
 	// processing queue
 	queue,

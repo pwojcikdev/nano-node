@@ -240,12 +240,16 @@ void topo_strategy::run_one_processing ()
 		return;
 	}
 
+	ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::ordered, ordered.size ());
+
 	// Tag each submitted block with `topology_index` so that the inspect callback can route it back to this strategy and advance the closed-loop cursor.
 	// Redundant (already-in-ledger) blocks were filtered out pre-fetch in
 	// run_one_blocks, so `ordered` is genuinely-new work; the inspect `old`
 	// path still covers the rare race where a block became old after fetch.
 	auto submitted = ctx.block_processor.add_many (ordered, nano::block_source::bootstrap, /* channel */ nullptr, /* last_callback */ {}, std::any{ query_source::topology_index });
 	debug_assert (submitted == ordered.size ()); // We wait for capacity before, so all should be submitted.
+
+	ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::submitted, submitted);
 }
 
 std::optional<nano::topo_key> topo_strategy::wait_position ()
