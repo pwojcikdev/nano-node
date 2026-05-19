@@ -8,6 +8,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -17,12 +18,9 @@
 #include <sstream>
 #include <vector>
 
-#if defined(__linux__)
-#include <unistd.h>
-#endif
-
 #ifndef _WIN32
 #include <dlfcn.h>
+#include <unistd.h>
 #include <unwind.h>
 #endif
 
@@ -317,19 +315,36 @@ _Unwind_Reason_Code unwind_collect (_Unwind_Context * context, void * arg)
 }
 #endif
 
+namespace
+{
+void write_stderr (std::string const & text)
+{
+#ifdef _WIN32
+	std::fwrite (text.data (), 1, text.size (), stderr);
+	std::fflush (stderr);
+#else
+	for (std::size_t offset = 0; offset < text.size ();)
+	{
+		auto written = ::write (STDERR_FILENO, text.data () + offset, text.size () - offset);
+		if (written <= 0)
+		{
+			break;
+		}
+		offset += static_cast<std::size_t> (written);
+	}
+#endif
+}
+}
+
 void nano::dump_crash_stacktrace_readable ()
 {
 	// Best-effort. Runs after the async-safe binary dump, in the crashing
 	// process. Not async-signal-safe, but we are aborting anyway and the binary
 	// dump has already succeeded, so a failure here loses nothing.
-	std::ofstream ofs (crash_readable_path, std::ios::out | std::ios::trunc);
-	if (!ofs.is_open ())
-	{
-		return;
-	}
+	std::ostringstream trace;
 
 #ifdef _WIN32
-	ofs << boost::stacktrace::stacktrace ();
+	trace << boost::stacktrace::stacktrace ();
 #else
 	// boost::stacktrace's libbacktrace backend stops at the signal trampoline,
 	// hiding the actual crash site. _Unwind_Backtrace (the unwinder C++
@@ -353,30 +368,42 @@ void nano::dump_crash_stacktrace_readable ()
 			continue;
 		}
 
-		ofs << ' ' << index << "# ";
+		trace << ' ' << index << "# ";
 		if (!name.empty ())
 		{
-			ofs << name;
+			trace << name;
 		}
 		else
 		{
-			std::stringstream address;
-			address << "0x" << std::uppercase << std::hex << raw;
-			ofs << address.str ();
+			trace << "0x" << std::uppercase << std::hex << raw << std::nouppercase << std::dec;
 		}
 
 		if (auto source_file = frame.source_file (); !source_file.empty ())
 		{
-			ofs << " at " << source_file << ':' << frame.source_line ();
+			trace << " at " << source_file << ':' << frame.source_line ();
 		}
 		else if (Dl_info info; dladdr (capture.frames[i], &info) != 0 && info.dli_fname != nullptr)
 		{
-			ofs << " in " << info.dli_fname;
+			trace << " in " << info.dli_fname;
 		}
-		ofs << '\n';
+		trace << '\n';
 		++index;
 	}
 #endif
+
+	auto text = trace.str ();
+
+	// Emit to stderr immediately so the crash is visible in the container log
+	// (e.g. `docker logs`) at crash time, not only on the next startup scan.
+	write_stderr ("==== Crash stacktrace (caught fatal signal) ====\n" + text + "==== End of crash stacktrace ====\n");
+
+	// Also persist it (plain, no markers) so the next-startup scan can reprint
+	// it and so it survives if stderr was not captured.
+	std::ofstream ofs (crash_readable_path, std::ios::out | std::ios::trunc);
+	if (ofs.is_open ())
+	{
+		ofs << text;
+	}
 }
 
 std::string nano::generate_stacktrace ()
