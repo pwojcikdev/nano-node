@@ -38,6 +38,14 @@ std::string generate_stacktrace ();
 void set_crash_stacktrace_path (std::filesystem::path const & directory);
 
 /**
+ * Async-signal-safe accessor for the directory configured via
+ * set_crash_stacktrace_path(). Returns an empty string when unset (legacy
+ * current-working-directory behaviour). Used by the load-address dump writer so
+ * those files land next to the binary dump on the persistent data volume.
+ */
+char const * crash_stacktrace_directory ();
+
+/**
  * Scans known locations (the current working directory and the data path) for
  * crash stacktrace dumps and writes them to `out`, preferring the human-readable
  * version and falling back to decoding the binary dump. Returns the number of

@@ -1,4 +1,5 @@
 #include <nano/lib/files.hpp>
+#include <nano/lib/stacktrace.hpp>
 #include <nano/lib/utility.hpp>
 
 #include <cstring>
@@ -16,11 +17,21 @@ int create_load_memory_address_file (dl_phdr_info * info, size_t, void *)
 {
 	static int counter = 0;
 	debug_assert (counter <= 99);
-	// Create filename
+	// Create filename. Written into the configured crash directory (the
+	// persistent data volume) when set, so the files survive a container
+	// restart alongside the dump; otherwise the legacy working directory.
 	char const file_prefix[] = "nano_node_crash_load_address_dump_";
-	// Holds the filename prefix, a unique (max 2 digits) number and extension (null terminator is included in file_prefix size)
-	char filename[sizeof (file_prefix) + 2 + 4];
-	snprintf (filename, sizeof (filename), "%s%d.txt", file_prefix, counter);
+	char const * directory = nano::crash_stacktrace_directory ();
+	// Holds an optional directory, the filename prefix, a unique (max 2 digits) number and extension
+	char filename[4096 + sizeof (file_prefix) + 2 + 4 + 1];
+	if (directory[0] != '\0')
+	{
+		snprintf (filename, sizeof (filename), "%s/%s%d.txt", directory, file_prefix, counter);
+	}
+	else
+	{
+		snprintf (filename, sizeof (filename), "%s%d.txt", file_prefix, counter);
+	}
 
 	// Open file
 	auto const file_descriptor = ::open (filename, O_CREAT | O_WRONLY | O_TRUNC,

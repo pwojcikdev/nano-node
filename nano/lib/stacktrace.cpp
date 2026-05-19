@@ -1,9 +1,14 @@
 #include <nano/boost/stacktrace.hpp>
 #include <nano/lib/stacktrace.hpp>
 
+#include <boost/dll/runtime_symbol_info.hpp>
+#include <boost/system/error_code.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <map>
@@ -12,10 +17,20 @@
 #include <sstream>
 #include <vector>
 
+#if defined(__linux__)
+#include <unistd.h>
+#endif
+
+#ifndef _WIN32
+#include <dlfcn.h>
+#include <unwind.h>
+#endif
+
 namespace
 {
 constexpr char const * backtrace_binary_filename = "nano_node_backtrace.dump";
 constexpr char const * backtrace_readable_filename = "nano_node_backtrace.txt";
+constexpr char const * load_address_prefix = "nano_node_crash_load_address_dump_";
 
 // Async-signal-safe storage for the crash dump paths. These are fixed buffers
 // written once during single-threaded startup and only ever read (never
@@ -23,6 +38,7 @@ constexpr char const * backtrace_readable_filename = "nano_node_backtrace.txt";
 constexpr std::size_t crash_path_max = 4096;
 char crash_binary_path[crash_path_max] = "nano_node_backtrace.dump";
 char crash_readable_path[crash_path_max] = "nano_node_backtrace.txt";
+char crash_directory[crash_path_max] = "";
 
 void store_path (char (&buffer)[crash_path_max], std::filesystem::path const & path)
 {
@@ -48,6 +64,219 @@ bool all_digits (std::string const & value)
 	return !value.empty () && std::all_of (value.begin (), value.end (), [] (unsigned char c) { return std::isdigit (c) != 0; });
 }
 
+// Parse a whole token as a hexadecimal number. The entire token must be
+// consumed, so frame indices like "0#" are rejected while "0x000064A2..." is
+// accepted.
+bool parse_hex (std::string const & token, std::uint64_t & out)
+{
+	if (token.empty ())
+	{
+		return false;
+	}
+	std::size_t pos = 0;
+	try
+	{
+		out = std::stoull (token, &pos, 16);
+	}
+	catch (...)
+	{
+		return false;
+	}
+	return pos == token.size ();
+}
+
+std::string shell_single_quote (std::string const & value)
+{
+	std::string result = "'";
+	for (char c : value)
+	{
+		if (c == '\'')
+		{
+			result += "'\\''";
+		}
+		else
+		{
+			result += c;
+		}
+	}
+	result += "'";
+	return result;
+}
+
+#if defined(__linux__)
+// Best-effort reconstruction of a symbolicated stacktrace from a binary dump
+// produced by a previous (now exited) process, using the recorded load-address
+// files and addr2line. This is the "advanced ceremony" that copes with ASLR;
+// returns false if it cannot be done (no load-address files, addr2line missing,
+// nothing resolvable) so the caller can fall back to raw addresses.
+bool symbolicate_binary_dump (std::filesystem::path const & dump_path, std::ostream & out)
+{
+	std::ifstream ifs (dump_path, std::ios::binary);
+	if (!ifs.is_open ())
+	{
+		return false;
+	}
+	boost::stacktrace::stacktrace st = boost::stacktrace::stacktrace::from_dump (ifs);
+	ifs.close ();
+	if (st.empty ())
+	{
+		return false;
+	}
+
+	// The load-address files are written next to the dump (legacy runs put them in the cwd)
+	std::vector<std::filesystem::path> candidate_dirs;
+	candidate_dirs.push_back (dump_path.parent_path ().empty () ? std::filesystem::path (".") : dump_path.parent_path ());
+	std::error_code cwd_ec;
+	if (auto cwd = std::filesystem::current_path (cwd_ec); !cwd_ec)
+	{
+		candidate_dirs.push_back (cwd);
+	}
+
+	std::filesystem::path base_dir;
+	for (auto const & dir : candidate_dirs)
+	{
+		std::error_code ec;
+		if (std::filesystem::exists (dir / (std::string (load_address_prefix) + "0.txt"), ec))
+		{
+			base_dir = dir;
+			break;
+		}
+	}
+	if (base_dir.empty ())
+	{
+		return false;
+	}
+
+	boost::system::error_code dll_ec;
+	auto executable = boost::dll::program_location (dll_ec);
+	if (dll_ec)
+	{
+		return false;
+	}
+
+	struct base_entry
+	{
+		std::uint64_t address;
+		std::string library;
+	};
+	std::vector<base_entry> bases;
+
+	// File 0 holds a single line: the load address of the executable itself
+	{
+		std::ifstream file (base_dir / (std::string (load_address_prefix) + "0.txt"));
+		std::string line;
+		std::uint64_t address;
+		if (std::getline (file, line) && parse_hex (line, address))
+		{
+			bases.push_back ({ address, executable.string () });
+		}
+	}
+	// Subsequent files hold two lines: the shared library path and its load address
+	for (int num = 1;; ++num)
+	{
+		auto path = base_dir / (std::string (load_address_prefix) + std::to_string (num) + ".txt");
+		std::error_code ec;
+		if (!std::filesystem::exists (path, ec))
+		{
+			break;
+		}
+		std::ifstream file (path);
+		std::string library;
+		std::string address_line;
+		std::getline (file, library);
+		std::getline (file, address_line);
+		std::uint64_t address;
+		if (parse_hex (address_line, address))
+		{
+			bases.push_back ({ address, library });
+		}
+	}
+	if (bases.empty ())
+	{
+		return false;
+	}
+	std::sort (bases.begin (), bases.end (), [] (auto const & a, auto const & b) { return a.address < b.address; });
+
+	// Extract the raw addresses from the (non-symbolicated) stacktrace text
+	std::vector<std::uint64_t> addresses;
+	{
+		std::stringstream ss;
+		ss << st;
+		std::string line;
+		while (std::getline (ss, line))
+		{
+			std::istringstream iss (line);
+			std::string token;
+			while (iss >> token)
+			{
+				std::uint64_t address;
+				if (parse_hex (token, address))
+				{
+					addresses.push_back (address);
+					break;
+				}
+			}
+		}
+	}
+	if (addresses.empty ())
+	{
+		return false;
+	}
+
+	// Capture addr2line output via a temporary file
+	auto temp = std::filesystem::temp_directory_path () / ("nano_node_addr2line_" + std::to_string (::getpid ()) + ".txt");
+	std::error_code rm_ec;
+	std::filesystem::remove (temp, rm_ec);
+
+	int successes = 0;
+	auto run_addr2line = [&] (bool relative) {
+		for (auto address : addresses)
+		{
+			for (auto it = bases.rbegin (); it != bases.rend (); ++it)
+			{
+				if (address > it->address)
+				{
+					auto target = relative ? address - it->address : address;
+					std::stringstream hex;
+					hex << std::hex << target;
+					auto command = "addr2line -fCi " + hex.str () + " -e " + shell_single_quote (it->library) + " >> " + shell_single_quote (temp.string ()) + " 2>/dev/null";
+					if (std::system (command.c_str ()) == 0)
+					{
+						++successes;
+					}
+					break;
+				}
+			}
+		}
+	};
+
+	run_addr2line (false);
+	{
+		std::ofstream separator (temp, std::ios::app);
+		separator << "\nUsing relative addresses:\n";
+	}
+	run_addr2line (true);
+
+	if (successes == 0)
+	{
+		// addr2line is not installed or produced nothing useful
+		std::filesystem::remove (temp, rm_ec);
+		return false;
+	}
+
+	std::ifstream result (temp);
+	out << result.rdbuf ();
+	result.close ();
+	std::filesystem::remove (temp, rm_ec);
+	return true;
+}
+#else
+bool symbolicate_binary_dump (std::filesystem::path const &, std::ostream &)
+{
+	return false;
+}
+#endif
+
 // A crash produces a readable (.txt) and a binary (.dump) file sharing a suffix:
 // "" for the active crash, ".<unix-timestamp>" once archived.
 struct crash_group
@@ -62,17 +291,92 @@ void nano::dump_crash_stacktrace ()
 	boost::stacktrace::safe_dump_to (crash_binary_path);
 }
 
+#ifndef _WIN32
+namespace
+{
+struct unwind_capture
+{
+	static constexpr int max_frames = 256;
+	void * frames[max_frames];
+	int count = 0;
+};
+
+_Unwind_Reason_Code unwind_collect (_Unwind_Context * context, void * arg)
+{
+	auto * capture = static_cast<unwind_capture *> (arg);
+	if (capture->count >= unwind_capture::max_frames)
+	{
+		return _URC_END_OF_STACK;
+	}
+	if (auto ip = _Unwind_GetIP (context); ip != 0)
+	{
+		capture->frames[capture->count++] = reinterpret_cast<void *> (ip);
+	}
+	return _URC_NO_REASON;
+}
+}
+#endif
+
 void nano::dump_crash_stacktrace_readable ()
 {
 	// Best-effort. Runs after the async-safe binary dump, in the crashing
-	// process, so the stacktrace is symbolicated against the correct (current)
-	// load addresses. Not async-signal-safe, but we are aborting anyway and the
-	// binary dump has already succeeded, so a failure here loses nothing.
+	// process. Not async-signal-safe, but we are aborting anyway and the binary
+	// dump has already succeeded, so a failure here loses nothing.
 	std::ofstream ofs (crash_readable_path, std::ios::out | std::ios::trunc);
-	if (ofs.is_open ())
+	if (!ofs.is_open ())
 	{
-		ofs << boost::stacktrace::stacktrace ();
+		return;
 	}
+
+#ifdef _WIN32
+	ofs << boost::stacktrace::stacktrace ();
+#else
+	// boost::stacktrace's libbacktrace backend stops at the signal trampoline,
+	// hiding the actual crash site. _Unwind_Backtrace (the unwinder C++
+	// exceptions use) steps through the signal frame into the crashing code; we
+	// then symbolicate each frame with boost::stacktrace::frame (libbacktrace).
+	unwind_capture capture;
+	_Unwind_Backtrace (&unwind_collect, &capture);
+
+	int index = 0;
+	for (int i = 0; i < capture.count; ++i)
+	{
+		// Return addresses point just past the call; step back one byte (except
+		// the innermost frame) so file/line map to the call site.
+		auto raw = reinterpret_cast<std::uintptr_t> (capture.frames[i]);
+		boost::stacktrace::frame frame (reinterpret_cast<void *> (i == 0 ? raw : raw - 1));
+
+		auto name = frame.name ();
+		// Drop this helper itself so the trace starts at the crash handler/site
+		if (index == 0 && name.find ("dump_crash_stacktrace_readable") != std::string::npos)
+		{
+			continue;
+		}
+
+		ofs << ' ' << index << "# ";
+		if (!name.empty ())
+		{
+			ofs << name;
+		}
+		else
+		{
+			std::stringstream address;
+			address << "0x" << std::uppercase << std::hex << raw;
+			ofs << address.str ();
+		}
+
+		if (auto source_file = frame.source_file (); !source_file.empty ())
+		{
+			ofs << " at " << source_file << ':' << frame.source_line ();
+		}
+		else if (Dl_info info; dladdr (capture.frames[i], &info) != 0 && info.dli_fname != nullptr)
+		{
+			ofs << " in " << info.dli_fname;
+		}
+		ofs << '\n';
+		++index;
+	}
+#endif
 }
 
 std::string nano::generate_stacktrace ()
@@ -87,6 +391,12 @@ void nano::set_crash_stacktrace_path (std::filesystem::path const & directory)
 {
 	store_path (crash_binary_path, directory / backtrace_binary_filename);
 	store_path (crash_readable_path, directory / backtrace_readable_filename);
+	store_path (crash_directory, directory);
+}
+
+char const * nano::crash_stacktrace_directory ()
+{
+	return crash_directory;
 }
 
 std::size_t nano::output_stacktrace_dumps (std::filesystem::path const & data_path, std::ostream & out, bool include_archived, bool archive_after)
@@ -188,20 +498,35 @@ std::size_t nano::output_stacktrace_dumps (std::filesystem::path const & data_pa
 			}
 		}
 
-		// Fall back to decoding the binary dump (raw addresses if produced by another process)
+		// Otherwise reconstruct from the binary dump: first try the advanced
+		// addr2line + load-address ceremony, then fall back to raw addresses
 		if (!emitted && !group.binary.empty ())
 		{
-			std::ifstream ifs (group.binary, std::ios::binary);
-			if (ifs.is_open ())
+			std::ostringstream body;
+			bool resolved = symbolicate_binary_dump (group.binary, body);
+			if (!resolved)
 			{
-				boost::stacktrace::stacktrace st = boost::stacktrace::stacktrace::from_dump (ifs);
-				if (!st.empty ())
+				std::ifstream ifs (group.binary, std::ios::binary);
+				if (ifs.is_open ())
 				{
-					out << "==== Crash stacktrace dump: " << group.binary.string () << " ====\n"
-						<< st
-						<< "==== End of crash stacktrace dump ====" << std::endl;
-					emitted = true;
+					boost::stacktrace::stacktrace st = boost::stacktrace::stacktrace::from_dump (ifs);
+					if (!st.empty ())
+					{
+						body << st;
+						resolved = true;
+					}
 				}
+			}
+			if (resolved && !body.str ().empty ())
+			{
+				out << "==== Crash stacktrace dump: " << group.binary.string () << " ====\n"
+					<< body.str ();
+				if (body.str ().back () != '\n')
+				{
+					out << '\n';
+				}
+				out << "==== End of crash stacktrace dump ====" << std::endl;
+				emitted = true;
 			}
 		}
 
