@@ -152,14 +152,6 @@ void topo_strategy::run_blocks ()
 
 void topo_strategy::run_one_blocks ()
 {
-	auto const min_version = ctx.network_constants.topo_bootstrap_protocol_version_min;
-	auto channel = ctx.wait_channel ([min_version] (std::shared_ptr<nano::transport::channel> const & channel) {
-		return channel->get_network_version () >= min_version;
-	});
-	if (!channel)
-	{
-		return;
-	}
 	auto hashes = wait_block_batch ();
 	if (hashes.empty ())
 	{
@@ -202,6 +194,16 @@ void topo_strategy::run_one_blocks ()
 	}
 
 	if (to_fetch.empty ())
+	{
+		return;
+	}
+
+	auto const min_version = ctx.network_constants.topo_bootstrap_protocol_version_min;
+	// auto channel = ctx.wait_channel ([min_version] (std::shared_ptr<nano::transport::channel> const & channel) {
+	// return channel->get_network_version () >= min_version;
+	// });
+	auto channel = wait_topo_index_channel ();
+	if (!channel)
 	{
 		return;
 	}
