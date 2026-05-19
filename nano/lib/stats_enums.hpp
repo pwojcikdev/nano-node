@@ -96,6 +96,7 @@ enum class type
 	bootstrap_account_sets,
 	bootstrap_frontier_scan,
 	bootstrap_topo,
+	bootstrap_topo_inspect,
 	bootstrap_timeout,
 	bootstrap_server,
 	bootstrap_server_request,
@@ -292,6 +293,8 @@ enum class detail
 	frontier_confirmation_failed,
 	error_socket_close,
 	topo_indexes,
+	process_blocks,
+	process_topo,
 
 	// vote result
 	vote,

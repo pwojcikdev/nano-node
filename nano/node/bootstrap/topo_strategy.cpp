@@ -58,6 +58,8 @@ void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_
 
 	auto const & hash = context.block->hash ();
 
+	ctx.stats.inc (nano::stat::type::bootstrap_topo_inspect, to_stat_detail (status));
+
 	switch (status)
 	{
 		case nano::block_status::progress:
@@ -189,8 +191,8 @@ void topo_strategy::run_one_blocks ()
 		for (auto const & [hash, topo_height] : redundant)
 		{
 			ctx.topology.mark_redundant (hash, topo_height);
-			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::redundant);
 		}
+		ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::redundant, redundant.size ());
 	}
 
 	if (to_fetch.empty ())
@@ -417,9 +419,8 @@ bool topo_strategy::process (nano::messages::asc_pull_ack::topo_index_payload co
 		case verify_result::ok:
 		{
 			ctx.stats.inc (nano::stat::type::bootstrap_verify_topo, nano::stat::detail::ok);
-			ctx.stats.add (nano::stat::type::bootstrap, nano::stat::detail::topo_index, nano::stat::dir::in, response.entries.size ());
-
-			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::process);
+			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::process_topo);
+			ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::topo_index, response.entries.size ());
 
 			bool advanced = ctx.topology.process (payload.cursor, response.entries);
 			if (advanced)
@@ -449,7 +450,8 @@ bool topo_strategy::process_blocks (nano::messages::asc_pull_ack::blocks_payload
 	debug_assert (tag.source == query_source::topology_blocks);
 
 	ctx.stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::blocks);
-	ctx.stats.add (nano::stat::type::bootstrap, nano::stat::detail::blocks, nano::stat::dir::in, response.blocks.size ());
+	ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::process_blocks);
+	ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::blocks, response.blocks.size ());
 
 	for (auto const & block : response.blocks)
 	{
