@@ -297,7 +297,7 @@ std::deque<std::shared_ptr<nano::block>> topo_strategy::wait_ordered_blocks ()
 
 std::shared_ptr<nano::transport::channel> topo_strategy::wait_topo_index_channel ()
 {
-	return ctx.wait_channel ([] (std::shared_ptr<nano::transport::channel> const & channel) {
+	return ctx.wait_channel (strategy::topology, [] (std::shared_ptr<nano::transport::channel> const & channel) {
 		return channel->get_flags ().test (nano::node_capabilities::topo_index);
 	});
 }

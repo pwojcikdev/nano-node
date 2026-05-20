@@ -36,6 +36,15 @@ enum class query_source
 	topology_blocks,
 };
 
+enum class strategy
+{
+	priority,
+	database,
+	dependency,
+	frontier,
+	topology,
+};
+
 nano::stat::detail to_stat_detail (query_type);
 nano::stat::detail to_stat_detail (query_source);
 

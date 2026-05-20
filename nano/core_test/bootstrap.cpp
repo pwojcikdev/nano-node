@@ -430,7 +430,7 @@ TEST (bootstrap, reset)
 	config.optimistic_scheduler->enable = false;
 	config.hinted_scheduler->enable = false;
 	// Add request limits to slow down bootstrap
-	config.bootstrap->rate_limit = 30;
+	config.bootstrap->priority_rate_limit = 30;
 
 	// Start server node
 	auto & node_server = *system.add_node (config);

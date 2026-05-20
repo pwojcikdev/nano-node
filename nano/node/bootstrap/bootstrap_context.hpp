@@ -108,8 +108,8 @@ public:
 
 	/* Ensure there is enough space in block_processor for queuing new blocks */
 	void wait_block_processor () const;
-	/* Waits for a channel that is not full, optionally restricted to channels accepted by `filter` */
-	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::peer_scoring::channel_filter const & filter = nullptr);
+	/* Waits for a channel that is not full, optionally restricted to channels accepted by `filter`. Applies the per-strategy rate limiter. */
+	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy, nano::bootstrap::peer_scoring::channel_filter const & filter = nullptr);
 
 	bool request (nano::account, size_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool send (std::shared_ptr<nano::transport::channel> const &, nano::messages::asc_pull_req && message, async_tag tag);
@@ -186,13 +186,12 @@ public: // Shared state
 	// clang-format on
 	ordered_tags tags;
 
-	// Rate limiter for all types of requests
-	nano::rate_limiter limiter;
-	// Requests for accounts from database have much lower hitrate and could introduce strain on the network
-	// A separate (lower) limiter ensures that we always reserve resources for querying accounts from priority queue
+	// Per-strategy rate limiters
+	nano::rate_limiter priority_limiter;
 	nano::rate_limiter database_limiter;
-	// Rate limiter for frontier requests
-	nano::rate_limiter frontiers_limiter;
+	nano::rate_limiter dependency_limiter;
+	nano::rate_limiter frontier_limiter;
+	nano::rate_limiter topology_limiter;
 
 	bool stopped{ false };
 	mutable nano::mutex mutex;

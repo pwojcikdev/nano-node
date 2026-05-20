@@ -39,7 +39,7 @@ void priority_strategy::run ()
 void priority_strategy::run_one ()
 {
 	ctx.wait_block_processor ();
-	auto channel = ctx.wait_channel ();
+	auto channel = ctx.wait_channel (strategy::priority);
 	if (!channel)
 	{
 		return;

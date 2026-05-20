@@ -53,9 +53,11 @@ nano::ledger_notifications & ledger_notifications_a, nano::block_processor & blo
 	topology{ config.topo_scan },
 	throttle{ compute_throttle_size () },
 	scoring{ config, node_config_a.network_params.network },
-	limiter{ config.rate_limit },
+	priority_limiter{ config.priority_rate_limit },
 	database_limiter{ config.database_rate_limit },
-	frontiers_limiter{ config.frontier_rate_limit },
+	dependency_limiter{ config.dependency_rate_limit },
+	frontier_limiter{ config.frontier_rate_limit },
+	topology_limiter{ config.topology_rate_limit },
 	workers{ 1, nano::thread_role::name::bootstrap_worker }
 {
 	// Inspect all processed blocks
@@ -233,16 +235,38 @@ void bootstrap_context::wait_block_processor () const
 	});
 }
 
-std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::peer_scoring::channel_filter const & filter)
+std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::strategy strategy_a, nano::bootstrap::peer_scoring::channel_filter const & filter)
 {
+	nano::rate_limiter * strategy_limiter_ptr = nullptr;
+	switch (strategy_a)
+	{
+		case strategy::priority:
+			strategy_limiter_ptr = &priority_limiter;
+			break;
+		case strategy::database:
+			strategy_limiter_ptr = &database_limiter;
+			break;
+		case strategy::dependency:
+			strategy_limiter_ptr = &dependency_limiter;
+			break;
+		case strategy::frontier:
+			strategy_limiter_ptr = &frontier_limiter;
+			break;
+		case strategy::topology:
+			strategy_limiter_ptr = &topology_limiter;
+			break;
+	}
+	release_assert (strategy_limiter_ptr != nullptr);
+	auto & strategy_limiter = *strategy_limiter_ptr;
+
 	// Limit the number of in-flight requests
 	wait ([this] () {
 		return tags.size () < config.max_requests;
 	});
 
-	// Wait until more requests can be sent
-	wait ([this] () {
-		return limiter.should_pass (1);
+	// Wait until more requests can be sent (per-strategy rate limit)
+	wait ([&strategy_limiter] () {
+		return strategy_limiter.should_pass (1);
 	});
 
 	// Wait until a channel is available
@@ -782,9 +806,11 @@ nano::container_info bootstrap_context::container_info () const
 
 	auto collect_limiters = [this] () {
 		nano::container_info info;
-		info.put ("total", limiter.size ());
+		info.put ("priority", priority_limiter.size ());
 		info.put ("database", database_limiter.size ());
-		info.put ("frontiers", frontiers_limiter.size ());
+		info.put ("dependency", dependency_limiter.size ());
+		info.put ("frontier", frontier_limiter.size ());
+		info.put ("topology", topology_limiter.size ());
 		return info;
 	};
 
