@@ -22,7 +22,7 @@ namespace nano::bootstrap
 class peer_scoring
 {
 public:
-	static nano::transport::traffic_type constexpr traffic_type = nano::transport::traffic_type::bootstrap_requests;
+	static nano::transport::traffic_type constexpr traffic_type = nano::transport::traffic_type::bootstrap;
 
 	using channel_filter = std::function<bool (std::shared_ptr<nano::transport::channel> const &)>;
 
