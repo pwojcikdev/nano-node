@@ -46,25 +46,25 @@ public:
 public:
 	unsigned consideration_count{ 4 };
 	std::size_t candidates{ 1000 };
-	std::chrono::milliseconds cooldown{ 1000 * 3 };
-	std::chrono::milliseconds block_retry{ 1000 * 5 };
+	std::chrono::milliseconds cooldown{ 3s };
+	std::chrono::milliseconds block_retry{ 5s };
 	std::size_t block_batch_size{ 128 };
-	std::size_t max_blocks_outstanding{ 10000 };
-	std::size_t max_blocks_queued{ 40000 };
+	std::size_t max_blocks_outstanding{ 10'000 };
+	std::size_t max_blocks_queued{ 40'000 };
 	// If the queue has outstanding work but nothing drains for this long, the
 	// discovery state is considered poisoned (unprocessable blocks, gaps left by
 	// dropped submissions, ...) and the pipeline is rewound. Acts as a fail-safe
 	// when the verify / dedup / backpressure safeguards don't prevent the stall.
-	std::chrono::milliseconds poisoning_timeout{ 1000 * 60 };
+	std::chrono::milliseconds poisoning_timeout{ 60s };
 	// Escalating-rollback step. When a poisoning reset clears the queue but the
 	// retry from `indexed` still makes no progress (gap below the anchor), the
 	// indexed cursor is rewound by this many topo-heights, doubling on every
 	// further unproductive reset until a workable position is found. Reset to
 	// `rollback_min` once a reset cycle drains at least one block.
-	uint64_t rollback_min{ 1024 };
+	uint64_t rollback_min{ 1000 };
 	// Upper bound on the doubling so the step can't overflow; once the rewind
 	// distance reaches/exceeds the indexed height the cursor lands at genesis.
-	uint64_t rollback_max{ 4 * 1024 * 1024 };
+	uint64_t rollback_max{ 4'000'000 };
 };
 
 class bootstrap_config final
