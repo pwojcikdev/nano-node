@@ -502,6 +502,7 @@ nano::container_info topo_scan_index::container_info () const
 		nano::container_info info;
 		info.put ("cursor", head.cursor.topo_height);
 		info.put ("indexed", indexed.topo_height);
+		info.put ("delta", head.cursor.topo_height > indexed.topo_height ? head.cursor.topo_height - indexed.topo_height : 0);
 		return info;
 	};
 
