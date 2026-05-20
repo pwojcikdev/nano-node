@@ -77,8 +77,8 @@ public:
 	// Wait until there is enough space in block_processor for new blocks
 	void wait_block_processor () const;
 
-	// Waits for a channel that is not full
-	std::shared_ptr<nano::transport::channel> wait_channel ();
+	// Waits for a channel that is not full. Applies the per-strategy rate limiter.
+	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy);
 
 	bool send (std::shared_ptr<nano::transport::channel> const &, query_descriptor query, query_source source);
 
@@ -153,13 +153,11 @@ public: // Shared state
 	// clang-format on
 	ordered_tags tags;
 
-	// Rate limiter for all types of requests
-	nano::rate_limiter limiter;
-	// Requests for accounts from database have much lower hitrate and could introduce strain on the network
-	// A separate (lower) limiter ensures that we always reserve resources for querying accounts from priority queue
+	// Per-strategy rate limiters
+	nano::rate_limiter priority_limiter;
 	nano::rate_limiter database_limiter;
-	// Rate limiter for frontier requests
-	nano::rate_limiter frontiers_limiter;
+	nano::rate_limiter dependency_limiter;
+	nano::rate_limiter frontier_limiter;
 
 	bool stopped{ false };
 	mutable nano::mutex mutex;
