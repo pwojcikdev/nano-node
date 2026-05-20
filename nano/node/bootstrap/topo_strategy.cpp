@@ -58,8 +58,6 @@ void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_
 
 	auto const & hash = context.block->hash ();
 
-	ctx.stats.inc (nano::stat::type::bootstrap_topo_inspect, to_stat_detail (status));
-
 	switch (status)
 	{
 		case nano::block_status::progress:

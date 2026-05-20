@@ -36,6 +36,6 @@ enum class query_source
 	topology_blocks,
 };
 
-nano::stat::detail to_stat_detail (nano::bootstrap::query_type);
-nano::stat::detail to_stat_detail (nano::bootstrap::query_source);
+nano::stat::detail to_stat_detail (query_type);
+nano::stat::detail to_stat_detail (query_source);
 }

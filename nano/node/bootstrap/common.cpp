@@ -4,7 +4,6 @@
 
 namespace nano::bootstrap
 {
-
 nano::stat::detail to_stat_detail (nano::bootstrap::query_type type)
 {
 	return nano::enum_convert<nano::stat::detail> (type);
@@ -14,5 +13,4 @@ nano::stat::detail to_stat_detail (nano::bootstrap::query_source source)
 {
 	return nano::enum_convert<nano::stat::detail> (source);
 }
-
 }
