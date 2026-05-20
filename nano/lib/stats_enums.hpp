@@ -792,7 +792,7 @@ template <>
 struct magic_enum::customize::enum_range<nano::stat::type>
 {
 	static constexpr int min = 0;
-	static constexpr int max = 128;
+	static constexpr int max = 256;
 };
 
 // Ensure that the enum_range is large enough to hold all values (including future ones)
