@@ -85,6 +85,7 @@ enum class type
 	bootstrap_verify,
 	bootstrap_verify_blocks,
 	bootstrap_verify_frontiers,
+	bootstrap_wait_channel,
 	bootstrap_process,
 	bootstrap_request,
 	bootstrap_request_ec,
@@ -559,6 +560,8 @@ enum class detail
 	processing_frontiers,
 	frontiers_dropped,
 	sync_accounts,
+	dependency,
+	frontier,
 
 	prioritize,
 	prioritize_failed,

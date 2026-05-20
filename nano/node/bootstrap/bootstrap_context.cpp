@@ -49,9 +49,10 @@ nano::ledger_notifications & ledger_notifications_a, nano::block_processor & blo
 	frontiers{ config.frontier_scan, stats },
 	throttle{ compute_throttle_size () },
 	scoring{ config, node_config_a.network_params.network },
-	limiter{ config.rate_limit },
+	priority_limiter{ config.priority_rate_limit },
 	database_limiter{ config.database_rate_limit },
-	frontiers_limiter{ config.frontier_rate_limit },
+	dependency_limiter{ config.dependency_rate_limit },
+	frontier_limiter{ config.frontier_rate_limit },
 	workers{ 1, nano::thread_role::name::bootstrap_worker }
 {
 	// Inspect all processed blocks
@@ -222,22 +223,41 @@ void bootstrap_context::wait_block_processor () const
 	});
 }
 
-std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel ()
+std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::strategy strat)
 {
+	auto & strategy_limiter = [this, strat] () -> nano::rate_limiter & {
+		switch (strat)
+		{
+			case strategy::priority:
+				return priority_limiter;
+			case strategy::database:
+				return database_limiter;
+			case strategy::dependency:
+				return dependency_limiter;
+			case strategy::frontier:
+				return frontier_limiter;
+		}
+		release_assert (false);
+	}();
+
 	// Limit the number of in-flight requests
 	wait ([this] () {
 		return tags.size () < config.max_requests;
 	});
 
-	// Wait until more requests can be sent
-	wait ([this] () {
-		return limiter.should_pass (1);
+	// Wait until more requests can be sent (per-strategy rate limit)
+	wait ([&strategy_limiter] () {
+		return strategy_limiter.should_pass (1);
 	});
 
 	// Wait until a channel is available
 	std::shared_ptr<nano::transport::channel> channel;
-	wait ([this, &channel] () {
+	wait ([this, &channel, strat] () {
 		channel = scoring.channel ();
+		if (!channel)
+		{
+			stats.inc (nano::stat::type::bootstrap_wait_channel, to_stat_detail (strat));
+		}
 		return channel != nullptr; // Wait until a channel is available
 	});
 	return channel;
@@ -697,9 +717,10 @@ nano::container_info bootstrap_context::container_info () const
 
 	auto collect_limiters = [this] () {
 		nano::container_info info;
-		info.put ("total", limiter.size ());
+		info.put ("priority", priority_limiter.size ());
 		info.put ("database", database_limiter.size ());
-		info.put ("frontiers", frontiers_limiter.size ());
+		info.put ("dependency", dependency_limiter.size ());
+		info.put ("frontier", frontier_limiter.size ());
 		return info;
 	};
 
