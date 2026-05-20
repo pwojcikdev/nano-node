@@ -556,6 +556,11 @@ void bootstrap_context::run_cleanup ()
 	{
 		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_cleanup);
 		cleanup ();
+
+		lock.unlock ();
+		condition.notify_all (); // Notify strategies that are waiting for cleanup to make progress
+		lock.lock ();
+
 		condition.wait_for (lock, nano::is_dev_run () ? 500ms : 5s, [this] () { return stopped; });
 	}
 }
