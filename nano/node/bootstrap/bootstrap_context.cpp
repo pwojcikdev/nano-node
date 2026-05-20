@@ -639,7 +639,10 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::blocks_payload co
 				blocks.pop_front ();
 			}
 
-			block_processor.add_many (blocks, nano::block_source::bootstrap, nullptr, [this, account = tag.account] (auto result) {
+			block_processor.add_many (
+			blocks,
+			nano::block_source::bootstrap, nullptr,
+			/* last_callback */ [this, account = tag.account] (auto result) {
 				// It's the last block submitted for this account chain, reset timestamp to allow more requests
 				stats.inc (nano::stat::type::bootstrap, nano::stat::detail::timestamp_reset);
 				{
@@ -647,7 +650,8 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::blocks_payload co
 					accounts.timestamp_reset (account);
 				}
 				condition.notify_all ();
-			});
+			},
+			/* tag */ std::any{ tag.source });
 
 			if (tag.source == query_source::database)
 			{

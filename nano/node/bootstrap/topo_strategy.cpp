@@ -248,7 +248,10 @@ void topo_strategy::run_one_processing ()
 	// Redundant (already-in-ledger) blocks were filtered out pre-fetch in
 	// run_one_blocks, so `ordered` is genuinely-new work; the inspect `old`
 	// path still covers the rare race where a block became old after fetch.
-	auto submitted = ctx.block_processor.add_many (ordered, nano::block_source::bootstrap, /* channel */ nullptr, /* last_callback */ {}, std::any{ query_source::topology_index });
+	auto submitted = ctx.block_processor.add_many (ordered,
+	nano::block_source::bootstrap, nullptr,
+	/* last_callback */ {},
+	/* tag */ std::any{ query_source::topology_index });
 	debug_assert (submitted == ordered.size ()); // We wait for capacity before, so all should be submitted.
 
 	ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::submitted, submitted);
