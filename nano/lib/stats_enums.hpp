@@ -86,6 +86,7 @@ enum class type
 	bootstrap_verify_blocks,
 	bootstrap_verify_frontiers,
 	bootstrap_verify_topo,
+	bootstrap_inspect,
 	bootstrap_process,
 	bootstrap_request,
 	bootstrap_request_ec,

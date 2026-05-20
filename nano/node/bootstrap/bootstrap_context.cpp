@@ -378,6 +378,12 @@ void bootstrap_context::inspect (secure::transaction const & txn, nano::block_st
 	auto const & source = context.source;
 	auto const & hash = block.hash ();
 
+	// Track statistics for blocks processed from the bootstrap pipeline so we can evaluate the effectiveness
+	if (context.source == nano::block_source::bootstrap)
+	{
+		stats.inc (nano::stat::type::bootstrap_inspect, to_stat_detail (result));
+	}
+
 	switch (result)
 	{
 		case nano::block_status::progress:
