@@ -477,6 +477,7 @@ void bootstrap_context::inspect (secure::transaction const & txn, nano::block_st
 	{
 		stats.inc (nano::stat::type::bootstrap_inspect, to_stat_detail (result));
 		stats.inc (nano::stat::type::bootstrap_inspect_source, to_stat_detail (tag_source));
+		stats.inc (to_inspect_stat_type (tag_source), to_stat_detail (result));
 	}
 }
 

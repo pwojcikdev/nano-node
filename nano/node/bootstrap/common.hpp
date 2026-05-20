@@ -38,4 +38,6 @@ enum class query_source
 
 nano::stat::detail to_stat_detail (query_type);
 nano::stat::detail to_stat_detail (query_source);
+
+nano::stat::type to_inspect_stat_type (query_source);
 }
