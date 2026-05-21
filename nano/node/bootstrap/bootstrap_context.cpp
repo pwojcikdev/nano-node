@@ -211,7 +211,7 @@ bool bootstrap_context::send (std::shared_ptr<nano::transport::channel> const & 
 	}
 	else
 	{
-		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::request_failed);
+		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::request_dropped);
 	}
 
 	return sent;
@@ -266,8 +266,12 @@ std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano:
 
 	// Wait until a channel is available
 	std::shared_ptr<nano::transport::channel> channel;
-	wait ([this, &channel, &filter] () {
+	wait ([this, &channel, &filter, strat] () {
 		channel = scoring.channel (filter);
+		if (!channel)
+		{
+			stats.inc (nano::stat::type::bootstrap_wait_channel, to_stat_detail (strat));
+		}
 		return channel != nullptr; // Wait until a channel is available
 	});
 	return channel;

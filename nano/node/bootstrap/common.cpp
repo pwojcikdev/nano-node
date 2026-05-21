@@ -14,6 +14,11 @@ nano::stat::detail to_stat_detail (nano::bootstrap::query_source source)
 	return nano::enum_convert<nano::stat::detail> (source);
 }
 
+nano::stat::detail to_stat_detail (nano::bootstrap::strategy strat)
+{
+	return nano::enum_convert<nano::stat::detail> (strat);
+}
+
 nano::stat::type to_inspect_stat_type (nano::bootstrap::query_source source)
 {
 	switch (source)
