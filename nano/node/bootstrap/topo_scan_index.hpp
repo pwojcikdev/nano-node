@@ -190,7 +190,7 @@ private:
 	// cleared on every reset. A stall with this still false means no peer
 	// delivered anything — a connectivity outage, not a poisoned anchor — so
 	// `check_poisoning` must not rewind `indexed`.
-	bool fetched_since_reset{ false };
+	uint64_t fetched_since_reset{ false };
 
 	// Escalating-rollback step (topo-heights): `config.rollback_min`, doubled
 	// (capped at `config.rollback_max`) per unproductive stall, reset to the

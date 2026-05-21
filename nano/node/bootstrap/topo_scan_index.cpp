@@ -155,7 +155,7 @@ void topo_scan_index::block_received (nano::block_hash const & hash, std::shared
 	{
 		// A peer actually delivered a block: this cycle has network reach, so a
 		// later stall (if any) is a real anchor problem, not an outage.
-		fetched_since_reset = true;
+		fetched_since_reset++;
 
 		// A tardy peer delivery must not backtrack a block past `received`.
 		if (it->state == block_state::submitted || it->state == block_state::received || it->state == block_state::redundant)
@@ -304,7 +304,7 @@ void topo_scan_index::reset_discovery ()
 	received_count = 0;
 	submitted_count = 0;
 	redundant_count = 0;
-	fetched_since_reset = false;
+	fetched_since_reset = 0;
 	// Baseline for the next cycle's progress check (post-rewind, if any).
 	indexed_at_reset = indexed;
 }
@@ -316,7 +316,7 @@ void topo_scan_index::reset ()
 	indexed_at_reset = {};
 	drained_at = std::chrono::steady_clock::now ();
 	rollback_distance = config.rollback_min;
-	fetched_since_reset = false;
+	fetched_since_reset = 0;
 	blocks.clear ();
 	pending_count = 0;
 	in_flight_count = 0;
@@ -516,7 +516,7 @@ nano::container_info topo_scan_index::container_info () const
 	info.put ("indexing_done", head.done ? std::size_t{ 1 } : std::size_t{ 0 });
 	info.put ("candidates", head.candidates.size ());
 	info.put ("rollback_distance", rollback_distance);
-	info.put ("fetched_since_reset", fetched_since_reset ? std::size_t{ 1 } : std::size_t{ 0 });
+	info.put ("fetched_since_reset", fetched_since_reset);
 	info.add ("cursors", collect_cursors ());
 	return info;
 }
