@@ -90,9 +90,9 @@ public:
 	std::size_t rate_limit{ 500 };
 	std::size_t priority_rate_limit{ 500 };
 	std::size_t database_rate_limit{ 250 };
-	std::size_t dependency_rate_limit{ 250 };
+	std::size_t dependency_rate_limit{ 500 };
 	std::size_t frontier_rate_limit{ 15 };
-	std::size_t topology_rate_limit{ 50 };
+	std::size_t topology_rate_limit{ 500 };
 
 	std::size_t database_warmup_ratio{ 10 };
 	std::size_t max_pull_count{ nano::bootstrap_server::max_blocks };
