@@ -235,29 +235,24 @@ void bootstrap_context::wait_block_processor () const
 	});
 }
 
-std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::strategy strategy_a, nano::bootstrap::peer_scoring::channel_filter const & filter)
+std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::strategy strat, nano::bootstrap::peer_scoring::channel_filter const & filter)
 {
-	nano::rate_limiter * strategy_limiter_ptr = nullptr;
-	switch (strategy_a)
-	{
-		case strategy::priority:
-			strategy_limiter_ptr = &priority_limiter;
-			break;
-		case strategy::database:
-			strategy_limiter_ptr = &database_limiter;
-			break;
-		case strategy::dependency:
-			strategy_limiter_ptr = &dependency_limiter;
-			break;
-		case strategy::frontier:
-			strategy_limiter_ptr = &frontier_limiter;
-			break;
-		case strategy::topology:
-			strategy_limiter_ptr = &topology_limiter;
-			break;
-	}
-	release_assert (strategy_limiter_ptr != nullptr);
-	auto & strategy_limiter = *strategy_limiter_ptr;
+	auto & strategy_limiter = [this, strat] () -> nano::rate_limiter & {
+		switch (strat)
+		{
+			case strategy::priority:
+				return priority_limiter;
+			case strategy::database:
+				return database_limiter;
+			case strategy::dependency:
+				return dependency_limiter;
+			case strategy::frontier:
+				return frontier_limiter;
+			case strategy::topology:
+				return topology_limiter;
+		}
+		release_assert (false);
+	}();
 
 	// Limit the number of in-flight requests
 	wait ([this] () {
