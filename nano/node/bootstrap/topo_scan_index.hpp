@@ -47,18 +47,22 @@ namespace nano::bootstrap
  *   only via the in-order prefix drain in `next_ordered_blocks`, so it never
  *   skips past unconfirmed work (a gap).
  *
- * Stall recovery (`check_poisoning`): if the queue is non-empty but nothing
- *   has drained for `poisoning_timeout`, recover. A stall where no block was
- *   ever fetched this cycle is a connectivity problem (unreachable peers), not
- *   a bad anchor — it is a no-op (`cleanup` retries in-flight requests when
- *   the network returns; `indexed` is left untouched). Otherwise, if the cycle
- *   made genuine progress — a freshly-fetched block reached the ledger, or
- *   `indexed` advanced into never-before-seen territory — the anchor is good:
- *   clear the queue and retry from `indexed`. Merely re-confirming blocks a
- *   previous rewind walked back over does NOT count. If no real progress was
- *   made, the anchor sits past a gap the ledger can't bridge: rewind `indexed`
- *   by an exponentially growing distance so repeated stalls bisect back to a
- *   workable position.
+ * Stall recovery (`check_poisoning` / `poisoning_predicate`): the queue is
+ *   poisoned if it is non-empty AND either nothing has drained for
+ *   `poisoning_timeout` (a frozen queue), or the cycle has run that long with
+ *   gaps outnumbering confirmations (a gap-dominated queue — it keeps draining
+ *   via redundant prefixes / `old` re-confirms, so the drain heartbeat stays
+ *   warm, but every block we fetch gaps because the forward cursor sits over
+ *   holes below it). On a poisoned queue: a cycle where no block was ever
+ *   fetched is a connectivity outage (unreachable peers), not a bad anchor —
+ *   no-op (`cleanup` retries when the network returns; `indexed` untouched).
+ *   Else if the cycle was productive — confirmations kept up with gaps and we
+ *   inserted something, or `indexed` advanced into never-before-seen territory
+ *   — the anchor is good: clear the queue and retry from `indexed`. A gap-
+ *   dominated cycle is never productive, even if `indexed` crept forward over
+ *   already-known blocks. Otherwise the anchor sits past a gap the ledger can't
+ *   bridge: rewind `indexed` by an exponentially growing distance so repeated
+ *   stalls bisect back to a workable position.
  */
 class topo_scan_index
 {
@@ -137,14 +141,15 @@ public:
 	// Snapshots `indexed` as the cycle's progress baseline.
 	void reset_discovery ();
 
-	// Stall recovery. No-op unless the queue is non-empty and nothing has
-	// drained for `poisoning_timeout`. Then: if no block was fetched this cycle
-	// the stall is a connectivity problem — no-op (don't rewind a good anchor
-	// during an outage). Else if the cycle was productive (confirmations
-	// outnumbered gaps, or `indexed` advanced past its high-water baseline),
-	// gentle `reset_discovery` and re-arm the rollback step; otherwise rewind
-	// `indexed` by the rollback distance (doubled, capped at `rollback_max`)
-	// before resetting. Returns true if it rolled back. `now` injectable for tests.
+	// Stall recovery. No-op unless `poisoning_predicate` flags the queue as
+	// poisoned (frozen, or gap-dominated). Then: if no block was fetched this
+	// cycle the stall is a connectivity problem — no-op (don't rewind a good
+	// anchor during an outage). Else if the cycle was productive (confirmations
+	// kept up with gaps and we inserted something, or `indexed` advanced past
+	// its high-water baseline — but NOT if gaps dominated), gentle
+	// `reset_discovery` and re-arm the rollback step; otherwise rewind `indexed`
+	// by the rollback distance (doubled, capped at `rollback_max`) before
+	// resetting. Returns true if it rolled back. `now` injectable for tests.
 	bool check_poisoning (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	void reset ();
@@ -208,6 +213,13 @@ private:
 	// our queue, not on `mark_indexed`, so unrelated ledger activity can't mask
 	// a stalled queue.
 	std::chrono::steady_clock::time_point drained_at{ std::chrono::steady_clock::now () };
+
+	// Start of the current cycle (set on construction, `reset`, and each
+	// `check_poisoning` recovery — NOT refreshed by queue movement). The gap-
+	// dominance trigger in `poisoning_predicate` waits this long before judging,
+	// so a fresh cycle gets `poisoning_timeout` to prove itself before gaps can
+	// flag it.
+	std::chrono::steady_clock::time_point cycle_started_at{ std::chrono::steady_clock::now () };
 
 	// High-water mark of `indexed`, carried across cycles. A rewind lowers
 	// `indexed` but NOT this, so re-confirming the region a previous rewind
@@ -291,6 +303,13 @@ private:
 
 private:
 	void state_change (block_state old_state, block_state new_state);
+
+	// True when the queue is poisoned and `check_poisoning` should recover:
+	// non-empty AND either the drain heartbeat is stale (frozen queue) or the
+	// cycle has run a full `poisoning_timeout` with gaps outnumbering
+	// confirmations (gap-dominated — the heartbeat is warm but the forward
+	// cursor is parked over holes). Pure; `now` injectable for tests.
+	bool poisoning_predicate (std::chrono::steady_clock::time_point now) const;
 
 	// Rewind `indexed` back by `distance` topo-heights (clamped at genesis).
 	void rewind (uint64_t distance);

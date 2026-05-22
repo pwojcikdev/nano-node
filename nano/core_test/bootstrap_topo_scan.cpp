@@ -1578,6 +1578,49 @@ TEST (bootstrap_topo_scan, failure_dominated_cycle_escalates)
 	ASSERT_EQ (scan.cursor (), key (4900, 0)); // 5000 - 100, not preserved at 5000
 }
 
+// The live failure mode: a redundant prefix keeps draining (heartbeat warm, so
+// the frozen-queue trigger never fires) and even creeps `indexed` into new
+// territory, while every block we actually fetch gaps. The gap-dominance
+// trigger must still fire, and the recovery must escalate-rewind despite the
+// cursor creep — NOT take the gentle path.
+TEST (bootstrap_topo_scan, gap_dominated_fires_despite_warm_heartbeat)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 100;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now (); // ~= cycle_started_at
+
+	scan.mark_indexed (nano::block_hash{ 42 }, 5000);
+	scan.reset_discovery (); // baseline (5000, 42)
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (5001, 1), key (5002, 2), key (5003, 3), key (5004, 4) });
+	scan.next_blocks (10, t0);
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ 2 }, stub);
+	scan.block_received (nano::block_hash{ 3 }, stub);
+
+	// Two gaps, zero confirmations.
+	scan.block_failed (nano::block_hash{ 2 });
+	scan.note_failed ();
+	scan.block_failed (nano::block_hash{ 3 });
+	scan.note_failed ();
+
+	// A redundant block drains right before the check — keeps the heartbeat warm
+	// AND creeps `indexed` to 5001 (> baseline). Block 4 stays outstanding.
+	scan.mark_redundant (nano::block_hash{ 1 }, 5001);
+	scan.next_ordered_blocks (10, t0 + 1900ms); // drained_at = t0+1900ms, indexed = (5001,1)
+	ASSERT_GT (scan.count_outstanding (), 0u);
+
+	// At t0+2s the heartbeat is warm (frozen path won't fire), but the cycle has
+	// run > timeout with gaps (2) > confirmations (0) → gap-dominance fires, and
+	// the cursor creep does NOT earn a gentle reset → escalate-rewind.
+	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+	ASSERT_EQ (scan.cursor (), key (4901, 0)); // 5001 - rollback_min, NOT preserved at 5001
+}
+
 // The mirror: when confirmations outnumber gaps the cycle is productive →
 // gentle reset (cursor preserved, escalation re-armed), not a rewind.
 TEST (bootstrap_topo_scan, progress_dominated_cycle_is_gentle)

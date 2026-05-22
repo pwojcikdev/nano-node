@@ -228,16 +228,11 @@ std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_ordered_blocks (s
 
 void topo_scan_index::block_done (nano::block_hash const & hash, std::chrono::steady_clock::time_point now)
 {
-	if (!erase_tracked (hash))
+	if (erase_tracked (hash))
 	{
-		// Untracked hash (e.g. a dropped/pre-reset submission). Not queue
-		// movement — must not refresh the heartbeat, or unrelated ledger
-		// activity would mask a stalled queue.
-		return;
+		// A tracked block left the queue: refresh the drain heartbeat.
+		drained_at = now;
 	}
-
-	// A tracked block left the queue: refresh the drain heartbeat.
-	drained_at = now;
 }
 
 void topo_scan_index::block_failed (nano::block_hash const & hash)
@@ -345,6 +340,7 @@ void topo_scan_index::reset ()
 	indexed = {};
 	indexed_at_reset = {};
 	drained_at = std::chrono::steady_clock::now ();
+	cycle_started_at = std::chrono::steady_clock::now ();
 	rollback_distance = config.rollback_min;
 	fetched_since_reset = 0;
 	progressed_since_reset = 0;
@@ -366,7 +362,7 @@ void topo_scan_index::rewind (uint64_t distance)
 	indexed = nano::topo_key{ target, nano::block_hash{ 0 } };
 }
 
-bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now)
+bool topo_scan_index::poisoning_predicate (std::chrono::steady_clock::time_point now) const
 {
 	// Nothing queued → nothing can be stuck.
 	if (count_outstanding () == 0)
@@ -374,40 +370,60 @@ bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now
 		return false;
 	}
 
-	// The queue drained recently → healthy, even if slow.
-	auto const since_drain = now - drained_at;
-	if (since_drain < config.poisoning_timeout)
+	// Frozen queue: nothing has drained for a full timeout. The original
+	// poisoning case — entries wedged in pending/in_flight, or a fetch that
+	// won't connect with no other queue movement.
+	if (now - drained_at >= config.poisoning_timeout)
+	{
+		return true;
+	}
+
+	// Gap-dominated queue: the queue IS draining (a redundant prefix or `old`
+	// re-confirms keep `drained_at` warm) but every block we actually fetch
+	// gaps. The drain heartbeat can't see this, so check it directly: once the
+	// cycle has run a full timeout and gaps outnumber confirmations, the forward
+	// cursor is parked over holes below it that it can never reach. The cycle
+	// age guard gives a fresh cycle `poisoning_timeout` to prove itself first.
+	if (now - cycle_started_at >= config.poisoning_timeout && failed_since_reset > progressed_since_reset)
+	{
+		return true;
+	}
+
+	return false;
+}
+
+bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now)
+{
+	if (!poisoning_predicate (now))
 	{
 		return false;
 	}
 
-	// Stuck. Was the cycle productive? Either confirmations outnumbered gaps
-	// (`progressed_since_reset > failed_since_reset` — a trickle of inserts amid
-	// mostly-gapping blocks does NOT qualify; the cursor is over holes it can't
-	// reach), or `indexed` advanced into never-before-seen territory
-	// (`indexed > indexed_at_reset` — the redundant drain catching up to our
-	// ledger's true extent). Merely re-confirming the region a previous rewind
-	// walked back over is neither: it only climbs `indexed` up to the preserved
-	// high-water baseline, which is what lets the escalation keep doubling toward
-	// a deep gap instead of resetting every cycle. If productive, the anchor is
-	// workable: clear the stuck tail, retry from `indexed`, re-arm the
-	// escalation. Non-destructive (no rewind), so taken regardless of connectivity.
-	//
-	// NOTE: this only takes effect once the body runs, i.e. after the drain
-	// heartbeat goes stale. A confirmation trickle faster than `poisoning_timeout`
-	// keeps `drained_at` warm (via `block_done`) and bypasses this entirely —
-	// that regime needs a failure-dominance trigger or targeted gap repair.
-	if (progressed_since_reset > failed_since_reset || indexed > indexed_at_reset)
+	// A cycle where gaps outnumber confirmations is poisoned regardless of how
+	// far the cursor crept: the blocks we fetch can't connect. This must be
+	// checked before the gentle path, or the redundant-drain cursor creep
+	// (`indexed > indexed_at_reset`) would mask a gap-dominated stall as progress.
+	bool const gap_dominated = failed_since_reset > progressed_since_reset;
+
+	// Productive cycle ⇒ gentle: confirmations kept up with gaps and we inserted
+	// something, or `indexed` advanced into never-before-seen territory (the
+	// redundant drain catching up to our ledger's true extent). Merely re-
+	// confirming the region a previous rewind walked back over is neither — it
+	// only climbs `indexed` up to the preserved high-water baseline. If
+	// productive, the anchor is workable: clear the stuck tail, retry from
+	// `indexed`, re-arm the escalation. Non-destructive (no rewind).
+	if (!gap_dominated && (progressed_since_reset > 0 || indexed > indexed_at_reset))
 	{
 		reset_discovery ();
 		rollback_distance = config.rollback_min;
 		drained_at = now;
+		cycle_started_at = now;
 		return true;
 	}
 
-	// No frontier progress. Rewinding `indexed` is destructive, so only do it
-	// with evidence the data itself is bad — we fetched blocks but they
-	// wouldn't connect. If no peer delivered anything this cycle the stall is a
+	// Not productive. Rewinding `indexed` is destructive, so only do it with
+	// evidence the data itself is bad — we fetched blocks but they wouldn't
+	// connect. If no peer delivered anything this cycle the stall is a
 	// connectivity outage: leave `indexed` alone (rewinding here would discard
 	// correct progress and keep doubling for the whole outage); `cleanup`
 	// retries the in-flight requests when the network returns.
@@ -422,6 +438,7 @@ bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now
 	rollback_distance = std::min (rollback_distance * 2, config.rollback_max);
 	reset_discovery ();
 	drained_at = now;
+	cycle_started_at = now;
 	return true;
 }
 
