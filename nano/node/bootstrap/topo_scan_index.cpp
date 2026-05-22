@@ -506,6 +506,13 @@ nano::container_info topo_scan_index::container_info () const
 		return info;
 	};
 
+	auto collect_rollback_info = [&] () {
+		nano::container_info info;
+		info.put ("fetched_since_reset", fetched_since_reset);
+		info.put ("rollback_distance", rollback_distance);
+		return info;
+	};
+
 	nano::container_info info;
 	info.put ("blocks", blocks.size ());
 	info.put ("blocks_pending", pending_count);
@@ -515,8 +522,7 @@ nano::container_info topo_scan_index::container_info () const
 	info.put ("blocks_redundant", redundant_count);
 	info.put ("indexing_done", head.done ? std::size_t{ 1 } : std::size_t{ 0 });
 	info.put ("candidates", head.candidates.size ());
-	info.put ("rollback_distance", rollback_distance);
-	info.put ("fetched_since_reset", fetched_since_reset);
+	info.add ("rollback", collect_rollback_info ());
 	info.add ("cursors", collect_cursors ());
 	return info;
 }
