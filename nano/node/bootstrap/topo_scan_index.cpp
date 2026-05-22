@@ -1,6 +1,8 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/node/bootstrap/topo_scan_index.hpp>
 
+#include <algorithm>
+
 namespace nano::bootstrap
 {
 topo_scan_index::topo_scan_index (nano::topo_scan_config const & config_a) :
@@ -238,6 +240,23 @@ void topo_scan_index::block_done (nano::block_hash const & hash, std::chrono::st
 	drained_at = now;
 }
 
+void topo_scan_index::block_failed (nano::block_hash const & hash)
+{
+	// A submitted block came back as a terminal non-progress result (gap / fork
+	// / bad signature). Free the slot so it stops counting toward backpressure,
+	// but deliberately do NOT touch `drained_at`: a gap is not forward progress,
+	// and refreshing the heartbeat here would prevent `check_poisoning` from
+	// ever detecting a gap-induced stall (discovery would just run to the end of
+	// the topology, gapping everything above the hole). A miss (untracked hash)
+	// is a no-op.
+	erase_tracked (hash);
+}
+
+void topo_scan_index::note_progress ()
+{
+	progressed_since_reset++;
+}
+
 void topo_scan_index::mark_indexed (nano::block_hash const & hash, uint64_t topo_height)
 {
 	debug_assert (topo_height > 0); // topo_height=0 is reserved for "not in topology"
@@ -305,8 +324,12 @@ void topo_scan_index::reset_discovery ()
 	submitted_count = 0;
 	redundant_count = 0;
 	fetched_since_reset = 0;
-	// Baseline for the next cycle's progress check (post-rewind, if any).
-	indexed_at_reset = indexed;
+	progressed_since_reset = 0;
+	// High-water baseline for the cycle's progress check. A rewind lowers
+	// `indexed` before this runs, but `std::max` keeps the baseline at the old
+	// frontier — so re-confirming the rewound-over region climbs `indexed` back
+	// up to (not past) the baseline and is correctly seen as non-progress.
+	indexed_at_reset = std::max (indexed_at_reset, indexed);
 }
 
 void topo_scan_index::reset ()
@@ -317,6 +340,7 @@ void topo_scan_index::reset ()
 	drained_at = std::chrono::steady_clock::now ();
 	rollback_distance = config.rollback_min;
 	fetched_since_reset = 0;
+	progressed_since_reset = 0;
 	blocks.clear ();
 	pending_count = 0;
 	in_flight_count = 0;
@@ -349,11 +373,17 @@ bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now
 		return false;
 	}
 
-	// Stuck. The frontier moved this cycle ⇒ the anchor is workable: clear the
-	// stuck tail and retry from the higher `indexed`, re-arming the escalation.
-	// This branch is non-destructive (no rewind), so it is taken regardless of
-	// connectivity.
-	if (indexed > indexed_at_reset)
+	// Stuck. Did the cycle make genuine forward progress? Either a freshly-
+	// fetched block reached the ledger (`progressed_since_reset`), or `indexed`
+	// advanced into never-before-seen territory (`indexed > indexed_at_reset` —
+	// the redundant drain catching up to our ledger's true extent). Merely re-
+	// confirming the region a previous rewind walked back over is NEITHER: it
+	// only climbs `indexed` up to the preserved high-water baseline, so it can't
+	// trip this — which is what lets the escalation keep doubling toward a deep
+	// gap instead of resetting every cycle. If progress was made the anchor is
+	// workable: clear the stuck tail, retry from `indexed`, re-arm the
+	// escalation. Non-destructive (no rewind), so taken regardless of connectivity.
+	if (progressed_since_reset || indexed > indexed_at_reset)
 	{
 		reset_discovery ();
 		rollback_distance = config.rollback_min;
@@ -506,9 +536,10 @@ nano::container_info topo_scan_index::container_info () const
 		return info;
 	};
 
-	auto collect_rollback_info = [&] () {
+	auto collect_counters = [&] () {
 		nano::container_info info;
 		info.put ("fetched_since_reset", fetched_since_reset);
+		info.put ("progressed_since_reset", progressed_since_reset);
 		info.put ("rollback_distance", rollback_distance);
 		return info;
 	};
@@ -522,7 +553,8 @@ nano::container_info topo_scan_index::container_info () const
 	info.put ("blocks_redundant", redundant_count);
 	info.put ("indexing_done", head.done ? std::size_t{ 1 } : std::size_t{ 0 });
 	info.put ("candidates", head.candidates.size ());
-	info.add ("rollback", collect_rollback_info ());
+
+	info.add ("counters", collect_counters ());
 	info.add ("cursors", collect_cursors ());
 	return info;
 }

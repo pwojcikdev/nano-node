@@ -69,6 +69,11 @@ void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_
 			debug_assert (topo_height > 0);
 
 			ctx.topology.mark_indexed (hash, topo_height);
+			// A freshly-fetched block reached the ledger: genuine forward
+			// progress. This (not merely the cursor advancing) re-arms the
+			// stall-recovery escalation, so re-confirming already-known blocks
+			// can never reset it.
+			ctx.topology.note_progress ();
 			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::indexed);
 		}
 		break;
@@ -89,7 +94,18 @@ void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_
 		}
 		break;
 		default:
-			break;
+		{
+			// Terminal non-progress result (gap_previous / gap_source / fork /
+			// bad_signature / ...). Evict the submitted entry so it stops holding
+			// backpressure. Without this the slot leaks: gapped blocks accumulate
+			// in `submitted` until the queue hits `max_blocks_queued`, discovery
+			// backpressures, and the whole pipeline stalls. Recovery from a
+			// genuine gap (the missing dependency sits below the forward-only
+			// cursor) is left to `check_poisoning`'s escalating rewind.
+			ctx.topology.block_failed (hash);
+			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::block_failed);
+		}
+		break;
 	}
 }
 

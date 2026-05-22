@@ -51,11 +51,14 @@ namespace nano::bootstrap
  *   has drained for `poisoning_timeout`, recover. A stall where no block was
  *   ever fetched this cycle is a connectivity problem (unreachable peers), not
  *   a bad anchor — it is a no-op (`cleanup` retries in-flight requests when
- *   the network returns; `indexed` is left untouched). Otherwise, if `indexed`
- *   advanced this cycle the anchor is good: clear the queue and retry from
- *   `indexed`. If it did not, the anchor sits past a gap the ledger can't
- *   bridge: rewind `indexed` by an exponentially growing distance so repeated
- *   stalls bisect back to a workable position.
+ *   the network returns; `indexed` is left untouched). Otherwise, if the cycle
+ *   made genuine progress — a freshly-fetched block reached the ledger, or
+ *   `indexed` advanced into never-before-seen territory — the anchor is good:
+ *   clear the queue and retry from `indexed`. Merely re-confirming blocks a
+ *   previous rewind walked back over does NOT count. If no real progress was
+ *   made, the anchor sits past a gap the ledger can't bridge: rewind `indexed`
+ *   by an exponentially growing distance so repeated stalls bisect back to a
+ *   workable position.
  */
 class topo_scan_index
 {
@@ -88,11 +91,28 @@ public:
 	// block as `old` evicts an entry without advancing `indexed`.
 	void block_done (nano::block_hash const & hash, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
+	// Evict a submitted block that came back as a terminal non-progress result
+	// (gap_previous / gap_source / fork / bad_signature / ...). Frees the queue
+	// slot so it stops holding backpressure. Unlike `block_done` this does NOT
+	// refresh the drain heartbeat: a gap is not forward progress, and masking it
+	// would stop `check_poisoning` from ever detecting a gap-induced stall.
+	// No-op if the hash isn't tracked.
+	void block_failed (nano::block_hash const & hash);
+
 	// --- Ledger feedback ---
 
 	// A block reached the ledger. Monotonically advances `indexed` to
 	// (topo_height, hash) when it strictly exceeds the current value.
 	void mark_indexed (nano::block_hash const & hash, uint64_t topo_height);
+
+	// Record that a freshly-fetched block was inserted into the ledger this
+	// cycle (the `progress` inspect result). This — not merely `indexed`
+	// advancing — is the authoritative "made forward progress" signal for
+	// `check_poisoning`. Re-confirming already-known blocks (the redundant
+	// drain, or `old` re-processing) advances `indexed` without fetching
+	// anything new and must NOT set this, or the rollback escalation resets
+	// every cycle and can never bisect down to a deep gap.
+	void note_progress ();
 
 	// Tag a queued entry as already in our ledger so it is never fetched. Only
 	// records the state + ledger topo_height; the cursor advance is deferred to
@@ -113,10 +133,12 @@ public:
 	// Stall recovery. No-op unless the queue is non-empty and nothing has
 	// drained for `poisoning_timeout`. Then: if no block was fetched this cycle
 	// the stall is a connectivity problem — no-op (don't rewind a good anchor
-	// during an outage). Else if `indexed` advanced this cycle, gentle
-	// `reset_discovery` and re-arm the rollback step; otherwise rewind
-	// `indexed` by the rollback distance (doubled, capped at `rollback_max`)
-	// before resetting. Returns true if it rolled back. `now` injectable for tests.
+	// during an outage). Else if the cycle made genuine progress (a freshly-
+	// fetched block reached the ledger, or `indexed` advanced past its
+	// high-water baseline), gentle `reset_discovery` and re-arm the rollback
+	// step; otherwise rewind `indexed` by the rollback distance (doubled, capped
+	// at `rollback_max`) before resetting. Returns true if it rolled back.
+	// `now` injectable for tests.
 	bool check_poisoning (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	void reset ();
@@ -181,9 +203,13 @@ private:
 	// a stalled queue.
 	std::chrono::steady_clock::time_point drained_at{ std::chrono::steady_clock::now () };
 
-	// `indexed` snapshot at the start of the current cycle. `check_poisoning`
-	// treats `indexed > indexed_at_reset` as real forward progress (re-chewing
-	// known blocks as `old` doesn't advance `indexed`, so it doesn't count).
+	// High-water mark of `indexed`, carried across cycles. A rewind lowers
+	// `indexed` but NOT this, so re-confirming the region a previous rewind
+	// walked back over only climbs `indexed` up to this baseline — it does not
+	// exceed it, and so is not mistaken for advancing into new territory.
+	// `check_poisoning` treats `indexed > indexed_at_reset` (genuinely new
+	// ground, e.g. the redundant drain catching up to our ledger's true extent)
+	// as progress, alongside `progressed_since_reset` (genuine new inserts).
 	nano::topo_key indexed_at_reset{};
 
 	// Set when a block is fetched from a peer (reaches `received`) this cycle;
@@ -191,6 +217,13 @@ private:
 	// delivered anything — a connectivity outage, not a poisoned anchor — so
 	// `check_poisoning` must not rewind `indexed`.
 	uint64_t fetched_since_reset{ false };
+
+	// Counts freshly-fetched blocks that reached the ledger (`progress`) this
+	// cycle; cleared on every reset. The authoritative forward-progress signal
+	// for `check_poisoning`: re-confirming already-known blocks (redundant drain
+	// or `old`) advances `indexed` but does not bump this, so a poisoned anchor
+	// keeps escalating its rewind instead of snapping back to `rollback_min`.
+	uint64_t progressed_since_reset{ false };
 
 	// Escalating-rollback step (topo-heights): `config.rollback_min`, doubled
 	// (capped at `config.rollback_max`) per unproductive stall, reset to the
@@ -203,7 +236,8 @@ private:
 		in_flight, // Request sent to a peer, awaiting response.
 		received, // Received from a peer, awaiting topological-order drain.
 		submitted, // Handed to the block processor, held until `block_done`
-		// confirms it (so backpressure accounts for in-flight processing).
+		// confirms it or `block_failed` evicts it on a terminal gap (so
+		// backpressure accounts for in-flight processing).
 		redundant, // Already in our ledger (pre-fetch check); never fetched.
 		// Cursor advance deferred to the in-order `next_ordered_blocks` drain.
 	};

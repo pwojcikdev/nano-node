@@ -1334,11 +1334,14 @@ TEST (bootstrap_topo_scan, advancing_cycle_is_gentle_and_rearms)
 		ASSERT_EQ (scan.cursor (), key (4900, 0));
 	}
 
-	// Next cycle queues work AND the frontier genuinely advances (a new block
-	// extends `indexed` past the cycle baseline of 4900).
+	// Next cycle queues work AND a freshly-fetched block reaches the ledger
+	// (note_progress) — genuine progress, even though 4950 is below the
+	// preserved high-water baseline (5000), so the cursor-advance signal alone
+	// wouldn't catch it.
 	auto pos = scan.next (t0 + 2s);
 	scan.process (*pos, std::deque<nano::topo_key>{ key (4901, 10), key (4902, 11) });
 	scan.mark_indexed (nano::block_hash{ 50 }, 4950);
+	scan.note_progress ();
 
 	// It then stalls again (the rest is stuck).
 	ASSERT_TRUE (scan.check_poisoning (t0 + 5s));
@@ -1356,8 +1359,9 @@ TEST (bootstrap_topo_scan, advancing_cycle_is_gentle_and_rearms)
 }
 
 // A stuck cycle that re-chews already-known blocks as `old` moves the queue
-// (block_done fires) but never advances `indexed`. That is not progress: the
-// escalation must keep doubling, not snap back to rollback_min.
+// (block_done fires) but inserts nothing fresh (no note_progress) and never
+// advances `indexed` past the baseline. That is not progress: the escalation
+// must keep doubling, not snap back to rollback_min.
 TEST (bootstrap_topo_scan, old_reprocessing_keeps_escalating)
 {
 	auto cfg = default_config ();
@@ -1435,4 +1439,100 @@ TEST (bootstrap_topo_scan, check_poisoning_rearms)
 	ASSERT_TRUE (scan.check_poisoning (t0 + 6s));
 	ASSERT_EQ (scan.cursor (), key (970, 0)); // 990 - 20
 	ASSERT_EQ (scan.count_outstanding (), 0);
+}
+
+// --- Fix B: re-confirmation after a rewind is not progress ---
+
+// The regression guard for the rollback-thrash bug. After a rewind, the re-walk
+// re-confirms the already-known region it walked back over: `indexed` climbs
+// back up, but only to the preserved high-water baseline, and no fresh block is
+// inserted. That must NOT count as progress — otherwise the escalation snaps
+// back to rollback_min every cycle and the rewind oscillates around the gap
+// forever instead of bisecting down to it.
+TEST (bootstrap_topo_scan, reconfirm_after_rewind_keeps_escalating)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 100;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	// Frontier reached 5000; a gap sits far below it (unreachable from here).
+	scan.mark_indexed (nano::block_hash{ 42 }, 5000);
+	scan.reset_discovery (); // high-water baseline = (5000, 42)
+
+	// Stall 1: discover above the frontier, fetch, but the chain won't connect.
+	// No progress → rewind by rollback_min (100): 5000 -> 4900, distance -> 200.
+	{
+		auto pos = scan.next (t0);
+		scan.process (*pos, std::deque<nano::topo_key>{ key (5001, 1) });
+		fetch_one (scan, 1, t0);
+		ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+		ASSERT_EQ (scan.cursor (), key (4900, 0));
+	}
+
+	// Re-walk: re-confirm an already-known block (mark_indexed WITHOUT
+	// note_progress models the redundant drain / `old` path). `indexed` climbs
+	// to 4950 — back up toward, but not past, the high-water baseline (5000).
+	auto pos = scan.next (t0 + 2s);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (4950, 2) });
+	scan.mark_indexed (nano::block_hash{ 2 }, 4950);
+	fetch_one (scan, 2, t0 + 2s); // peers reachable; still won't connect
+
+	// Stall 2: re-confirmation is not progress → escalate (rewind by the doubled
+	// 200), NOT a gentle reset that re-arms to rollback_min (which would rewind
+	// by only 100, leaving the cursor at 4850).
+	ASSERT_TRUE (scan.check_poisoning (t0 + 4s));
+	ASSERT_EQ (scan.cursor (), key (4750, 0)); // 4950 - 200
+}
+
+// --- Fix A: terminal gaps are evicted (no submitted leak) ---
+
+// A submitted block that comes back as a gap must be evicted by `block_failed`
+// so it stops holding backpressure — but, unlike `block_done`, it must NOT
+// refresh the drain heartbeat (a gap is not progress; the stall clock keeps
+// running so recovery can still fire).
+TEST (bootstrap_topo_scan, block_failed_evicts_without_refreshing_heartbeat)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	// Queue three, fetch and submit two; the third stays pending.
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (1, 100), key (2, 200), key (3, 300) });
+	scan.next_blocks (10, t0);
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ 100 }, stub);
+	scan.block_received (nano::block_hash{ 200 }, stub);
+	scan.next_ordered_blocks (10, t0); // 100, 200 -> submitted
+	ASSERT_EQ (scan.count_submitted (), 2);
+
+	// A real drain refreshes the heartbeat...
+	scan.block_done (nano::block_hash{ 100 }, t0 + 500ms);
+	// ...but a gap eviction frees the slot WITHOUT refreshing it.
+	scan.block_failed (nano::block_hash{ 200 });
+	ASSERT_EQ (scan.count_submitted (), 0);
+	ASSERT_EQ (scan.count_outstanding (), 1); // only the still-pending 300 remains
+
+	// Heartbeat is still at the block_done time (t0+500ms), not bumped by
+	// block_failed: 900ms later is within the 1s window → no stall yet.
+	ASSERT_FALSE (scan.check_poisoning (t0 + 1400ms));
+	// Once the window since that last real drain elapses, the stall fires.
+	ASSERT_TRUE (scan.check_poisoning (t0 + 1600ms));
+}
+
+// `block_failed` on a hash we don't track is a no-op (e.g. a stale submission
+// evicted by a concurrent reset).
+TEST (bootstrap_topo_scan, block_failed_untracked_noop)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	scan.block_failed (nano::block_hash{ 777 });
+	ASSERT_EQ (scan.count_outstanding (), 0);
+	ASSERT_EQ (scan.cursor (), nano::topo_key{});
 }
