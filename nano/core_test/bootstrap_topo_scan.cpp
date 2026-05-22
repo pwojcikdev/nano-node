@@ -1536,3 +1536,79 @@ TEST (bootstrap_topo_scan, block_failed_untracked_noop)
 	ASSERT_EQ (scan.count_outstanding (), 0);
 	ASSERT_EQ (scan.cursor (), nano::topo_key{});
 }
+
+// A cycle that confirms a few blocks but gaps more (failed > progressed) is
+// unproductive: the stall escalates the rewind instead of taking the gentle
+// path that a single confirmation would otherwise trigger.
+TEST (bootstrap_topo_scan, failure_dominated_cycle_escalates)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 100;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	scan.mark_indexed (nano::block_hash{ 42 }, 5000);
+	scan.reset_discovery (); // high-water baseline = (5000, 42)
+
+	// Queue work above the frontier and fetch it (network reach).
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (5001, 1), key (5002, 2), key (5003, 3), key (5004, 4) });
+	scan.next_blocks (10, t0);
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ 1 }, stub);
+	scan.block_received (nano::block_hash{ 2 }, stub);
+	scan.block_received (nano::block_hash{ 3 }, stub);
+
+	// This cycle confirms one but gaps two: failed (2) > progressed (1). A gap
+	// evicts the entry (block_failed) AND records the gap (note_failed), matching
+	// the inspect call pattern. Block 4 stays outstanding so the queue is
+	// non-empty at the stall.
+	scan.note_progress ();
+	scan.block_failed (nano::block_hash{ 1 });
+	scan.note_failed ();
+	scan.block_failed (nano::block_hash{ 2 });
+	scan.note_failed ();
+	ASSERT_GT (scan.count_outstanding (), 0u);
+
+	// Stall: gaps dominated → NOT gentle (which would preserve the cursor);
+	// escalate-rewind by rollback_min instead.
+	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+	ASSERT_EQ (scan.cursor (), key (4900, 0)); // 5000 - 100, not preserved at 5000
+}
+
+// The mirror: when confirmations outnumber gaps the cycle is productive →
+// gentle reset (cursor preserved, escalation re-armed), not a rewind.
+TEST (bootstrap_topo_scan, progress_dominated_cycle_is_gentle)
+{
+	auto cfg = default_config ();
+	cfg.poisoning_timeout = 1s;
+	cfg.rollback_min = 100;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	auto const t0 = std::chrono::steady_clock::now ();
+
+	scan.mark_indexed (nano::block_hash{ 42 }, 5000);
+	scan.reset_discovery (); // high-water baseline = (5000, 42)
+
+	auto pos = scan.next (t0);
+	scan.process (*pos, std::deque<nano::topo_key>{ key (5001, 1), key (5002, 2) });
+	scan.next_blocks (10, t0);
+	std::shared_ptr<nano::block> stub;
+	scan.block_received (nano::block_hash{ 1 }, stub);
+
+	// Three confirmations, one gap: progressed (3) > failed (1). Block 2 stays
+	// outstanding so the queue is non-empty at the stall.
+	scan.note_progress ();
+	scan.note_progress ();
+	scan.note_progress ();
+	scan.block_failed (nano::block_hash{ 1 });
+	scan.note_failed ();
+	ASSERT_GT (scan.count_outstanding (), 0u);
+
+	// Stall: confirmations dominated → gentle, cursor preserved, queue cleared.
+	ASSERT_TRUE (scan.check_poisoning (t0 + 2s));
+	ASSERT_EQ (scan.cursor (), key (5000, 42)); // preserved, NOT rewound
+	ASSERT_EQ (scan.count_outstanding (), 0);
+}

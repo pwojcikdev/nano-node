@@ -93,15 +93,27 @@ void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_
 			}
 		}
 		break;
+		case nano::block_status::gap_previous:
+		case nano::block_status::gap_source:
+		case nano::block_status::gap_epoch_open_pending:
+		{
+			// A missing dependency below the forward-only cursor. Evict the
+			// submitted entry (so it stops holding backpressure — without this
+			// the slot leaks: gapped blocks accumulate in `submitted` until the
+			// queue hits `max_blocks_queued` and the pipeline stalls) AND record
+			// it as a gap. A cycle where gaps dominate confirmations tells
+			// `check_poisoning` the cursor is sitting over holes it can't reach,
+			// so it escalates the rewind instead of snapping back to rollback_min.
+			ctx.topology.block_failed (hash);
+			ctx.topology.note_failed ();
+			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::block_failed);
+		}
+		break;
 		default:
 		{
-			// Terminal non-progress result (gap_previous / gap_source / fork /
-			// bad_signature / ...). Evict the submitted entry so it stops holding
-			// backpressure. Without this the slot leaks: gapped blocks accumulate
-			// in `submitted` until the queue hits `max_blocks_queued`, discovery
-			// backpressures, and the whole pipeline stalls. Recovery from a
-			// genuine gap (the missing dependency sits below the forward-only
-			// cursor) is left to `check_poisoning`'s escalating rewind.
+			// Other terminal results (fork, bad_signature, ...): not a hole below
+			// us, just won't insert as-is. Evict the slot so it doesn't leak in
+			// `submitted`, but don't count it as a gap.
 			ctx.topology.block_failed (hash);
 			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::block_failed);
 		}

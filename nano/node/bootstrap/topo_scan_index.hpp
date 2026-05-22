@@ -114,6 +114,13 @@ public:
 	// every cycle and can never bisect down to a deep gap.
 	void note_progress ();
 
+	// Record that a fetched block came back as a gap (missing dependency below
+	// the forward cursor). Counted against `note_progress` by `check_poisoning`:
+	// a cycle where gaps dominate confirmations is unproductive. Called only on
+	// gap results — NOT on forks/bad signatures (bad blocks, not holes below us)
+	// and NOT inside `block_failed` (which evicts every terminal result).
+	void note_failed ();
+
 	// Tag a queued entry as already in our ledger so it is never fetched. Only
 	// records the state + ledger topo_height; the cursor advance is deferred to
 	// `next_ordered_blocks` (in topological order), so this is safe to call in
@@ -133,12 +140,11 @@ public:
 	// Stall recovery. No-op unless the queue is non-empty and nothing has
 	// drained for `poisoning_timeout`. Then: if no block was fetched this cycle
 	// the stall is a connectivity problem — no-op (don't rewind a good anchor
-	// during an outage). Else if the cycle made genuine progress (a freshly-
-	// fetched block reached the ledger, or `indexed` advanced past its
-	// high-water baseline), gentle `reset_discovery` and re-arm the rollback
-	// step; otherwise rewind `indexed` by the rollback distance (doubled, capped
-	// at `rollback_max`) before resetting. Returns true if it rolled back.
-	// `now` injectable for tests.
+	// during an outage). Else if the cycle was productive (confirmations
+	// outnumbered gaps, or `indexed` advanced past its high-water baseline),
+	// gentle `reset_discovery` and re-arm the rollback step; otherwise rewind
+	// `indexed` by the rollback distance (doubled, capped at `rollback_max`)
+	// before resetting. Returns true if it rolled back. `now` injectable for tests.
 	bool check_poisoning (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	void reset ();
@@ -219,11 +225,19 @@ private:
 	uint64_t fetched_since_reset{ false };
 
 	// Counts freshly-fetched blocks that reached the ledger (`progress`) this
-	// cycle; cleared on every reset. The authoritative forward-progress signal
-	// for `check_poisoning`: re-confirming already-known blocks (redundant drain
-	// or `old`) advances `indexed` but does not bump this, so a poisoned anchor
-	// keeps escalating its rewind instead of snapping back to `rollback_min`.
+	// cycle; cleared on every reset. Compared against `failed_since_reset` by
+	// `check_poisoning`: the cycle counts as productive only when confirmations
+	// outnumber gaps. Re-confirming already-known blocks (redundant drain or
+	// `old`) advances `indexed` but does NOT bump this.
 	uint64_t progressed_since_reset{ false };
+
+	// Counts gap results (missing dependency below the cursor) seen this cycle,
+	// bumped by `note_failed`; cleared on every reset. When gaps outnumber
+	// confirmations (`failed_since_reset > progressed_since_reset`) the forward
+	// cursor is sitting over holes it can't reach, so a stall escalates the
+	// rewind rather than snapping back to `rollback_min`. Forks/bad signatures
+	// are evicted (`block_failed`) but not counted here — they aren't holes.
+	uint64_t failed_since_reset{ false };
 
 	// Escalating-rollback step (topo-heights): `config.rollback_min`, doubled
 	// (capped at `config.rollback_max`) per unproductive stall, reset to the

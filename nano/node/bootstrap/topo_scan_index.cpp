@@ -248,13 +248,19 @@ void topo_scan_index::block_failed (nano::block_hash const & hash)
 	// and refreshing the heartbeat here would prevent `check_poisoning` from
 	// ever detecting a gap-induced stall (discovery would just run to the end of
 	// the topology, gapping everything above the hole). A miss (untracked hash)
-	// is a no-op.
+	// is a no-op. Gap accounting is separate (`note_failed`): this evicts every
+	// terminal result, gap or not.
 	erase_tracked (hash);
 }
 
 void topo_scan_index::note_progress ()
 {
 	progressed_since_reset++;
+}
+
+void topo_scan_index::note_failed ()
+{
+	failed_since_reset++;
 }
 
 void topo_scan_index::mark_indexed (nano::block_hash const & hash, uint64_t topo_height)
@@ -325,6 +331,7 @@ void topo_scan_index::reset_discovery ()
 	redundant_count = 0;
 	fetched_since_reset = 0;
 	progressed_since_reset = 0;
+	failed_since_reset = 0;
 	// High-water baseline for the cycle's progress check. A rewind lowers
 	// `indexed` before this runs, but `std::max` keeps the baseline at the old
 	// frontier — so re-confirming the rewound-over region climbs `indexed` back
@@ -341,6 +348,7 @@ void topo_scan_index::reset ()
 	rollback_distance = config.rollback_min;
 	fetched_since_reset = 0;
 	progressed_since_reset = 0;
+	failed_since_reset = 0;
 	blocks.clear ();
 	pending_count = 0;
 	in_flight_count = 0;
@@ -373,17 +381,23 @@ bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now
 		return false;
 	}
 
-	// Stuck. Did the cycle make genuine forward progress? Either a freshly-
-	// fetched block reached the ledger (`progressed_since_reset`), or `indexed`
-	// advanced into never-before-seen territory (`indexed > indexed_at_reset` —
-	// the redundant drain catching up to our ledger's true extent). Merely re-
-	// confirming the region a previous rewind walked back over is NEITHER: it
-	// only climbs `indexed` up to the preserved high-water baseline, so it can't
-	// trip this — which is what lets the escalation keep doubling toward a deep
-	// gap instead of resetting every cycle. If progress was made the anchor is
+	// Stuck. Was the cycle productive? Either confirmations outnumbered gaps
+	// (`progressed_since_reset > failed_since_reset` — a trickle of inserts amid
+	// mostly-gapping blocks does NOT qualify; the cursor is over holes it can't
+	// reach), or `indexed` advanced into never-before-seen territory
+	// (`indexed > indexed_at_reset` — the redundant drain catching up to our
+	// ledger's true extent). Merely re-confirming the region a previous rewind
+	// walked back over is neither: it only climbs `indexed` up to the preserved
+	// high-water baseline, which is what lets the escalation keep doubling toward
+	// a deep gap instead of resetting every cycle. If productive, the anchor is
 	// workable: clear the stuck tail, retry from `indexed`, re-arm the
 	// escalation. Non-destructive (no rewind), so taken regardless of connectivity.
-	if (progressed_since_reset || indexed > indexed_at_reset)
+	//
+	// NOTE: this only takes effect once the body runs, i.e. after the drain
+	// heartbeat goes stale. A confirmation trickle faster than `poisoning_timeout`
+	// keeps `drained_at` warm (via `block_done`) and bypasses this entirely —
+	// that regime needs a failure-dominance trigger or targeted gap repair.
+	if (progressed_since_reset > failed_since_reset || indexed > indexed_at_reset)
 	{
 		reset_discovery ();
 		rollback_distance = config.rollback_min;
@@ -540,6 +554,7 @@ nano::container_info topo_scan_index::container_info () const
 		nano::container_info info;
 		info.put ("fetched_since_reset", fetched_since_reset);
 		info.put ("progressed_since_reset", progressed_since_reset);
+		info.put ("failed_since_reset", failed_since_reset);
 		info.put ("rollback_distance", rollback_distance);
 		return info;
 	};
