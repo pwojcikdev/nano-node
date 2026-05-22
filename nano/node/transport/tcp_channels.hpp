@@ -6,6 +6,7 @@
 #include <nano/node/endpoint.hpp>
 #include <nano/node/endpoint_templ.hpp>
 #include <nano/node/transport/channel.hpp>
+#include <nano/node/transport/common.hpp>
 #include <nano/node/transport/fwd.hpp>
 #include <nano/node/transport/tcp_channel.hpp>
 #include <nano/node/transport/transport.hpp>
@@ -62,7 +63,7 @@ public:
 	std::optional<nano::messages::keepalive> sample_keepalive ();
 
 	// Connection start
-	bool start_tcp (nano::endpoint const &);
+	bool start_tcp (nano::endpoint const &, nano::transport::connect_callback callback = {});
 
 	std::deque<std::shared_ptr<tcp_socket>> all_sockets () const;
 	std::deque<std::shared_ptr<tcp_server>> all_servers () const;
