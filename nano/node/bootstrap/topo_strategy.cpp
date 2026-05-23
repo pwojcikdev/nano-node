@@ -254,7 +254,7 @@ void topo_strategy::run_one_processing ()
 	// Tag each block with `topology_index` so the inspect callback routes the
 	// result back to the topo scan.
 	auto submitted = ctx.block_processor.add_many (ordered,
-	nano::block_source::bootstrap, nullptr,
+	nano::block_source::bootstrap, ctx.block_processor_channel (strategy::topology),
 	/* last_callback */ {},
 	/* tag */ std::any{ query_source::topology_index });
 	debug_assert (submitted == ordered.size ()); // We wait for capacity first, so all should be submitted.

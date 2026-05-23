@@ -16,6 +16,7 @@
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/transport/formatting.hpp>
+#include <nano/node/transport/null_channel.hpp>
 #include <nano/node/transport/transport.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/ledger.hpp>
@@ -27,7 +28,7 @@ using namespace std::chrono_literals;
 
 namespace nano::bootstrap
 {
-bootstrap_context::bootstrap_context (nano::node_config const & node_config_a, nano::ledger & ledger_a,
+bootstrap_context::bootstrap_context (nano::node_config const & node_config_a, nano::node & node_a, nano::ledger & ledger_a,
 nano::ledger_notifications & ledger_notifications_a, nano::block_processor & block_processor_a, nano::network & network_a, nano::stats & stat_a, nano::logger & logger_a) :
 	config{ *node_config_a.bootstrap },
 	network_constants{ node_config_a.network_params.network },
@@ -58,6 +59,9 @@ nano::ledger_notifications & ledger_notifications_a, nano::block_processor & blo
 	dependency_limiter{ config.dependency_rate_limit },
 	frontier_limiter{ config.frontier_rate_limit },
 	topology_limiter{ config.topology_rate_limit },
+	priority_channel{ std::make_shared<nano::transport::null_channel> (node_a) },
+	database_channel{ std::make_shared<nano::transport::null_channel> (node_a) },
+	topology_channel{ std::make_shared<nano::transport::null_channel> (node_a) },
 	workers{ 1, nano::thread_role::name::bootstrap_worker }
 {
 	// Inspect all processed blocks
@@ -230,14 +234,34 @@ void bootstrap_context::wait (std::function<bool ()> const & predicate) const
 
 void bootstrap_context::wait_block_processor (nano::bootstrap::strategy strat, std::size_t threshold) const
 {
+	auto const & channel = block_processor_channel (strat);
 	wait ([&] () {
-		bool should_pass = block_processor.size (nano::block_source::bootstrap) < threshold;
+		// Gate on this strategy's own fair-queue bucket, not the aggregate bootstrap backlog,
+		// so strategies don't block each other on a shared gauge.
+		bool should_pass = block_processor.size (nano::block_source::bootstrap, channel) < threshold;
 		if (!should_pass)
 		{
 			stats.inc (nano::stat::type::bootstrap_wait_block_processor, to_stat_detail (strat));
 		}
 		return should_pass;
 	});
+}
+
+std::shared_ptr<nano::transport::channel> const & bootstrap_context::block_processor_channel (nano::bootstrap::strategy strat) const
+{
+	switch (strat)
+	{
+		case strategy::priority:
+			return priority_channel;
+		case strategy::database:
+			return database_channel;
+		case strategy::topology:
+			return topology_channel;
+		case strategy::dependency:
+		case strategy::frontier:
+			break; // These strategies do not submit blocks to the processor
+	}
+	release_assert (false);
 }
 
 std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::strategy strat, nano::bootstrap::peer_scoring::channel_filter const & filter)
@@ -655,7 +679,7 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::blocks_payload co
 
 			block_processor.add_many (
 			blocks,
-			nano::block_source::bootstrap, nullptr,
+			nano::block_source::bootstrap, block_processor_channel (to_strategy (tag.source)),
 			/* last_callback */ [this, account = tag.account] (auto result) {
 				// It's the last block submitted for this account chain, reset timestamp to allow more requests
 				stats.inc (nano::stat::type::bootstrap, nano::stat::detail::timestamp_reset);

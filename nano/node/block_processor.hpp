@@ -85,6 +85,7 @@ public:
 
 	std::size_t size () const;
 	std::size_t size (nano::block_source) const;
+	std::size_t size (nano::block_source, std::shared_ptr<nano::transport::channel> const & channel) const;
 
 	nano::container_info container_info () const;
 
