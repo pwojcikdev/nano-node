@@ -86,6 +86,7 @@ enum class type
 	bootstrap_verify_blocks,
 	bootstrap_verify_frontiers,
 	bootstrap_wait_channel,
+	bootstrap_wait_block_processor,
 	bootstrap_process,
 	bootstrap_request,
 	bootstrap_request_ec,
