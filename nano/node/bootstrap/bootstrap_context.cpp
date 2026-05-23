@@ -228,10 +228,15 @@ void bootstrap_context::wait (std::function<bool ()> const & predicate) const
 	}
 }
 
-void bootstrap_context::wait_block_processor () const
+void bootstrap_context::wait_block_processor (nano::bootstrap::strategy strat, std::size_t threshold) const
 {
-	wait ([this] () {
-		return block_processor.size (nano::block_source::bootstrap) < config.block_processor_threshold;
+	wait ([&] () {
+		bool should_pass = block_processor.size (nano::block_source::bootstrap) < threshold;
+		if (!should_pass)
+		{
+			stats.inc (nano::stat::type::bootstrap_wait_block_processor, to_stat_detail (strat));
+		}
+		return should_pass;
 	});
 }
 

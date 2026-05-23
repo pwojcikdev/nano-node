@@ -40,17 +40,20 @@ void database_strategy::run ()
 
 void database_strategy::run_one (bool should_throttle)
 {
-	ctx.wait_block_processor ();
+	ctx.wait_block_processor (strategy::database, ctx.config.block_processor_threshold);
+
 	auto channel = ctx.wait_channel (strategy::database);
 	if (!channel)
 	{
 		return;
 	}
+
 	auto account = wait_database (should_throttle);
 	if (account.is_zero ())
 	{
 		return;
 	}
+
 	ctx.request (account, 2, channel, query_source::database);
 }
 

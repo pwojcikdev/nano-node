@@ -55,6 +55,7 @@ public:
 	std::size_t block_batch_size{ 128 };
 	std::size_t max_blocks_outstanding{ 10'000 };
 	std::size_t max_blocks_queued{ 40'000 };
+	std::size_t block_processor_threshold{ 2000 };
 	// Repair-head rollback step (topo-heights). A repair head homes its cursor
 	// this far below the gap it is chasing; if the gap persists after re-scanning
 	// up to it, the distance doubles (capped at `rollback_max`) so it walks

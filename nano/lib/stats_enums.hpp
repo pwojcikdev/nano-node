@@ -95,6 +95,7 @@ enum class type
 	bootstrap_inspect_topo,
 	bootstrap_inspect_other,
 	bootstrap_wait_channel,
+	bootstrap_wait_block_processor,
 	bootstrap_process,
 	bootstrap_request,
 	bootstrap_request_ec,

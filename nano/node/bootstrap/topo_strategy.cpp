@@ -241,7 +241,7 @@ void topo_strategy::run_processing ()
 
 void topo_strategy::run_one_processing ()
 {
-	ctx.wait_block_processor ();
+	ctx.wait_block_processor (strategy::topology, ctx.config.topo_scan.block_processor_threshold);
 
 	auto ordered = wait_submit_batch ();
 	if (ordered.empty ())

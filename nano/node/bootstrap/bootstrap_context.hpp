@@ -108,9 +108,10 @@ public:
 	void wait (std::function<bool ()> const & predicate) const;
 
 	/* Ensure there is enough space in block_processor for queuing new blocks */
-	void wait_block_processor () const;
+	void wait_block_processor (nano::bootstrap::strategy, std::size_t threshold) const;
+
 	/* Waits for a channel that is not full, optionally restricted to channels accepted by `filter`. Applies the per-strategy rate limiter. */
-	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy, nano::bootstrap::peer_scoring::channel_filter const & filter = nullptr);
+	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy, nano::bootstrap::peer_scoring::channel_filter const & filter = nullptr);
 
 	bool request (nano::account, size_t count, std::shared_ptr<nano::transport::channel> const &, query_source);
 	bool send (std::shared_ptr<nano::transport::channel> const &, nano::messages::asc_pull_req && message, async_tag tag);
