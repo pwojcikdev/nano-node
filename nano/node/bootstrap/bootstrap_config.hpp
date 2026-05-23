@@ -44,6 +44,10 @@ public:
 	nano::error serialize (nano::tomlconfig &) const;
 
 public:
+	// Number of concurrent scanning heads: head 0 is the spear (scans the
+	// frontier forward), the rest are repair heads (roll back to gaps and
+	// re-scan to refetch skipped keys). Minimum 1 (spear only).
+	unsigned head_count{ 4 };
 	unsigned consideration_count{ 4 };
 	std::size_t candidates{ 1000 };
 	std::chrono::milliseconds cooldown{ 3s };
@@ -51,19 +55,12 @@ public:
 	std::size_t block_batch_size{ 128 };
 	std::size_t max_blocks_outstanding{ 10'000 };
 	std::size_t max_blocks_queued{ 40'000 };
-	// If the queue has outstanding work but nothing drains for this long, the
-	// discovery state is considered poisoned (unprocessable blocks, gaps left by
-	// dropped submissions, ...) and the pipeline is rewound. Acts as a fail-safe
-	// when the verify / dedup / backpressure safeguards don't prevent the stall.
-	std::chrono::milliseconds poisoning_timeout{ 60s };
-	// Escalating-rollback step. When a poisoning reset clears the queue but the
-	// retry from `indexed` still makes no progress (gap below the anchor), the
-	// indexed cursor is rewound by this many topo-heights, doubling on every
-	// further unproductive reset until a workable position is found. Reset to
-	// `rollback_min` once a reset cycle drains at least one block.
+	// Repair-head rollback step (topo-heights). A repair head homes its cursor
+	// this far below the gap it is chasing; if the gap persists after re-scanning
+	// up to it, the distance doubles (capped at `rollback_max`) so it walks
+	// progressively further back until a fresh union re-enumerates the skipped key.
 	uint64_t rollback_min{ 1000 };
-	// Upper bound on the doubling so the step can't overflow; once the rewind
-	// distance reaches/exceeds the indexed height the cursor lands at genesis.
+	// Upper bound on the doubling rollback distance.
 	uint64_t rollback_max{ 4'000'000 };
 };
 

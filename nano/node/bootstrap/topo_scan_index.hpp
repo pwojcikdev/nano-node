@@ -9,7 +9,7 @@
 
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/member.hpp>
-#include <boost/multi_index/sequenced_index.hpp>
+#include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index_container.hpp>
 
 #include <chrono>
@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <vector>
 
 namespace mi = boost::multi_index;
 
@@ -26,149 +27,143 @@ namespace nano::bootstrap
  * In-memory state for the topology bootstrap strategy. Not internally
  * synchronized: callers hold the bootstrap context mutex.
  *
- * Pipeline: discover -> fetch -> submit -> confirm.
+ * MULTI-HEAD MODEL
+ * ----------------
+ * Several independent scanning `head`s walk the topology index concurrently,
+ * each accumulating a `consideration_count`-peer union at its own cursor and
+ * advancing only over that union (the proven, gap-safe discovery from the
+ * previous design — kept verbatim, just one accumulator per head):
  *
- * Discovery (`next` / `process`): an open-loop `head.cursor` walks the
- *   topology space. Each cursor position gathers a quorum of candidate
- *   `topo_key`s from `consideration_count` peer responses, queues the first
- *   `candidates` of them, and advances the cursor to the last queued key.
- *   Backpressure (`max_blocks_queued` in `next`) bounds how far discovery
- *   runs ahead of processing.
+ *   - head 0 is the SPEAR: it scans the highest discovered region forward,
+ *     extending the frontier. This is the bulk of progress.
+ *   - heads 1..K-1 are REPAIR heads: free-roaming cursors that roll BACK to
+ *     wherever a gap is and re-scan upward with a fresh union. They are NOT
+ *     bounded by the confirmed watermark. A key the spear's union skipped sits
+ *     below the watermark once its chunk completes, so a repair head rolls its
+ *     cursor back to below a gapped block's height and re-unions that region;
+ *     a fresh peer sample re-enumerates the skipped key. If the gap persists,
+ *     the head's rollback distance escalates (it walks further back).
  *
- * Block queue: every queued entry moves pending -> in_flight -> received ->
- *   submitted, then is evicted by `block_done` once the processor confirms it.
- *   Entries already in our ledger are tagged `redundant` by the pre-fetch
- *   check and never fetched. `next_ordered_blocks` drains in strict
- *   topological order.
+ * No account resolution, no by-hash dependency chasing — repair is pure union
+ * re-scan with free positioning. Account-based dependency walking is left to
+ * the priority/dependency strategies.
  *
- * Indexed cursor: `indexed` is the highest topo_key whose block reached the
- *   ledger (`mark_indexed`). It is the externally-reported position
- *   (`cursor()`), closed-loop with processing. Redundant entries advance it
- *   only via the in-order prefix drain in `next_ordered_blocks`, so it never
- *   skips past unconfirmed work (a gap).
+ * CHUNKS
+ * ------
+ * Each time a head finalizes its union it emits a `chunk`: the lowest
+ * `candidates` keys of the union, submitted to the block processor as a unit
+ * and evaluated by their per-block results. A chunk is `done` only when every
+ * member reached the ledger; a `gapped` member keeps its chunk open (it is
+ * retained and re-submitted on a retry timer, never silently dropped). The
+ * head that owns a chunk reads its outcome to decide whether its region is
+ * clean or needs another (deeper) re-scan.
  *
- * Stall recovery (`check_poisoning` / `poisoning_predicate`): the queue is
- *   poisoned if it is non-empty AND either nothing has drained for
- *   `poisoning_timeout` (a frozen queue), or the cycle has run that long with
- *   gaps outnumbering confirmations (a gap-dominated queue — it keeps draining
- *   via redundant prefixes / `old` re-confirms, so the drain heartbeat stays
- *   warm, but every block we fetch gaps because the forward cursor sits over
- *   holes below it). On a poisoned queue: a cycle where no block was ever
- *   fetched is a connectivity outage (unreachable peers), not a bad anchor —
- *   no-op (`cleanup` retries when the network returns; `indexed` untouched).
- *   Else if the cycle was productive — confirmations kept up with gaps and we
- *   inserted something, or `indexed` advanced into never-before-seen territory
- *   — the anchor is good: clear the queue and retry from `indexed`. A gap-
- *   dominated cycle is never productive, even if `indexed` crept forward over
- *   already-known blocks. Otherwise the anchor sits past a gap the ledger can't
- *   bridge: rewind `indexed` by an exponentially growing distance so repeated
- *   stalls bisect back to a workable position.
+ * MEMBERS & WATERMARK
+ * -------------------
+ * All discovered keys live in one `members` container ordered by `topo_key`
+ * (so repair-inserted low keys slot into their correct topological position)
+ * and hashed by block hash (O(1) result routing). New unions dedup against it,
+ * so a re-scan only adds the previously-skipped keys. `confirmed_watermark` is
+ * the top of the contiguous in-ledger prefix — a progress REPORT (`cursor()`),
+ * NOT a barrier; repair heads scan freely below it.
+ *
+ * TERMINATION
+ * -----------
+ * `caught_up` = the spear saw the tip (a short/empty page) AND no members are
+ * gapped or in-flight (everything in_ledger/terminal). Until then a gapped
+ * member keeps the bootstrap from declaring done, so a skipped key is never
+ * silently lost — the repair loop keeps re-scanning for it.
  */
 class topo_scan_index
 {
 public:
 	explicit topo_scan_index (nano::topo_scan_config const &);
 
-	// --- Discovery ---
+	// Number of concurrent scanning heads (head 0 = spear, rest = repair).
+	std::size_t head_count () const;
 
-	// Next position to query, or nullopt under cooldown / topology-end /
-	// backpressure. `now` injectable for tests.
-	std::optional<nano::topo_key> next (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
+	// --- Discovery (per head) ---
 
-	// Accumulate a peer response. Returns true when the discovery cursor
-	// advances (entries queued or topology end). Does not touch `indexed`.
-	bool process (nano::topo_key start, std::deque<nano::topo_key> const & entries);
+	// Next cursor for head `h` to query, or nullopt under cooldown / quorum-wait
+	// / backpressure / (spear) topology-end. For a repair head this also (re)homes
+	// the cursor onto the current gap region when its previous region is clean.
+	// `now` injectable for tests.
+	std::optional<nano::topo_key> next (std::size_t head, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// --- Block queue ---
+	// Accumulate a peer response for head `h` queried at `start`. Returns true
+	// when the head's cursor advances (a chunk was emitted, or — spear only —
+	// the topology end was reached). Stale responses (start != head cursor) are
+	// dropped. New keys are deduped against `members`; only previously-unseen
+	// keys become fetchable members.
+	bool process (std::size_t head, nano::topo_key start, std::deque<nano::topo_key> const & entries);
 
-	// Hashes to fetch (pending, or in_flight past `block_retry`), topological
-	// order, transitioned to in_flight. `now` injectable for tests.
+	// --- Fetch (shared across heads) ---
+
+	// Hashes to fetch: members that are `pending`, or `in_flight` past
+	// `block_retry`. Lowest topo_key first (deps before dependents). Transitioned
+	// to `in_flight`. `now` injectable for tests.
 	std::deque<nano::block_hash> next_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
+
+	// A peer delivered a block: member -> `received`, block retained (kept so a
+	// gapped member can be re-submitted without re-fetching).
 	void block_received (nano::block_hash const & hash, std::shared_ptr<nano::block> const & block);
-	// Two phases: (1) advance the cursor through the strictly-contiguous
-	// `redundant` prefix at the head (in-order, gap-safe); (2) return up to
-	// `max_count` `received` blocks for submission. `now` injectable for tests.
-	std::deque<std::shared_ptr<nano::block>> next_ordered_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
-	// Evict a confirmed block (inspect callback, any source/result). A hit
-	// refreshes the drain heartbeat; a miss (untracked hash) is a no-op. Note:
-	// this is queue movement, not frontier progress — re-processing a known
-	// block as `old` evicts an entry without advancing `indexed`.
-	void block_done (nano::block_hash const & hash, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// Evict a submitted block that came back as a terminal non-progress result
-	// (gap_previous / gap_source / fork / bad_signature / ...). Frees the queue
-	// slot so it stops holding backpressure. Unlike `block_done` this does NOT
-	// refresh the drain heartbeat: a gap is not forward progress, and masking it
-	// would stop `check_poisoning` from ever detecting a gap-induced stall.
-	// No-op if the hash isn't tracked.
-	void block_failed (nano::block_hash const & hash);
+	// Blocks to hand to the processor, lowest topo_key first: `received` members
+	// (first submission) and `gapped` members past the re-submit retry interval
+	// (their dependency may have since been filled by a repair head). Transitioned
+	// to `submitted`. `now` injectable for tests.
+	std::deque<std::shared_ptr<nano::block>> next_submit (std::size_t max_count, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// --- Ledger feedback ---
+	// --- Result feedback (from the inspect callback) ---
 
-	// A block reached the ledger. Monotonically advances `indexed` to
-	// (topo_height, hash) when it strictly exceeds the current value.
-	void mark_indexed (nano::block_hash const & hash, uint64_t topo_height);
+	// A submitted block reached the ledger (`progress` or `old`). Member ->
+	// `in_ledger` (the member already carries its topo_key from discovery, so no
+	// height is needed); advances `confirmed_watermark` over the contiguous prefix.
+	void block_indexed (nano::block_hash const & hash);
 
-	// Record that a freshly-fetched block was inserted into the ledger this
-	// cycle (the `progress` inspect result). This — not merely `indexed`
-	// advancing — is the authoritative "made forward progress" signal for
-	// `check_poisoning`. Re-confirming already-known blocks (the redundant
-	// drain, or `old` re-processing) advances `indexed` without fetching
-	// anything new and must NOT set this, or the rollback escalation resets
-	// every cycle and can never bisect down to a deep gap.
-	void note_progress ();
+	// A submitted block came back as a dependency gap (gap_previous / gap_source
+	// / gap_epoch_open_pending). Member -> `gapped`: retained and re-submitted
+	// later; its (lowest) height homes a repair head's rollback. NOT dropped.
+	void block_gapped (nano::block_hash const & hash, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// Record that a fetched block came back as a gap (missing dependency below
-	// the forward cursor). Counted against `note_progress` by `check_poisoning`:
-	// a cycle where gaps dominate confirmations is unproductive. Called only on
-	// gap results — NOT on forks/bad signatures (bad blocks, not holes below us)
-	// and NOT inside `block_failed` (which evicts every terminal result).
-	void note_failed ();
+	// A submitted block is terminally unusable here (fork / bad_signature / ...).
+	// Member -> `terminal`: evicted from the open set (not a hole), logged loud.
+	void block_terminal (nano::block_hash const & hash);
 
-	// Tag a queued entry as already in our ledger so it is never fetched. Only
-	// records the state + ledger topo_height; the cursor advance is deferred to
-	// `next_ordered_blocks` (in topological order), so this is safe to call in
-	// any order. No-op if the hash isn't tracked.
-	void mark_redundant (nano::block_hash const & hash, uint64_t ledger_topo_height);
+	// A queued member is already in our ledger (pre-fetch redundancy check) ->
+	// treated as `in_ledger` without a fetch. No-op if untracked.
+	void mark_redundant (nano::block_hash const & hash);
 
-	// Return in_flight entries older than `block_retry` to pending so they can
-	// be retried. Fail-safe for slots stranded when the in-flight cap gates the
-	// `next_blocks` retry path. Returns the count reset. Driven externally;
-	// `next_blocks` does not call it. `now` injectable for tests.
+	// Return `in_flight` members older than `block_retry` to `pending` for retry.
+	// Returns the count reset. `now` injectable for tests.
 	std::size_t cleanup (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
-
-	// Clear the queue and resume discovery from `indexed` (preserved).
-	// Snapshots `indexed` as the cycle's progress baseline.
-	void reset_discovery ();
-
-	// Stall recovery. No-op unless `poisoning_predicate` flags the queue as
-	// poisoned (frozen, or gap-dominated). Then: if no block was fetched this
-	// cycle the stall is a connectivity problem — no-op (don't rewind a good
-	// anchor during an outage). Else if the cycle was productive (confirmations
-	// kept up with gaps and we inserted something, or `indexed` advanced past
-	// its high-water baseline — but NOT if gaps dominated), gentle
-	// `reset_discovery` and re-arm the rollback step; otherwise rewind `indexed`
-	// by the rollback distance (doubled, capped at `rollback_max`) before
-	// resetting. Returns true if it rolled back. `now` injectable for tests.
-	bool check_poisoning (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	void reset ();
 
+	// Poll mode: re-arm the spear (after `caught_up`) to re-page from its cursor
+	// and pick up blocks appended to the index since the tip was reached.
+	void repoll ();
+
 	// --- Lifecycle / queries ---
 
+	// Work remains: spear hasn't reached the tip, or any member is unresolved
+	// (pending / in_flight / received / gapped). Drives thread parking.
 	bool indexing () const;
-	// The externally-reported position: highest topo_key confirmed into the
-	// ledger (`indexed`). Distinct from the open-loop discovery cursor.
+	// Tip reached AND every member in_ledger/terminal (no gaps, nothing in
+	// flight). The whole topology is synced.
+	bool caught_up () const;
+	// Externally-reported position: top of the contiguous in-ledger prefix.
+	// Report only — repair heads scan below it.
 	nano::topo_key cursor () const;
-	bool has_blocks_pending () const;
-	// Total queue depth (all states). Drives discovery backpressure; submitted
-	// entries are counted so discovery can't race past in-flight processing.
-	std::size_t count_outstanding () const;
+
+	std::size_t count_members () const;
 	std::size_t count_pending () const;
 	std::size_t count_in_flight () const;
 	std::size_t count_received () const;
 	std::size_t count_submitted () const;
-	std::size_t count_redundant () const;
+	std::size_t count_in_ledger () const;
+	std::size_t count_gapped () const;
+	std::size_t count_chunks () const;
 
 	nano::container_info container_info () const;
 
@@ -176,146 +171,125 @@ private: // Dependencies
 	nano::topo_scan_config const & config;
 
 private:
-	// Open-loop discovery state: the `cursor` and the candidate quorum being
-	// accumulated at it.
-	struct topo_head
+	// --- Member ---
+
+	enum class member_state
 	{
-		nano::topo_key cursor{};
+		pending, // Discovered, not yet requested.
+		in_flight, // Request sent, awaiting delivery.
+		received, // Delivered by a peer, awaiting submission.
+		submitted, // Handed to the processor, awaiting its result.
+		in_ledger, // Confirmed into the ledger (progress / old / redundant).
+		gapped, // Submitted but a dependency was missing — retained, re-submitted.
+		terminal, // Fork / bad signature — evicted, not a hole.
+	};
 
+	struct member
+	{
+		nano::block_hash hash{ 0 };
+		nano::topo_key key{};
+		member_state state{ member_state::pending };
+		std::shared_ptr<nano::block> block;
+		std::chrono::steady_clock::time_point timestamp{}; // last fetch / submit
+		uint64_t chunk_id{ 0 }; // owning chunk
+	};
+
+	// clang-format off
+	class tag_key {};
+	class tag_hash {};
+	using member_set = boost::multi_index_container<member,
+	mi::indexed_by<
+		mi::ordered_unique<mi::tag<tag_key>,
+			mi::member<member, nano::topo_key, &member::key>>,
+		mi::hashed_unique<mi::tag<tag_hash>,
+			mi::member<member, nano::block_hash, &member::hash>>
+	>>;
+	// clang-format on
+
+	member_set members;
+
+	// --- Chunk (a head's submission/evaluation batch) ---
+
+	struct chunk
+	{
+		uint64_t id{ 0 };
+		std::size_t head{ 0 }; // emitting head
+		nano::topo_key lo{}, hi{}; // covered range
+		std::size_t total{ 0 }; // members emitted
+		std::size_t resolved{ 0 }; // in_ledger + terminal
+		bool done () const
+		{
+			return resolved >= total;
+		}
+	};
+
+	std::map<uint64_t, chunk> chunks;
+	uint64_t next_chunk_id{ 0 };
+
+	// --- Scanning head ---
+
+	struct scan_head
+	{
+		bool repair{ false }; // false == spear
+		nano::topo_key cursor{}; // current scan position
+
+		// consideration_count-peer union accumulator (unchanged mechanism).
 		std::set<nano::topo_key> candidates;
-
 		unsigned requests{ 0 };
 		unsigned completed{ 0 };
 		std::chrono::steady_clock::time_point timestamp{};
 
-		bool done{ false };
+		bool done{ false }; // spear: topology end reached
+		uint64_t rollback{ 0 }; // repair: current rollback distance (escalates)
+		nano::topo_key target{}; // repair: gap height this region is chasing
 
-		void reset ()
+		void reset_union ()
 		{
-			cursor = {};
 			requests = 0;
 			completed = 0;
 			timestamp = {};
-			done = false;
 			candidates.clear ();
 		}
 	};
 
-	topo_head head;
+	std::vector<scan_head> heads;
 
-	// Closed-loop tracking cursor: highest topo_key confirmed into the ledger
-	// (`mark_indexed`). Lags `head.cursor` by at most the queue depth. Exposed
-	// via `cursor()`.
-	nano::topo_key indexed{};
+	// Top of the contiguous in-ledger prefix (by topo_key). Report only.
+	nano::topo_key confirmed_watermark{};
+	// Spear saw a short/empty page: the discovered frontier reached the tip.
+	bool tip_reached{ false };
 
-	// Drain heartbeat: time of the last `block_done` that evicted a tracked
-	// entry (or construction / reset). The poisoning trigger clock — keyed on
-	// our queue, not on `mark_indexed`, so unrelated ledger activity can't mask
-	// a stalled queue.
-	std::chrono::steady_clock::time_point drained_at{ std::chrono::steady_clock::now () };
+	// Keys of currently-gapped members, ordered. Homes repair-head rollback:
+	// repair head `h` chases the (h-1)-th lowest gap. Kept in sync with the
+	// `gapped` member transitions.
+	std::set<nano::topo_key> gapped_keys;
 
-	// Start of the current cycle (set on construction, `reset`, and each
-	// `check_poisoning` recovery — NOT refreshed by queue movement). The gap-
-	// dominance trigger in `poisoning_predicate` waits this long before judging,
-	// so a fresh cycle gets `poisoning_timeout` to prove itself before gaps can
-	// flag it.
-	std::chrono::steady_clock::time_point cycle_started_at{ std::chrono::steady_clock::now () };
-
-	// High-water mark of `indexed`, carried across cycles. A rewind lowers
-	// `indexed` but NOT this, so re-confirming the region a previous rewind
-	// walked back over only climbs `indexed` up to this baseline — it does not
-	// exceed it, and so is not mistaken for advancing into new territory.
-	// `check_poisoning` treats `indexed > indexed_at_reset` (genuinely new
-	// ground, e.g. the redundant drain catching up to our ledger's true extent)
-	// as progress, alongside `progressed_since_reset` (genuine new inserts).
-	nano::topo_key indexed_at_reset{};
-
-	// Set when a block is fetched from a peer (reaches `received`) this cycle;
-	// cleared on every reset. A stall with this still false means no peer
-	// delivered anything — a connectivity outage, not a poisoned anchor — so
-	// `check_poisoning` must not rewind `indexed`.
-	uint64_t fetched_since_reset{ false };
-
-	// Counts freshly-fetched blocks that reached the ledger (`progress`) this
-	// cycle; cleared on every reset. Compared against `failed_since_reset` by
-	// `check_poisoning`: the cycle counts as productive only when confirmations
-	// outnumber gaps. Re-confirming already-known blocks (redundant drain or
-	// `old`) advances `indexed` but does NOT bump this.
-	uint64_t progressed_since_reset{ false };
-
-	// Counts gap results (missing dependency below the cursor) seen this cycle,
-	// bumped by `note_failed`; cleared on every reset. When gaps outnumber
-	// confirmations (`failed_since_reset > progressed_since_reset`) the forward
-	// cursor is sitting over holes it can't reach, so a stall escalates the
-	// rewind rather than snapping back to `rollback_min`. Forks/bad signatures
-	// are evicted (`block_failed`) but not counted here — they aren't holes.
-	uint64_t failed_since_reset{ false };
-
-	// Escalating-rollback step (topo-heights): `config.rollback_min`, doubled
-	// (capped at `config.rollback_max`) per unproductive stall, reset to the
-	// minimum on a productive one.
-	uint64_t rollback_distance;
-
-	enum class block_state
-	{
-		pending, // Known but not requested yet.
-		in_flight, // Request sent to a peer, awaiting response.
-		received, // Received from a peer, awaiting topological-order drain.
-		submitted, // Handed to the block processor, held until `block_done`
-		// confirms it or `block_failed` evicts it on a terminal gap (so
-		// backpressure accounts for in-flight processing).
-		redundant, // Already in our ledger (pre-fetch check); never fetched.
-		// Cursor advance deferred to the in-order `next_ordered_blocks` drain.
-	};
-
-	struct block_entry
-	{
-		nano::block_hash hash{ 0 };
-		nano::topo_key key{};
-		block_state state{ block_state::pending };
-		std::chrono::steady_clock::time_point timestamp{};
-		std::shared_ptr<nano::block> block;
-		// Our ledger's topo_height; only meaningful while state == redundant,
-		// used as the `mark_indexed` anchor at the contiguous head.
-		uint64_t ledger_topo_height{ 0 };
-	};
-
-	// clang-format off
-	class tag_sequenced {};
-	class tag_hash {};
-
-	using ordered_blocks = boost::multi_index_container<block_entry,
-	mi::indexed_by<
-		mi::sequenced<mi::tag<tag_sequenced>>,
-		mi::hashed_unique<mi::tag<tag_hash>,
-			mi::member<block_entry, nano::block_hash, &block_entry::hash>>
-	>>;
-	// clang-format on
-
-	ordered_blocks blocks;
-
-	// O(1) counters, kept in sync with state transitions
+	// O(1) state counters, kept in sync with transitions.
 	std::size_t pending_count{ 0 };
 	std::size_t in_flight_count{ 0 };
 	std::size_t received_count{ 0 };
 	std::size_t submitted_count{ 0 };
-	std::size_t redundant_count{ 0 };
+	std::size_t in_ledger_count{ 0 };
+	std::size_t gapped_count{ 0 };
 
 private:
-	void state_change (block_state old_state, block_state new_state);
-
-	// True when the queue is poisoned and `check_poisoning` should recover:
-	// non-empty AND either the drain heartbeat is stale (frozen queue) or the
-	// cycle has run a full `poisoning_timeout` with gaps outnumbering
-	// confirmations (gap-dominated — the heartbeat is warm but the forward
-	// cursor is parked over holes). Pure; `now` injectable for tests.
-	bool poisoning_predicate (std::chrono::steady_clock::time_point now) const;
-
-	// Rewind `indexed` back by `distance` topo-heights (clamped at genesis).
-	void rewind (uint64_t distance);
-
-	// Remove a tracked entry by hash, keeping the O(1) state counters in sync.
-	// Returns true if an entry was actually found and erased.
-	bool erase_tracked (nano::block_hash const & hash);
+	// Transition a member's state, keeping counters in sync.
+	void set_state (member const &, member_state);
+	// Advance `confirmed_watermark` over the contiguous in_ledger/terminal prefix
+	// at the head of the ordered member set, erasing (pruning) those members.
+	// Call after a member reaches in_ledger / terminal.
+	void advance_watermark ();
+	// Mark a member (found by hash) resolved into the ledger, prune-advance the
+	// watermark. Shared by `block_indexed` and `mark_redundant`.
+	void resolve_member (nano::block_hash const & hash);
+	// topo_height of the (n)-th lowest gapped member, or nullopt if fewer than
+	// n+1 gaps exist — homes repair head (n+1)'s rollback.
+	std::optional<uint64_t> nth_gap_height (std::size_t n) const;
+	// True if head `h`'s union is eligible to (re)query at its cursor now.
+	bool eligible (scan_head const &, std::chrono::steady_clock::time_point now) const;
+	// Mark a member resolved against its chunk; erase the chunk when fully done.
+	void chunk_resolve (uint64_t chunk_id);
+	// Discovery backpressure: total unresolved members across all heads.
+	std::size_t outstanding () const;
 };
 }

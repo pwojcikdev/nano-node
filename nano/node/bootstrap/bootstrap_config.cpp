@@ -59,6 +59,7 @@ nano::error nano::frontier_scan_config::serialize (nano::tomlconfig & toml) cons
 
 nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 {
+	toml.get ("head_count", head_count);
 	toml.get ("consideration_count", consideration_count);
 	toml.get_duration ("cooldown", cooldown);
 	toml.get_duration ("block_retry", block_retry);
@@ -66,7 +67,6 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("block_batch_size", block_batch_size);
 	toml.get ("max_blocks_outstanding", max_blocks_outstanding);
 	toml.get ("max_blocks_queued", max_blocks_queued);
-	toml.get_duration ("poisoning_timeout", poisoning_timeout);
 	toml.get ("rollback_min", rollback_min);
 	toml.get ("rollback_max", rollback_max);
 
@@ -75,16 +75,16 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 
 nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 {
-	toml.put ("consideration_count", consideration_count, "Number of peer responses required at each cursor before advancing the index scan.\ntype:uint64");
+	toml.put ("head_count", head_count, "Number of concurrent scanning heads (1 spear + repair heads). Minimum 1.\ntype:uint64");
+	toml.put ("consideration_count", consideration_count, "Number of peer responses unioned at each cursor before advancing the index scan.\ntype:uint64");
 	toml.put ("cooldown", cooldown.count (), "Delay before re-querying the same cursor when consideration_count requests are in flight.\ntype:milliseconds");
-	toml.put ("block_retry", block_retry.count (), "Retry timeout for in-flight block hashes.\ntype:milliseconds");
-	toml.put ("candidates", candidates, "Maximum number of topo index entries requested per call.\ntype:uint64");
+	toml.put ("block_retry", block_retry.count (), "Retry timeout for in-flight block hashes and re-submit interval for gapped blocks.\ntype:milliseconds");
+	toml.put ("candidates", candidates, "Maximum number of topo index entries kept per chunk.\ntype:uint64");
 	toml.put ("block_batch_size", block_batch_size, "Maximum number of hashes requested per blocks_random call.\ntype:uint64");
 	toml.put ("max_blocks_outstanding", max_blocks_outstanding, "Pause block fetching when this many blocks are actively in-flight.\ntype:uint64");
-	toml.put ("max_blocks_queued", max_blocks_queued, "Pause index scanning when total queue size hits this number.\ntype:uint64");
-	toml.put ("poisoning_timeout", poisoning_timeout.count (), "Roll back discovery when the queue has outstanding work but nothing drains for this long.\ntype:milliseconds");
-	toml.put ("rollback_min", rollback_min, "Initial topo-height rewind distance when an unproductive poisoning reset escalates.\ntype:uint64");
-	toml.put ("rollback_max", rollback_max, "Upper bound on the doubling rewind distance for escalating poisoning rollback.\ntype:uint64");
+	toml.put ("max_blocks_queued", max_blocks_queued, "Pause spear scanning when the held member window hits this number.\ntype:uint64");
+	toml.put ("rollback_min", rollback_min, "Initial topo-height rollback distance for a repair head homing onto a gap.\ntype:uint64");
+	toml.put ("rollback_max", rollback_max, "Upper bound on the doubling repair-head rollback distance.\ntype:uint64");
 
 	return toml.get_error ();
 }

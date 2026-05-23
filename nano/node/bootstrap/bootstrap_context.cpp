@@ -401,79 +401,6 @@ void bootstrap_context::inspect (secure::transaction const & txn, nano::block_st
 	auto const & source = context.source;
 	auto const & hash = block.hash ();
 
-	switch (result)
-	{
-		case nano::block_status::progress:
-		{
-			// Mark successfully processed blocks as done in the topology scan
-			topology.block_done (hash);
-
-			// Progress blocks from live traffic don't need further bootstrapping
-			if (source != nano::block_source::live)
-			{
-				const auto account = block.account ();
-
-				// If we've inserted any block in to an account, unmark it as blocked
-				accounts.unblock (account);
-				accounts.priority_up (account);
-
-				if (block.is_send ())
-				{
-					auto destination = block.destination ();
-					accounts.unblock (destination, hash); // Unblocking automatically inserts account into priority set
-					accounts.priority_set (destination);
-				}
-			}
-		}
-		break;
-		case nano::block_status::old:
-		{
-			// Mark already-processed blocks as done in the topology scan
-			topology.block_done (hash);
-		}
-		break;
-		case nano::block_status::gap_source:
-		{
-			// Prevent malicious live traffic from filling up the blocked set
-			if (source == nano::block_source::bootstrap)
-			{
-				const auto account = block.previous ().is_zero () ? block.account_field ().value () : ledger.any.block_account (txn, block.previous ()).value_or (0);
-				const auto source_hash = block.source_field ().value_or (block.link_field ().value_or (0).as_block_hash ());
-
-				if (!account.is_zero () && !source_hash.is_zero ())
-				{
-					// Mark account as blocked because it is missing the source block
-					accounts.block (account, source_hash);
-				}
-			}
-		}
-		break;
-		case nano::block_status::gap_previous:
-		{
-			// Prevent live traffic from evicting accounts from the priority list
-			if (source == nano::block_source::live && !accounts.priority_half_full () && !accounts.blocked_half_full ())
-			{
-				if (block.type () == block_type::state)
-				{
-					const auto account = block.account_field ().value ();
-					accounts.priority_set (account);
-				}
-			}
-		}
-		break;
-		case nano::block_status::gap_epoch_open_pending:
-		{
-			// Epoch open blocks for accounts that don't have any pending blocks yet
-			debug_assert (block.type () == block_type::state); // Only state blocks can have epoch open pending status
-			const auto account = block.account_field ().value_or (0);
-			accounts.priority_erase (account);
-		}
-		break;
-		default: // No need to handle other cases
-			// TODO: If we receive blocks that are invalid (bad signature, fork, etc.), we should penalize the peer that sent them
-			break;
-	}
-
 	auto extract_tag_source = [] (nano::block_context const & context) -> query_source {
 		if (auto const * tag_source = std::any_cast<query_source> (&context.tag))
 		{
@@ -481,18 +408,80 @@ void bootstrap_context::inspect (secure::transaction const & txn, nano::block_st
 		}
 		return query_source::invalid;
 	};
-
-	// Route blocks that originated from the topology bootstrap pipeline so the topology strategy can advance its closed-loop cursor on confirmed processing
 	auto const tag_source = extract_tag_source (context);
-	switch (tag_source)
+
+	// Topology bootstrap owns its blocks end-to-end: route results to the topo
+	// scan (advance the watermark, home repair heads). It does NOT feed the
+	// account-set / dependency machinery — resolving dependencies that way is the
+	// priority and dependency strategies' job, kept separate by design.
+	if (tag_source == query_source::topology_index)
 	{
-		case query_source::topology_index:
+		topo_strat.inspect (txn, result, context);
+	}
+	else
+	{
+		switch (result)
 		{
-			topo_strat.inspect (txn, result, context);
+			case nano::block_status::progress:
+			{
+				// Progress blocks from live traffic don't need further bootstrapping
+				if (source != nano::block_source::live)
+				{
+					const auto account = block.account ();
+
+					// If we've inserted any block in to an account, unmark it as blocked
+					accounts.unblock (account);
+					accounts.priority_up (account);
+
+					if (block.is_send ())
+					{
+						auto destination = block.destination ();
+						accounts.unblock (destination, hash); // Unblocking automatically inserts account into priority set
+						accounts.priority_set (destination);
+					}
+				}
+			}
+			break;
+			case nano::block_status::gap_source:
+			{
+				// Prevent malicious live traffic from filling up the blocked set
+				if (source == nano::block_source::bootstrap)
+				{
+					const auto account = block.previous ().is_zero () ? block.account_field ().value () : ledger.any.block_account (txn, block.previous ()).value_or (0);
+					const auto source_hash = block.source_field ().value_or (block.link_field ().value_or (0).as_block_hash ());
+
+					if (!account.is_zero () && !source_hash.is_zero ())
+					{
+						// Mark account as blocked because it is missing the source block
+						accounts.block (account, source_hash);
+					}
+				}
+			}
+			break;
+			case nano::block_status::gap_previous:
+			{
+				// Prevent live traffic from evicting accounts from the priority list
+				if (source == nano::block_source::live && !accounts.priority_half_full () && !accounts.blocked_half_full ())
+				{
+					if (block.type () == block_type::state)
+					{
+						const auto account = block.account_field ().value ();
+						accounts.priority_set (account);
+					}
+				}
+			}
+			break;
+			case nano::block_status::gap_epoch_open_pending:
+			{
+				// Epoch open blocks for accounts that don't have any pending blocks yet
+				debug_assert (block.type () == block_type::state); // Only state blocks can have epoch open pending status
+				const auto account = block.account_field ().value_or (0);
+				accounts.priority_erase (account);
+			}
+			break;
+			default: // No need to handle other cases
+				break;
 		}
-		break;
-		default:
-			break; // No need to handle other cases;
 	}
 
 	// Track statistics for blocks processed from the bootstrap pipeline so we can evaluate the effectiveness
@@ -530,21 +519,12 @@ void bootstrap_context::cleanup ()
 		tags_by_order.pop_front ();
 	}
 
-	// Topology bootstrap maintenance:
-	//   1. Reclaim stale in-flight block hashes (slots that timed out without a
-	//      response and would otherwise be held forever under backpressure).
-	//   2. Stall recovery — when the queue has outstanding work but nothing has
-	//      drained for `poisoning_timeout`, clear and retry; if the retry also
-	//      makes no progress, the indexed anchor is rewound with escalating
-	//      distance until a workable position is found.
+	// Topology bootstrap maintenance: reclaim stale in-flight block hashes (slots
+	// that timed out without a response). Stall recovery is no longer a global
+	// rewind — repair heads roll back to gaps on their own.
 	if (auto reclaimed = topology.cleanup (now); reclaimed > 0)
 	{
 		stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::timeout, reclaimed);
-	}
-	if (topology.check_poisoning (now))
-	{
-		stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::reset);
-		logger.warn (nano::log::type::bootstrap, "Topology discovery stalled — rewound, resuming from indexed cursor topo_height={}", topology.cursor ().topo_height);
 	}
 }
 

@@ -6,54 +6,104 @@
 namespace nano::bootstrap
 {
 topo_scan_index::topo_scan_index (nano::topo_scan_config const & config_a) :
-	config{ config_a },
-	rollback_distance{ config_a.rollback_min }
+	config{ config_a }
 {
+	reset ();
 }
 
-std::optional<nano::topo_key> topo_scan_index::next (std::chrono::steady_clock::time_point now)
+std::size_t topo_scan_index::head_count () const
 {
-	if (head.done)
-	{
-		return std::nullopt;
-	}
+	return heads.size ();
+}
 
-	// Backpressure: pause discovery while the queue is full. This is the
-	// coupling between discovery and processing.
-	if (count_outstanding () >= config.max_blocks_queued)
-	{
-		return std::nullopt;
-	}
-
+bool topo_scan_index::eligible (scan_head const & head, std::chrono::steady_clock::time_point now) const
+{
 	auto const cutoff = now - config.cooldown;
+	// Capacity to gather more of the quorum, or the cooldown since the last
+	// request at this cursor has elapsed.
+	return head.requests < config.consideration_count || head.timestamp < cutoff;
+}
 
-	// Eligible for query if we have capacity to consider more candidates, or if cooldown has elapsed since last request
-	bool eligible = head.requests < config.consideration_count || head.timestamp < cutoff;
-	if (!eligible)
+std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono::steady_clock::time_point now)
+{
+	debug_assert (h < heads.size ());
+	auto & head = heads[h];
+
+	if (!head.repair)
 	{
+		// Spear: scan the frontier forward.
+		if (head.done)
+		{
+			return std::nullopt; // Topology end reached (re-armed by poll mode).
+		}
+		// Backpressure: pause discovery while the held window is full. Repair
+		// heads are exempt so they can always fill the hole that's blocking it.
+		if (outstanding () >= config.max_blocks_queued)
+		{
+			return std::nullopt;
+		}
+		if (!eligible (head, now))
+		{
+			return std::nullopt;
+		}
+		head.requests += 1;
+		head.timestamp = now;
+		return head.cursor;
+	}
+
+	// Repair head h chases the (h-1)-th lowest gap.
+	auto const g = nth_gap_height (h - 1);
+	if (!g)
+	{
+		head.target = {}; // No gap for this head — idle.
 		return std::nullopt;
 	}
 
+	auto const back_off = [] (uint64_t height, uint64_t distance) {
+		return nano::topo_key{ height > distance ? height - distance : 0, nano::block_hash{ 0 } };
+	};
+
+	if (head.target.topo_height != *g)
+	{
+		// New target gap — home below it.
+		head.target = nano::topo_key{ *g, nano::block_hash{ 0 } };
+		head.rollback = config.rollback_min;
+		head.cursor = back_off (*g, head.rollback);
+		head.reset_union ();
+	}
+	else if (head.cursor.topo_height >= *g)
+	{
+		// Reached the gap height but it's still gapped — the skipped key is
+		// deeper (or was missed again). Walk further back and re-scan.
+		head.rollback = std::min (head.rollback * 2, config.rollback_max);
+		head.cursor = back_off (*g, head.rollback);
+		head.reset_union ();
+	}
+
+	if (!eligible (head, now))
+	{
+		return std::nullopt;
+	}
 	head.requests += 1;
 	head.timestamp = now;
-
 	return head.cursor;
 }
 
-bool topo_scan_index::process (nano::topo_key const start, std::deque<nano::topo_key> const & entries)
+bool topo_scan_index::process (std::size_t h, nano::topo_key const start, std::deque<nano::topo_key> const & entries)
 {
-	// Keys in response must be in ascending order
+	debug_assert (h < heads.size ());
 	debug_assert (std::is_sorted (entries.begin (), entries.end ()));
+	auto & head = heads[h];
 
-	// Reject stale responses (cursor already advanced past `start`)
+	// Reject stale responses (cursor already advanced past `start`).
 	if (start != head.cursor)
 	{
-		return false; // Not advanced
+		return false;
 	}
 
 	head.completed += 1;
 
-	// Accumulate union of strictly-post-cursor entries
+	// Accumulate the union of strictly-post-cursor entries.
 	for (auto const & entry : entries)
 	{
 		if (entry > head.cursor)
@@ -62,251 +112,240 @@ bool topo_scan_index::process (nano::topo_key const start, std::deque<nano::topo
 		}
 	}
 
-	// Wait for full quorum of responses before finalizing
+	// Wait for the full quorum before finalizing.
 	if (head.completed < config.consideration_count)
 	{
-		return false; // Not advanced
-	}
-
-	// All consideration_count responses received - finalize
-	if (head.candidates.empty () && head.completed >= config.consideration_count * 2)
-	{
-		// Every queried peer reported nothing past the cursor: topology end
-		head.done = true;
-		return true; // Advanced (to end)
+		return false;
 	}
 
 	if (head.candidates.empty ())
 	{
-		return false; // Not advanced (not enough candidates, but not enough responses to conclude end)
+		// Spear: a sustained empty quorum means the topology end. Repair heads
+		// scan below the frontier where entries always exist, so they don't reach
+		// this (a transient empty response just re-queries on cooldown).
+		if (!head.repair && head.completed >= config.consideration_count * 2)
+		{
+			head.done = true;
+			tip_reached = true;
+			return true;
+		}
+		return false;
 	}
 
-	// Insert kept entries into the block-fetch queue, deduped against existing by multiindex constraints
-	nano::topo_key last_inserted{};
-	size_t kept_count = 0;
+	// Finalize: keep the lowest `candidates` of the union as a chunk, deduped
+	// against the member set so a re-scan only adds previously-skipped keys.
+	auto & by_hash = members.get<tag_hash> ();
+	uint64_t const chunk_id = next_chunk_id;
+	nano::topo_key last_inserted = head.cursor;
+	std::size_t kept = 0, added = 0;
+	nano::topo_key lo{}, hi{};
 	for (auto const & candidate : head.candidates)
 	{
-		// Trim union to only the first `candidates` entries
-		if (kept_count >= config.candidates)
+		if (kept >= config.candidates)
 		{
 			break;
 		}
+		last_inserted = candidate;
+		++kept;
 
-		block_entry entry{};
-		entry.hash = candidate.hash;
-		entry.key = candidate;
-		entry.state = block_state::pending;
-
-		auto [_, inserted] = blocks.push_back (entry);
-		if (inserted)
+		if (by_hash.find (candidate.hash) != by_hash.end ())
 		{
-			++pending_count;
+			continue; // Already tracked — dedup.
 		}
 
-		last_inserted = candidate;
-		++kept_count;
+		member m{};
+		m.hash = candidate.hash;
+		m.key = candidate;
+		m.state = member_state::pending;
+		m.chunk_id = chunk_id;
+		members.insert (m);
+		++pending_count;
+		if (added == 0)
+		{
+			lo = candidate;
+		}
+		hi = candidate;
+		++added;
 	}
 
-	// Advance discovery cursor to the last kept entry
+	if (added > 0)
+	{
+		chunk c{};
+		c.id = chunk_id;
+		c.head = h;
+		c.lo = lo;
+		c.hi = hi;
+		c.total = added;
+		chunks.emplace (chunk_id, c);
+		++next_chunk_id;
+	}
+
+	// Advance the head's cursor to the last kept key.
 	debug_assert (head.cursor < last_inserted);
 	head.cursor = last_inserted;
-	head.requests = 0;
-	head.completed = 0;
-	head.timestamp = {};
-	head.candidates.clear ();
-
-	return true; // Advanced
+	head.reset_union ();
+	return true;
 }
 
 std::deque<nano::block_hash> topo_scan_index::next_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now)
 {
 	std::deque<nano::block_hash> result;
 
-	auto const retry_cutoff = now - config.block_retry;
-
-	// Pause block fetching if we have too many outstanding requests (backpressure)
-	if (count_in_flight () >= config.max_blocks_outstanding)
+	if (in_flight_count >= config.max_blocks_outstanding)
 	{
-		return result;
+		return result; // In-flight cap.
 	}
 
-	// Iterate in order of insertion (topological order)
-	auto & by_seq = blocks.get<tag_sequenced> ();
-	for (auto it = by_seq.begin (); it != by_seq.end () && result.size () < max_count; ++it)
+	auto const retry_cutoff = now - config.block_retry;
+	auto & by_key = members.get<tag_key> ();
+	for (auto it = by_key.begin (); it != by_key.end () && result.size () < max_count; ++it)
 	{
-		// Eligible for fetch if pending, or in-flight but past retry cutoff
-		bool const eligible = it->state == block_state::pending || (it->state == block_state::in_flight && it->timestamp < retry_cutoff);
-		if (eligible)
+		bool const want = it->state == member_state::pending
+		|| (it->state == member_state::in_flight && it->timestamp < retry_cutoff);
+		if (want)
 		{
 			result.push_back (it->hash);
-			state_change (it->state, block_state::in_flight);
-			by_seq.modify (it, [now] (block_entry & entry) {
-				entry.state = block_state::in_flight;
-				entry.timestamp = now;
+			set_state (*it, member_state::in_flight);
+			by_key.modify (it, [now] (member & m) {
+				m.state = member_state::in_flight;
+				m.timestamp = now;
 			});
 		}
 	}
-
 	return result;
 }
 
 void topo_scan_index::block_received (nano::block_hash const & hash, std::shared_ptr<nano::block> const & block)
 {
-	auto & by_hash = blocks.get<tag_hash> ();
-	if (auto it = by_hash.find (hash); it != by_hash.end ())
+	auto & by_hash = members.get<tag_hash> ();
+	auto it = by_hash.find (hash);
+	if (it == by_hash.end ())
 	{
-		// A peer actually delivered a block: this cycle has network reach, so a
-		// later stall (if any) is a real anchor problem, not an outage.
-		fetched_since_reset++;
-
-		// A tardy peer delivery must not backtrack a block past `received`.
-		if (it->state == block_state::submitted || it->state == block_state::received || it->state == block_state::redundant)
-		{
-			return;
-		}
-
-		state_change (it->state, block_state::received);
-		by_hash.modify (it, [&block] (block_entry & entry) {
-			entry.state = block_state::received;
-			entry.block = block;
-		});
+		return;
 	}
+	// A tardy delivery must not backtrack a block past `received`.
+	if (it->state != member_state::pending && it->state != member_state::in_flight)
+	{
+		return;
+	}
+	set_state (*it, member_state::received);
+	by_hash.modify (it, [&block] (member & m) {
+		m.state = member_state::received;
+		m.block = block;
+	});
 }
 
-std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_ordered_blocks (std::size_t max_count, std::chrono::steady_clock::time_point now)
+std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_submit (std::size_t max_count, std::chrono::steady_clock::time_point now)
 {
-	auto & by_seq = blocks.get<tag_sequenced> ();
-
-	// Phase 1: drain the contiguous `redundant` prefix at the head, advancing
-	// the cursor. Consuming only the head and stopping at the first
-	// non-redundant entry keeps the advance in topological order — it can't
-	// skip past unconfirmed work. Unbounded by `max_count` so a rollback
-	// re-walk's long known-block prefix catches up in one pass.
-	while (!by_seq.empty ())
-	{
-		auto it = by_seq.begin ();
-		if (it->state != block_state::redundant)
-		{
-			break;
-		}
-		// topo_height==0: pre-topo-index block — evicted, but not a cursor
-		// anchor. `mark_indexed` is monotonic.
-		if (it->ledger_topo_height > 0)
-		{
-			mark_indexed (it->hash, it->ledger_topo_height);
-		}
-		--redundant_count;
-		by_seq.erase (it);
-		drained_at = now; // queue moved — don't mistake a fast drain for a stall
-	}
-
-	// Phase 2: collect up to `max_count` `received` blocks for submission.
 	std::deque<std::shared_ptr<nano::block>> result;
-	for (auto it = by_seq.begin (); it != by_seq.end () && result.size () < max_count; ++it)
+
+	// Submit in topo_key order (deps before dependents) over the contiguous
+	// front: submit `received` members and re-submit `gapped` members past their
+	// retry interval (their dep may now be filled); skip blocks already in the
+	// processor pipeline (`submitted`) or confirmed (`in_ledger`/`terminal`);
+	// STOP at the first un-fetched member (`pending`/`in_flight`) — submitting
+	// past an un-fetched hole would only gap its dependents.
+	auto const retry_cutoff = now - config.block_retry;
+	auto & by_key = members.get<tag_key> ();
+	for (auto it = by_key.begin (); it != by_key.end () && result.size () < max_count; ++it)
 	{
-		// Skip past (don't stop on) submitted entries and interior redundant
-		// entries so later `received` blocks can still be submitted.
-		if (it->state == block_state::submitted || it->state == block_state::redundant)
-		{
-			continue;
-		}
-		// Stop at the first not-yet-received entry — preserves topological order.
-		if (it->state != block_state::received)
+		if (it->state == member_state::pending || it->state == member_state::in_flight)
 		{
 			break;
 		}
-		result.push_back (it->block);
-		// Transition to `submitted` (not erase) so the slot still counts toward
-		// backpressure; `block_done` evicts it once the processor confirms.
-		state_change (block_state::received, block_state::submitted);
-		by_seq.modify (it, [] (block_entry & entry) {
-			entry.state = block_state::submitted;
-		});
+		bool const submit = it->state == member_state::received
+		|| (it->state == member_state::gapped && it->timestamp < retry_cutoff);
+		if (submit)
+		{
+			result.push_back (it->block);
+			set_state (*it, member_state::submitted);
+			by_key.modify (it, [now] (member & m) {
+				m.state = member_state::submitted;
+				m.timestamp = now;
+			});
+		}
 	}
 	return result;
 }
 
-void topo_scan_index::block_done (nano::block_hash const & hash, std::chrono::steady_clock::time_point now)
+void topo_scan_index::resolve_member (nano::block_hash const & hash)
 {
-	if (erase_tracked (hash))
-	{
-		// A tracked block left the queue: refresh the drain heartbeat.
-		drained_at = now;
-	}
-}
-
-void topo_scan_index::block_failed (nano::block_hash const & hash)
-{
-	// A submitted block came back as a terminal non-progress result (gap / fork
-	// / bad signature). Free the slot so it stops counting toward backpressure,
-	// but deliberately do NOT touch `drained_at`: a gap is not forward progress,
-	// and refreshing the heartbeat here would prevent `check_poisoning` from
-	// ever detecting a gap-induced stall (discovery would just run to the end of
-	// the topology, gapping everything above the hole). A miss (untracked hash)
-	// is a no-op. Gap accounting is separate (`note_failed`): this evicts every
-	// terminal result, gap or not.
-	erase_tracked (hash);
-}
-
-void topo_scan_index::note_progress ()
-{
-	progressed_since_reset++;
-}
-
-void topo_scan_index::note_failed ()
-{
-	failed_since_reset++;
-}
-
-void topo_scan_index::mark_indexed (nano::block_hash const & hash, uint64_t topo_height)
-{
-	debug_assert (topo_height > 0); // topo_height=0 is reserved for "not in topology"
-
-	nano::topo_key const new_key{ topo_height, hash };
-	if (new_key <= indexed)
-	{
-		return; // Already at or past this position
-	}
-
-	indexed = new_key;
-}
-
-void topo_scan_index::mark_redundant (nano::block_hash const & hash, uint64_t ledger_topo_height)
-{
-	auto & by_hash = blocks.get<tag_hash> ();
+	auto & by_hash = members.get<tag_hash> ();
 	auto it = by_hash.find (hash);
 	if (it == by_hash.end ())
 	{
-		return; // Raced away (e.g. concurrent live `block_done`).
+		return;
 	}
-	if (it->state == block_state::redundant)
+	if (it->state == member_state::in_ledger || it->state == member_state::terminal)
 	{
-		return; // Already tagged.
+		return; // Already resolved.
 	}
-	// Tag only. The cursor advance is applied in topological order at the
-	// contiguous head by `next_ordered_blocks`, so this is order-independent.
-	state_change (it->state, block_state::redundant);
-	by_hash.modify (it, [ledger_topo_height] (block_entry & entry) {
-		entry.state = block_state::redundant;
-		entry.ledger_topo_height = ledger_topo_height;
+	auto const cid = it->chunk_id;
+	set_state (*it, member_state::in_ledger);
+	by_hash.modify (it, [] (member & m) { m.state = member_state::in_ledger; });
+	chunk_resolve (cid);
+	advance_watermark ();
+}
+
+void topo_scan_index::block_indexed (nano::block_hash const & hash)
+{
+	resolve_member (hash);
+}
+
+void topo_scan_index::mark_redundant (nano::block_hash const & hash)
+{
+	resolve_member (hash);
+}
+
+void topo_scan_index::block_gapped (nano::block_hash const & hash, std::chrono::steady_clock::time_point now)
+{
+	auto & by_hash = members.get<tag_hash> ();
+	auto it = by_hash.find (hash);
+	if (it == by_hash.end ())
+	{
+		return;
+	}
+	// Only a submitted block can come back as a gap. Retain its block and
+	// schedule a re-submit; its (lowest) height homes a repair head's rollback.
+	if (it->state != member_state::submitted)
+	{
+		return;
+	}
+	set_state (*it, member_state::gapped); // inserts into gapped_keys
+	by_hash.modify (it, [now] (member & m) {
+		m.state = member_state::gapped;
+		m.timestamp = now;
 	});
+}
+
+void topo_scan_index::block_terminal (nano::block_hash const & hash)
+{
+	auto & by_hash = members.get<tag_hash> ();
+	auto it = by_hash.find (hash);
+	if (it == by_hash.end ())
+	{
+		return;
+	}
+	auto const cid = it->chunk_id;
+	set_state (*it, member_state::terminal);
+	by_hash.modify (it, [] (member & m) { m.state = member_state::terminal; });
+	chunk_resolve (cid);
+	advance_watermark (); // a terminal block at the front is not a hole — advance past it
 }
 
 std::size_t topo_scan_index::cleanup (std::chrono::steady_clock::time_point now)
 {
-	auto const stale_cutoff = now - config.block_retry;
-
+	auto const cutoff = now - config.block_retry;
 	std::size_t reset_count = 0;
-	auto & by_seq = blocks.get<tag_sequenced> ();
-	for (auto it = by_seq.begin (); it != by_seq.end (); ++it)
+	auto & by_key = members.get<tag_key> ();
+	for (auto it = by_key.begin (); it != by_key.end (); ++it)
 	{
-		// Eligible for refetch if in-flight but past the retry cutoff
-		if (it->state == block_state::in_flight && it->timestamp < stale_cutoff)
+		if (it->state == member_state::in_flight && it->timestamp < cutoff)
 		{
-			state_change (it->state, block_state::pending);
-			by_seq.modify (it, [] (block_entry & entry) {
-				entry.state = block_state::pending;
-				entry.timestamp = {};
+			set_state (*it, member_state::pending);
+			by_key.modify (it, [] (member & m) {
+				m.state = member_state::pending;
+				m.timestamp = {};
 			});
 			++reset_count;
 		}
@@ -314,280 +353,206 @@ std::size_t topo_scan_index::cleanup (std::chrono::steady_clock::time_point now)
 	return reset_count;
 }
 
-void topo_scan_index::reset_discovery ()
-{
-	head.reset ();
-	head.cursor = indexed;
-	blocks.clear ();
-	pending_count = 0;
-	in_flight_count = 0;
-	received_count = 0;
-	submitted_count = 0;
-	redundant_count = 0;
-	fetched_since_reset = 0;
-	progressed_since_reset = 0;
-	failed_since_reset = 0;
-	// High-water baseline for the cycle's progress check. A rewind lowers
-	// `indexed` before this runs, but `std::max` keeps the baseline at the old
-	// frontier — so re-confirming the rewound-over region climbs `indexed` back
-	// up to (not past) the baseline and is correctly seen as non-progress.
-	indexed_at_reset = std::max (indexed_at_reset, indexed);
-}
-
 void topo_scan_index::reset ()
 {
-	head.reset ();
-	indexed = {};
-	indexed_at_reset = {};
-	drained_at = std::chrono::steady_clock::now ();
-	cycle_started_at = std::chrono::steady_clock::now ();
-	rollback_distance = config.rollback_min;
-	fetched_since_reset = 0;
-	progressed_since_reset = 0;
-	failed_since_reset = 0;
-	blocks.clear ();
-	pending_count = 0;
-	in_flight_count = 0;
-	received_count = 0;
-	submitted_count = 0;
-	redundant_count = 0;
+	members.clear ();
+	chunks.clear ();
+	gapped_keys.clear ();
+	next_chunk_id = 0;
+	confirmed_watermark = {};
+	tip_reached = false;
+	pending_count = in_flight_count = received_count = submitted_count = in_ledger_count = gapped_count = 0;
+
+	std::size_t const count = std::max<std::size_t> (1, config.head_count);
+	heads.assign (count, scan_head{});
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		heads[i].repair = (i != 0); // head 0 == spear
+		heads[i].rollback = config.rollback_min;
+	}
 }
 
-void topo_scan_index::rewind (uint64_t distance)
+void topo_scan_index::repoll ()
 {
-	auto const height = indexed.topo_height;
-	auto const target = height > distance ? height - distance : 0;
-	// Drop the hash: we want the peer to walk from the start of `target`, not
-	// from some specific (and now meaningless) block at the old height.
-	indexed = nano::topo_key{ target, nano::block_hash{ 0 } };
+	// Poll mode: re-arm the spear to re-page from its cursor and detect new
+	// blocks appended to the index since the tip was reached.
+	heads[0].done = false;
+	tip_reached = false;
+	heads[0].reset_union ();
 }
 
-bool topo_scan_index::poisoning_predicate (std::chrono::steady_clock::time_point now) const
+void topo_scan_index::set_state (member const & m, member_state ns)
 {
-	// Nothing queued → nothing can be stuck.
-	if (count_outstanding () == 0)
+	switch (m.state)
 	{
-		return false;
-	}
-
-	// Frozen queue: nothing has drained for a full timeout. The original
-	// poisoning case — entries wedged in pending/in_flight, or a fetch that
-	// won't connect with no other queue movement.
-	if (now - drained_at >= config.poisoning_timeout)
-	{
-		return true;
-	}
-
-	// Gap-dominated queue: the queue IS draining (a redundant prefix or `old`
-	// re-confirms keep `drained_at` warm) but every block we actually fetch
-	// gaps. The drain heartbeat can't see this, so check it directly: once the
-	// cycle has run a full timeout and gaps outnumber confirmations, the forward
-	// cursor is parked over holes below it that it can never reach. The cycle
-	// age guard gives a fresh cycle `poisoning_timeout` to prove itself first.
-	if (now - cycle_started_at >= config.poisoning_timeout && failed_since_reset > progressed_since_reset)
-	{
-		return true;
-	}
-
-	return false;
-}
-
-bool topo_scan_index::check_poisoning (std::chrono::steady_clock::time_point now)
-{
-	if (!poisoning_predicate (now))
-	{
-		return false;
-	}
-
-	// A cycle where gaps outnumber confirmations is poisoned regardless of how
-	// far the cursor crept: the blocks we fetch can't connect. This must be
-	// checked before the gentle path, or the redundant-drain cursor creep
-	// (`indexed > indexed_at_reset`) would mask a gap-dominated stall as progress.
-	bool const gap_dominated = failed_since_reset > progressed_since_reset;
-
-	// Productive cycle ⇒ gentle: confirmations kept up with gaps and we inserted
-	// something, or `indexed` advanced into never-before-seen territory (the
-	// redundant drain catching up to our ledger's true extent). Merely re-
-	// confirming the region a previous rewind walked back over is neither — it
-	// only climbs `indexed` up to the preserved high-water baseline. If
-	// productive, the anchor is workable: clear the stuck tail, retry from
-	// `indexed`, re-arm the escalation. Non-destructive (no rewind).
-	if (!gap_dominated && (progressed_since_reset > 0 || indexed > indexed_at_reset))
-	{
-		reset_discovery ();
-		rollback_distance = config.rollback_min;
-		drained_at = now;
-		cycle_started_at = now;
-		return true;
-	}
-
-	// Not productive. Rewinding `indexed` is destructive, so only do it with
-	// evidence the data itself is bad — we fetched blocks but they wouldn't
-	// connect. If no peer delivered anything this cycle the stall is a
-	// connectivity outage: leave `indexed` alone (rewinding here would discard
-	// correct progress and keep doubling for the whole outage); `cleanup`
-	// retries the in-flight requests when the network returns.
-	if (!fetched_since_reset)
-	{
-		return false;
-	}
-
-	// `indexed` sits past a gap the ledger can't bridge. Rewind it and widen
-	// the next step so repeated stalls bisect back in O(log n).
-	rewind (rollback_distance);
-	rollback_distance = std::min (rollback_distance * 2, config.rollback_max);
-	reset_discovery ();
-	drained_at = now;
-	cycle_started_at = now;
-	return true;
-}
-
-void topo_scan_index::state_change (block_state old_state, block_state new_state)
-{
-	switch (old_state)
-	{
-		case block_state::pending:
+		case member_state::pending:
 			--pending_count;
 			break;
-		case block_state::in_flight:
+		case member_state::in_flight:
 			--in_flight_count;
 			break;
-		case block_state::received:
+		case member_state::received:
 			--received_count;
 			break;
-		case block_state::submitted:
+		case member_state::submitted:
 			--submitted_count;
 			break;
-		case block_state::redundant:
-			--redundant_count;
+		case member_state::in_ledger:
+			--in_ledger_count;
+			break;
+		case member_state::gapped:
+			--gapped_count;
+			gapped_keys.erase (m.key);
+			break;
+		case member_state::terminal:
 			break;
 	}
-	switch (new_state)
+	switch (ns)
 	{
-		case block_state::pending:
+		case member_state::pending:
 			++pending_count;
 			break;
-		case block_state::in_flight:
+		case member_state::in_flight:
 			++in_flight_count;
 			break;
-		case block_state::received:
+		case member_state::received:
 			++received_count;
 			break;
-		case block_state::submitted:
+		case member_state::submitted:
 			++submitted_count;
 			break;
-		case block_state::redundant:
-			++redundant_count;
+		case member_state::in_ledger:
+			++in_ledger_count;
+			break;
+		case member_state::gapped:
+			++gapped_count;
+			gapped_keys.insert (m.key);
+			break;
+		case member_state::terminal:
 			break;
 	}
 }
 
-bool topo_scan_index::erase_tracked (nano::block_hash const & hash)
+void topo_scan_index::advance_watermark ()
 {
-	auto & by_hash = blocks.get<tag_hash> ();
-	auto it = by_hash.find (hash);
-	if (it == by_hash.end ())
+	auto & by_key = members.get<tag_key> ();
+	while (!by_key.empty ())
 	{
-		return false;
+		auto it = by_key.begin ();
+		if (it->state != member_state::in_ledger && it->state != member_state::terminal)
+		{
+			break;
+		}
+		confirmed_watermark = it->key;
+		if (it->state == member_state::in_ledger)
+		{
+			--in_ledger_count;
+		}
+		by_key.erase (it);
 	}
-	switch (it->state)
+}
+
+void topo_scan_index::chunk_resolve (uint64_t chunk_id)
+{
+	auto it = chunks.find (chunk_id);
+	if (it == chunks.end ())
 	{
-		case block_state::pending:
-			--pending_count;
-			break;
-		case block_state::in_flight:
-			--in_flight_count;
-			break;
-		case block_state::received:
-			--received_count;
-			break;
-		case block_state::submitted:
-			--submitted_count;
-			break;
-		case block_state::redundant:
-			--redundant_count;
-			break;
+		return;
 	}
-	by_hash.erase (it);
-	return true;
+	++it->second.resolved;
+	if (it->second.done ())
+	{
+		chunks.erase (it);
+	}
+}
+
+std::optional<uint64_t> topo_scan_index::nth_gap_height (std::size_t n) const
+{
+	if (gapped_keys.size () <= n)
+	{
+		return std::nullopt;
+	}
+	auto it = gapped_keys.begin ();
+	std::advance (it, n);
+	return it->topo_height;
+}
+
+std::size_t topo_scan_index::outstanding () const
+{
+	return members.size ();
 }
 
 bool topo_scan_index::indexing () const
 {
-	return !head.done;
+	return !heads[0].done || !members.empty ();
+}
+
+bool topo_scan_index::caught_up () const
+{
+	return tip_reached && members.empty ();
 }
 
 nano::topo_key topo_scan_index::cursor () const
 {
-	return indexed;
+	return confirmed_watermark;
 }
 
-bool topo_scan_index::has_blocks_pending () const
+std::size_t topo_scan_index::count_members () const
 {
-	return !blocks.empty ();
+	return members.size ();
 }
-
-std::size_t topo_scan_index::count_outstanding () const
-{
-	return blocks.size ();
-}
-
 std::size_t topo_scan_index::count_pending () const
 {
 	return pending_count;
 }
-
 std::size_t topo_scan_index::count_in_flight () const
 {
 	return in_flight_count;
 }
-
 std::size_t topo_scan_index::count_received () const
 {
 	return received_count;
 }
-
 std::size_t topo_scan_index::count_submitted () const
 {
 	return submitted_count;
 }
-
-std::size_t topo_scan_index::count_redundant () const
+std::size_t topo_scan_index::count_in_ledger () const
 {
-	return redundant_count;
+	return in_ledger_count;
+}
+std::size_t topo_scan_index::count_gapped () const
+{
+	return gapped_count;
+}
+std::size_t topo_scan_index::count_chunks () const
+{
+	return chunks.size ();
 }
 
 nano::container_info topo_scan_index::container_info () const
 {
-	auto collect_cursors = [&] () {
+	auto collect_heads = [&] () {
 		nano::container_info info;
-		info.put ("cursor", head.cursor.topo_height);
-		info.put ("indexed", indexed.topo_height);
-		info.put ("delta", head.cursor.topo_height > indexed.topo_height ? head.cursor.topo_height - indexed.topo_height : 0);
-		return info;
-	};
-
-	auto collect_counters = [&] () {
-		nano::container_info info;
-		info.put ("fetched_since_reset", fetched_since_reset);
-		info.put ("progressed_since_reset", progressed_since_reset);
-		info.put ("failed_since_reset", failed_since_reset);
-		info.put ("rollback_distance", rollback_distance);
+		info.put ("watermark", confirmed_watermark.topo_height);
+		for (std::size_t i = 0; i < heads.size (); ++i)
+		{
+			info.put (std::to_string (i), heads[i].cursor.topo_height);
+		}
 		return info;
 	};
 
 	nano::container_info info;
-	info.put ("blocks", blocks.size ());
-	info.put ("blocks_pending", pending_count);
-	info.put ("blocks_in_flight", in_flight_count);
-	info.put ("blocks_received", received_count);
-	info.put ("blocks_submitted", submitted_count);
-	info.put ("blocks_redundant", redundant_count);
-	info.put ("indexing_done", head.done ? std::size_t{ 1 } : std::size_t{ 0 });
-	info.put ("candidates", head.candidates.size ());
-
-	info.add ("counters", collect_counters ());
-	info.add ("cursors", collect_cursors ());
+	info.put ("members", members.size ());
+	info.put ("pending", pending_count);
+	info.put ("in_flight", in_flight_count);
+	info.put ("received", received_count);
+	info.put ("submitted", submitted_count);
+	info.put ("in_ledger", in_ledger_count);
+	info.put ("gapped", gapped_count);
+	info.put ("chunks", chunks.size ());
+	info.put ("tip_reached", tip_reached ? std::size_t{ 1 } : std::size_t{ 0 });
+	info.add ("heads", collect_heads ());
 	return info;
 }
 }

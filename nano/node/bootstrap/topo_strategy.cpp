@@ -24,14 +24,18 @@ topo_strategy::topo_strategy (bootstrap_context & ctx_a) :
 
 void topo_strategy::start ()
 {
-	debug_assert (!thread_index.joinable ());
+	debug_assert (scan_threads.empty ());
 	debug_assert (!thread_blocks.joinable ());
 	debug_assert (!thread_processing.joinable ());
 
-	thread_index = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bootstrap_topo_index);
-		run_index ();
-	});
+	auto const heads = ctx.topology.head_count ();
+	for (std::size_t h = 0; h < heads; ++h)
+	{
+		scan_threads.emplace_back ([this, h] () {
+			nano::thread_role::set (nano::thread_role::name::bootstrap_topo_index);
+			run_scan (h);
+		});
+	}
 
 	thread_blocks = std::thread ([this] () {
 		nano::thread_role::set (nano::thread_role::name::bootstrap_topo_blocks);
@@ -46,9 +50,13 @@ void topo_strategy::start ()
 
 void topo_strategy::stop ()
 {
-	join_or_pass (thread_index);
-	join_or_pass (thread_blocks);
-	join_or_pass (thread_processing);
+	for (auto & thread : scan_threads)
+	{
+		nano::join_or_pass (thread);
+	}
+	scan_threads.clear ();
+	nano::join_or_pass (thread_blocks);
+	nano::join_or_pass (thread_processing);
 }
 
 void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_status const & status, nano::block_context const & context)
@@ -61,74 +69,57 @@ void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_
 	switch (status)
 	{
 		case nano::block_status::progress:
-		{
-			// Newly inserted blocks carry the sideband set by ledger.process(); its
-			// topo_height is the authoritative source for closed-loop cursor advance.
-			debug_assert (context.block->has_sideband ());
-			auto const topo_height = context.block->sideband ().topo_height;
-			debug_assert (topo_height > 0);
-
-			ctx.topology.mark_indexed (hash, topo_height);
-			// A freshly-fetched block reached the ledger: genuine forward
-			// progress. This (not merely the cursor advancing) re-arms the
-			// stall-recovery escalation, so re-confirming already-known blocks
-			// can never reset it.
-			ctx.topology.note_progress ();
-			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::indexed);
-		}
-		break;
 		case nano::block_status::old:
 		{
-			// The network block has no sideband for "old" results — ledger.process()
-			// doesn't set one when the block is already stored. Look up the stored
-			// block to read the authoritative topo_height.
-			if (auto stored = ctx.ledger.any.block_get (txn, hash))
-			{
-				debug_assert (stored->has_sideband ());
-				auto const topo_height = stored->sideband ().topo_height;
-				debug_assert (topo_height > 0);
-
-				ctx.topology.mark_indexed (hash, topo_height);
-				ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::indexed);
-			}
+			// The block reached the ledger. The member already carries its
+			// topo_key from discovery, so we just mark it confirmed.
+			ctx.topology.block_indexed (hash);
+			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::indexed);
 		}
 		break;
 		case nano::block_status::gap_previous:
 		case nano::block_status::gap_source:
 		case nano::block_status::gap_epoch_open_pending:
 		{
-			// A missing dependency below the forward-only cursor. Evict the
-			// submitted entry (so it stops holding backpressure — without this
-			// the slot leaks: gapped blocks accumulate in `submitted` until the
-			// queue hits `max_blocks_queued` and the pipeline stalls) AND record
-			// it as a gap. A cycle where gaps dominate confirmations tells
-			// `check_poisoning` the cursor is sitting over holes it can't reach,
-			// so it escalates the rewind instead of snapping back to rollback_min.
-			ctx.topology.block_failed (hash);
-			ctx.topology.note_failed ();
-			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::block_failed);
+			// A dependency below the cursor is missing. Keep the member (retained
+			// + re-submitted); its height homes a repair head's rollback. The
+			// per-result gap counters are tracked in bootstrap_context::inspect.
+			ctx.topology.block_gapped (hash);
 		}
 		break;
 		default:
 		{
-			// Other terminal results (fork, bad_signature, ...): not a hole below
-			// us, just won't insert as-is. Evict the slot so it doesn't leak in
-			// `submitted`, but don't count it as a gap.
-			ctx.topology.block_failed (hash);
+			// Fork / bad signature / ... — terminally unusable, not a hole.
+			ctx.topology.block_terminal (hash);
 			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::block_failed);
 		}
 		break;
 	}
 }
 
-void topo_strategy::run_index ()
+void topo_strategy::run_scan (std::size_t h)
 {
+	auto const poll_interval = nano::is_dev_run () ? 1s : 15s;
+
 	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
 	while (!ctx.stopped)
 	{
-		// Park while indexing is finished. Will be woken on stop or reset.
-		if (!ctx.topology.indexing ())
+		// Is this head active? The spear runs while indexing; a repair head runs
+		// only when there's a gap for it to chase (head h chases the (h-1)-th gap).
+		bool const active = (h == 0) ? ctx.topology.indexing () : (ctx.topology.count_gapped () >= h);
+		if (!active)
 		{
+			// Spear poll mode: once caught up, periodically re-page from the tip to
+			// detect blocks appended to the index.
+			if (h == 0 && ctx.topology.caught_up ())
+			{
+				ctx.condition.wait_for (lock, poll_interval, [this] () { return ctx.stopped; });
+				if (!ctx.stopped)
+				{
+					ctx.topology.repoll ();
+				}
+				continue;
+			}
 			ctx.condition.wait_for (lock, nano::is_dev_run () ? 500ms : 5s, [this] () { return ctx.stopped; });
 			continue;
 		}
@@ -136,25 +127,25 @@ void topo_strategy::run_index ()
 		lock.unlock ();
 
 		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::loop_topo_index);
-		run_one_index ();
+		run_one_scan (h);
 
 		lock.lock ();
 	}
 }
 
-void topo_strategy::run_one_index ()
+void topo_strategy::run_one_scan (std::size_t h)
 {
 	auto channel = wait_topo_index_channel ();
 	if (!channel)
 	{
 		return;
 	}
-	auto pos = wait_position ();
+	auto pos = wait_position (h);
 	if (!pos)
 	{
 		return;
 	}
-	request_index (*pos, channel);
+	request_index (h, *pos, channel);
 }
 
 void topo_strategy::run_blocks ()
@@ -162,8 +153,7 @@ void topo_strategy::run_blocks ()
 	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
 	while (!ctx.stopped)
 	{
-		// Park while there's nothing to fetch and indexing is done.
-		if (!ctx.topology.has_blocks_pending () && !ctx.topology.indexing ())
+		if (!ctx.topology.indexing ())
 		{
 			ctx.condition.wait_for (lock, nano::is_dev_run () ? 500ms : 5s, [this] () { return ctx.stopped; });
 			continue;
@@ -186,23 +176,17 @@ void topo_strategy::run_one_blocks ()
 		return;
 	}
 
-	// Pre-fetch redundancy filter: never spend a network fetch on a block we
-	// already have. The ledger reads run WITHOUT ctx.mutex (DB I/O must not
-	// stall the other strategies); only the tiny in-memory state tag takes the
-	// lock. We do NOT advance the cursor here — `mark_redundant` just tags the
-	// entry; the cursor advance is deferred to `next_ordered_blocks`, which
-	// applies it strictly in topological order (gap-safe) regardless of the
-	// parallel fetch order.
+	// Pre-fetch redundancy filter: never fetch a block we already have. Ledger
+	// reads run WITHOUT ctx.mutex; only the in-memory tag takes the lock.
 	std::deque<nano::block_hash> to_fetch;
-	std::deque<std::pair<nano::block_hash, uint64_t>> redundant;
+	std::deque<nano::block_hash> redundant;
 	{
 		auto tx = ctx.ledger.tx_begin_read ();
 		for (auto const & hash : hashes)
 		{
-			if (auto existing = ctx.ledger.any.block_get (tx, hash))
+			if (ctx.ledger.any.block_exists (tx, hash))
 			{
-				debug_assert (existing->has_sideband ());
-				redundant.emplace_back (hash, existing->sideband ().topo_height);
+				redundant.push_back (hash);
 			}
 			else
 			{
@@ -214,9 +198,9 @@ void topo_strategy::run_one_blocks ()
 	if (!redundant.empty ())
 	{
 		nano::lock_guard<nano::mutex> guard{ ctx.mutex };
-		for (auto const & [hash, topo_height] : redundant)
+		for (auto const & hash : redundant)
 		{
-			ctx.topology.mark_redundant (hash, topo_height);
+			ctx.topology.mark_redundant (hash);
 		}
 		ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::redundant, redundant.size ());
 	}
@@ -226,10 +210,6 @@ void topo_strategy::run_one_blocks ()
 		return;
 	}
 
-	auto const min_version = ctx.network_constants.topo_bootstrap_protocol_version_min;
-	// auto channel = ctx.wait_channel ([min_version] (std::shared_ptr<nano::transport::channel> const & channel) {
-	// return channel->get_network_version () >= min_version;
-	// });
 	auto channel = wait_topo_index_channel ();
 	if (!channel)
 	{
@@ -244,8 +224,7 @@ void topo_strategy::run_processing ()
 	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
 	while (!ctx.stopped)
 	{
-		// Park while there's nothing pending and indexing is done.
-		if (!ctx.topology.has_blocks_pending () && !ctx.topology.indexing ())
+		if (!ctx.topology.indexing ())
 		{
 			ctx.condition.wait_for (lock, nano::is_dev_run () ? 500ms : 5s, [this] () { return ctx.stopped; });
 			continue;
@@ -264,7 +243,7 @@ void topo_strategy::run_one_processing ()
 {
 	ctx.wait_block_processor ();
 
-	auto ordered = wait_ordered_blocks ();
+	auto ordered = wait_submit_batch ();
 	if (ordered.empty ())
 	{
 		return;
@@ -272,27 +251,25 @@ void topo_strategy::run_one_processing ()
 
 	ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::ordered, ordered.size ());
 
-	// Tag each submitted block with `topology_index` so that the inspect callback can route it back to this strategy and advance the closed-loop cursor.
-	// Redundant (already-in-ledger) blocks were filtered out pre-fetch in
-	// run_one_blocks, so `ordered` is genuinely-new work; the inspect `old`
-	// path still covers the rare race where a block became old after fetch.
+	// Tag each block with `topology_index` so the inspect callback routes the
+	// result back to the topo scan.
 	auto submitted = ctx.block_processor.add_many (ordered,
 	nano::block_source::bootstrap, nullptr,
 	/* last_callback */ {},
 	/* tag */ std::any{ query_source::topology_index });
-	debug_assert (submitted == ordered.size ()); // We wait for capacity before, so all should be submitted.
+	debug_assert (submitted == ordered.size ()); // We wait for capacity first, so all should be submitted.
 
 	ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::submitted, submitted);
 }
 
-std::optional<nano::topo_key> topo_strategy::wait_position ()
+std::optional<nano::topo_key> topo_strategy::wait_position (std::size_t h)
 {
 	std::optional<nano::topo_key> result;
-	ctx.wait ([this, &result] () {
+	ctx.wait ([this, h, &result] () {
 		debug_assert (!ctx.mutex.try_lock ());
-		result = ctx.topology.next ();
-		// Wake up if we have a position to query, or indexing is done.
-		return result.has_value () || !ctx.topology.indexing ();
+		result = ctx.topology.next (h);
+		bool const idle = (h == 0) ? !ctx.topology.indexing () : (ctx.topology.count_gapped () < h);
+		return result.has_value () || idle;
 	});
 	return result;
 }
@@ -303,22 +280,20 @@ std::deque<nano::block_hash> topo_strategy::wait_block_batch ()
 	ctx.wait ([this, &result] () {
 		debug_assert (!ctx.mutex.try_lock ());
 		result = ctx.topology.next_blocks (ctx.config.topo_scan.block_batch_size);
-		// Wake up if we have hashes to fetch, or there's nothing left to do.
-		return !result.empty () || (!ctx.topology.has_blocks_pending () && !ctx.topology.indexing ());
+		return !result.empty () || !ctx.topology.indexing ();
 	});
 	return result;
 }
 
-std::deque<std::shared_ptr<nano::block>> topo_strategy::wait_ordered_blocks ()
+std::deque<std::shared_ptr<nano::block>> topo_strategy::wait_submit_batch ()
 {
 	std::deque<std::shared_ptr<nano::block>> result;
 	ctx.wait ([this, &result] () {
 		debug_assert (!ctx.mutex.try_lock ());
-		// Bound the drain so a single add_many can't overshoot the block
-		// processor's per-source queue cap and silently drop blocks.
-		result = ctx.topology.next_ordered_blocks (ctx.config.block_processor_threshold);
-		// Wake up if we have blocks to submit, or there's nothing left to do.
-		return !result.empty () || (!ctx.topology.has_blocks_pending () && !ctx.topology.indexing ());
+		// Bound the drain so a single add_many can't overshoot the processor's
+		// per-source queue cap.
+		result = ctx.topology.next_submit (ctx.config.block_processor_threshold);
+		return !result.empty () || !ctx.topology.indexing ();
 	});
 	return result;
 }
@@ -330,7 +305,7 @@ std::shared_ptr<nano::transport::channel> topo_strategy::wait_topo_index_channel
 	});
 }
 
-bool topo_strategy::request_index (nano::topo_key cursor, std::shared_ptr<nano::transport::channel> const & channel)
+bool topo_strategy::request_index (std::size_t h, nano::topo_key cursor, std::shared_ptr<nano::transport::channel> const & channel)
 {
 	async_tag tag{};
 	tag.type = query_type::topo_index;
@@ -339,6 +314,7 @@ bool topo_strategy::request_index (nano::topo_key cursor, std::shared_ptr<nano::
 
 	topo_index_tag_payload payload{};
 	payload.cursor = cursor;
+	payload.head = h;
 	tag.payload = payload;
 
 	nano::messages::asc_pull_req message{ ctx.network_constants };
@@ -352,7 +328,7 @@ bool topo_strategy::request_index (nano::topo_key cursor, std::shared_ptr<nano::
 	message.update_header ();
 
 	ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::request_index);
-	ctx.logger.debug (nano::log::type::bootstrap, "Requesting topo index from cursor topo_height={} hash={} from: {}", cursor.topo_height, cursor.hash.to_string (), channel);
+	ctx.logger.debug (nano::log::type::bootstrap, "Requesting topo index (head {}) from cursor topo_height={} hash={} from: {}", h, cursor.topo_height, cursor.hash.to_string (), channel);
 
 	return ctx.send (channel, std::move (message), tag);
 }
@@ -391,8 +367,8 @@ verify_result topo_strategy::verify (nano::messages::asc_pull_ack::topo_index_pa
 	auto const & payload = std::get<topo_index_tag_payload> (tag.payload);
 	auto const & entries = response.entries;
 
-	// Non-empty entries must be sorted strictly ascending and start at or past the requested cursor.
-	// Empty entries are valid: they signal "peer has nothing past cursor" and feed end-of-topology detection.
+	// Non-empty entries must be sorted strictly ascending and start at or past
+	// the requested cursor. Empty entries are valid: end-of-topology signal.
 	if (!entries.empty ())
 	{
 		if (entries.front () < payload.cursor)
@@ -433,7 +409,7 @@ bool topo_strategy::process (nano::messages::asc_pull_ack::topo_index_payload co
 			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::process_topo);
 			ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::topo_index, response.entries.size ());
 
-			bool advanced = ctx.topology.process (payload.cursor, response.entries);
+			bool advanced = ctx.topology.process (payload.head, payload.cursor, response.entries);
 			if (advanced)
 			{
 				ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::advance);
