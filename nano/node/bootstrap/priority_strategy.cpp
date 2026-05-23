@@ -46,7 +46,7 @@ void priority_strategy::run ()
 
 void priority_strategy::run_one ()
 {
-	ctx.wait_block_processor ();
+	ctx.wait_block_processor (strategy::priority, ctx.config.block_processor_threshold);
 
 	// Refill the buffer with a fresh batch of pull queries once it runs dry
 	if (buffer.empty ())

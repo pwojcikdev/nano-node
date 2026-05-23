@@ -60,7 +60,7 @@ enum class verify_result
 class bootstrap_context
 {
 public:
-	bootstrap_context (nano::node_config const &, nano::ledger &, nano::ledger_notifications &, nano::block_processor &, nano::network &, nano::stats &, nano::logger &);
+	bootstrap_context (nano::node_config const &, nano::node &, nano::ledger &, nano::ledger_notifications &, nano::block_processor &, nano::network &, nano::stats &, nano::logger &);
 	~bootstrap_context ();
 
 	void start ();
@@ -75,7 +75,10 @@ public:
 	void wait (std::function<bool ()> const & predicate) const;
 
 	// Wait until there is enough space in block_processor for new blocks
-	void wait_block_processor () const;
+	void wait_block_processor (nano::bootstrap::strategy, std::size_t threshold) const;
+
+	// Placeholder channel used as a fair-queue partition key so the block processor equalizes ingest across strategies
+	std::shared_ptr<nano::transport::channel> const & block_processor_channel (nano::bootstrap::strategy) const;
 
 	// Waits for a channel that is not full. Applies the per-strategy rate limiter.
 	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy);
@@ -163,6 +166,13 @@ public: // Shared state
 	nano::rate_limiter database_limiter;
 	nano::rate_limiter dependency_limiter;
 	nano::rate_limiter frontier_limiter;
+
+	// Per-strategy placeholder channels. Tagging block_processor submissions with a distinct
+	// channel per strategy gives each its own fair-queue bucket, so the processor round-robins
+	// ingest evenly across strategies instead of letting one starve the others.
+	std::shared_ptr<nano::transport::channel> priority_channel;
+	std::shared_ptr<nano::transport::channel> database_channel;
+	std::shared_ptr<nano::transport::channel> topology_channel;
 
 	bool stopped{ false };
 	mutable nano::mutex mutex;

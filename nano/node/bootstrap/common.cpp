@@ -19,4 +19,22 @@ nano::stat::detail to_stat_detail (nano::bootstrap::strategy strat)
 {
 	return nano::enum_convert<nano::stat::detail> (strat);
 }
+
+nano::bootstrap::strategy to_strategy (nano::bootstrap::query_source source)
+{
+	switch (source)
+	{
+		case query_source::priority:
+			return strategy::priority;
+		case query_source::database:
+			return strategy::database;
+		case query_source::dependencies:
+			return strategy::dependency;
+		case query_source::frontiers:
+			return strategy::frontier;
+		case query_source::invalid:
+			break;
+	}
+	release_assert (false);
+}
 }
