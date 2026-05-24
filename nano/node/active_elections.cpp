@@ -156,6 +156,12 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 		return result;
 	}
 
+	// Elections disabled: node only processes and pulls blocks without confirming them
+	if (node.flags.disable_elections)
+	{
+		return result;
+	}
+
 	auto const root = block->qualified_root ();
 	auto const hash = block->hash ();
 
