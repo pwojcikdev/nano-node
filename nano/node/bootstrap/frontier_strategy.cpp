@@ -18,13 +18,15 @@ using namespace std::chrono_literals;
 namespace nano::bootstrap
 {
 frontier_strategy::frontier_strategy (bootstrap_context & ctx_a) :
-	ctx{ ctx_a }
+	ctx{ ctx_a },
+	workers{ 1, nano::thread_role::name::bootstrap_frontier_processing }
 {
 }
 
 void frontier_strategy::start ()
 {
 	debug_assert (!thread.joinable ());
+	workers.start ();
 	thread = std::thread ([this] () {
 		nano::thread_role::set (nano::thread_role::name::bootstrap_frontier_scan);
 		run ();
@@ -34,6 +36,7 @@ void frontier_strategy::start ()
 void frontier_strategy::stop ()
 {
 	nano::join_or_pass (thread);
+	workers.stop ();
 }
 
 void frontier_strategy::run ()
@@ -55,7 +58,7 @@ void frontier_strategy::run_one ()
 		return !ctx.accounts.priority_half_full ();
 	});
 	ctx.wait ([this] () {
-		return ctx.workers.queued_tasks () < ctx.config.frontier_scan.max_pending;
+		return workers.queued_tasks () < ctx.config.frontier_scan.max_pending;
 	});
 	auto channel = ctx.wait_channel (strategy::frontier);
 	if (!channel)
@@ -125,9 +128,9 @@ bool frontier_strategy::process (nano::messages::asc_pull_ack::frontiers_payload
 			ctx.frontiers.process (query.start, response.frontiers);
 
 			// Allow some overfill to avoid unnecessarily dropping responses
-			if (ctx.workers.queued_tasks () < ctx.config.frontier_scan.max_pending * 4)
+			if (workers.queued_tasks () < ctx.config.frontier_scan.max_pending * 4)
 			{
-				ctx.workers.post ([this, frontiers_l = response.frontiers] {
+				workers.post ([this, frontiers_l = response.frontiers] {
 					process_frontiers (frontiers_l);
 				});
 			}

@@ -104,6 +104,11 @@ private:
 	// Inserts the tag and transmits the message over the channel
 	bool transmit (std::shared_ptr<nano::transport::channel> const &, nano::messages::asc_pull_req && message, async_tag tag);
 
+	// Filters out blocks already present in the ledger (read transaction) and submits the rest to
+	// the block processor. Runs on a bootstrap worker thread, NOT under ctx.mutex, to keep ledger
+	// I/O off the message-processing thread that dispatches network responses.
+	void submit_blocks (std::deque<std::shared_ptr<nano::block>> blocks, async_tag tag);
+
 	void maintenance (nano::unique_lock<nano::mutex> & lock);
 	void run_maintenance ();
 
