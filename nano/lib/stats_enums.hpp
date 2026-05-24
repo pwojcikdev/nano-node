@@ -561,6 +561,7 @@ enum class detail
 	track,
 	timeout,
 	nothing_new,
+	filtered_blocks,
 	account_info_empty,
 	frontiers_empty,
 	loop_database,

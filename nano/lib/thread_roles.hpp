@@ -50,6 +50,7 @@ enum class name
 	bootstrap_dependency_walker,
 	bootstrap_dependency_sync,
 	bootstrap_frontier_scan,
+	bootstrap_frontier_processing,
 	bootstrap_topo_index,
 	bootstrap_topo_blocks,
 	bootstrap_topo_processing,

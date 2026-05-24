@@ -656,7 +656,6 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::blocks_payload co
 	debug_assert (tag.type == query_type::blocks_by_hash || tag.type == query_type::blocks_by_account);
 
 	release_assert (std::holds_alternative<blocks_tag_payload> (tag.payload));
-	auto const & payload = std::get<blocks_tag_payload> (tag.payload);
 
 	stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::blocks);
 
@@ -668,33 +667,14 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::blocks_payload co
 			stats.inc (nano::stat::type::bootstrap_verify_blocks, nano::stat::detail::ok);
 			stats.add (nano::stat::type::bootstrap, nano::stat::detail::blocks, nano::stat::dir::in, response.blocks.size ());
 
-			auto blocks = response.blocks;
-
-			// Avoid re-processing the block we already have
-			release_assert (blocks.size () >= 1);
-			if (blocks.front ()->hash () == payload.start.as_block_hash ())
-			{
-				blocks.pop_front ();
-			}
-
-			block_processor.add_many (
-			blocks,
-			nano::block_source::bootstrap, block_processor_channel (to_strategy (tag.source)),
-			/* last_callback */ [this, account = tag.account] (auto result) {
-				// It's the last block submitted for this account chain, reset timestamp to allow more requests
-				stats.inc (nano::stat::type::bootstrap, nano::stat::detail::timestamp_reset);
-				{
-					nano::lock_guard<nano::mutex> guard{ mutex };
-					accounts.timestamp_reset (account);
-				}
-				condition.notify_all ();
-			},
-			/* tag */ std::any{ tag.source });
-
-			if (tag.source == query_source::database)
-			{
-				throttle.add (true);
-			}
+			// Hand the verified chain off to a bootstrap worker for the read-transaction filter and
+			// block-processor submission. We're currently on a message-processing thread (which
+			// dispatches all inbound network traffic) and holding ctx.mutex (which the strategy
+			// threads contend on), so neither a ledger read nor block submission belongs here.
+			// verify() above touches only the in-memory blocks, so it stays inline.
+			workers.post ([this, blocks = response.blocks, tag] () mutable {
+				submit_blocks (std::move (blocks), tag);
+			});
 		}
 		break;
 		case verify_result::nothing_new:
@@ -720,6 +700,80 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::blocks_payload co
 	}
 
 	return result != verify_result::invalid;
+}
+
+void bootstrap_context::submit_blocks (std::deque<std::shared_ptr<nano::block>> blocks, async_tag tag)
+{
+	// Runs on a bootstrap worker thread without ctx.mutex held: the ledger read and the block
+	// submission must stay off the message-processing thread that dispatched the response.
+	release_assert (std::holds_alternative<blocks_tag_payload> (tag.payload));
+	auto const & payload = std::get<blocks_tag_payload> (tag.payload);
+
+	// Avoid re-processing the block we already have (the echoed cursor)
+	release_assert (!blocks.empty ());
+	if (blocks.front ()->hash () == payload.start.as_block_hash ())
+	{
+		blocks.pop_front ();
+	}
+
+	// Early filter: drop the leading run of blocks already present in the ledger. Without this,
+	// blocks we already have are handed to the block processor only to come back as `old` after
+	// taking a slot in its bounded bootstrap queue (which throttles the strategies via
+	// wait_block_processor) and a write-transaction lookup. This is common when the priority and
+	// topology strategies run together: topology (and live traffic) frequently fill an account's
+	// chain before a priority pull for that account completes. The response is a verified
+	// contiguous chain and a block cannot exist in the ledger unless its predecessor does, so the
+	// present blocks form a prefix — stop at the first missing block and submit the rest, whose
+	// `previous` is then guaranteed to be in the ledger. `block_exists_or_pruned` matches the
+	// ledger processor's own `old` test.
+	size_t filtered = 0;
+	{
+		auto transaction = ledger.tx_begin_read ();
+		while (!blocks.empty () && ledger.any.block_exists_or_pruned (transaction, blocks.front ()->hash ()))
+		{
+			blocks.pop_front ();
+			++filtered;
+		}
+	}
+	stats.add (nano::stat::type::bootstrap, nano::stat::detail::filtered_blocks, filtered);
+
+	if (blocks.empty ())
+	{
+		// The whole response is already in the ledger. Mirror the (no-op) outcome of submitting an
+		// all-`old` batch: release the account cooldown so it can be re-sampled — an optimistic
+		// pull may still find blocks above our frontier — without lowering its priority. For the
+		// database scan, count the pull as unproductive so the throttle can back off.
+		{
+			nano::lock_guard<nano::mutex> guard{ mutex };
+			accounts.timestamp_reset (tag.account);
+			if (tag.source == query_source::database)
+			{
+				throttle.add (false);
+			}
+		}
+		condition.notify_all ();
+		return;
+	}
+
+	block_processor.add_many (
+	blocks,
+	nano::block_source::bootstrap, block_processor_channel (to_strategy (tag.source)),
+	[this, account = tag.account] (auto result) {
+		// It's the last block submitted for this account chain, reset timestamp to allow more requests
+		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::timestamp_reset);
+		{
+			nano::lock_guard<nano::mutex> guard{ mutex };
+			accounts.timestamp_reset (account);
+		}
+		condition.notify_all ();
+	},
+	/* tag */ std::any{ tag.source });
+
+	if (tag.source == query_source::database)
+	{
+		nano::lock_guard<nano::mutex> guard{ mutex };
+		throttle.add (true);
+	}
 }
 
 verify_result bootstrap_context::verify (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag) const
