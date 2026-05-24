@@ -120,6 +120,11 @@ private:
 
 	verify_result verify (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag) const;
 
+	// Filters out blocks already present in the ledger (read transaction) and submits the rest to
+	// the block processor. Runs on a bootstrap worker thread, NOT under ctx.mutex, to keep ledger
+	// I/O off the message-processing thread that dispatches network responses.
+	void submit_blocks (std::deque<std::shared_ptr<nano::block>> blocks, async_tag tag);
+
 	void cleanup ();
 	void run_cleanup ();
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/thread_pool.hpp>
 #include <nano/node/bootstrap/bootstrap_context.hpp>
 
 #include <deque>
@@ -30,5 +31,11 @@ private:
 
 	bootstrap_context & ctx;
 	std::thread thread;
+
+	// Dedicated pool for the (ledger-reading) frontier processing tasks. Kept separate from
+	// ctx.workers, which carries block-processor submissions, so the two workloads don't contend
+	// for a single thread and so the frontier scan's `queued_tasks ()` backpressure only counts
+	// its own pending work.
+	nano::thread_pool workers;
 };
 }
