@@ -103,7 +103,7 @@ nano::node::node (uint16_t peering_port_a, std::filesystem::path const & applica
 nano::node::node (std::filesystem::path const & application_path_a, nano::node_config const & config_a, nano::work_pool & work_a, nano::node_flags flags_a, unsigned seq) :
 	application_path{ application_path_a },
 	node_id{ load_or_create_node_id (application_path_a) },
-	config_impl{ std::make_unique<nano::node_config> (config_a) },
+	config_impl{ std::make_unique<nano::node_config> (apply_flag_overrides (config_a, flags_a)) },
 	config{ *config_impl },
 	flags_impl{ std::make_unique<nano::node_flags> (flags_a) },
 	flags{ *flags_impl },
@@ -408,6 +408,11 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 	if (flags.super_rebroadcaster)
 	{
 		logger.warn (nano::log::type::node, "Super rebroadcaster mode enabled - broadcasting to all peers (expect high bandwidth usage)");
+	}
+
+	if (flags.disable_elections)
+	{
+		logger.warn (nano::log::type::node, "Elections are disabled (--disable_elections): the node will only process and pull blocks without confirming them");
 	}
 
 	if ((network_params.network.is_live_network () || network_params.network.is_beta_network ()) && !flags.inactive_node)
