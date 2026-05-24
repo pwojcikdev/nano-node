@@ -443,7 +443,11 @@ void topo_scan_index::advance_watermark ()
 		{
 			break;
 		}
-		confirmed_watermark = it->key;
+		// Monotonic: a repair head re-finding a dependency BELOW the (false-
+		// advanced) watermark prunes it here, but that must not drag the reported
+		// position backward — otherwise the watermark thrashes down to the dep's
+		// height and climbs back on every deep repair.
+		confirmed_watermark = std::max (confirmed_watermark, it->key);
 		if (it->state == member_state::in_ledger)
 		{
 			--in_ledger_count;

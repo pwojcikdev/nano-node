@@ -61,8 +61,12 @@ public:
 	// up to it, the distance doubles (capped at `rollback_max`) so it walks
 	// progressively further back until a fresh union re-enumerates the skipped key.
 	uint64_t rollback_min{ 1000 };
-	// Upper bound on the doubling rollback distance.
-	uint64_t rollback_max{ 4'000'000 };
+	// Upper bound on the doubling rollback distance. Set effectively unbounded so
+	// a repair head can reach a dependency at any depth — including all the way
+	// to genesis (the cursor clamps at 0 once the distance exceeds the gap
+	// height). A finite value here would leave deps deeper than it unreachable,
+	// which stalls the tail. Large but overflow-safe under the doubling.
+	uint64_t rollback_max{ 1'000'000'000'000'000'000 };
 };
 
 class bootstrap_config final

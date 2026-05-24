@@ -202,6 +202,49 @@ TEST (bootstrap_topo_scan, repair_escalates_rollback)
 	ASSERT_EQ (pos2->topo_height, 4800);
 }
 
+// With the rollback cap lifted, escalation can walk all the way back to genesis
+// (cursor clamps at 0) so a dependency at any depth is reachable.
+TEST (bootstrap_topo_scan, repair_rolls_back_to_genesis)
+{
+	auto cfg = default_config ();
+	cfg.rollback_min = 100; // rollback_max is effectively unbounded (default)
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	scan.process (0, nano::topo_key{}, entries ({ key (150, 42) }));
+	submit_member (scan, 42);
+	scan.block_gapped (nano::block_hash{ 42 });
+
+	auto p1 = scan.next (1);
+	ASSERT_EQ (p1->topo_height, 50); // 150 - rollback_min
+
+	scan.process (1, *p1, entries ({ key (151, 7) })); // scan up to the gap, still unresolved
+
+	// 150 - 200 (doubled) clamps to genesis rather than hitting a finite cap.
+	auto p2 = scan.next (1);
+	ASSERT_EQ (p2->topo_height, 0);
+}
+
+// Filling a dependency that sits BELOW the watermark (a repair of a previously
+// false-advanced region) must not drag the reported watermark backward.
+TEST (bootstrap_topo_scan, watermark_monotonic)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	scan.process (0, nano::topo_key{}, entries ({ key (5, 500) }));
+	submit_member (scan, 500);
+	scan.block_indexed (nano::block_hash{ 500 });
+	ASSERT_EQ (scan.cursor (), key (5, 500));
+
+	// A repair head re-discovers and fills a dependency below the watermark.
+	scan.process (1, nano::topo_key{}, entries ({ key (2, 200) }));
+	submit_member (scan, 200);
+	scan.block_indexed (nano::block_hash{ 200 });
+
+	ASSERT_EQ (scan.cursor (), key (5, 500)); // not dragged back to (2, 200)
+	ASSERT_EQ (scan.count_members (), 0);
+}
+
 // A terminal result (fork / bad signature) is not a hole: the member is
 // resolved and the watermark advances past it.
 TEST (bootstrap_topo_scan, terminal_is_not_a_hole)
