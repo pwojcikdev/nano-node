@@ -49,6 +49,11 @@ public:
 	// ranges below the frontier to refetch keys the spear's union skipped). Minimum 1
 	// (spear only).
 	unsigned head_count{ 4 };
+	// Weighted scheduling ratio of the spear to the repair heads on the single scan
+	// thread: the spear is served this many requests for every 1 given to a repair head
+	// (round-robin across the repair heads). 4 = spear gets 4/5 of the requests, the
+	// repair heads share 1/5. Minimum 1 (1:1). Raise to favour frontier progress.
+	unsigned spear_weight{ 4 };
 	unsigned consideration_count{ 4 };
 	std::size_t candidates{ 1000 };
 	std::chrono::milliseconds cooldown{ 3s };

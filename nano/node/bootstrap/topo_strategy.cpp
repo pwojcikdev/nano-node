@@ -28,7 +28,7 @@ void topo_strategy::start ()
 	debug_assert (!thread_blocks.joinable ());
 	debug_assert (!thread_processing.joinable ());
 
-	// A single thread drives all scanning heads, weighting the spear at ~half.
+	// A single thread drives all scanning heads, weighting the spear (spear_weight:1).
 	thread_scan = std::thread ([this] () {
 		nano::thread_role::set (nano::thread_role::name::bootstrap_topo_index);
 		run_scan ();
@@ -112,7 +112,7 @@ void topo_strategy::run_scan ()
 			}
 		}
 
-		// Wait (with backoff) for a head to have work, weighting the spear at ~half.
+		// Wait (with backoff) for a head to have work, weighting the spear (spear_weight:1).
 		auto picked = wait_scan_head ();
 		if (!picked)
 		{
@@ -149,18 +149,22 @@ std::optional<std::pair<std::size_t, nano::topo_key>> topo_strategy::pick_scan_h
 	debug_assert (!ctx.mutex.try_lock ());
 
 	std::size_t const heads = ctx.topology.head_count ();
-	// Preferred head this tick: the spear (head 0) on even ticks, the repair heads
-	// round-robin on odd ticks — so the spear gets ~half the requests and the repair
-	// heads share the other half. (topology.next has no side effects when it returns
-	// nullopt, so trying several heads here commits at most the one we serve.)
+	// Preferred head this tick, weighted spear:repair = `spear_weight`:1. Each cycle of
+	// (spear_weight + 1) ticks gives the spear (head 0) the first `spear_weight` ticks and
+	// a repair head the last one (round-robin across cycles). So the spear gets
+	// spear_weight/(spear_weight+1) of the requests and the repair heads share the rest.
+	// (topology.next has no side effects when it returns nullopt, so trying several heads
+	// here commits at most the one we serve.)
+	std::size_t const spear_weight = ctx.config.topo_scan.spear_weight == 0 ? 1 : ctx.config.topo_scan.spear_weight;
+	std::size_t const cycle = spear_weight + 1;
 	std::size_t preferred;
-	if (heads <= 1 || (scan_tick % 2) == 0)
+	if (heads <= 1 || (scan_tick % cycle) < spear_weight)
 	{
 		preferred = 0;
 	}
 	else
 	{
-		preferred = 1 + ((scan_tick / 2) % (heads - 1));
+		preferred = 1 + ((scan_tick / cycle) % (heads - 1));
 	}
 	++scan_tick;
 
