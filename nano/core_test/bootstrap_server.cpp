@@ -699,10 +699,12 @@ TEST (bootstrap_server, serve_topo_index)
 	auto response_payload = std::get<nano::messages::asc_pull_ack::topo_index_payload> (response.payload);
 	ASSERT_FALSE (response_payload.entries.empty ());
 
-	// Verify entries are in topo-ascending order
+	// Verify entries are in topo-ascending order AND dense: topo heights are
+	// contiguous, so consecutive entries are at most one height apart.
 	for (std::size_t n = 1; n < response_payload.entries.size (); ++n)
 	{
 		ASSERT_LT (response_payload.entries[n - 1], response_payload.entries[n]);
+		ASSERT_LE (response_payload.entries[n].topo_height - response_payload.entries[n - 1].topo_height, 1u);
 	}
 
 	// Continuation request from last returned entry
@@ -790,10 +792,12 @@ TEST (bootstrap_server, serve_topo_index_descending)
 	auto response_payload = std::get<nano::messages::asc_pull_ack::topo_index_payload> (responses.get ().front ().payload);
 	ASSERT_FALSE (response_payload.entries.empty ());
 
-	// Entries are strictly descending and all below the start cursor.
+	// Entries are strictly descending, dense (consecutive heights at most one apart),
+	// and all below the start cursor.
 	for (std::size_t n = 1; n < response_payload.entries.size (); ++n)
 	{
 		ASSERT_GT (response_payload.entries[n - 1], response_payload.entries[n]);
+		ASSERT_LE (response_payload.entries[n - 1].topo_height - response_payload.entries[n].topo_height, 1u);
 	}
 	ASSERT_LT (response_payload.entries.front (), payload.start);
 

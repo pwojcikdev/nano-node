@@ -383,6 +383,14 @@ verify_result topo_strategy::verify (nano::messages::asc_pull_ack::topo_index_pa
 	bool const descending = payload.head != 0;
 	if (!entries.empty ())
 	{
+		// Topo heights are contiguous: a block at height H has a dependency at H-1 that
+		// must also be in the peer's ledger, so by induction every height from 1 up is
+		// populated. Hence consecutive entries are at most ONE height apart (0 = same
+		// height/different hash, 1 = next height). A larger jump means the peer's index
+		// has a hole — it is broken, incomplete, or malicious — so reject the response.
+		// (We deliberately do NOT compare the first entry to the cursor: a peer that is
+		// a bit behind legitimately returns its own lower top entries, far from a repair
+		// head's frontier cursor, yet its slice is still internally dense.)
 		if (descending)
 		{
 			// Strictly descending, all at or below the cursor.
@@ -397,6 +405,10 @@ verify_result topo_strategy::verify (nano::messages::asc_pull_ack::topo_index_pa
 				{
 					return verify_result::invalid;
 				}
+				if (previous.topo_height > entries[i].topo_height + 1)
+				{
+					return verify_result::invalid; // gap in the height space
+				}
 				previous = entries[i];
 			}
 		}
@@ -408,13 +420,19 @@ verify_result topo_strategy::verify (nano::messages::asc_pull_ack::topo_index_pa
 				return verify_result::invalid;
 			}
 			nano::topo_key previous{};
+			bool first = true;
 			for (auto const & entry : entries)
 			{
 				if (entry <= previous)
 				{
 					return verify_result::invalid;
 				}
+				if (!first && entry.topo_height > previous.topo_height + 1)
+				{
+					return verify_result::invalid; // gap in the height space
+				}
 				previous = entry;
+				first = false;
 			}
 		}
 	}
