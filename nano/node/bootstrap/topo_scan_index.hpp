@@ -43,15 +43,19 @@ namespace nano::bootstrap
  *     cascade — the threshold caps that.
  *   - heads 1..K-1 are REPAIR heads: continuous background sweepers that scan UPWARD
  *     (normal topo order — dependencies before dependents, so the fetch/submit pipeline
- *     can drain what they discover; this keeps the member set from piling up). Each
- *     sweeps `[floor, anchor]` and restarts at its floor on reaching the anchor (the
- *     spear's frontier). Head h covers the top `anchor/2^(h-1)` of the range: head 1 the
- *     full `[0, anchor]` (floor 0 — the guarantor that every key is re-scanned), head 2
- *     `[anchor/2, anchor]`, head 3 `[3*anchor/4, anchor]`, … The floor is the LOWER
- *     bound (start of the upward sweep) and is SPEAR-RELATIVE (a fixed fraction of the
- *     frontier), NOT tied to the head ahead's live cursor, so the heads scan independent
- *     ranges and never reset one another when one wraps; they concentrate near the
- *     frontier where fresh gaps form. Head 1's full sweep cannot miss a key, so any key
+ *     can drain what they discover; this keeps the member set from piling up). They stay
+ *     idle until the spear frontier passes `repair_activation_height` (skips the dense,
+ *     dependency-free low layer the spear grinds through at the start, which can never
+ *     gap and so never needs repair). Once active, each head sweeps a FROZEN
+ *     `[floor, ceiling]` range and restarts at its floor on reaching the ceiling, where
+ *     the ceiling is SNAPSHOTTED from the spear frontier at each wrap and held fixed for
+ *     the whole sweep — it is NOT the live frontier, so a fast-moving spear can't drag
+ *     the ceiling away and make a head chase it forever (which degenerates into never
+ *     re-scanning). Head h covers the top `ceiling/2^(h-1)`: head 1 the full
+ *     `[0, ceiling]` (floor 0 — the guarantor that every key is re-scanned), head 2
+ *     `[ceiling/2, ceiling]`, head 3 `[3*ceiling/4, ceiling]`, … The floor is derived
+ *     from the frozen ceiling, so floor and ceiling are both fixed per sweep and the
+ *     heads scan independent ranges. Head 1's full sweep cannot miss a key, so any key
  *     the spear's union skipped is eventually re-enumerated. Each repair page finalizes
  *     on a SINGLE peer response — coverage builds across restarts with different peers
  *     (a union across time), not within one page.
@@ -255,6 +259,9 @@ private:
 		std::chrono::steady_clock::time_point timestamp{};
 
 		bool done{ false }; // spear: topology end reached
+		uint64_t ceiling{ 0 }; // repair: frozen top of the current sweep (snapshot of the
+		// spear frontier at the last wrap); the floor is derived from it. Re-snapshotted
+		// only on wrap, so a head sweeps a fixed range instead of chasing the live spear.
 
 		void reset_union ()
 		{

@@ -68,6 +68,7 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("max_blocks_outstanding", max_blocks_outstanding);
 	toml.get ("max_blocks_queued", max_blocks_queued);
 	toml.get ("gap_threshold", gap_threshold);
+	toml.get ("repair_activation_height", repair_activation_height);
 
 	return toml.get_error ();
 }
@@ -83,6 +84,7 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("max_blocks_outstanding", max_blocks_outstanding, "Pause block fetching when this many blocks are actively in-flight.\ntype:uint64");
 	toml.put ("max_blocks_queued", max_blocks_queued, "Pause spear scanning when the held member window hits this number.\ntype:uint64");
 	toml.put ("gap_threshold", gap_threshold, "Number of pending dependency gaps the spear tolerates before pausing for the repair heads to catch up. 1 = pause at the first gap.\ntype:uint64");
+	toml.put ("repair_activation_height", repair_activation_height, "Repair heads stay idle until the spear frontier's topo_height reaches this, skipping the dense dependency-free low layer at the start of a bootstrap.\ntype:uint64");
 
 	return toml.get_error ();
 }

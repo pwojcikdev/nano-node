@@ -9,12 +9,15 @@ using namespace std::chrono_literals;
 namespace
 {
 // Default test config: consideration_count=1 lets a head finalize after a
-// single response; head_count=2 gives one spear + one repair head.
+// single response; head_count=2 gives one spear + one repair head;
+// repair_activation_height=1 lets repair kick in as soon as the spear discovers
+// anything (height >= 1) instead of waiting out the production default.
 nano::topo_scan_config default_config ()
 {
 	nano::topo_scan_config cfg{};
 	cfg.consideration_count = 1;
 	cfg.head_count = 2;
+	cfg.repair_activation_height = 1;
 	return cfg;
 }
 
@@ -501,6 +504,48 @@ TEST (bootstrap_topo_scan, repair_empty_page_retries)
 	auto p2 = scan.next (1, now + cfg.cooldown + 1s);
 	ASSERT_TRUE (p2);
 	ASSERT_EQ (*p2, nano::topo_key{}); // same position, retried
+}
+
+// Repair heads stay idle until the spear frontier passes `repair_activation_height`,
+// then kick in — this skips the dense dependency-free low layer at the start.
+TEST (bootstrap_topo_scan, repair_activation_gate)
+{
+	auto cfg = default_config ();
+	cfg.repair_activation_height = 50; // idle until the spear passes height 50
+	nano::bootstrap::topo_scan_index scan{ cfg };
+	auto const now = std::chrono::steady_clock::now ();
+
+	// Spear at height 10 (< 50): repair stays idle.
+	scan.process (0, nano::topo_key{}, entries ({ key (10, 10) }));
+	ASSERT_FALSE (scan.next (1, now).has_value ());
+
+	// Spear climbs past the threshold: repair kicks in.
+	scan.process (0, key (10, 10), entries ({ key (60, 60) }));
+	ASSERT_TRUE (scan.next (1, now).has_value ());
+}
+
+// A head freezes its ceiling at the spear frontier when it (re)starts a sweep and holds
+// it fixed: it wraps at the frozen ceiling instead of chasing a fast-moving spear.
+TEST (bootstrap_topo_scan, repair_ceiling_frozen)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+	auto const now = std::chrono::steady_clock::now ();
+
+	// Spear at 100; head 1 freezes its ceiling at 100 and starts at genesis.
+	scan.process (0, nano::topo_key{}, entries ({ key (100, 1) }));
+	auto p1 = scan.next (1, now);
+	ASSERT_EQ (*p1, nano::topo_key{});
+
+	// Spear races far ahead while head 1 is mid-sweep.
+	scan.process (0, key (100, 1), entries ({ key (100000, 2) })); // spear -> 100000
+
+	// Head 1 advances to its FROZEN ceiling (100) and wraps back to the floor — it does
+	// NOT chase the spear up to 100000 (which the live-anchor design would have done).
+	scan.process (1, *p1, entries ({ key (100, 1) })); // head 1 cursor -> 100 (== frozen ceiling)
+	auto p2 = scan.next (1, now);
+	ASSERT_TRUE (p2);
+	ASSERT_EQ (*p2, nano::topo_key{}); // wrapped at the frozen ceiling, not chasing
 }
 
 // Quiescence: once the spear is done and no gap remains, the repair head idles so

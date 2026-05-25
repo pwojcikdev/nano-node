@@ -57,37 +57,40 @@ std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono:
 	}
 
 	// Repair head: continuous UPWARD sweep (normal topo order — dependencies before
-	// dependents, so the fetch/submit pipeline can drain what it discovers) within
-	// [floor, anchor], restarting at the floor on reaching the anchor. Quiesce once the
-	// spear reached the tip and no gap remains, so re-discovery of already-synced keys
-	// stops and `members` can drain to empty (else `caught_up` could never be reached).
-	// A paused spear (gapped_count > 0) leaves repair active.
+	// dependents, so the fetch/submit pipeline can drain what it discovers) within a
+	// FROZEN [floor, ceiling] range. Quiesce once the spear reached the tip and no gap
+	// remains, so re-discovery of already-synced keys stops and `members` can drain to
+	// empty (else `caught_up` could never be reached). A paused spear (gapped_count > 0)
+	// leaves repair active.
 	if (heads[0].done && gapped_count == 0)
 	{
 		return std::nullopt;
 	}
 
-	// Anchor at the spear's frontier. Head h covers the top anchor/2^(h-1) of the range:
-	// head 1 the full range [0, anchor] (floor 0 — the guarantor that every key is
-	// re-scanned), head 2 [anchor/2, anchor], head 3 [3*anchor/4, anchor], … The floor is
-	// the LOWER bound (start of the upward sweep); the anchor is the UPPER bound (wrap
-	// point). Floors are SPEAR-relative (a fixed fraction of the frontier), independent of
-	// the other heads, so heads scan independent ranges and don't reset one another when
-	// one wraps.
-	nano::topo_key const anchor = heads[0].cursor;
-	if (anchor.topo_height == 0)
+	nano::topo_key const spear = heads[0].cursor;
+	// Kick in only once the spear frontier has climbed past the activation threshold.
+	// This skips the dense, dependency-free low layer (topo_height ~1: genesis + the
+	// many epoch-open blocks) the spear grinds through at the start — re-scanning it just
+	// thrashes, and those root blocks can never gap so they never need repair.
+	if (spear.topo_height < config.repair_activation_height)
 	{
-		return std::nullopt; // Nothing discovered ahead yet — idle.
+		return std::nullopt;
 	}
-	uint64_t const shift = h - 1;
-	uint64_t const reach = (shift >= 64) ? 0 : (anchor.topo_height >> shift);
-	uint64_t const floor_height = anchor.topo_height - reach;
 
-	// (Re)start the upward sweep at the floor when the cursor is below it (initial start,
-	// or the range shifted up as the spear advanced) or has reached the anchor (top of
-	// the range). reset_union clears the timestamp so the first page fires immediately.
-	if (head.cursor.topo_height < floor_height || head.cursor.topo_height >= anchor.topo_height)
+	// FREEZE the sweep range at the current spear frontier on first start and on every
+	// wrap; hold it fixed in between. The ceiling is a SNAPSHOT of the spear, not the
+	// live frontier — so a fast-moving spear can't drag the ceiling away and make the
+	// head chase it forever (which degenerates into one endless trailing sweep that never
+	// re-scans). Head h covers the top ceiling/2^(h-1): head 1 the full [0, ceiling]
+	// (floor 0 — the guarantor that every key is re-scanned), head 2 [ceiling/2, ceiling],
+	// head 3 [3*ceiling/4, ceiling], … The floor is derived from the frozen ceiling, so
+	// both are fixed for the whole sweep.
+	if (head.ceiling == 0 || head.cursor.topo_height >= head.ceiling)
 	{
+		head.ceiling = spear.topo_height; // snapshot / re-snapshot at the wrap
+		uint64_t const shift = h - 1;
+		uint64_t const reach = (shift >= 64) ? 0 : (head.ceiling >> shift);
+		uint64_t const floor_height = head.ceiling - reach;
 		head.cursor = nano::topo_key{ floor_height, nano::block_hash{ 0 } };
 		head.reset_union ();
 	}

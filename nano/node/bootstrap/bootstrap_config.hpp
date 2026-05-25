@@ -44,9 +44,10 @@ public:
 	nano::error serialize (nano::tomlconfig &) const;
 
 public:
-	// Number of concurrent scanning heads: head 0 is the spear (scans the
-	// frontier forward), the rest are repair heads (roll back to gaps and
-	// re-scan to refetch skipped keys). Minimum 1 (spear only).
+	// Number of concurrent scanning heads: head 0 is the spear (scans the frontier
+	// forward in topo order), the rest are repair heads (re-scan nested top-fraction
+	// ranges below the frontier to refetch keys the spear's union skipped). Minimum 1
+	// (spear only).
 	unsigned head_count{ 4 };
 	unsigned consideration_count{ 4 };
 	std::size_t candidates{ 1000 };
@@ -62,6 +63,14 @@ public:
 	// threshold the spear pauses and waits for the repair heads to clear every gap
 	// before resuming. 1 = pause at the first gap. Clamped to a minimum of 1.
 	std::size_t gap_threshold{ 1000 };
+	// The repair heads stay idle until the spear frontier's topo_height reaches this
+	// threshold ("kick in once the spear is established"). At the start of a bootstrap
+	// the spear sits at topo_height ~1 for a long time — genesis + the very many
+	// dependency-free epoch-open blocks all share that height — and those root blocks
+	// can never gap, so repair is useless there and only thrashes. Gating activation on
+	// the spear's height skips that phase. Each head still covers its full range
+	// (head 1 down to genesis) once active. Tune to where the dense low layer ends.
+	uint64_t repair_activation_height{ 100 };
 };
 
 class bootstrap_config final
