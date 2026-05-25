@@ -42,14 +42,16 @@ namespace nano::bootstrap
  *     bound just submits the dependents of a missing key, which gap in turn and
  *     cascade — the threshold caps that.
  *   - heads 1..K-1 are REPAIR heads: continuous background sweepers. Each walks
- *     `[0, bound]` and WRAPS back to genesis at the bound, forever. The bound of
- *     head h is the current cursor of head h-1 (head 0 == spear), so the heads
- *     nest: head 1 sweeps up to the spear, head 2 up to head 1, etc. A full
- *     sweep cannot miss a key, so any key the spear's union skipped is
- *     eventually re-enumerated; the lower heads re-sample the low region (where
- *     critical dependencies live) more densely. Each repair page finalizes on a
- *     SINGLE peer response — coverage builds across wrap-arounds with different
- *     peers (a union across time), not within one page.
+ *     `[0, bound]` and WRAPS back to genesis at the bound, forever. Head 1's bound
+ *     is the spear's current cursor — it sweeps the FULL discovered range and is
+ *     the guarantor that every skipped key below the frontier is re-scanned (so it
+ *     must not be shrunk). Each subsequent head's bound is HALF the head ahead's
+ *     height (head 2 up to head1/2, head 3 up to head2/2, …), so the lower heads
+ *     concentrate geometrically on the low region where critical dependencies live.
+ *     A full sweep cannot miss a key, so any key the spear's union skipped is
+ *     eventually re-enumerated. Each repair page finalizes on a SINGLE peer
+ *     response — coverage builds across wrap-arounds with different peers (a union
+ *     across time), not within one page.
  *
  * No account resolution, no by-hash dependency chasing — repair is pure
  * full-range re-scan. Account-based dependency walking is left to the

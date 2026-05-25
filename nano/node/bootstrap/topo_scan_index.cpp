@@ -65,20 +65,28 @@ std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono:
 		return std::nullopt;
 	}
 
-	// Bound is the head ahead's current position (head 0 == spear); the heads nest:
-	// head 1 sweeps up to the spear, head 2 up to head 1, and so on.
-	auto const bound = heads[h - 1].cursor;
-	if (bound.topo_height == 0)
+	// Upper bound for this head's sweep. Head 1 sweeps the full range up to the spear
+	// — it MUST, as the guarantor that every skipped key below the frontier gets
+	// re-scanned (halving it would leave the upper half unrepaired and could stall the
+	// spear). Each subsequent head sweeps up to HALF the head ahead's height (head 2
+	// up to head1/2, head 3 up to head2/2, …), concentrating the lower heads
+	// geometrically on the low region where dependencies live.
+	uint64_t bound_height = heads[h - 1].cursor.topo_height;
+	if (h >= 2)
 	{
-		// The head ahead is still at genesis (startup, or it just wrapped), so there
-		// is no range [0, bound] to sweep yet — wait for it to advance, then sweep
-		// in behind it. This is a brief wait, not a stall.
+		bound_height /= 2;
+	}
+	if (bound_height == 0)
+	{
+		// Nothing to sweep yet: the head ahead is at genesis (startup / just wrapped),
+		// or so low that half its height rounds to zero. Wait for it to advance, then
+		// sweep in behind it — a brief wait, not a stall.
 		return std::nullopt;
 	}
 
-	if (head.cursor.topo_height >= bound.topo_height)
+	if (head.cursor.topo_height >= bound_height)
 	{
-		// Reached the head ahead: wrap back to genesis and sweep the range again.
+		// Reached the bound: wrap back to genesis and sweep the range again.
 		head.cursor = nano::topo_key{};
 		head.reset_union ();
 		head.timestamp = now; // Throttle the restart by one cooldown (anti-spin).

@@ -415,6 +415,33 @@ TEST (bootstrap_topo_scan, repair_wrap_around)
 	ASSERT_EQ (*p2, nano::topo_key{});
 }
 
+// Head 1 sweeps the full range up to the spear, but each subsequent head is bounded
+// by HALF the head ahead's height (head 2 wraps at head1/2, not head1).
+TEST (bootstrap_topo_scan, repair_head_scans_half_of_head_ahead)
+{
+	auto cfg = default_config ();
+	cfg.head_count = 3; // spear + repair head 1 + repair head 2
+	nano::bootstrap::topo_scan_index scan{ cfg };
+	auto const now = std::chrono::steady_clock::now ();
+
+	// Spear -> height 100; drive repair head 1's cursor up to height 100.
+	scan.process (0, nano::topo_key{}, entries ({ key (100, 1) }));
+	auto p1 = scan.next (1, now);
+	scan.process (1, *p1, entries ({ key (100, 1) })); // head 1 cursor -> 100
+
+	// Head 2 is bounded by head1_height / 2 = 50, not the full 100.
+	auto p2 = scan.next (2, now);
+	ASSERT_TRUE (p2);
+	ASSERT_EQ (*p2, nano::topo_key{});
+	scan.process (2, *p2, entries ({ key (50, 7) })); // head 2 cursor -> 50 (== its bound)
+
+	// Reaching 50 wraps head 2 (it would NOT wrap at 50 if its bound were the full 100).
+	ASSERT_FALSE (scan.next (2, now).has_value ()); // wrapped, throttled this tick
+	auto p2b = scan.next (2, now + cfg.cooldown + 1s);
+	ASSERT_TRUE (p2b);
+	ASSERT_EQ (*p2b, nano::topo_key{}); // swept back to genesis at bound 50 (half of 100)
+}
+
 // A repair head will not re-fire the same cursor within the cooldown (anti-spin),
 // but fires again once it elapses.
 TEST (bootstrap_topo_scan, repair_no_spin_cooldown)

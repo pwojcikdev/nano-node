@@ -107,9 +107,9 @@ void topo_strategy::run_scan (std::size_t h)
 	{
 		// Every head runs while indexing. The finer policy lives in topology.next():
 		// the spear pauses on the gap threshold; a repair head continuously sweeps its
-		// nested range [0, head-ahead] and wraps, only waiting for the head ahead to
-		// advance off genesis (startup / just after it wrapped) or once the topology
-		// has quiesced.
+		// nested range (head 1 up to the spear, each later head up to half the head
+		// ahead) and wraps, only waiting for the head ahead to advance off genesis
+		// (startup / just after it wrapped) or once the topology has quiesced.
 		bool const active = ctx.topology.indexing ();
 		if (!active)
 		{
