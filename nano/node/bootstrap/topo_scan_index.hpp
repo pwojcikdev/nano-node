@@ -48,9 +48,12 @@ namespace nano::bootstrap
  *     the frontier, including above the confirmed watermark where heights are sparse —
  *     is reached quickly. Head 1 sweeps the full range down to genesis (floor 0): the
  *     guarantor that every dependency is re-scanned (its range must not be shrunk).
- *     Each subsequent head covers only the upper HALF of the head ahead's range
- *     (floor = midpoint of the anchor and the head ahead's cursor), concentrating the
- *     lower heads near the frontier where fresh gaps form. A full top-down sweep
+ *     Each subsequent head covers only the top `anchor/2^(h-1)` of the range
+ *     (floor = anchor - anchor/2^(h-1)): head 2 the top half, head 3 the top quarter, …
+ *     The floors are SPEAR-RELATIVE (a fixed fraction of the frontier), NOT tied to the
+ *     head ahead's live cursor, so the heads scan independent ranges and never reset one
+ *     another when one wraps; they concentrate near the frontier where fresh gaps form.
+ *     A full top-down sweep
  *     cannot miss a key, so any key the spear's union skipped is eventually
  *     re-enumerated. Each repair page finalizes on a SINGLE peer response (the
  *     descending topo-index pull) — coverage builds across restarts with different

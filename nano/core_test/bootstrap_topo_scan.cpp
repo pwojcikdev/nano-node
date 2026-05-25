@@ -427,32 +427,38 @@ TEST (bootstrap_topo_scan, repair_restarts_at_bottom)
 	ASSERT_EQ (*p3, key (3, 3));
 }
 
-// Head 1 sweeps the full range down to genesis, but each subsequent head is floored at
-// the MIDPOINT between the anchor and the head ahead — covering only the upper half and
-// restarting there instead of descending all the way down.
-TEST (bootstrap_topo_scan, repair_head_scans_half_of_head_ahead)
+// Head 1 sweeps the full range down to genesis; each subsequent head is floored at a
+// fixed fraction of the spear (anchor - anchor/2^(h-1)), INDEPENDENT of the other heads'
+// positions — head 2 covers the top half [anchor/2, anchor].
+TEST (bootstrap_topo_scan, repair_head_floor_is_spear_relative)
 {
 	auto cfg = default_config ();
 	cfg.head_count = 3; // spear + repair head 1 + repair head 2
 	nano::bootstrap::topo_scan_index scan{ cfg };
 	auto const now = std::chrono::steady_clock::now ();
 
-	// Spear anchor -> (100, 1); drive repair head 1's cursor DOWN to height 20.
-	scan.process (0, nano::topo_key{}, entries ({ key (100, 1) }));
-	auto p1 = scan.next (1, now);
-	scan.process (1, *p1, entries ({ key (20, 20) })); // head 1 cursor -> (20, 20)
+	scan.process (0, nano::topo_key{}, entries ({ key (100, 1) })); // anchor (100, 1)
 
-	// Head 2 floor = midpoint(anchor 100, head1 20) = 60; it starts at the anchor.
+	// Move head 1 partway down — head 2's floor must NOT depend on it.
+	auto p1 = scan.next (1, now);
+	scan.process (1, *p1, entries ({ key (80, 80) })); // head 1 cursor -> 80
+
+	// Head 2 floor = anchor - anchor/2 = 50 (spear-relative); NOT (100+80)/2 = 90.
 	auto p2 = scan.next (2, now);
 	ASSERT_TRUE (p2);
-	ASSERT_EQ (*p2, key (100, 1));
-	scan.process (2, *p2, entries ({ key (60, 60) })); // head 2 cursor -> 60 (== its floor)
+	ASSERT_EQ (*p2, key (100, 1)); // starts at the anchor
+	scan.process (2, *p2, entries ({ key (60, 60) })); // descend to 60
 
-	// Reaching the floor (60) restarts head 2 at the anchor — it would continue below 60
-	// if its floor were 0 like head 1.
-	auto p2b = scan.next (2, now);
-	ASSERT_TRUE (p2b);
-	ASSERT_EQ (*p2b, key (100, 1));
+	// 60 is below head 1 (80) and below the old coupled floor (90) but above 50, so the
+	// sweep continues — proving the floor is the spear-relative 50, not tied to head 1.
+	auto p2c = scan.next (2, now);
+	ASSERT_TRUE (p2c);
+	ASSERT_EQ (*p2c, key (60, 60));
+
+	scan.process (2, *p2c, entries ({ key (50, 50) })); // descend to the floor (50)
+	auto p2d = scan.next (2, now);
+	ASSERT_TRUE (p2d);
+	ASSERT_EQ (*p2d, key (100, 1)); // restarted at the anchor
 }
 
 // A repair head will not re-fire an unanswered cursor within the cooldown (anti-spin),

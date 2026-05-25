@@ -78,11 +78,15 @@ std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono:
 	{
 		return std::nullopt; // Nothing discovered ahead yet — idle.
 	}
-	uint64_t floor_height = 0;
-	if (h >= 2)
-	{
-		floor_height = (anchor.topo_height + heads[h - 1].cursor.topo_height) / 2;
-	}
+	// Floor is a fixed fraction of the spear frontier (anchor), independent of the other
+	// repair heads: head h covers the top anchor/2^(h-1) of the range — head 1 the full
+	// range (floor 0), head 2 the top half (anchor/2), head 3 the top quarter, … Being
+	// SPEAR-relative (not tied to the head ahead's live cursor) means each head keeps
+	// descending toward its own floor even when another head wraps; the heads no longer
+	// reset one another.
+	uint64_t const shift = h - 1;
+	uint64_t const reach = (shift >= 64) ? 0 : (anchor.topo_height >> shift);
+	uint64_t const floor_height = anchor.topo_height - reach;
 
 	// (Re)start the sweep at the anchor when the cursor has descended to/below the floor
 	// (process parks it at genesis once it reaches the bottom of the index), or when the
