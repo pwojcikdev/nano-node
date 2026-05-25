@@ -24,18 +24,15 @@ topo_strategy::topo_strategy (bootstrap_context & ctx_a) :
 
 void topo_strategy::start ()
 {
-	debug_assert (scan_threads.empty ());
+	debug_assert (!thread_scan.joinable ());
 	debug_assert (!thread_blocks.joinable ());
 	debug_assert (!thread_processing.joinable ());
 
-	auto const heads = ctx.topology.head_count ();
-	for (std::size_t h = 0; h < heads; ++h)
-	{
-		scan_threads.emplace_back ([this, h] () {
-			nano::thread_role::set (nano::thread_role::name::bootstrap_topo_index);
-			run_scan (h);
-		});
-	}
+	// A single thread drives all scanning heads, weighting the spear at ~half.
+	thread_scan = std::thread ([this] () {
+		nano::thread_role::set (nano::thread_role::name::bootstrap_topo_index);
+		run_scan ();
+	});
 
 	thread_blocks = std::thread ([this] () {
 		nano::thread_role::set (nano::thread_role::name::bootstrap_topo_blocks);
@@ -50,11 +47,7 @@ void topo_strategy::start ()
 
 void topo_strategy::stop ()
 {
-	for (auto & thread : scan_threads)
-	{
-		nano::join_or_pass (thread);
-	}
-	scan_threads.clear ();
+	nano::join_or_pass (thread_scan);
 	nano::join_or_pass (thread_blocks);
 	nano::join_or_pass (thread_processing);
 }
@@ -98,24 +91,17 @@ void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_
 	}
 }
 
-void topo_strategy::run_scan (std::size_t h)
+void topo_strategy::run_scan ()
 {
 	auto const poll_interval = nano::is_dev_run () ? 1s : 15s;
 
-	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
 	while (!ctx.stopped)
 	{
-		// Every head runs while indexing. The finer policy lives in topology.next():
-		// the spear pauses on the gap threshold; a repair head continuously sweeps its
-		// nested range (head 1 up to the spear, each later head up to half the head
-		// ahead) and wraps, only waiting for the head ahead to advance off genesis
-		// (startup / just after it wrapped) or once the topology has quiesced.
-		bool const active = ctx.topology.indexing ();
-		if (!active)
+		// Spear poll mode: once caught up, periodically re-page from the tip to detect
+		// blocks appended to the index.
 		{
-			// Spear poll mode: once caught up, periodically re-page from the tip to
-			// detect blocks appended to the index.
-			if (h == 0 && ctx.topology.caught_up ())
+			nano::unique_lock<nano::mutex> lock{ ctx.mutex };
+			if (ctx.topology.caught_up ())
 			{
 				ctx.condition.wait_for (lock, poll_interval, [this] () { return ctx.stopped; });
 				if (!ctx.stopped)
@@ -124,32 +110,74 @@ void topo_strategy::run_scan (std::size_t h)
 				}
 				continue;
 			}
-			ctx.condition.wait_for (lock, nano::is_dev_run () ? 500ms : 5s, [this] () { return ctx.stopped; });
-			continue;
 		}
 
-		lock.unlock ();
+		// Wait (with backoff) for a head to have work, weighting the spear at ~half.
+		auto picked = wait_scan_head ();
+		if (!picked)
+		{
+			continue; // caught_up / stopped — re-evaluate at the top.
+		}
 
 		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::loop_topo_index);
-		run_one_scan (h);
-
-		lock.lock ();
+		if (auto channel = wait_topo_index_channel ())
+		{
+			request_index (picked->first, picked->second, channel);
+		}
 	}
 }
 
-void topo_strategy::run_one_scan (std::size_t h)
+std::optional<std::pair<std::size_t, nano::topo_key>> topo_strategy::wait_scan_head ()
 {
-	auto channel = wait_topo_index_channel ();
-	if (!channel)
+	std::optional<std::pair<std::size_t, nano::topo_key>> result;
+	ctx.wait ([this, &result] () {
+		debug_assert (!ctx.mutex.try_lock ());
+		// Nothing more to schedule once the topology stops indexing (drives the outer
+		// loop into poll mode / parking).
+		if (!ctx.topology.indexing ())
+		{
+			return true;
+		}
+		result = pick_scan_head (std::chrono::steady_clock::now ());
+		return result.has_value ();
+	});
+	return result;
+}
+
+std::optional<std::pair<std::size_t, nano::topo_key>> topo_strategy::pick_scan_head (std::chrono::steady_clock::time_point now)
+{
+	debug_assert (!ctx.mutex.try_lock ());
+
+	std::size_t const heads = ctx.topology.head_count ();
+	// Preferred head this tick: the spear (head 0) on even ticks, the repair heads
+	// round-robin on odd ticks — so the spear gets ~half the requests and the repair
+	// heads share the other half. (topology.next has no side effects when it returns
+	// nullopt, so trying several heads here commits at most the one we serve.)
+	std::size_t preferred;
+	if (heads <= 1 || (scan_tick % 2) == 0)
 	{
-		return;
+		preferred = 0;
 	}
-	auto pos = wait_position (h);
-	if (!pos)
+	else
 	{
-		return;
+		preferred = 1 + ((scan_tick / 2) % (heads - 1));
 	}
-	request_index (h, *pos, channel);
+	++scan_tick;
+
+	if (auto pos = ctx.topology.next (preferred, now))
+	{
+		return std::make_pair (preferred, *pos);
+	}
+	// Preferred head had nothing; fall back to any other head with work (lowest index
+	// first, so the spear soaks up spare capacity) rather than waste the tick.
+	for (std::size_t h = 0; h < heads; ++h)
+	{
+		if (auto pos = ctx.topology.next (h, now))
+		{
+			return std::make_pair (h, *pos);
+		}
+	}
+	return std::nullopt;
 }
 
 void topo_strategy::run_blocks ()
@@ -264,22 +292,6 @@ void topo_strategy::run_one_processing ()
 	debug_assert (submitted == ordered.size ()); // We wait for capacity first, so all should be submitted.
 
 	ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::submitted, submitted);
-}
-
-std::optional<nano::topo_key> topo_strategy::wait_position (std::size_t h)
-{
-	std::optional<nano::topo_key> result;
-	ctx.wait ([this, h, &result] () {
-		debug_assert (!ctx.mutex.try_lock ());
-		result = ctx.topology.next (h);
-		// Park until this head offers a cursor, or the topology stops indexing. A
-		// head whose next() returns nullopt while indexing (spear paused on the gap
-		// threshold, repair waiting out a cooldown or for the spear to advance) keeps
-		// waiting and re-checks on the next notify / backoff tick.
-		bool const idle = !ctx.topology.indexing ();
-		return result.has_value () || idle;
-	});
-	return result;
 }
 
 std::deque<nano::block_hash> topo_strategy::wait_block_batch ()
