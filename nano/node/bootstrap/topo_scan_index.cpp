@@ -56,46 +56,39 @@ std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono:
 		return head.cursor;
 	}
 
-	// Repair head: continuous DOWNWARD sweep from the spear frontier (the anchor) to a
-	// floor, then restart at the anchor. Quiesce once the spear reached the tip and no
-	// gap remains, so re-discovery of already-synced keys stops and `members` can drain
-	// to empty (else `caught_up` could never be reached). A paused spear
-	// (gapped_count > 0) leaves repair active.
+	// Repair head: continuous UPWARD sweep (normal topo order — dependencies before
+	// dependents, so the fetch/submit pipeline can drain what it discovers) within
+	// [floor, anchor], restarting at the floor on reaching the anchor. Quiesce once the
+	// spear reached the tip and no gap remains, so re-discovery of already-synced keys
+	// stops and `members` can drain to empty (else `caught_up` could never be reached).
+	// A paused spear (gapped_count > 0) leaves repair active.
 	if (heads[0].done && gapped_count == 0)
 	{
 		return std::nullopt;
 	}
 
-	// Anchor at the spear's frontier — repair sweeps DOWN from there, so a gap's missing
-	// dependency (which can sit anywhere below the frontier, including above the
-	// confirmed watermark) is reached fast. Head 1 sweeps the full range down to genesis
-	// (floor 0) — it MUST, as the guarantor that every dependency is re-scanned. Each
-	// subsequent head only covers the upper HALF of the head ahead's range
-	// (floor = midpoint of the anchor and the head ahead's cursor), concentrating the
-	// lower heads near the frontier where fresh gaps form.
+	// Anchor at the spear's frontier. Head h covers the top anchor/2^(h-1) of the range:
+	// head 1 the full range [0, anchor] (floor 0 — the guarantor that every key is
+	// re-scanned), head 2 [anchor/2, anchor], head 3 [3*anchor/4, anchor], … The floor is
+	// the LOWER bound (start of the upward sweep); the anchor is the UPPER bound (wrap
+	// point). Floors are SPEAR-relative (a fixed fraction of the frontier), independent of
+	// the other heads, so heads scan independent ranges and don't reset one another when
+	// one wraps.
 	nano::topo_key const anchor = heads[0].cursor;
 	if (anchor.topo_height == 0)
 	{
 		return std::nullopt; // Nothing discovered ahead yet — idle.
 	}
-	// Floor is a fixed fraction of the spear frontier (anchor), independent of the other
-	// repair heads: head h covers the top anchor/2^(h-1) of the range — head 1 the full
-	// range (floor 0), head 2 the top half (anchor/2), head 3 the top quarter, … Being
-	// SPEAR-relative (not tied to the head ahead's live cursor) means each head keeps
-	// descending toward its own floor even when another head wraps; the heads no longer
-	// reset one another.
 	uint64_t const shift = h - 1;
 	uint64_t const reach = (shift >= 64) ? 0 : (anchor.topo_height >> shift);
 	uint64_t const floor_height = anchor.topo_height - reach;
 
-	// (Re)start the sweep at the anchor when the cursor has descended to/below the floor
-	// (process parks it at genesis once it reaches the bottom of the index), or when the
-	// anchor moved out from under it. reset_union clears the timestamp so the first page
-	// of a fresh sweep fires immediately; the lower heads re-sampling the near-frontier
-	// region often is by design, and the shared rate limiter caps the aggregate load.
-	if (head.cursor.topo_height <= floor_height || head.cursor.topo_height > anchor.topo_height)
+	// (Re)start the upward sweep at the floor when the cursor is below it (initial start,
+	// or the range shifted up as the spear advanced) or has reached the anchor (top of
+	// the range). reset_union clears the timestamp so the first page fires immediately.
+	if (head.cursor.topo_height < floor_height || head.cursor.topo_height >= anchor.topo_height)
 	{
-		head.cursor = anchor;
+		head.cursor = nano::topo_key{ floor_height, nano::block_hash{ 0 } };
 		head.reset_union ();
 	}
 
@@ -115,12 +108,8 @@ std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono:
 bool topo_scan_index::process (std::size_t h, nano::topo_key const start, std::deque<nano::topo_key> const & entries)
 {
 	debug_assert (h < heads.size ());
+	debug_assert (std::is_sorted (entries.begin (), entries.end ()));
 	auto & head = heads[h];
-	// Head 0 (spear) scans upward; repair heads scan downward.
-	bool const descending = head.repair;
-	debug_assert (std::is_sorted (entries.begin (), entries.end (), [descending] (nano::topo_key const & a, nano::topo_key const & b) {
-		return descending ? a > b : a < b;
-	}));
 
 	// Reject stale responses (cursor already moved off `start`).
 	if (start != head.cursor)
@@ -130,18 +119,18 @@ bool topo_scan_index::process (std::size_t h, nano::topo_key const start, std::d
 
 	head.completed += 1;
 
-	// Accumulate entries strictly beyond the cursor — above it for the spear, below it
-	// for a repair head. `candidates` stays ordered ascending either way.
+	// Accumulate the strictly-post-cursor entries.
 	for (auto const & entry : entries)
 	{
-		if (descending ? entry < head.cursor : entry > head.cursor)
+		if (entry > head.cursor)
 		{
 			head.candidates.insert (entry);
 		}
 	}
 
 	// The spear unions a full quorum before finalizing; a repair head finalizes on the
-	// first response (coverage builds across wrap-arounds, not within one page).
+	// first response (coverage builds across restarts with different peers, not within
+	// one page).
 	if (!head.repair && head.completed < config.consideration_count)
 	{
 		return false;
@@ -149,41 +138,39 @@ bool topo_scan_index::process (std::size_t h, nano::topo_key const start, std::d
 
 	if (head.candidates.empty ())
 	{
-		if (!head.repair)
+		// Spear: a sustained empty quorum means the topology end. A repair head can also
+		// see an empty page (a lagging peer with nothing past the cursor); it makes no
+		// progress and re-queries the same cursor on cooldown with a fresh peer.
+		if (!head.repair && head.completed >= config.consideration_count * 2)
 		{
-			// Spear: a sustained empty quorum means the topology end.
-			if (head.completed >= config.consideration_count * 2)
-			{
-				head.done = true;
-				tip_reached = true;
-				return true;
-			}
-			return false;
+			head.done = true;
+			tip_reached = true;
+			return true;
 		}
-		// Repair head: an empty page means the bottom of the index was reached (peers
-		// advertising topo_index hold the full index). Park the cursor at genesis so
-		// next() restarts the sweep from the anchor.
-		head.cursor = nano::topo_key{};
-		head.reset_union ();
-		return true;
+		return false;
 	}
 
-	// Finalize: keep up to `candidates` keys of the union nearest the cursor — the
-	// lowest for the spear (so it advances UP), the highest for a repair head (so it
-	// advances DOWN) — deduped against the member set so a re-scan only adds keys that
-	// were previously skipped.
+	// Finalize: keep the lowest `candidates` of the union as a chunk, deduped against the
+	// member set so a re-scan only adds previously-skipped keys.
 	auto & by_hash = members.get<tag_hash> ();
 	uint64_t const chunk_id = next_chunk_id;
 	nano::topo_key last_inserted = head.cursor;
 	std::size_t kept = 0, added = 0;
 	nano::topo_key lo{}, hi{};
-	auto consider = [&] (nano::topo_key const & candidate) {
+	for (auto const & candidate : head.candidates)
+	{
+		if (kept >= config.candidates)
+		{
+			break;
+		}
 		last_inserted = candidate;
 		++kept;
+
 		if (by_hash.find (candidate.hash) != by_hash.end ())
 		{
-			return; // Already tracked — dedup.
+			continue; // Already tracked — dedup.
 		}
+
 		member m{};
 		m.hash = candidate.hash;
 		m.key = candidate;
@@ -193,29 +180,10 @@ bool topo_scan_index::process (std::size_t h, nano::topo_key const start, std::d
 		++pending_count;
 		if (added == 0)
 		{
-			lo = hi = candidate;
+			lo = candidate;
 		}
-		else
-		{
-			lo = std::min (lo, candidate);
-			hi = std::max (hi, candidate);
-		}
+		hi = candidate;
 		++added;
-	};
-
-	if (descending)
-	{
-		for (auto it = head.candidates.rbegin (); it != head.candidates.rend () && kept < config.candidates; ++it)
-		{
-			consider (*it);
-		}
-	}
-	else
-	{
-		for (auto it = head.candidates.begin (); it != head.candidates.end () && kept < config.candidates; ++it)
-		{
-			consider (*it);
-		}
 	}
 
 	if (added > 0)
@@ -230,11 +198,8 @@ bool topo_scan_index::process (std::size_t h, nano::topo_key const start, std::d
 		++next_chunk_id;
 	}
 
-	// Advance the cursor to the last kept key: the highest for the spear (UP), the
-	// lowest for a repair head (DOWN). The page is non-empty here, so the cursor always
-	// moves strictly beyond its previous position.
-	bool const advanced = descending ? (last_inserted < head.cursor) : (head.cursor < last_inserted);
-	debug_assert (advanced);
+	// Advance the head's cursor to the last (highest) kept key.
+	debug_assert (head.cursor < last_inserted);
 	head.cursor = last_inserted;
 	head.reset_union ();
 	return true;

@@ -41,23 +41,20 @@ namespace nano::bootstrap
  *     to clear every gap (back to zero) before resuming. Ignoring gaps without
  *     bound just submits the dependents of a missing key, which gap in turn and
  *     cascade — the threshold caps that.
- *   - heads 1..K-1 are REPAIR heads: continuous background sweepers that scan
- *     DOWNWARD. Each starts at an anchor near the top, walks DOWN, and restarts at the
- *     anchor when it reaches its floor (or the bottom of the index). The anchor is the
- *     spear's frontier, so a gap's missing dependency — which can sit anywhere below
- *     the frontier, including above the confirmed watermark where heights are sparse —
- *     is reached quickly. Head 1 sweeps the full range down to genesis (floor 0): the
- *     guarantor that every dependency is re-scanned (its range must not be shrunk).
- *     Each subsequent head covers only the top `anchor/2^(h-1)` of the range
- *     (floor = anchor - anchor/2^(h-1)): head 2 the top half, head 3 the top quarter, …
- *     The floors are SPEAR-RELATIVE (a fixed fraction of the frontier), NOT tied to the
- *     head ahead's live cursor, so the heads scan independent ranges and never reset one
- *     another when one wraps; they concentrate near the frontier where fresh gaps form.
- *     A full top-down sweep
- *     cannot miss a key, so any key the spear's union skipped is eventually
- *     re-enumerated. Each repair page finalizes on a SINGLE peer response (the
- *     descending topo-index pull) — coverage builds across restarts with different
- *     peers (a union across time), not within one page.
+ *   - heads 1..K-1 are REPAIR heads: continuous background sweepers that scan UPWARD
+ *     (normal topo order — dependencies before dependents, so the fetch/submit pipeline
+ *     can drain what they discover; this keeps the member set from piling up). Each
+ *     sweeps `[floor, anchor]` and restarts at its floor on reaching the anchor (the
+ *     spear's frontier). Head h covers the top `anchor/2^(h-1)` of the range: head 1 the
+ *     full `[0, anchor]` (floor 0 — the guarantor that every key is re-scanned), head 2
+ *     `[anchor/2, anchor]`, head 3 `[3*anchor/4, anchor]`, … The floor is the LOWER
+ *     bound (start of the upward sweep) and is SPEAR-RELATIVE (a fixed fraction of the
+ *     frontier), NOT tied to the head ahead's live cursor, so the heads scan independent
+ *     ranges and never reset one another when one wraps; they concentrate near the
+ *     frontier where fresh gaps form. Head 1's full sweep cannot miss a key, so any key
+ *     the spear's union skipped is eventually re-enumerated. Each repair page finalizes
+ *     on a SINGLE peer response — coverage builds across restarts with different peers
+ *     (a union across time), not within one page.
  *
  * No account resolution, no by-hash dependency chasing — repair is pure
  * full-range re-scan. Account-based dependency walking is left to the

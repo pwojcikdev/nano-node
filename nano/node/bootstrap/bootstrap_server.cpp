@@ -473,33 +473,15 @@ nano::messages::asc_pull_ack nano::bootstrap_server::process (secure::transactio
 
 	nano::messages::asc_pull_ack::topo_index_payload response_payload{};
 
-	if (request.direction == nano::messages::topo_direction::descending)
+	auto begin = (request.start == nano::topo_key{})
+	? store.topology.begin (transaction)
+	: store.topology.begin (transaction, request.start);
+
+	auto end = store.topology.end (transaction);
+
+	for (auto it = std::move (begin); it != end && response_payload.entries.size () < request.count; ++it)
 	{
-		// Entries strictly below `start`, in descending order. Peers advertising the
-		// topo_index capability hold the full index, so an empty response means the
-		// requester has reached the bottom of the index. `first` and `it` are separate
-		// cursors (the iterator is move-only, so we can't copy one into the other).
-		auto first = store.topology.begin (transaction);
-		auto it = (request.start == nano::topo_key{})
-		? store.topology.begin (transaction) // == first position; the loop won't run
-		: store.topology.begin (transaction, request.start); // lower_bound: first key >= start
-		while (it != first && response_payload.entries.size () < request.count)
-		{
-			--it; // largest key < start, then the next smaller, ...
-			response_payload.entries.push_back (it->first);
-		}
-	}
-	else
-	{
-		// Entries at or after `start`, in ascending order.
-		auto begin = (request.start == nano::topo_key{})
-		? store.topology.begin (transaction)
-		: store.topology.begin (transaction, request.start);
-		auto end = store.topology.end (transaction);
-		for (auto it = std::move (begin); it != end && response_payload.entries.size () < request.count; ++it)
-		{
-			response_payload.entries.push_back (it->first);
-		}
+		response_payload.entries.push_back (it->first);
 	}
 
 	response.payload = response_payload;

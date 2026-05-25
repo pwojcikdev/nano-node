@@ -332,8 +332,6 @@ bool topo_strategy::request_index (std::size_t h, nano::topo_key cursor, std::sh
 	nano::messages::asc_pull_req::topo_index_payload msg_pld;
 	msg_pld.start = cursor;
 	msg_pld.count = nano::narrow_cast<uint16_t> (std::min<std::size_t> (ctx.config.topo_scan.candidates, nano::messages::asc_pull_ack::topo_index_payload::max_entries));
-	// Head 0 (spear) walks the frontier upward; repair heads sweep downward.
-	msg_pld.direction = (h == 0) ? nano::messages::topo_direction::ascending : nano::messages::topo_direction::descending;
 	message.payload = msg_pld;
 	message.update_header ();
 
@@ -377,63 +375,33 @@ verify_result topo_strategy::verify (nano::messages::asc_pull_ack::topo_index_pa
 	auto const & payload = std::get<topo_index_tag_payload> (tag.payload);
 	auto const & entries = response.entries;
 
-	// Head 0 (spear) requests ascending; repair heads request descending. Empty
-	// entries are always valid (end-of-topology for the spear, bottom-reached for a
-	// repair head).
-	bool const descending = payload.head != 0;
+	// Non-empty entries must be sorted strictly ascending and start at or past the
+	// requested cursor. Topo heights are contiguous: a block at height H has a
+	// dependency at H-1 that must also be in the peer's ledger, so by induction every
+	// height from 1 up is populated. Hence consecutive entries are at most ONE height
+	// apart (0 = same height/different hash, 1 = next height); a larger jump means the
+	// peer's index has a hole — broken, incomplete, or malicious — so reject it. Empty
+	// entries are valid: end-of-topology signal.
 	if (!entries.empty ())
 	{
-		// Topo heights are contiguous: a block at height H has a dependency at H-1 that
-		// must also be in the peer's ledger, so by induction every height from 1 up is
-		// populated. Hence consecutive entries are at most ONE height apart (0 = same
-		// height/different hash, 1 = next height). A larger jump means the peer's index
-		// has a hole — it is broken, incomplete, or malicious — so reject the response.
-		// (We deliberately do NOT compare the first entry to the cursor: a peer that is
-		// a bit behind legitimately returns its own lower top entries, far from a repair
-		// head's frontier cursor, yet its slice is still internally dense.)
-		if (descending)
+		if (entries.front () < payload.cursor)
 		{
-			// Strictly descending, all at or below the cursor.
-			if (entries.front () > payload.cursor)
-			{
-				return verify_result::invalid;
-			}
-			nano::topo_key previous = entries.front ();
-			for (std::size_t i = 1; i < entries.size (); ++i)
-			{
-				if (entries[i] >= previous)
-				{
-					return verify_result::invalid;
-				}
-				if (previous.topo_height > entries[i].topo_height + 1)
-				{
-					return verify_result::invalid; // gap in the height space
-				}
-				previous = entries[i];
-			}
+			return verify_result::invalid;
 		}
-		else
+		nano::topo_key previous{};
+		bool first = true;
+		for (auto const & entry : entries)
 		{
-			// Strictly ascending, all at or past the cursor.
-			if (entries.front () < payload.cursor)
+			if (entry <= previous)
 			{
 				return verify_result::invalid;
 			}
-			nano::topo_key previous{};
-			bool first = true;
-			for (auto const & entry : entries)
+			if (!first && entry.topo_height > previous.topo_height + 1)
 			{
-				if (entry <= previous)
-				{
-					return verify_result::invalid;
-				}
-				if (!first && entry.topo_height > previous.topo_height + 1)
-				{
-					return verify_result::invalid; // gap in the height space
-				}
-				previous = entry;
-				first = false;
+				return verify_result::invalid; // gap in the height space
 			}
+			previous = entry;
+			first = false;
 		}
 	}
 

@@ -26,15 +26,6 @@ enum class asc_pull_type : uint8_t
 };
 
 /**
- * Direction of a topo index scan, relative to the request's `start` cursor.
- */
-enum class topo_direction : uint8_t
-{
-	ascending = 0, // entries at/after `start`, increasing (spear / forward discovery)
-	descending = 1, // entries strictly before `start`, decreasing (repair heads)
-};
-
-/**
  * Ascending bootstrap pull request
  */
 class asc_pull_req final : public message
@@ -135,7 +126,6 @@ public: // Payload definitions
 	public: // Payload
 		nano::topo_key start{};
 		uint16_t count{ 0 };
-		topo_direction direction{ topo_direction::ascending };
 
 	public: // Logging
 		void operator() (nano::object_stream &) const;
