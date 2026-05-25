@@ -29,50 +29,59 @@ namespace nano::bootstrap
  *
  * MULTI-HEAD MODEL
  * ----------------
- * Several independent scanning `head`s walk the topology index concurrently,
- * each accumulating a `consideration_count`-peer union at its own cursor and
- * advancing only over that union (the proven, gap-safe discovery from the
- * previous design — kept verbatim, just one accumulator per head):
+ * Several independent scanning `head`s walk the topology index concurrently:
  *
  *   - head 0 is the SPEAR: it scans the highest discovered region forward,
- *     extending the frontier. This is the bulk of progress.
- *   - heads 1..K-1 are REPAIR heads: free-roaming cursors that roll BACK to
- *     wherever a gap is and re-scan upward with a fresh union. They are NOT
- *     bounded by the confirmed watermark. A key the spear's union skipped sits
- *     below the watermark once its chunk completes, so a repair head rolls its
- *     cursor back to below a gapped block's height and re-unions that region;
- *     a fresh peer sample re-enumerates the skipped key. If the gap persists,
- *     the head's rollback distance escalates (it walks further back).
+ *     accumulating a `consideration_count`-peer union at its cursor and
+ *     advancing only over that union (the proven, gap-safe frontier discovery).
+ *     This is the bulk of progress. The spear tolerates a bounded number of
+ *     pending dependency gaps (`gap_threshold`): below it the spear keeps
+ *     discovering and keeps submitting past gaps; once the gap count reaches the
+ *     threshold the spear PAUSES (`repair_wait`) and waits for the repair heads
+ *     to clear every gap (back to zero) before resuming. Ignoring gaps without
+ *     bound just submits the dependents of a missing key, which gap in turn and
+ *     cascade — the threshold caps that.
+ *   - heads 1..K-1 are REPAIR heads: continuous background sweepers. Each walks
+ *     `[0, bound]` and WRAPS back to genesis at the bound, forever. The bound of
+ *     head h is the current cursor of head h-1 (head 0 == spear), so the heads
+ *     nest: head 1 sweeps up to the spear, head 2 up to head 1, etc. A full
+ *     sweep cannot miss a key, so any key the spear's union skipped is
+ *     eventually re-enumerated; the lower heads re-sample the low region (where
+ *     critical dependencies live) more densely. Each repair page finalizes on a
+ *     SINGLE peer response — coverage builds across wrap-arounds with different
+ *     peers (a union across time), not within one page.
  *
- * No account resolution, no by-hash dependency chasing — repair is pure union
- * re-scan with free positioning. Account-based dependency walking is left to
- * the priority/dependency strategies.
+ * No account resolution, no by-hash dependency chasing — repair is pure
+ * full-range re-scan. Account-based dependency walking is left to the
+ * priority/dependency strategies.
  *
  * CHUNKS
  * ------
- * Each time a head finalizes its union it emits a `chunk`: the lowest
- * `candidates` keys of the union, submitted to the block processor as a unit
- * and evaluated by their per-block results. A chunk is `done` only when every
- * member reached the ledger; a `gapped` member keeps its chunk open (it is
- * retained and re-submitted on a retry timer, never silently dropped). The
- * head that owns a chunk reads its outcome to decide whether its region is
- * clean or needs another (deeper) re-scan.
+ * Each time a head finalizes a page it emits a `chunk`: the lowest `candidates`
+ * keys discovered, submitted to the block processor as a unit and evaluated by
+ * their per-block results. A chunk is `done` only when every member reached the
+ * ledger; a `gapped` member keeps its chunk open (it is retained and re-submitted
+ * on a retry timer, never silently dropped).
  *
  * MEMBERS & WATERMARK
  * -------------------
  * All discovered keys live in one `members` container ordered by `topo_key`
  * (so repair-inserted low keys slot into their correct topological position)
- * and hashed by block hash (O(1) result routing). New unions dedup against it,
+ * and hashed by block hash (O(1) result routing). New pages dedup against it,
  * so a re-scan only adds the previously-skipped keys. `confirmed_watermark` is
  * the top of the contiguous in-ledger prefix — a progress REPORT (`cursor()`),
- * NOT a barrier; repair heads scan freely below it.
+ * NOT a barrier; repair heads scan freely below it (the monotonic guard in
+ * `advance_watermark` keeps it from being dragged back when a repair head fills
+ * a dependency below the reported position).
  *
  * TERMINATION
  * -----------
- * `caught_up` = the spear saw the tip (a short/empty page) AND no members are
- * gapped or in-flight (everything in_ledger/terminal). Until then a gapped
- * member keeps the bootstrap from declaring done, so a skipped key is never
- * silently lost — the repair loop keeps re-scanning for it.
+ * `caught_up` = the spear saw the tip (a short/empty page) AND no members remain
+ * (everything in_ledger/terminal and pruned). To let `members` actually drain to
+ * empty, repair `next()` self-idles once the spear is `done` and no gap remains
+ * (otherwise continuous re-discovery of already-synced keys would keep `members`
+ * non-empty forever). Until the tip is reached a gapped member keeps the
+ * bootstrap from declaring done, so a skipped key is never silently lost.
  */
 class topo_scan_index
 {
@@ -123,7 +132,7 @@ public:
 
 	// A submitted block came back as a dependency gap (gap_previous / gap_source
 	// / gap_epoch_open_pending). Member -> `gapped`: retained and re-submitted
-	// later; its (lowest) height homes a repair head's rollback. NOT dropped.
+	// later; once the gap count reaches `gap_threshold` the spear pauses. NOT dropped.
 	void block_gapped (nano::block_hash const & hash, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	// A submitted block is terminally unusable here (fork / bad_signature / ...).
@@ -233,15 +242,14 @@ private:
 		bool repair{ false }; // false == spear
 		nano::topo_key cursor{}; // current scan position
 
-		// consideration_count-peer union accumulator (unchanged mechanism).
+		// Discovery accumulator. The spear unions `consideration_count` peer
+		// responses before finalizing a page; a repair head finalizes on the first.
 		std::set<nano::topo_key> candidates;
 		unsigned requests{ 0 };
 		unsigned completed{ 0 };
 		std::chrono::steady_clock::time_point timestamp{};
 
 		bool done{ false }; // spear: topology end reached
-		uint64_t rollback{ 0 }; // repair: current rollback distance (escalates)
-		nano::topo_key target{}; // repair: gap height this region is chasing
 
 		void reset_union ()
 		{
@@ -259,10 +267,10 @@ private:
 	// Spear saw a short/empty page: the discovered frontier reached the tip.
 	bool tip_reached{ false };
 
-	// Keys of currently-gapped members, ordered. Homes repair-head rollback:
-	// repair head `h` chases the (h-1)-th lowest gap. Kept in sync with the
-	// `gapped` member transitions.
-	std::set<nano::topo_key> gapped_keys;
+	// Spear gap-pause latch (hysteresis): set when `gapped_count` reaches
+	// `gap_threshold`, cleared only when it returns to 0. While set, the spear
+	// pauses discovery and `next_submit` stops at the first gap.
+	bool repair_wait{ false };
 
 	// O(1) state counters, kept in sync with transitions.
 	std::size_t pending_count{ 0 };
@@ -282,10 +290,9 @@ private:
 	// Mark a member (found by hash) resolved into the ledger, prune-advance the
 	// watermark. Shared by `block_indexed` and `mark_redundant`.
 	void resolve_member (nano::block_hash const & hash);
-	// topo_height of the (n)-th lowest gapped member, or nullopt if fewer than
-	// n+1 gaps exist — homes repair head (n+1)'s rollback.
-	std::optional<uint64_t> nth_gap_height (std::size_t n) const;
-	// True if head `h`'s union is eligible to (re)query at its cursor now.
+	// Gap count at which the spear pauses, clamped to a minimum of 1.
+	std::size_t effective_gap_threshold () const;
+	// True if the spear head's union is eligible to (re)query at its cursor now.
 	bool eligible (scan_head const &, std::chrono::steady_clock::time_point now) const;
 	// Mark a member resolved against its chunk; erase the chunk when fully done.
 	void chunk_resolve (uint64_t chunk_id);

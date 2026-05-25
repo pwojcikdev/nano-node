@@ -67,8 +67,7 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("block_batch_size", block_batch_size);
 	toml.get ("max_blocks_outstanding", max_blocks_outstanding);
 	toml.get ("max_blocks_queued", max_blocks_queued);
-	toml.get ("rollback_min", rollback_min);
-	toml.get ("rollback_max", rollback_max);
+	toml.get ("gap_threshold", gap_threshold);
 
 	return toml.get_error ();
 }
@@ -83,8 +82,7 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("block_batch_size", block_batch_size, "Maximum number of hashes requested per blocks_random call.\ntype:uint64");
 	toml.put ("max_blocks_outstanding", max_blocks_outstanding, "Pause block fetching when this many blocks are actively in-flight.\ntype:uint64");
 	toml.put ("max_blocks_queued", max_blocks_queued, "Pause spear scanning when the held member window hits this number.\ntype:uint64");
-	toml.put ("rollback_min", rollback_min, "Initial topo-height rollback distance for a repair head homing onto a gap.\ntype:uint64");
-	toml.put ("rollback_max", rollback_max, "Upper bound on the doubling repair-head rollback distance.\ntype:uint64");
+	toml.put ("gap_threshold", gap_threshold, "Number of pending dependency gaps the spear tolerates before pausing for the repair heads to catch up. 1 = pause at the first gap.\ntype:uint64");
 
 	return toml.get_error ();
 }

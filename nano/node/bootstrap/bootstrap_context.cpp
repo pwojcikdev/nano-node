@@ -549,8 +549,8 @@ void bootstrap_context::cleanup ()
 	}
 
 	// Topology bootstrap maintenance: reclaim stale in-flight block hashes (slots
-	// that timed out without a response). Stall recovery is no longer a global
-	// rewind — repair heads roll back to gaps on their own.
+	// that timed out without a response). Gaps are not recovered here — the repair
+	// heads continuously re-sweep the index in the background and fill them.
 	if (auto reclaimed = topology.cleanup (now); reclaimed > 0)
 	{
 		stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::timeout, reclaimed);

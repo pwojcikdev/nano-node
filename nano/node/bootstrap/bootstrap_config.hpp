@@ -56,17 +56,12 @@ public:
 	std::size_t max_blocks_outstanding{ 10'000 };
 	std::size_t max_blocks_queued{ 40'000 };
 	std::size_t block_processor_threshold{ 2000 };
-	// Repair-head rollback step (topo-heights). A repair head homes its cursor
-	// this far below the gap it is chasing; if the gap persists after re-scanning
-	// up to it, the distance doubles (capped at `rollback_max`) so it walks
-	// progressively further back until a fresh union re-enumerates the skipped key.
-	uint64_t rollback_min{ 1000 };
-	// Upper bound on the doubling rollback distance. Set effectively unbounded so
-	// a repair head can reach a dependency at any depth — including all the way
-	// to genesis (the cursor clamps at 0 once the distance exceeds the gap
-	// height). A finite value here would leave deps deeper than it unreachable,
-	// which stalls the tail. Large but overflow-safe under the doubling.
-	uint64_t rollback_max{ 1'000'000'000'000'000'000 };
+	// Number of pending dependency gaps the spear tolerates before pausing. Below
+	// this the spear keeps discovering and keeps submitting past gaps (making
+	// progress on independent account chains); once the gap count reaches the
+	// threshold the spear pauses and waits for the repair heads to clear every gap
+	// before resuming. 1 = pause at the first gap. Clamped to a minimum of 1.
+	std::size_t gap_threshold{ 1000 };
 };
 
 class bootstrap_config final

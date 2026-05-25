@@ -36,8 +36,13 @@ std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono:
 		{
 			return std::nullopt; // Topology end reached (re-armed by poll mode).
 		}
-		// Backpressure: pause discovery while the held window is full. Repair
-		// heads are exempt so they can always fill the hole that's blocking it.
+		// Pause once pending gaps reach the threshold: wait for the repair heads to
+		// clear every gap (the latch resets at zero) before extending the frontier.
+		if (repair_wait)
+		{
+			return std::nullopt;
+		}
+		// Backpressure: pause discovery while the held window is full.
 		if (outstanding () >= config.max_blocks_queued)
 		{
 			return std::nullopt;
@@ -51,36 +56,39 @@ std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono:
 		return head.cursor;
 	}
 
-	// Repair head h chases the (h-1)-th lowest gap.
-	auto const g = nth_gap_height (h - 1);
-	if (!g)
+	// Repair head: continuous sweep of [0, bound], wrapping at the bound. Quiesce
+	// once the spear reached the tip and no gap remains, so re-discovery of already-
+	// synced keys stops and `members` can drain to empty (else `caught_up` could
+	// never be reached). A paused spear (gapped_count > 0) leaves repair active.
+	if (heads[0].done && gapped_count == 0)
 	{
-		head.target = {}; // No gap for this head — idle.
 		return std::nullopt;
 	}
 
-	auto const back_off = [] (uint64_t height, uint64_t distance) {
-		return nano::topo_key{ height > distance ? height - distance : 0, nano::block_hash{ 0 } };
-	};
-
-	if (head.target.topo_height != *g)
+	// Bound is the head ahead's current position (head 0 == spear); the heads nest:
+	// head 1 sweeps up to the spear, head 2 up to head 1, and so on.
+	auto const bound = heads[h - 1].cursor;
+	if (bound.topo_height == 0)
 	{
-		// New target gap — home below it.
-		head.target = nano::topo_key{ *g, nano::block_hash{ 0 } };
-		head.rollback = config.rollback_min;
-		head.cursor = back_off (*g, head.rollback);
-		head.reset_union ();
-	}
-	else if (head.cursor.topo_height >= *g)
-	{
-		// Reached the gap height but it's still gapped — the skipped key is
-		// deeper (or was missed again). Walk further back and re-scan.
-		head.rollback = std::min (head.rollback * 2, config.rollback_max);
-		head.cursor = back_off (*g, head.rollback);
-		head.reset_union ();
+		// The head ahead is still at genesis (startup, or it just wrapped), so there
+		// is no range [0, bound] to sweep yet — wait for it to advance, then sweep
+		// in behind it. This is a brief wait, not a stall.
+		return std::nullopt;
 	}
 
-	if (!eligible (head, now))
+	if (head.cursor.topo_height >= bound.topo_height)
+	{
+		// Reached the head ahead: wrap back to genesis and sweep the range again.
+		head.cursor = nano::topo_key{};
+		head.reset_union ();
+		head.timestamp = now; // Throttle the restart by one cooldown (anti-spin).
+	}
+
+	// Repair eligibility is cooldown-since-last-fire only (single-response pages, no
+	// consideration_count burst): a response resets `timestamp` to {} via
+	// `reset_union` so the next page fires at once, while an unanswered cursor or a
+	// fresh wrap waits out one cooldown.
+	if (head.timestamp >= now - config.cooldown)
 	{
 		return std::nullopt;
 	}
@@ -103,7 +111,7 @@ bool topo_scan_index::process (std::size_t h, nano::topo_key const start, std::d
 
 	head.completed += 1;
 
-	// Accumulate the union of strictly-post-cursor entries.
+	// Accumulate the strictly-post-cursor entries.
 	for (auto const & entry : entries)
 	{
 		if (entry > head.cursor)
@@ -112,17 +120,19 @@ bool topo_scan_index::process (std::size_t h, nano::topo_key const start, std::d
 		}
 	}
 
-	// Wait for the full quorum before finalizing.
-	if (head.completed < config.consideration_count)
+	// The spear unions a full quorum before finalizing; a repair head finalizes on
+	// the first response (coverage builds across wrap-arounds, not within a page).
+	if (!head.repair && head.completed < config.consideration_count)
 	{
 		return false;
 	}
 
 	if (head.candidates.empty ())
 	{
-		// Spear: a sustained empty quorum means the topology end. Repair heads
-		// scan below the frontier where entries always exist, so they don't reach
-		// this (a transient empty response just re-queries on cooldown).
+		// Spear: a sustained empty quorum means the topology end. A repair head can
+		// also see an empty page (a lagging peer with nothing past the cursor) — it
+		// just makes no progress and re-queries the same cursor on cooldown with a
+		// fresh peer; it never concludes the tip.
 		if (!head.repair && head.completed >= config.consideration_count * 2)
 		{
 			head.done = true;
@@ -180,8 +190,10 @@ bool topo_scan_index::process (std::size_t h, nano::topo_key const start, std::d
 		++next_chunk_id;
 	}
 
-	// Advance the head's cursor to the last kept key.
-	debug_assert (head.cursor < last_inserted);
+	// Advance the head's cursor to the last kept key. (A repair page that returned
+	// nothing past the cursor takes the empty branch above and never reaches here,
+	// so the cursor always moves forward — but keep the assert spear-only for safety.)
+	debug_assert (head.repair || head.cursor < last_inserted);
 	head.cursor = last_inserted;
 	head.reset_union ();
 	return true;
@@ -239,30 +251,47 @@ std::deque<std::shared_ptr<nano::block>> topo_scan_index::next_submit (std::size
 {
 	std::deque<std::shared_ptr<nano::block>> result;
 
-	// Submit in topo_key order (deps before dependents) over the contiguous
-	// front: submit `received` members and re-submit `gapped` members past their
-	// retry interval (their dep may now be filled); skip blocks already in the
-	// processor pipeline (`submitted`) or confirmed (`in_ledger`/`terminal`);
-	// STOP at the first un-fetched member (`pending`/`in_flight`) — submitting
-	// past an un-fetched hole would only gap its dependents.
+	// Submit in topo_key order (deps before dependents) over the contiguous front:
+	// submit `received` members and re-submit `gapped` members past their retry
+	// interval (their dep may now be filled by a repair head); skip blocks already
+	// in the processor pipeline (`submitted`) or confirmed (`in_ledger`/`terminal`);
+	// STOP at the first un-fetched member (`pending`/`in_flight`) — submitting past
+	// an un-fetched hole would only gap its dependents. A `gapped` member STOPS the
+	// walk too while the gap-pause latch is set (`repair_wait`), so no dependents are
+	// submitted past it and the gap set can only shrink; below the threshold the walk
+	// continues past gaps to make progress on independent chains (bounded by it).
+	bool const paused = repair_wait;
 	auto const retry_cutoff = now - config.block_retry;
 	auto & by_key = members.get<tag_key> ();
+	auto const submit = [&] (auto it) {
+		result.push_back (it->block);
+		set_state (*it, member_state::submitted);
+		by_key.modify (it, [now] (member & m) {
+			m.state = member_state::submitted;
+			m.timestamp = now;
+		});
+	};
 	for (auto it = by_key.begin (); it != by_key.end () && result.size () < max_count; ++it)
 	{
 		if (it->state == member_state::pending || it->state == member_state::in_flight)
 		{
 			break;
 		}
-		bool const submit = it->state == member_state::received
-		|| (it->state == member_state::gapped && it->timestamp < retry_cutoff);
-		if (submit)
+		if (it->state == member_state::gapped)
 		{
-			result.push_back (it->block);
-			set_state (*it, member_state::submitted);
-			by_key.modify (it, [now] (member & m) {
-				m.state = member_state::submitted;
-				m.timestamp = now;
-			});
+			if (it->timestamp < retry_cutoff)
+			{
+				submit (it);
+			}
+			if (paused)
+			{
+				break; // Threshold reached: do not submit dependents past the gap.
+			}
+			continue;
+		}
+		if (it->state == member_state::received)
+		{
+			submit (it);
 		}
 	}
 	return result;
@@ -305,13 +334,13 @@ void topo_scan_index::block_gapped (nano::block_hash const & hash, std::chrono::
 	{
 		return;
 	}
-	// Only a submitted block can come back as a gap. Retain its block and
-	// schedule a re-submit; its (lowest) height homes a repair head's rollback.
+	// Only a submitted block can come back as a gap. Retain its block and schedule a
+	// re-submit; once the gap count reaches the threshold the spear pauses for repair.
 	if (it->state != member_state::submitted)
 	{
 		return;
 	}
-	set_state (*it, member_state::gapped); // inserts into gapped_keys
+	set_state (*it, member_state::gapped); // bumps gapped_count / maybe sets repair_wait
 	by_hash.modify (it, [now] (member & m) {
 		m.state = member_state::gapped;
 		m.timestamp = now;
@@ -357,10 +386,10 @@ void topo_scan_index::reset ()
 {
 	members.clear ();
 	chunks.clear ();
-	gapped_keys.clear ();
 	next_chunk_id = 0;
 	confirmed_watermark = {};
 	tip_reached = false;
+	repair_wait = false;
 	pending_count = in_flight_count = received_count = submitted_count = in_ledger_count = gapped_count = 0;
 
 	std::size_t const count = std::max<std::size_t> (1, config.head_count);
@@ -368,7 +397,6 @@ void topo_scan_index::reset ()
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		heads[i].repair = (i != 0); // head 0 == spear
-		heads[i].rollback = config.rollback_min;
 	}
 }
 
@@ -402,7 +430,6 @@ void topo_scan_index::set_state (member const & m, member_state ns)
 			break;
 		case member_state::gapped:
 			--gapped_count;
-			gapped_keys.erase (m.key);
 			break;
 		case member_state::terminal:
 			break;
@@ -426,10 +453,20 @@ void topo_scan_index::set_state (member const & m, member_state ns)
 			break;
 		case member_state::gapped:
 			++gapped_count;
-			gapped_keys.insert (m.key);
 			break;
 		case member_state::terminal:
 			break;
+	}
+
+	// Maintain the spear gap-pause latch (hysteresis): pause once gaps reach the
+	// threshold, resume only when every gap has cleared.
+	if (gapped_count >= effective_gap_threshold ())
+	{
+		repair_wait = true;
+	}
+	else if (gapped_count == 0)
+	{
+		repair_wait = false;
 	}
 }
 
@@ -470,15 +507,9 @@ void topo_scan_index::chunk_resolve (uint64_t chunk_id)
 	}
 }
 
-std::optional<uint64_t> topo_scan_index::nth_gap_height (std::size_t n) const
+std::size_t topo_scan_index::effective_gap_threshold () const
 {
-	if (gapped_keys.size () <= n)
-	{
-		return std::nullopt;
-	}
-	auto it = gapped_keys.begin ();
-	std::advance (it, n);
-	return it->topo_height;
+	return std::max<std::size_t> (1, config.gap_threshold);
 }
 
 std::size_t topo_scan_index::outstanding () const
@@ -556,6 +587,7 @@ nano::container_info topo_scan_index::container_info () const
 	info.put ("gapped", gapped_count);
 	info.put ("chunks", chunks.size ());
 	info.put ("tip_reached", tip_reached ? std::size_t{ 1 } : std::size_t{ 0 });
+	info.put ("repair_wait", repair_wait ? std::size_t{ 1 } : std::size_t{ 0 });
 	info.add ("heads", collect_heads ());
 	return info;
 }

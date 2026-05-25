@@ -82,8 +82,9 @@ void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_
 		case nano::block_status::gap_epoch_open_pending:
 		{
 			// A dependency below the cursor is missing. Keep the member (retained
-			// + re-submitted); its height homes a repair head's rollback. The
-			// per-result gap counters are tracked in bootstrap_context::inspect.
+			// + re-submitted); once enough gaps accumulate the spear pauses while the
+			// repair heads re-scan and fill them. The per-result gap counters are
+			// tracked in bootstrap_context::inspect.
 			ctx.topology.block_gapped (hash);
 		}
 		break;
@@ -104,9 +105,12 @@ void topo_strategy::run_scan (std::size_t h)
 	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
 	while (!ctx.stopped)
 	{
-		// Is this head active? The spear runs while indexing; a repair head runs
-		// only when there's a gap for it to chase (head h chases the (h-1)-th gap).
-		bool const active = (h == 0) ? ctx.topology.indexing () : (ctx.topology.count_gapped () >= h);
+		// Every head runs while indexing. The finer policy lives in topology.next():
+		// the spear pauses on the gap threshold; a repair head continuously sweeps its
+		// nested range [0, head-ahead] and wraps, only waiting for the head ahead to
+		// advance off genesis (startup / just after it wrapped) or once the topology
+		// has quiesced.
+		bool const active = ctx.topology.indexing ();
 		if (!active)
 		{
 			// Spear poll mode: once caught up, periodically re-page from the tip to
@@ -268,7 +272,11 @@ std::optional<nano::topo_key> topo_strategy::wait_position (std::size_t h)
 	ctx.wait ([this, h, &result] () {
 		debug_assert (!ctx.mutex.try_lock ());
 		result = ctx.topology.next (h);
-		bool const idle = (h == 0) ? !ctx.topology.indexing () : (ctx.topology.count_gapped () < h);
+		// Park until this head offers a cursor, or the topology stops indexing. A
+		// head whose next() returns nullopt while indexing (spear paused on the gap
+		// threshold, repair waiting out a cooldown or for the spear to advance) keeps
+		// waiting and re-checks on the next notify / backoff tick.
+		bool const idle = !ctx.topology.indexing ();
 		return result.has_value () || idle;
 	});
 	return result;
