@@ -41,17 +41,20 @@ namespace nano::bootstrap
  *     to clear every gap (back to zero) before resuming. Ignoring gaps without
  *     bound just submits the dependents of a missing key, which gap in turn and
  *     cascade — the threshold caps that.
- *   - heads 1..K-1 are REPAIR heads: continuous background sweepers. Each walks
- *     `[0, bound]` and WRAPS back to genesis at the bound, forever. Head 1's bound
- *     is the spear's current cursor — it sweeps the FULL discovered range and is
- *     the guarantor that every skipped key below the frontier is re-scanned (so it
- *     must not be shrunk). Each subsequent head's bound is HALF the head ahead's
- *     height (head 2 up to head1/2, head 3 up to head2/2, …), so the lower heads
- *     concentrate geometrically on the low region where critical dependencies live.
- *     A full sweep cannot miss a key, so any key the spear's union skipped is
- *     eventually re-enumerated. Each repair page finalizes on a SINGLE peer
- *     response — coverage builds across wrap-arounds with different peers (a union
- *     across time), not within one page.
+ *   - heads 1..K-1 are REPAIR heads: continuous background sweepers that scan
+ *     DOWNWARD. Each starts at an anchor near the top, walks DOWN, and restarts at the
+ *     anchor when it reaches its floor (or the bottom of the index). The anchor is the
+ *     spear's frontier, so a gap's missing dependency — which can sit anywhere below
+ *     the frontier, including above the confirmed watermark where heights are sparse —
+ *     is reached quickly. Head 1 sweeps the full range down to genesis (floor 0): the
+ *     guarantor that every dependency is re-scanned (its range must not be shrunk).
+ *     Each subsequent head covers only the upper HALF of the head ahead's range
+ *     (floor = midpoint of the anchor and the head ahead's cursor), concentrating the
+ *     lower heads near the frontier where fresh gaps form. A full top-down sweep
+ *     cannot miss a key, so any key the spear's union skipped is eventually
+ *     re-enumerated. Each repair page finalizes on a SINGLE peer response (the
+ *     descending topo-index pull) — coverage builds across restarts with different
+ *     peers (a union across time), not within one page.
  *
  * No account resolution, no by-hash dependency chasing — repair is pure
  * full-range re-scan. Account-based dependency walking is left to the

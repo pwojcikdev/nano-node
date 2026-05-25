@@ -780,6 +780,7 @@ TEST (message, asc_pull_req_serialization_topo_index)
 	nano::messages::asc_pull_req::topo_index_payload original_payload{};
 	original_payload.start = nano::topo_key{ 4242, nano::test::random_hash () };
 	original_payload.count = 777;
+	original_payload.direction = nano::messages::topo_direction::descending;
 
 	original.payload = original_payload;
 	original.update_header ();
@@ -805,6 +806,7 @@ TEST (message, asc_pull_req_serialization_topo_index)
 	ASSERT_NO_THROW (message_payload = std::get<nano::messages::asc_pull_req::topo_index_payload> (message.payload));
 	ASSERT_EQ (original_payload.start, message_payload.start);
 	ASSERT_EQ (original_payload.count, message_payload.count);
+	ASSERT_EQ (original_payload.direction, message_payload.direction);
 
 	ASSERT_TRUE (nano::at_end (stream));
 }

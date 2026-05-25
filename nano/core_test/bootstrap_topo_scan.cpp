@@ -76,13 +76,18 @@ TEST (bootstrap_topo_scan, dedup_on_rescan)
 {
 	auto cfg = default_config ();
 	nano::bootstrap::topo_scan_index scan{ cfg };
+	auto const now = std::chrono::steady_clock::now ();
 
-	scan.process (0, nano::topo_key{}, entries ({ key (1, 100) }));
-	ASSERT_EQ (scan.count_members (), 1);
-
-	// A second head re-scans from genesis: 100 is already tracked (deduped), 200 is new.
-	scan.process (1, nano::topo_key{}, entries ({ key (1, 100), key (2, 200) }));
+	// Spear discovers two keys (members 50, 100); the anchor is (10, 100).
+	scan.process (0, nano::topo_key{}, entries ({ key (5, 50), key (10, 100) }));
 	ASSERT_EQ (scan.count_members (), 2);
+
+	// Repair head 1 sweeps DOWN from the anchor: (5, 50) is already tracked (deduped),
+	// (3, 30) is new.
+	auto p = scan.next (1, now);
+	ASSERT_EQ (*p, key (10, 100)); // anchor (spear frontier)
+	scan.process (1, *p, entries ({ key (5, 50), key (3, 30) })); // descending
+	ASSERT_EQ (scan.count_members (), 3); // 50, 100, 30
 }
 
 // Full pipeline: discovered -> fetched -> received -> submitted -> in_ledger,
@@ -279,14 +284,18 @@ TEST (bootstrap_topo_scan, watermark_monotonic)
 {
 	auto cfg = default_config ();
 	nano::bootstrap::topo_scan_index scan{ cfg };
+	auto const now = std::chrono::steady_clock::now ();
 
 	scan.process (0, nano::topo_key{}, entries ({ key (5, 500) }));
 	submit_member (scan, 500);
 	scan.block_indexed (nano::block_hash{ 500 });
 	ASSERT_EQ (scan.cursor (), key (5, 500));
 
-	// A repair head re-discovers and fills a dependency below the watermark.
-	scan.process (1, nano::topo_key{}, entries ({ key (2, 200) }));
+	// A repair head sweeps DOWN from the anchor (5, 500) and re-discovers a dependency
+	// below the watermark.
+	auto p = scan.next (1, now);
+	ASSERT_EQ (*p, key (5, 500)); // anchor
+	scan.process (1, *p, entries ({ key (2, 200) })); // descending, (2,200) < (5,500)
 	submit_member (scan, 200);
 	scan.block_indexed (nano::block_hash{ 200 });
 
@@ -362,7 +371,9 @@ TEST (bootstrap_topo_scan, spear_backpressure)
 
 // A repair head idles while its bound (the head ahead's cursor) is still at
 // genesis — there is nothing discovered to sweep yet.
-TEST (bootstrap_topo_scan, repair_idle_when_bound_zero)
+// A repair head idles while the spear anchor is still at genesis — there is nothing
+// discovered above it to sweep down from yet.
+TEST (bootstrap_topo_scan, repair_idle_when_anchor_zero)
 {
 	auto cfg = default_config ();
 	nano::bootstrap::topo_scan_index scan{ cfg };
@@ -370,53 +381,55 @@ TEST (bootstrap_topo_scan, repair_idle_when_bound_zero)
 	ASSERT_FALSE (scan.next (1).has_value ());
 }
 
-// Once the spear advances, repair head 1 sweeps its range starting at genesis and
-// moves forward over single responses.
-TEST (bootstrap_topo_scan, repair_sweeps_after_spear_advances)
+// Once the spear advances, repair head 1 starts at the spear frontier (anchor) and
+// sweeps DOWNWARD over single responses.
+TEST (bootstrap_topo_scan, repair_sweeps_down_from_spear)
 {
 	auto cfg = default_config ();
 	nano::bootstrap::topo_scan_index scan{ cfg };
 	auto const now = std::chrono::steady_clock::now ();
 
-	scan.process (0, nano::topo_key{}, entries ({ key (5, 500) })); // spear bound -> height 5
+	scan.process (0, nano::topo_key{}, entries ({ key (100, 1) })); // spear anchor -> (100, 1)
 
 	auto p1 = scan.next (1, now);
 	ASSERT_TRUE (p1);
-	ASSERT_EQ (*p1, nano::topo_key{}); // sweep starts at genesis
+	ASSERT_EQ (*p1, key (100, 1)); // sweep starts at the spear frontier
 
-	// Single response advances the repair cursor (no quorum wait).
-	ASSERT_TRUE (scan.process (1, *p1, entries ({ key (1, 100), key (2, 200) })));
-	ASSERT_EQ (scan.count_members (), 3); // 500 (spear) + 100 + 200 (repair)
+	// Single response (entries below the cursor, descending) advances the cursor DOWN.
+	ASSERT_TRUE (scan.process (1, *p1, entries ({ key (80, 80), key (60, 60) })));
+	ASSERT_EQ (scan.count_members (), 3); // (100,1) spear + (80) + (60) repair
 
 	auto p2 = scan.next (1, now);
 	ASSERT_TRUE (p2);
-	ASSERT_EQ (*p2, key (2, 200)); // continues forward from the last kept key
+	ASSERT_EQ (*p2, key (60, 60)); // continues downward from the lowest kept key
 }
 
-// When a repair head reaches its bound it wraps back to genesis (after one
-// cooldown, so a small range can't hot-spin).
-TEST (bootstrap_topo_scan, repair_wrap_around)
+// Reaching the bottom of the index (an empty descending page) restarts the sweep at
+// the spear anchor.
+TEST (bootstrap_topo_scan, repair_restarts_at_bottom)
 {
 	auto cfg = default_config ();
 	nano::bootstrap::topo_scan_index scan{ cfg };
 	auto const now = std::chrono::steady_clock::now ();
 
-	scan.process (0, nano::topo_key{}, entries ({ key (3, 300) })); // bound height 3
+	scan.process (0, nano::topo_key{}, entries ({ key (3, 3) })); // anchor (3, 3)
 	auto p1 = scan.next (1, now);
-	ASSERT_EQ (*p1, nano::topo_key{});
-	scan.process (1, *p1, entries ({ key (3, 300) })); // sweep up to the bound
+	ASSERT_EQ (*p1, key (3, 3));
+	scan.process (1, *p1, entries ({ key (2, 2), key (1, 1) })); // descend to (1, 1)
 
-	// Cursor now == bound: the query wraps (and is throttled this tick).
-	ASSERT_FALSE (scan.next (1, now).has_value ());
+	auto p2 = scan.next (1, now);
+	ASSERT_EQ (*p2, key (1, 1));
+	ASSERT_TRUE (scan.process (1, *p2, entries ({}))); // nothing below -> bottom reached, park
 
-	// After a cooldown the wrapped sweep fires again at genesis.
-	auto p2 = scan.next (1, now + cfg.cooldown + 1s);
-	ASSERT_TRUE (p2);
-	ASSERT_EQ (*p2, nano::topo_key{});
+	// The next query restarts the sweep at the anchor (top).
+	auto p3 = scan.next (1, now);
+	ASSERT_TRUE (p3);
+	ASSERT_EQ (*p3, key (3, 3));
 }
 
-// Head 1 sweeps the full range up to the spear, but each subsequent head is bounded
-// by HALF the head ahead's height (head 2 wraps at head1/2, not head1).
+// Head 1 sweeps the full range down to genesis, but each subsequent head is floored at
+// the MIDPOINT between the anchor and the head ahead — covering only the upper half and
+// restarting there instead of descending all the way down.
 TEST (bootstrap_topo_scan, repair_head_scans_half_of_head_ahead)
 {
 	auto cfg = default_config ();
@@ -424,25 +437,25 @@ TEST (bootstrap_topo_scan, repair_head_scans_half_of_head_ahead)
 	nano::bootstrap::topo_scan_index scan{ cfg };
 	auto const now = std::chrono::steady_clock::now ();
 
-	// Spear -> height 100; drive repair head 1's cursor up to height 100.
+	// Spear anchor -> (100, 1); drive repair head 1's cursor DOWN to height 20.
 	scan.process (0, nano::topo_key{}, entries ({ key (100, 1) }));
 	auto p1 = scan.next (1, now);
-	scan.process (1, *p1, entries ({ key (100, 1) })); // head 1 cursor -> 100
+	scan.process (1, *p1, entries ({ key (20, 20) })); // head 1 cursor -> (20, 20)
 
-	// Head 2 is bounded by head1_height / 2 = 50, not the full 100.
+	// Head 2 floor = midpoint(anchor 100, head1 20) = 60; it starts at the anchor.
 	auto p2 = scan.next (2, now);
 	ASSERT_TRUE (p2);
-	ASSERT_EQ (*p2, nano::topo_key{});
-	scan.process (2, *p2, entries ({ key (50, 7) })); // head 2 cursor -> 50 (== its bound)
+	ASSERT_EQ (*p2, key (100, 1));
+	scan.process (2, *p2, entries ({ key (60, 60) })); // head 2 cursor -> 60 (== its floor)
 
-	// Reaching 50 wraps head 2 (it would NOT wrap at 50 if its bound were the full 100).
-	ASSERT_FALSE (scan.next (2, now).has_value ()); // wrapped, throttled this tick
-	auto p2b = scan.next (2, now + cfg.cooldown + 1s);
+	// Reaching the floor (60) restarts head 2 at the anchor — it would continue below 60
+	// if its floor were 0 like head 1.
+	auto p2b = scan.next (2, now);
 	ASSERT_TRUE (p2b);
-	ASSERT_EQ (*p2b, nano::topo_key{}); // swept back to genesis at bound 50 (half of 100)
+	ASSERT_EQ (*p2b, key (100, 1));
 }
 
-// A repair head will not re-fire the same cursor within the cooldown (anti-spin),
+// A repair head will not re-fire an unanswered cursor within the cooldown (anti-spin),
 // but fires again once it elapses.
 TEST (bootstrap_topo_scan, repair_no_spin_cooldown)
 {
@@ -450,15 +463,15 @@ TEST (bootstrap_topo_scan, repair_no_spin_cooldown)
 	nano::bootstrap::topo_scan_index scan{ cfg };
 	auto const now = std::chrono::steady_clock::now ();
 
-	scan.process (0, nano::topo_key{}, entries ({ key (5, 500) }));
+	scan.process (0, nano::topo_key{}, entries ({ key (100, 1) })); // anchor (100, 1)
 
-	ASSERT_TRUE (scan.next (1, now).has_value ());
-	ASSERT_FALSE (scan.next (1, now).has_value ()); // within cooldown -> refused
-	ASSERT_TRUE (scan.next (1, now + cfg.cooldown + 1s).has_value ()); // cooldown elapsed
+	ASSERT_TRUE (scan.next (1, now).has_value ()); // fires at the anchor
+	ASSERT_FALSE (scan.next (1, now).has_value ()); // unanswered cursor within cooldown -> refused
+	ASSERT_TRUE (scan.next (1, now + cfg.cooldown + 1s).has_value ()); // cooldown elapsed -> retry
 }
 
-// A repair head finalizes a page on the FIRST response, while the spear still
-// needs the full consideration_count quorum.
+// A repair head finalizes a page on the FIRST response, while the spear still needs the
+// full consideration_count quorum.
 TEST (bootstrap_topo_scan, repair_single_response_finalizes)
 {
 	auto cfg = default_config ();
@@ -473,26 +486,28 @@ TEST (bootstrap_topo_scan, repair_single_response_finalizes)
 
 	auto rp = scan.next (1, now);
 	ASSERT_TRUE (rp);
+	ASSERT_EQ (*rp, key (5, 500)); // repair starts at the anchor
 	ASSERT_TRUE (scan.process (1, *rp, entries ({ key (1, 100) }))); // repair: single response advances
-	ASSERT_EQ (scan.count_members (), 2); // 500 + 100
+	ASSERT_EQ (scan.count_members (), 2); // (5,500) + (1,100)
 }
 
-// A repair page with nothing past the cursor makes no progress, does not assert,
-// and the cursor can be retried.
-TEST (bootstrap_topo_scan, repair_empty_progress_no_assert)
+// An empty descending page (bottom reached) parks the cursor without asserting, and the
+// head restarts at the anchor.
+TEST (bootstrap_topo_scan, repair_empty_page_restarts)
 {
 	auto cfg = default_config ();
 	nano::bootstrap::topo_scan_index scan{ cfg };
 	auto const now = std::chrono::steady_clock::now ();
 
-	scan.process (0, nano::topo_key{}, entries ({ key (5, 500) }));
+	scan.process (0, nano::topo_key{}, entries ({ key (5, 500) })); // anchor (5, 500)
 	auto p = scan.next (1, now);
 	ASSERT_TRUE (p);
-	ASSERT_FALSE (scan.process (1, *p, entries ({}))); // empty page: no advance, no assert
+	ASSERT_EQ (*p, key (5, 500));
+	ASSERT_TRUE (scan.process (1, *p, entries ({}))); // empty page: park, no assert
 
-	auto p2 = scan.next (1, now + cfg.cooldown + 1s);
+	auto p2 = scan.next (1, now);
 	ASSERT_TRUE (p2);
-	ASSERT_EQ (*p2, nano::topo_key{}); // same position, retried
+	ASSERT_EQ (*p2, key (5, 500)); // restarted at the anchor
 }
 
 // Quiescence: once the spear is done and no gap remains, the repair head idles so
@@ -516,7 +531,7 @@ TEST (bootstrap_topo_scan, caught_up_quiesce)
 	ASSERT_TRUE (scan.caught_up ());
 	ASSERT_FALSE (scan.indexing ());
 	// Repair quiesces: spear done, no gaps.
-	ASSERT_FALSE (scan.next (1, now + cfg.cooldown + 1s).has_value ());
+	ASSERT_FALSE (scan.next (1, now).has_value ());
 }
 
 // reset returns to a clean initial state.

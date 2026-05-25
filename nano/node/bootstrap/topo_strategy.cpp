@@ -332,6 +332,8 @@ bool topo_strategy::request_index (std::size_t h, nano::topo_key cursor, std::sh
 	nano::messages::asc_pull_req::topo_index_payload msg_pld;
 	msg_pld.start = cursor;
 	msg_pld.count = nano::narrow_cast<uint16_t> (std::min<std::size_t> (ctx.config.topo_scan.candidates, nano::messages::asc_pull_ack::topo_index_payload::max_entries));
+	// Head 0 (spear) walks the frontier upward; repair heads sweep downward.
+	msg_pld.direction = (h == 0) ? nano::messages::topo_direction::ascending : nano::messages::topo_direction::descending;
 	message.payload = msg_pld;
 	message.update_header ();
 
@@ -375,23 +377,45 @@ verify_result topo_strategy::verify (nano::messages::asc_pull_ack::topo_index_pa
 	auto const & payload = std::get<topo_index_tag_payload> (tag.payload);
 	auto const & entries = response.entries;
 
-	// Non-empty entries must be sorted strictly ascending and start at or past
-	// the requested cursor. Empty entries are valid: end-of-topology signal.
+	// Head 0 (spear) requests ascending; repair heads request descending. Empty
+	// entries are always valid (end-of-topology for the spear, bottom-reached for a
+	// repair head).
+	bool const descending = payload.head != 0;
 	if (!entries.empty ())
 	{
-		if (entries.front () < payload.cursor)
+		if (descending)
 		{
-			return verify_result::invalid;
-		}
-
-		nano::topo_key previous{};
-		for (auto const & entry : entries)
-		{
-			if (entry <= previous)
+			// Strictly descending, all at or below the cursor.
+			if (entries.front () > payload.cursor)
 			{
 				return verify_result::invalid;
 			}
-			previous = entry;
+			nano::topo_key previous = entries.front ();
+			for (std::size_t i = 1; i < entries.size (); ++i)
+			{
+				if (entries[i] >= previous)
+				{
+					return verify_result::invalid;
+				}
+				previous = entries[i];
+			}
+		}
+		else
+		{
+			// Strictly ascending, all at or past the cursor.
+			if (entries.front () < payload.cursor)
+			{
+				return verify_result::invalid;
+			}
+			nano::topo_key previous{};
+			for (auto const & entry : entries)
+			{
+				if (entry <= previous)
+				{
+					return verify_result::invalid;
+				}
+				previous = entry;
+			}
 		}
 	}
 

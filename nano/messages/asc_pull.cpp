@@ -278,6 +278,7 @@ void asc_pull_req::topo_index_payload::serialize (nano::stream & stream) const
 {
 	start.serialize (stream);
 	nano::write_big_endian (stream, count);
+	nano::write (stream, direction);
 }
 
 void asc_pull_req::topo_index_payload::deserialize (nano::stream & stream)
@@ -287,6 +288,7 @@ void asc_pull_req::topo_index_payload::deserialize (nano::stream & stream)
 		throw std::runtime_error ("Failed to deserialize topo_key");
 	}
 	nano::read_big_endian (stream, count);
+	nano::read (stream, direction);
 }
 
 void asc_pull_req::topo_index_payload::operator() (nano::object_stream & obs) const
@@ -294,6 +296,7 @@ void asc_pull_req::topo_index_payload::operator() (nano::object_stream & obs) co
 	obs.write ("start_height", start.topo_height);
 	obs.write ("start_hash", start.hash);
 	obs.write ("count", count);
+	obs.write ("direction", static_cast<uint8_t> (direction));
 }
 
 /*
