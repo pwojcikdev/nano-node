@@ -13,6 +13,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace mi = boost::multi_index;
 
@@ -39,6 +40,12 @@ public:
 
 	// Returns an available channel, optionally restricted to channels accepted by `filter`
 	std::shared_ptr<nano::transport::channel> channel (channel_filter const & filter = nullptr);
+
+	// Number of channels currently usable for bootstrap that pass `filter` (the reachable peer pool)
+	std::size_t count (channel_filter const & filter = nullptr) const;
+
+	// Builds a filter rejecting any channel whose node id is in `excluded`, then defers to `base`
+	static channel_filter exclude_filter (std::vector<nano::node_id> excluded, channel_filter base = nullptr);
 
 	// Synchronize channels with the network, passed channels should be shuffled
 	void sync (std::deque<std::shared_ptr<nano::transport::channel>> const & list);

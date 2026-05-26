@@ -72,6 +72,10 @@ auto priority_strategy::next_priority () -> priority_result
 {
 	debug_assert (!ctx.mutex.try_lock ());
 
+	// Allow up to 4 concurrent in-flight requests per account. Unlike the topo spear / frontier
+	// heads, priority redundancy is concurrent in-flight requests (not an aggregating quorum
+	// that finalizes a shared decision), so it can't produce a false tip/frontier from one fast
+	// peer — hence it is intentionally not subject to the distinct-peer quorum logic.
 	auto next = ctx.accounts.next_priority ([this] (nano::account const & account) {
 		return ctx.count_tags (account, query_source::priority) < 4;
 	});

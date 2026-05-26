@@ -5,6 +5,7 @@
 #include <nano/node/bootstrap/frontier_strategy.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/node/transport/channel.hpp>
 #include <nano/node/transport/formatting.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/ledger.hpp>
@@ -52,38 +53,74 @@ void frontier_strategy::run ()
 
 void frontier_strategy::run_one ()
 {
-	// No need to wait for block_processor, as we are not processing blocks
-	ctx.wait ([this] () {
-		return !ctx.accounts.priority_half_full ();
-	});
-	ctx.wait ([this] () {
-		return workers.queued_tasks () < ctx.config.frontier_scan.max_pending;
-	});
-	auto channel = ctx.wait_channel (strategy::frontier);
-	if (!channel)
+	auto request = wait_frontier_request ();
+	if (!request)
 	{
 		return;
 	}
-	auto frontier = wait_frontier ();
-	if (frontier.is_zero ())
-	{
-		return;
-	}
-	request_frontiers (frontier, channel);
+	request_frontiers (request->account, request->channel);
 }
 
-nano::account frontier_strategy::wait_frontier ()
+std::optional<frontier_strategy::frontier_request> frontier_strategy::wait_frontier_request ()
 {
-	nano::account result{ 0 };
+	std::optional<frontier_request> result;
 	ctx.wait ([this, &result] () {
 		debug_assert (!ctx.mutex.try_lock ());
-		result = ctx.frontiers.next ();
-		if (!result.is_zero ())
+		// Backpressure: don't outrun the priority set or the (ledger-reading) processing workers.
+		// No need to wait for block_processor, as we are not processing blocks.
+		if (ctx.accounts.priority_half_full ())
 		{
-			ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_frontier);
-			return true;
+			return false;
 		}
-		return false;
+		if (workers.queued_tasks () >= ctx.config.frontier_scan.max_pending)
+		{
+			return false;
+		}
+		// Global in-flight cap (mirrors wait_channel).
+		if (ctx.tags.size () >= ctx.config.max_requests)
+		{
+			return false;
+		}
+
+		auto const account = ctx.frontiers.next ();
+		if (account.is_zero ())
+		{
+			return false;
+		}
+
+		// Spread the consideration_count quorum across DISTINCT peers (frontiers need no
+		// capability gate), mirroring the topo spear, so one fast peer can't fill the quorum.
+		auto const capable = ctx.scoring.count ();
+		ctx.frontiers.freeze_target (account, capable);
+		// We only get here past eligibility with a full round on the cooldown branch: reopen
+		// the distinct pool for a fresh retry round.
+		if (ctx.frontiers.round_full (account))
+		{
+			ctx.frontiers.new_round (account);
+		}
+		// Per-strategy rate limit (consumes a token; mirrors wait_channel).
+		if (!ctx.frontier_limiter.should_pass (1))
+		{
+			return false;
+		}
+		auto const seen = ctx.frontiers.seen_peers (account);
+		auto channel = ctx.scoring.channel (nano::bootstrap::peer_scoring::exclude_filter (seen));
+		if (!channel)
+		{
+			// No distinct peer right now. If we've already queried every reachable peer (pool
+			// smaller than the frozen target), cap the round to what we reached so the gather
+			// can finalize; otherwise the distinct peers are just momentarily busy — back off.
+			if (seen.size () >= capable && !seen.empty ())
+			{
+				ctx.frontiers.cap_target (account);
+			}
+			return false;
+		}
+		ctx.frontiers.record_query (account, channel->get_node_id ());
+
+		ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_frontier);
+		result = frontier_request{ account, channel };
+		return true;
 	});
 	return result;
 }

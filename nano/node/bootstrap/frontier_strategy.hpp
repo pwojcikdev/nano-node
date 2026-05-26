@@ -5,6 +5,7 @@
 
 #include <deque>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <utility>
 
@@ -24,7 +25,17 @@ public:
 private:
 	void run ();
 
-	nano::account wait_frontier ();
+	// A chosen frontier request: the account to scan from and the distinct peer to query.
+	struct frontier_request
+	{
+		nano::account account{ 0 };
+		std::shared_ptr<nano::transport::channel> channel;
+	};
+
+	// Waits (with backoff) until a head has work AND a distinct peer is available to query it,
+	// returning both. Head selection, the per-page distinct-peer quorum, and channel
+	// acquisition all happen under one lock hold so acquire+commit is atomic.
+	std::optional<frontier_request> wait_frontier_request ();
 	bool request_frontiers (nano::account start, std::shared_ptr<nano::transport::channel> const & channel);
 	verify_result verify (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag) const;
 	void process_frontiers (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);

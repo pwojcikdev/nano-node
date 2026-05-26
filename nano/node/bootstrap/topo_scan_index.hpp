@@ -5,6 +5,7 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/node/bootstrap/bootstrap_config.hpp>
+#include <nano/node/bootstrap/distinct_peers.hpp>
 #include <nano/secure/common.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
@@ -114,6 +115,24 @@ public:
 	// dropped. New keys are deduped against `members`; only previously-unseen
 	// keys become fetchable members.
 	bool process (std::size_t head, nano::topo_key start, std::deque<nano::topo_key> const & entries);
+
+	// --- Spear distinct-peer round (driven by the strategy, which holds the channels) ---
+
+	// Freeze the spear round size to min(consideration_count, capable_peers) on the first
+	// request of a page (no-op once frozen / for repair heads). Sizes the quorum to the
+	// reachable peer pool so it can finalize even when fewer peers than consideration_count exist.
+	void freeze_target (std::size_t head, std::size_t capable_peers);
+	// Record a distinct peer (by node id) queried for the spear's current page.
+	void record_query (std::size_t head, nano::node_id peer);
+	// Cooldown re-fire of a full round: reopen the distinct-peer pool for a retry round.
+	void new_round (std::size_t head);
+	// The distinct-peer pool is exhausted (fewer reachable peers than the frozen target):
+	// cap the round to the peers actually reached so the gather can finalize, not stall.
+	void cap_target (std::size_t head);
+	// True once the spear has queried `target` distinct peers this round.
+	bool round_full (std::size_t head) const;
+	// Distinct peer node ids queried for the spear's current page (for the exclusion filter).
+	std::vector<nano::node_id> seen_peers (std::size_t head) const;
 
 	// --- Fetch (shared across heads) ---
 
@@ -251,12 +270,18 @@ private:
 		bool repair{ false }; // false == spear
 		nano::topo_key cursor{}; // current scan position
 
-		// Discovery accumulator. The spear unions `consideration_count` peer
-		// responses before finalizing a page; a repair head finalizes on the first.
+		// Discovery accumulator. Each head unions its target distinct peer responses before
+		// finalizing a page (the spear `consideration_count`, a repair `repair_consideration_count`).
 		std::set<nano::topo_key> candidates;
 		unsigned requests{ 0 };
 		unsigned completed{ 0 };
 		std::chrono::steady_clock::time_point timestamp{};
+
+		// Distinct peers queried for the current page plus the adaptive round size, so each
+		// head's requests spread across different peers (and the round finalizes on however
+		// many distinct peers are actually reachable). The spear unions consideration_count
+		// peers, a repair head the smaller repair_consideration_count.
+		distinct_peers peers;
 
 		bool done{ false }; // spear: topology end reached
 		uint64_t ceiling{ 0 }; // repair: frozen top of the current sweep (snapshot of the
@@ -269,6 +294,7 @@ private:
 			completed = 0;
 			timestamp = {};
 			candidates.clear ();
+			peers.clear ();
 		}
 	};
 
@@ -304,6 +330,13 @@ private:
 	void resolve_member (nano::block_hash const & hash);
 	// Gap count at which the spear pauses, clamped to a minimum of 1.
 	std::size_t effective_gap_threshold () const;
+	// Per-head desired redundancy: consideration_count for the spear, repair_consideration_count
+	// for a repair head.
+	std::size_t head_consideration (scan_head const &) const;
+	// Round size for a head: the frozen adaptive target, or head_consideration when not yet
+	// frozen (the latter preserves behavior when the index is driven without the strategy, e.g.
+	// in tests).
+	std::size_t head_target (scan_head const &) const;
 	// True if the spear head's union is eligible to (re)query at its cursor now.
 	bool eligible (scan_head const &, std::chrono::steady_clock::time_point now) const;
 	// Mark a member resolved against its chunk; erase the chunk when fully done.

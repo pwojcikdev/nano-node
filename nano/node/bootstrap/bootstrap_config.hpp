@@ -54,7 +54,12 @@ public:
 	// (round-robin across the repair heads). 4 = spear gets 4/5 of the requests, the
 	// repair heads share 1/5. Minimum 1 (1:1). Raise to favour frontier progress.
 	unsigned spear_weight{ 4 };
+	// Redundancy: how many DISTINCT peers each head unions per page before finalizing. The
+	// spear uses the larger `consideration_count` (it drives the frontier and must be robust
+	// against a fast un-synced peer); the repair heads use the smaller `repair_consideration_count`
+	// (they already build coverage across wrap-arounds, so they need less per-page redundancy).
 	unsigned consideration_count{ 4 };
+	unsigned repair_consideration_count{ 2 };
 	std::size_t candidates{ 1000 };
 	std::chrono::milliseconds cooldown{ 3s };
 	std::chrono::milliseconds block_retry{ 5s };

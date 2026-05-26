@@ -37,15 +37,25 @@ private:
 	void run_processing ();
 	void run_one_processing ();
 
+	// A chosen scan request: which head, the cursor to query, and the distinct peer to query.
+	struct scan_request
+	{
+		std::size_t head{ 0 };
+		nano::topo_key cursor{};
+		std::shared_ptr<nano::transport::channel> channel;
+	};
+
 	// Pick the next head to query this tick, weighting the spear (head 0) at ~half and
 	// round-robining the repair heads through the other half; falls back to any other
 	// head with work so one idle head can't stall the thread. Returns the chosen head
 	// and its next cursor, or nullopt if no head currently has work. Must be called under
 	// the context mutex (it calls topology.next); commits only the returned head.
 	std::optional<std::pair<std::size_t, nano::topo_key>> pick_scan_head (std::chrono::steady_clock::time_point now);
-	// Waits (with backoff) until some head has work and returns it, or nullopt once the
-	// topology stops indexing / is caught up.
-	std::optional<std::pair<std::size_t, nano::topo_key>> wait_scan_head ();
+	// Waits (with backoff) until some head has work AND a distinct capable peer is available
+	// to query it, returning both, or nullopt once the topology stops indexing / is caught
+	// up. Head selection, the per-page distinct-peer quorum, and channel acquisition all
+	// happen under one lock hold so acquire+commit is atomic.
+	std::optional<scan_request> wait_scan_request ();
 	// Blocks until there are member hashes to fetch, or all work is done.
 	std::deque<nano::block_hash> wait_block_batch ();
 	// Blocks until there are blocks ready to submit, or all work is done.

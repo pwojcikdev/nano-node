@@ -102,6 +102,36 @@ std::shared_ptr<nano::transport::channel> nano::bootstrap::peer_scoring::channel
 	return nullptr;
 }
 
+std::size_t nano::bootstrap::peer_scoring::count (channel_filter const & filter) const
+{
+	// Mirror the acceptance tests of channel() (minus the send-slot mutation) so the count
+	// reflects channels channel() would actually be willing to return right now: live, not
+	// transport-full, under the per-channel request limit, and accepted by `filter`.
+	return std::count_if (scoring.begin (), scoring.end (), [&] (auto const & entry) {
+		auto channel = entry.channel.lock ();
+		if (!channel || channel->max (traffic_type) || limit_exceeded (channel))
+		{
+			return false;
+		}
+		if (filter && !filter (channel))
+		{
+			return false;
+		}
+		return true;
+	});
+}
+
+nano::bootstrap::peer_scoring::channel_filter nano::bootstrap::peer_scoring::exclude_filter (std::vector<nano::node_id> excluded, channel_filter base)
+{
+	return [excluded = std::move (excluded), base = std::move (base)] (std::shared_ptr<nano::transport::channel> const & channel) {
+		if (std::find (excluded.begin (), excluded.end (), channel->get_node_id ()) != excluded.end ())
+		{
+			return false;
+		}
+		return base ? base (channel) : true;
+	};
+}
+
 std::size_t nano::bootstrap::peer_scoring::size () const
 {
 	return scoring.size ();

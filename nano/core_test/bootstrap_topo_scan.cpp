@@ -8,14 +8,15 @@ using namespace std::chrono_literals;
 
 namespace
 {
-// Default test config: consideration_count=1 lets a head finalize after a
-// single response; head_count=2 gives one spear + one repair head;
-// repair_activation_height=1 lets repair kick in as soon as the spear discovers
-// anything (height >= 1) instead of waiting out the production default.
+// Default test config: consideration_count / repair_consideration_count = 1 let a head
+// finalize after a single response; head_count=2 gives one spear + one repair head;
+// repair_activation_height=1 lets repair kick in as soon as the spear discovers anything
+// (height >= 1) instead of waiting out the production default.
 nano::topo_scan_config default_config ()
 {
 	nano::topo_scan_config cfg{};
 	cfg.consideration_count = 1;
+	cfg.repair_consideration_count = 1;
 	cfg.head_count = 2;
 	cfg.repair_activation_height = 1;
 	return cfg;
@@ -466,12 +467,13 @@ TEST (bootstrap_topo_scan, repair_no_spin_cooldown)
 	ASSERT_TRUE (scan.next (1, now + cfg.cooldown + 1s).has_value ()); // cooldown elapsed -> retry
 }
 
-// A repair head finalizes a page on the FIRST response, while the spear still needs the
-// full consideration_count quorum.
+// Each head unions its own target before finalizing: the spear consideration_count (2 here),
+// a repair head the smaller repair_consideration_count (1 here, so it finalizes on the first).
 TEST (bootstrap_topo_scan, repair_single_response_finalizes)
 {
 	auto cfg = default_config ();
 	cfg.consideration_count = 2;
+	cfg.repair_consideration_count = 1;
 	nano::bootstrap::topo_scan_index scan{ cfg };
 	auto const now = std::chrono::steady_clock::now ();
 
@@ -485,6 +487,28 @@ TEST (bootstrap_topo_scan, repair_single_response_finalizes)
 	ASSERT_EQ (*rp, nano::topo_key{}); // head 1 starts at genesis
 	ASSERT_TRUE (scan.process (1, *rp, entries ({ key (1, 100) }))); // repair: single response advances
 	ASSERT_EQ (scan.count_members (), 2); // (5,500) + (1,100)
+}
+
+// A repair head also unions a redundant quorum when repair_consideration_count > 1: it bursts
+// that many requests per page and only advances once that many responses arrive.
+TEST (bootstrap_topo_scan, repair_quorum_redundant)
+{
+	auto cfg = default_config ();
+	cfg.repair_consideration_count = 2;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+	auto const now = std::chrono::steady_clock::now ();
+
+	scan.process (0, nano::topo_key{}, entries ({ key (100, 1) })); // spear anchor -> (100, 1)
+
+	// The repair head bursts up to 2 requests before the cooldown (not just one).
+	ASSERT_TRUE (scan.next (1, now));
+	ASSERT_TRUE (scan.next (1, now)); // 2nd of the quorum, same cooldown window
+	ASSERT_FALSE (scan.next (1, now)); // quorum issued -> wait for cooldown
+
+	// First response does NOT advance; the second (quorum reached) does.
+	ASSERT_FALSE (scan.process (1, nano::topo_key{}, entries ({ key (20, 20) })));
+	ASSERT_TRUE (scan.process (1, nano::topo_key{}, entries ({ key (40, 40) })));
+	ASSERT_EQ (scan.count_members (), 3); // (100,1) spear + (20) + (40) repair
 }
 
 // A repair page with nothing past the cursor makes no progress and does not assert; the
@@ -589,4 +613,93 @@ TEST (bootstrap_topo_scan, reset_clears_state)
 	ASSERT_EQ (scan.cursor (), nano::topo_key{});
 	ASSERT_TRUE (scan.indexing ());
 	ASSERT_FALSE (scan.caught_up ());
+}
+
+// The spear quorum adapts to the reachable peer count: with consideration_count=4 but only
+// 2 capable peers, the page finalizes after 2 responses instead of stalling waiting for 4.
+TEST (bootstrap_topo_scan, spear_quorum_adapts_to_peer_count)
+{
+	auto cfg = default_config ();
+	cfg.consideration_count = 4;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+	auto const now = std::chrono::steady_clock::now ();
+
+	scan.freeze_target (0, 2); // only 2 capable peers -> round target 2
+
+	auto sp = scan.next (0, now);
+	ASSERT_TRUE (sp);
+	ASSERT_FALSE (scan.process (0, *sp, entries ({ key (1, 100) }))); // 1st of 2
+	ASSERT_TRUE (scan.process (0, *sp, entries ({ key (1, 100) }))); // adaptive target reached
+	ASSERT_EQ (scan.count_members (), 1);
+}
+
+// freeze_target sizes the round to min(consideration_count, capable peers); record_query
+// tracks distinct node ids (deduped); new_round reopens the pool but keeps the target.
+TEST (bootstrap_topo_scan, distinct_peers_round)
+{
+	auto cfg = default_config ();
+	cfg.consideration_count = 4;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	scan.freeze_target (0, 2); // 2 capable peers -> target 2
+	// freeze is a no-op once set (a later, larger pool does not raise the frozen target).
+	scan.freeze_target (0, 10);
+
+	ASSERT_FALSE (scan.round_full (0));
+	scan.record_query (0, nano::node_id{ 1 });
+	ASSERT_FALSE (scan.round_full (0));
+	ASSERT_EQ (scan.seen_peers (0).size (), 1);
+
+	scan.record_query (0, nano::node_id{ 2 });
+	ASSERT_TRUE (scan.round_full (0)); // 2 distinct queried == target
+	ASSERT_EQ (scan.seen_peers (0).size (), 2);
+
+	scan.record_query (0, nano::node_id{ 2 }); // duplicate node id not double-counted
+	ASSERT_EQ (scan.seen_peers (0).size (), 2);
+
+	scan.new_round (0); // cooldown re-fire reopens the pool
+	ASSERT_EQ (scan.seen_peers (0).size (), 0);
+	ASSERT_FALSE (scan.round_full (0));
+}
+
+// When fewer peers are reachable than the frozen target, cap_target shrinks the round to the
+// peers actually reached so the gather can finalize instead of stalling.
+TEST (bootstrap_topo_scan, distinct_peers_cap_target)
+{
+	auto cfg = default_config ();
+	cfg.consideration_count = 4;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+	auto const now = std::chrono::steady_clock::now ();
+
+	scan.freeze_target (0, 4); // target 4
+	scan.record_query (0, nano::node_id{ 1 });
+	scan.record_query (0, nano::node_id{ 2 });
+	ASSERT_FALSE (scan.round_full (0)); // 2 < 4
+
+	scan.cap_target (0); // pool exhausted at 2 reachable peers
+	ASSERT_TRUE (scan.round_full (0)); // 2 >= capped target
+
+	auto sp = scan.next (0, now);
+	ASSERT_TRUE (sp);
+	ASSERT_FALSE (scan.process (0, *sp, entries ({ key (1, 100) }))); // 1st of capped 2
+	ASSERT_TRUE (scan.process (0, *sp, entries ({ key (1, 100) }))); // capped target reached
+}
+
+// The empty-tip detection uses the adaptive target: with target 2 the tip concludes after
+// 2*2 = 4 empty responses (distinct rounds), not consideration_count*2 = 8.
+TEST (bootstrap_topo_scan, spear_tip_uses_adaptive_target)
+{
+	auto cfg = default_config ();
+	cfg.consideration_count = 4;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	scan.freeze_target (0, 2); // target 2 -> tip needs 4 empties
+
+	for (int i = 0; i < 3; ++i)
+	{
+		ASSERT_FALSE (scan.process (0, nano::topo_key{}, entries ({})));
+	}
+	ASSERT_FALSE (scan.caught_up ());
+	ASSERT_TRUE (scan.process (0, nano::topo_key{}, entries ({}))); // 4th empty -> tip
+	ASSERT_TRUE (scan.caught_up ());
 }

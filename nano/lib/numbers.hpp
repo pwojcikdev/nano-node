@@ -264,6 +264,10 @@ public:
 		public_key{ key } {};
 };
 
+// A node id identifies a peer node on the network. It is a public key — the same
+// underlying type as an account — aliased to make the intent explicit at call sites.
+using node_id = account;
+
 class hash_or_account
 {
 public:

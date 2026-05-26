@@ -19,9 +19,9 @@ std::size_t topo_scan_index::head_count () const
 bool topo_scan_index::eligible (scan_head const & head, std::chrono::steady_clock::time_point now) const
 {
 	auto const cutoff = now - config.cooldown;
-	// Capacity to gather more of the quorum, or the cooldown since the last
-	// request at this cursor has elapsed.
-	return head.requests < config.consideration_count || head.timestamp < cutoff;
+	// Capacity to issue another quorum request (the strategy steers each to a distinct peer),
+	// or the cooldown since the last request at this cursor has elapsed.
+	return head.requests < head_target (head) || head.timestamp < cutoff;
 }
 
 std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono::steady_clock::time_point now)
@@ -95,11 +95,11 @@ std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono:
 		head.reset_union ();
 	}
 
-	// Repair eligibility is cooldown-since-last-fire only (single-response pages, no
-	// consideration_count burst): a response resets `timestamp` to {} via `reset_union`
-	// so the next page fires at once, while an unanswered cursor waits out one cooldown
-	// before being re-queried.
-	if (head.timestamp >= now - config.cooldown)
+	// Same quorum eligibility as the spear (the strategy steers each request to a distinct
+	// peer): a repair head bursts up to repair_consideration_count requests per page, then
+	// waits out the cooldown. A response resets `timestamp` to {} via `reset_union` so the
+	// next page fires at once; an unanswered cursor waits one cooldown before re-querying.
+	if (!eligible (head, now))
 	{
 		return std::nullopt;
 	}
@@ -131,20 +131,21 @@ bool topo_scan_index::process (std::size_t h, nano::topo_key const start, std::d
 		}
 	}
 
-	// The spear unions a full quorum before finalizing; a repair head finalizes on the
-	// first response (coverage builds across restarts with different peers, not within
-	// one page).
-	if (!head.repair && head.completed < config.consideration_count)
+	// Every head unions a full quorum (one response per distinct peer) before finalizing —
+	// the spear consideration_count peers, a repair head the smaller repair_consideration_count.
+	if (head.completed < head_target (head))
 	{
 		return false;
 	}
 
 	if (head.candidates.empty ())
 	{
-		// Spear: a sustained empty quorum means the topology end. A repair head can also
-		// see an empty page (a lagging peer with nothing past the cursor); it makes no
-		// progress and re-queries the same cursor on cooldown with a fresh peer.
-		if (!head.repair && head.completed >= config.consideration_count * 2)
+		// Spear: a sustained empty quorum means the topology end. Because each round queries
+		// `target` DISTINCT peers, target*2 empties is >=2 distinct rounds agreeing empty —
+		// a single fast empty peer can no longer trip this. A repair head can also see an
+		// empty quorum (lagging peers with nothing past the cursor); it makes no progress and
+		// re-queries the same cursor on cooldown with fresh peers.
+		if (!head.repair && head.completed >= head_target (head) * 2)
 		{
 			head.done = true;
 			tip_reached = true;
@@ -519,6 +520,65 @@ void topo_scan_index::chunk_resolve (uint64_t chunk_id)
 std::size_t topo_scan_index::effective_gap_threshold () const
 {
 	return std::max<std::size_t> (1, config.gap_threshold);
+}
+
+std::size_t topo_scan_index::head_consideration (scan_head const & head) const
+{
+	// The spear must be robust against a fast un-synced peer, so it unions more peers; a
+	// repair head needs less per-page redundancy (coverage also builds across wrap-arounds).
+	return head.repair ? config.repair_consideration_count : config.consideration_count;
+}
+
+std::size_t topo_scan_index::head_target (scan_head const & head) const
+{
+	// The frozen adaptive size, or head_consideration when the strategy hasn't frozen one
+	// (the latter preserves behavior when the index is driven directly, e.g. in unit tests).
+	return head.peers.target != 0 ? head.peers.target : head_consideration (head);
+}
+
+void topo_scan_index::freeze_target (std::size_t h, std::size_t capable_peers)
+{
+	debug_assert (h < heads.size ());
+	auto & head = heads[h];
+	head.peers.freeze (head_consideration (head), capable_peers);
+}
+
+void topo_scan_index::record_query (std::size_t h, nano::node_id peer)
+{
+	debug_assert (h < heads.size ());
+	heads[h].peers.add (peer);
+}
+
+void topo_scan_index::new_round (std::size_t h)
+{
+	debug_assert (h < heads.size ());
+	heads[h].peers.new_round ();
+}
+
+void topo_scan_index::cap_target (std::size_t h)
+{
+	debug_assert (h < heads.size ());
+	auto & head = heads[h];
+	// Distinct pool exhausted: finalize on the peers actually reached (>=1) instead of
+	// waiting forever for a quorum that can't be filled.
+	if (head.peers.size () >= 1)
+	{
+		head.peers.target = static_cast<unsigned> (std::clamp<std::size_t> (head.peers.size (), 1, distinct_peers::capacity));
+	}
+}
+
+bool topo_scan_index::round_full (std::size_t h) const
+{
+	debug_assert (h < heads.size ());
+	auto const & head = heads[h];
+	return head.peers.size () >= head_target (head);
+}
+
+std::vector<nano::node_id> topo_scan_index::seen_peers (std::size_t h) const
+{
+	debug_assert (h < heads.size ());
+	auto const & head = heads[h];
+	return std::vector<nano::node_id> (head.peers.seen.begin (), head.peers.seen.begin () + head.peers.count);
 }
 
 std::size_t topo_scan_index::outstanding () const

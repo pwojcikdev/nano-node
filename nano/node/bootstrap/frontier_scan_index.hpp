@@ -2,6 +2,7 @@
 
 #include <nano/node/bootstrap/bootstrap_config.hpp>
 #include <nano/node/bootstrap/common.hpp>
+#include <nano/node/bootstrap/distinct_peers.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/mem_fun.hpp>
@@ -14,6 +15,7 @@
 #include <chrono>
 #include <map>
 #include <set>
+#include <vector>
 
 namespace mi = boost::multi_index;
 
@@ -30,6 +32,16 @@ public:
 
 	nano::account next ();
 	bool process (nano::account start, std::deque<std::pair<nano::account, nano::block_hash>> const & response);
+
+	// Distinct-peer round management for the head covering `start` (driven by the strategy,
+	// which holds the channels), mirroring the topo spear: spread the consideration_count
+	// requests across distinct peers and size the round to the reachable peer pool.
+	void freeze_target (nano::account start, std::size_t capable_peers);
+	void record_query (nano::account start, nano::node_id peer);
+	void new_round (nano::account start);
+	void cap_target (nano::account start);
+	bool round_full (nano::account start) const;
+	std::vector<nano::node_id> seen_peers (nano::account start) const;
 
 	void reset ();
 
@@ -63,6 +75,10 @@ private:
 		std::chrono::steady_clock::time_point timestamp{};
 		size_t processed{ 0 }; // Total number of accounts processed
 
+		// Distinct peers queried for the current page plus the adaptive round size, so the
+		// consideration_count requests spread across different peers.
+		nano::bootstrap::distinct_peers peers;
+
 		nano::account index () const
 		{
 			return start;
@@ -76,6 +92,7 @@ private:
 			completed = 0;
 			timestamp = {};
 			processed = 0;
+			peers.clear ();
 		}
 	};
 
@@ -95,5 +112,9 @@ private:
 	// clang-format on
 
 	ordered_heads heads;
+
+	// Round size for the head: the frozen adaptive target, or consideration_count when not
+	// yet frozen (the latter preserves behavior when the index is driven without the strategy).
+	std::size_t frontier_target (frontier_head const &) const;
 };
 }

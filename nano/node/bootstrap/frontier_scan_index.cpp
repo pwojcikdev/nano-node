@@ -3,6 +3,8 @@
 #include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/multiprecision/cpp_int.hpp>
 
+#include <algorithm>
+
 namespace nano::bootstrap
 {
 frontier_scan_index::frontier_scan_index (frontier_scan_config const & config_a, nano::stats & stats_a) :
@@ -44,9 +46,10 @@ nano::account frontier_scan_index::next ()
 	{
 		auto const & head = *it;
 
-		if (head.requests < config.consideration_count || head.timestamp < cutoff)
+		auto const target = frontier_target (head);
+		if (head.requests < target || head.timestamp < cutoff)
 		{
-			stats.inc (nano::stat::type::bootstrap_frontier_scan, (head.requests < config.consideration_count) ? nano::stat::detail::next_by_requests : nano::stat::detail::next_by_timestamp);
+			stats.inc (nano::stat::type::bootstrap_frontier_scan, (head.requests < target) ? nano::stat::detail::next_by_requests : nano::stat::detail::next_by_timestamp);
 
 			debug_assert (head.next.number () >= head.start.number ());
 			debug_assert (head.next.number () < head.end.number ());
@@ -99,15 +102,17 @@ bool frontier_scan_index::process (nano::account start, std::deque<std::pair<nan
 			entry.candidates.erase (std::prev (entry.candidates.end ()));
 		}
 
-		// Special case for the last frontier head that won't receive larger than max frontier
-		if (entry.completed >= config.consideration_count * 2 && entry.candidates.empty ())
+		// Special case for the last frontier head that won't receive larger than max frontier.
+		// Because each round queries `target` DISTINCT peers, target*2 empties is >=2 distinct
+		// rounds agreeing empty — a single fast empty peer can no longer trip this.
+		if (entry.completed >= frontier_target (entry) * 2 && entry.candidates.empty ())
 		{
 			stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::done_empty);
 			entry.candidates.insert (entry.end);
 		}
 
 		// Check if done
-		if (entry.completed >= config.consideration_count && !entry.candidates.empty ())
+		if (entry.completed >= frontier_target (entry) && !entry.candidates.empty ())
 		{
 			stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::done);
 
@@ -122,6 +127,7 @@ bool frontier_scan_index::process (nano::account start, std::deque<std::pair<nan
 			entry.requests = 0;
 			entry.completed = 0;
 			entry.timestamp = {};
+			entry.peers.clear ();
 
 			// Bound the search range
 			if (entry.next.number () >= entry.end.number ())
@@ -135,6 +141,91 @@ bool frontier_scan_index::process (nano::account start, std::deque<std::pair<nan
 	});
 
 	return done;
+}
+
+std::size_t frontier_scan_index::frontier_target (frontier_head const & head) const
+{
+	return head.peers.target != 0 ? head.peers.target : config.consideration_count;
+}
+
+void frontier_scan_index::freeze_target (nano::account start, std::size_t capable_peers)
+{
+	auto & by_start = heads.get<tag_start> ();
+	auto it = by_start.upper_bound (start);
+	if (it == by_start.begin ())
+	{
+		return;
+	}
+	it = std::prev (it);
+	by_start.modify (it, [this, capable_peers] (frontier_head & head) {
+		head.peers.freeze (config.consideration_count, capable_peers);
+	});
+}
+
+void frontier_scan_index::record_query (nano::account start, nano::node_id peer)
+{
+	auto & by_start = heads.get<tag_start> ();
+	auto it = by_start.upper_bound (start);
+	if (it == by_start.begin ())
+	{
+		return;
+	}
+	it = std::prev (it);
+	by_start.modify (it, [peer] (frontier_head & head) { head.peers.add (peer); });
+}
+
+void frontier_scan_index::new_round (nano::account start)
+{
+	auto & by_start = heads.get<tag_start> ();
+	auto it = by_start.upper_bound (start);
+	if (it == by_start.begin ())
+	{
+		return;
+	}
+	it = std::prev (it);
+	by_start.modify (it, [] (frontier_head & head) { head.peers.new_round (); });
+}
+
+void frontier_scan_index::cap_target (nano::account start)
+{
+	auto & by_start = heads.get<tag_start> ();
+	auto it = by_start.upper_bound (start);
+	if (it == by_start.begin ())
+	{
+		return;
+	}
+	it = std::prev (it);
+	by_start.modify (it, [] (frontier_head & head) {
+		// Distinct pool exhausted: finalize on the peers actually reached (>=1).
+		if (head.peers.size () >= 1)
+		{
+			head.peers.target = static_cast<unsigned> (std::clamp<std::size_t> (head.peers.size (), 1, nano::bootstrap::distinct_peers::capacity));
+		}
+	});
+}
+
+bool frontier_scan_index::round_full (nano::account start) const
+{
+	auto const & by_start = heads.get<tag_start> ();
+	auto it = by_start.upper_bound (start);
+	if (it == by_start.begin ())
+	{
+		return false;
+	}
+	it = std::prev (it);
+	return it->peers.size () >= frontier_target (*it);
+}
+
+std::vector<nano::node_id> frontier_scan_index::seen_peers (nano::account start) const
+{
+	auto const & by_start = heads.get<tag_start> ();
+	auto it = by_start.upper_bound (start);
+	if (it == by_start.begin ())
+	{
+		return {};
+	}
+	it = std::prev (it);
+	return std::vector<nano::node_id> (it->peers.seen.begin (), it->peers.seen.begin () + it->peers.count);
 }
 
 nano::container_info frontier_scan_index::container_info () const
