@@ -105,7 +105,9 @@ enum class type
 	bootstrap_frontiers,
 	bootstrap_account_sets,
 	bootstrap_frontier_scan,
+	bootstrap_frontier_wait,
 	bootstrap_topo,
+	bootstrap_topo_wait,
 	bootstrap_timeout,
 	bootstrap_server,
 	bootstrap_server_request,
@@ -710,6 +712,14 @@ enum class detail
 	received,
 	indexed,
 	redundant,
+
+	// bootstrap scan loop wait reasons (bootstrap_topo_wait / bootstrap_frontier_wait types):
+	// which gate is parking the scan loop
+	wait_max_requests,
+	wait_no_work,
+	wait_rate_limit,
+	wait_backpressure,
+	wait_channel,
 
 	// bounded backlog,
 	gathered_targets,

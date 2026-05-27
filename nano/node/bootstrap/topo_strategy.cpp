@@ -135,9 +135,25 @@ std::optional<topo_strategy::scan_request> topo_strategy::wait_scan_request ()
 		{
 			return true;
 		}
-		// Global in-flight cap (mirrors wait_channel).
+		// Global in-flight cap.
 		if (ctx.tags.size () >= ctx.config.max_requests)
 		{
+			ctx.stats.inc (nano::stat::type::bootstrap_topo_wait, nano::stat::detail::wait_max_requests);
+			return false;
+		}
+
+		// Peers that can serve topology index queries.
+		auto capability = [] (std::shared_ptr<nano::transport::channel> const & channel) {
+			return channel->get_flags ().test (nano::node_capabilities::topo_index);
+		};
+
+		// No peer advertising the topo_index capability is reachable right now: wait for one
+		// (checked before committing a head so the spear is not throttled into cooldown over a
+		// failure that isn't its own — and so this surfaces as a channel wait, not "no work").
+		auto const capable = ctx.scoring.count (capability);
+		if (capable == 0)
+		{
+			ctx.stats.inc (nano::stat::type::bootstrap_topo_wait, nano::stat::detail::wait_channel);
 			return false;
 		}
 
@@ -145,21 +161,18 @@ std::optional<topo_strategy::scan_request> topo_strategy::wait_scan_request ()
 		auto picked = pick_scan_head (now);
 		if (!picked)
 		{
+			// Capable peers exist, but no head is eligible (cooldown / backpressure / gap-pause /
+			// repair activation gate).
+			ctx.stats.inc (nano::stat::type::bootstrap_topo_wait, nano::stat::detail::wait_no_work);
 			return false;
 		}
 		auto const head = picked->first;
 		auto const cursor = picked->second;
 
-		// Peers that can serve topology index queries.
-		auto capability = [] (std::shared_ptr<nano::transport::channel> const & channel) {
-			return channel->get_flags ().test (nano::node_capabilities::topo_index);
-		};
-
 		// Universal across heads: spread each head's quorum across DISTINCT peers so one fast
 		// (possibly un-synced) peer can't fill the quorum and stall discovery. The spear unions
 		// consideration_count peers, a repair head the smaller repair_consideration_count
-		// (head_target encodes which). Both query the topo index, so both need the capability.
-		auto const capable = ctx.scoring.count (capability);
+		// (head_target encodes which).
 		ctx.topology.freeze_target (head, capable);
 		// We only get here past eligibility with a full round on the cooldown branch: reopen
 		// the distinct pool for a fresh retry round.
@@ -167,23 +180,24 @@ std::optional<topo_strategy::scan_request> topo_strategy::wait_scan_request ()
 		{
 			ctx.topology.new_round (head);
 		}
-		// Per-strategy rate limit (consumes a token; mirrors wait_channel).
+		// Per-strategy rate limit (consumes a token).
 		if (!ctx.topology_limiter.should_pass (1))
 		{
+			ctx.stats.inc (nano::stat::type::bootstrap_topo_wait, nano::stat::detail::wait_rate_limit);
 			return false;
 		}
 		auto const seen = ctx.topology.seen_peers (head);
 		auto channel = ctx.scoring.channel (nano::bootstrap::peer_scoring::exclude_filter (seen, capability));
 		if (!channel)
 		{
-			// No distinct capable peer right now. If we've already queried every reachable peer
-			// (pool smaller than the frozen target), cap the round to what we reached so the
-			// gather can finalize instead of waiting forever; otherwise the distinct peers are
-			// just momentarily busy — back off and retry.
+			// Capable peers exist but none distinct-available right now. If we've already queried
+			// every reachable peer (pool smaller than the frozen target), cap the round to what we
+			// reached so the gather can finalize; otherwise they are just momentarily busy.
 			if (seen.size () >= capable && !seen.empty ())
 			{
 				ctx.topology.cap_target (head);
 			}
+			ctx.stats.inc (nano::stat::type::bootstrap_topo_wait, nano::stat::detail::wait_channel);
 			return false;
 		}
 		ctx.topology.record_query (head, channel->get_node_id ());
