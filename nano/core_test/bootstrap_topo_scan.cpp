@@ -596,6 +596,48 @@ TEST (bootstrap_topo_scan, caught_up_quiesce)
 	ASSERT_FALSE (scan.next (1, now).has_value ());
 }
 
+// A gap in already-confirmed territory (a repair head re-finding a hole below the watermark)
+// must not wedge the prune of confirmed members above it, nor count against the discovery
+// window — so a handful of gaps cannot stall the spear below gap_threshold.
+TEST (bootstrap_topo_scan, low_gap_does_not_stall_spear)
+{
+	auto cfg = default_config ();
+	cfg.max_blocks_queued = 3; // tiny window, so a wedged backlog would trip backpressure
+	cfg.gap_threshold = 100; // high, so the repair_wait latch stays off
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	// Spear confirms a prefix; the watermark advances to height 3.
+	scan.process (0, nano::topo_key{}, entries ({ key (1, 100), key (2, 200), key (3, 300) }));
+	submit_member (scan, 100);
+	submit_member (scan, 200);
+	submit_member (scan, 300);
+	scan.block_indexed (nano::block_hash{ 100 });
+	scan.block_indexed (nano::block_hash{ 200 });
+	scan.block_indexed (nano::block_hash{ 300 });
+	ASSERT_EQ (scan.count_members (), 0);
+	ASSERT_EQ (scan.cursor (), key (3, 300));
+
+	// A repair head re-discovers four keys below the watermark: 10 is a genuine hole (gaps),
+	// 20/30/40 are redundant re-confirms.
+	scan.process (1, nano::topo_key{}, entries ({ key (1, 10), key (1, 20), key (1, 30), key (1, 40) }));
+	submit_member (scan, 10);
+	submit_member (scan, 20);
+	submit_member (scan, 30);
+	submit_member (scan, 40);
+	scan.block_gapped (nano::block_hash{ 10 });
+	scan.block_indexed (nano::block_hash{ 20 });
+	scan.block_indexed (nano::block_hash{ 30 });
+	scan.block_indexed (nano::block_hash{ 40 });
+
+	// The confirmed re-discoveries are released despite the lower gap; only the unresolved
+	// hole is retained, so the active window stays below max_blocks_queued and the spear is
+	// free to keep extending the frontier (would be backpressure-stalled before this fix).
+	ASSERT_EQ (scan.count_gapped (), 1);
+	ASSERT_EQ (scan.count_in_ledger (), 0);
+	ASSERT_EQ (scan.count_members (), 1);
+	ASSERT_TRUE (scan.next (0).has_value ());
+}
+
 // reset returns to a clean initial state.
 TEST (bootstrap_topo_scan, reset_clears_state)
 {

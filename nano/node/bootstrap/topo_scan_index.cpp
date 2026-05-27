@@ -37,12 +37,15 @@ std::optional<nano::topo_key> topo_scan_index::next (std::size_t h, std::chrono:
 			return std::nullopt; // Topology end reached (re-armed by poll mode).
 		}
 		// Pause once pending gaps reach the threshold: wait for the repair heads to
-		// clear every gap (the latch resets at zero) before extending the frontier.
+		// clear every gap (the latch resets at zero) before extending the frontier. This is
+		// the ONLY gap-driven pause — below the threshold gaps never stall the spear.
 		if (repair_wait)
 		{
 			return std::nullopt;
 		}
-		// Backpressure: pause discovery while the held window is full.
+		// Backpressure: pause discovery while the active (unconfirmed) window is full, so we
+		// don't outrun fetching/processing. Confirmed-but-unpruned members do not count (see
+		// outstanding()), so gaps wedging the prune can't trip this.
 		if (outstanding () >= config.max_blocks_queued)
 		{
 			return std::nullopt;
@@ -483,23 +486,36 @@ void topo_scan_index::set_state (member const & m, member_state ns)
 void topo_scan_index::advance_watermark ()
 {
 	auto & by_key = members.get<tag_key> ();
-	while (!by_key.empty ())
+	for (auto it = by_key.begin (); it != by_key.end ();)
 	{
-		auto it = by_key.begin ();
-		if (it->state != member_state::in_ledger && it->state != member_state::terminal)
+		if (it->state == member_state::in_ledger || it->state == member_state::terminal)
 		{
+			// Confirmed: advance the watermark and release it. Monotonic — a repair head
+			// re-finding a dependency BELOW the (false-advanced) watermark prunes it here,
+			// but that must not drag the reported position backward.
+			confirmed_watermark = std::max (confirmed_watermark, it->key);
+			if (it->state == member_state::in_ledger)
+			{
+				--in_ledger_count;
+			}
+			it = by_key.erase (it);
+		}
+		else if (it->key <= confirmed_watermark)
+		{
+			// An unresolved member (gapped) in already-confirmed territory — a repair head
+			// re-found a hole the watermark already passed. Keep it for resolution, but do NOT
+			// let it wedge the prune of confirmed members above it: otherwise the confirmed
+			// backlog piles up against max_blocks_queued and stalls the spear well below
+			// gap_threshold (the gap latch's job).
+			++it;
+		}
+		else
+		{
+			// First unresolved member at/above the frontier: stop the contiguous advance. A
+			// real frontier gap holds the watermark here (and, once they accumulate to
+			// gap_threshold, pauses the spear via repair_wait).
 			break;
 		}
-		// Monotonic: a repair head re-finding a dependency BELOW the (false-
-		// advanced) watermark prunes it here, but that must not drag the reported
-		// position backward — otherwise the watermark thrashes down to the dep's
-		// height and climbs back on every deep repair.
-		confirmed_watermark = std::max (confirmed_watermark, it->key);
-		if (it->state == member_state::in_ledger)
-		{
-			--in_ledger_count;
-		}
-		by_key.erase (it);
 	}
 }
 
@@ -576,7 +592,11 @@ std::vector<nano::node_id> topo_scan_index::seen_peers (std::size_t h) const
 
 std::size_t topo_scan_index::outstanding () const
 {
-	return members.size ();
+	// Active discovery window: members still being fetched/processed, or gapped and awaiting
+	// retry. Deliberately EXCLUDES in_ledger/terminal members — they are done and only awaiting
+	// prune, so a few gaps wedging the prune can't inflate this and stall the spear. Gap-driven
+	// pausing is solely the repair_wait latch's job (engaged at gap_threshold).
+	return pending_count + in_flight_count + received_count + submitted_count + gapped_count;
 }
 
 bool topo_scan_index::indexing () const
