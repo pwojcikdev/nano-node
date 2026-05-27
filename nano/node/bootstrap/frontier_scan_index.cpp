@@ -148,84 +148,49 @@ std::size_t frontier_scan_index::frontier_target (frontier_head const & head) co
 	return head.peers.target != 0 ? head.peers.target : config.consideration_count;
 }
 
-void frontier_scan_index::freeze_target (nano::account start, std::size_t capable_peers)
+frontier_scan_index::frontier_head const * frontier_scan_index::find_head (nano::account start) const
 {
-	auto & by_start = heads.get<tag_start> ();
+	auto const & by_start = heads.get<tag_start> ();
 	auto it = by_start.upper_bound (start);
 	if (it == by_start.begin ())
 	{
-		return;
+		return nullptr;
 	}
-	it = std::prev (it);
-	by_start.modify (it, [this, capable_peers] (frontier_head & head) {
+	return &*std::prev (it);
+}
+
+void frontier_scan_index::freeze_target (nano::account start, std::size_t capable_peers)
+{
+	modify_head (start, [this, capable_peers] (frontier_head & head) {
 		head.peers.freeze (config.consideration_count, capable_peers);
 	});
 }
 
 void frontier_scan_index::record_query (nano::account start, nano::node_id peer)
 {
-	auto & by_start = heads.get<tag_start> ();
-	auto it = by_start.upper_bound (start);
-	if (it == by_start.begin ())
-	{
-		return;
-	}
-	it = std::prev (it);
-	by_start.modify (it, [peer] (frontier_head & head) { head.peers.add (peer); });
+	modify_head (start, [peer] (frontier_head & head) { head.peers.add (peer); });
 }
 
 void frontier_scan_index::new_round (nano::account start)
 {
-	auto & by_start = heads.get<tag_start> ();
-	auto it = by_start.upper_bound (start);
-	if (it == by_start.begin ())
-	{
-		return;
-	}
-	it = std::prev (it);
-	by_start.modify (it, [] (frontier_head & head) { head.peers.new_round (); });
+	modify_head (start, [] (frontier_head & head) { head.peers.new_round (); });
 }
 
 void frontier_scan_index::cap_target (nano::account start)
 {
-	auto & by_start = heads.get<tag_start> ();
-	auto it = by_start.upper_bound (start);
-	if (it == by_start.begin ())
-	{
-		return;
-	}
-	it = std::prev (it);
-	by_start.modify (it, [] (frontier_head & head) {
-		// Distinct pool exhausted: finalize on the peers actually reached (>=1).
-		if (head.peers.size () >= 1)
-		{
-			head.peers.target = static_cast<unsigned> (std::clamp<std::size_t> (head.peers.size (), 1, nano::bootstrap::distinct_peers::capacity));
-		}
-	});
+	modify_head (start, [] (frontier_head & head) { head.peers.cap_to_seen (); });
 }
 
 bool frontier_scan_index::round_full (nano::account start) const
 {
-	auto const & by_start = heads.get<tag_start> ();
-	auto it = by_start.upper_bound (start);
-	if (it == by_start.begin ())
-	{
-		return false;
-	}
-	it = std::prev (it);
-	return it->peers.size () >= frontier_target (*it);
+	auto const * head = find_head (start);
+	return head != nullptr && head->peers.size () >= frontier_target (*head);
 }
 
 std::vector<nano::node_id> frontier_scan_index::seen_peers (nano::account start) const
 {
-	auto const & by_start = heads.get<tag_start> ();
-	auto it = by_start.upper_bound (start);
-	if (it == by_start.begin ())
-	{
-		return {};
-	}
-	it = std::prev (it);
-	return std::vector<nano::node_id> (it->peers.seen.begin (), it->peers.seen.begin () + it->peers.count);
+	auto const * head = find_head (start);
+	return head != nullptr ? head->peers.to_vector () : std::vector<nano::node_id>{};
 }
 
 nano::container_info frontier_scan_index::container_info () const

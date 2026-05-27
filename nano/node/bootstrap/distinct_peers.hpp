@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <vector>
 
 namespace nano::bootstrap
 {
@@ -28,7 +29,8 @@ struct distinct_peers
 
 	bool contains (nano::node_id id) const
 	{
-		return std::find (seen.begin (), seen.begin () + count, id) != seen.begin () + count;
+		auto const last = seen.begin () + count;
+		return std::find (seen.begin (), last, id) != last;
 	}
 
 	// Record a queried peer. Returns false if already present or the set is full.
@@ -47,6 +49,11 @@ struct distinct_peers
 		return count;
 	}
 
+	std::vector<nano::node_id> to_vector () const
+	{
+		return std::vector<nano::node_id> (seen.begin (), seen.begin () + count);
+	}
+
 	// Freeze the round size to the smaller of the desired redundancy and the reachable peer
 	// pool (clamped to [1, capacity]). No-op once frozen, so the size is stable for the round.
 	void freeze (std::size_t consideration, std::size_t capable)
@@ -54,6 +61,17 @@ struct distinct_peers
 		if (target == 0)
 		{
 			target = static_cast<unsigned> (std::clamp<std::size_t> (std::min ({ consideration, capable, capacity }), 1, capacity));
+		}
+	}
+
+	// Distinct pool exhausted: cap the round to the peers actually reached so the gather can
+	// finalize instead of waiting for a quorum that can't be filled. No-op if none reached.
+	// `count` is already bounded by `capacity`, so this never exceeds the cap.
+	void cap_to_seen ()
+	{
+		if (count > 0)
+		{
+			target = static_cast<unsigned> (count);
 		}
 	}
 

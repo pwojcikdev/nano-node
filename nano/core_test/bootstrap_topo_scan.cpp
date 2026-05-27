@@ -662,6 +662,26 @@ TEST (bootstrap_topo_scan, distinct_peers_round)
 	ASSERT_FALSE (scan.round_full (0));
 }
 
+// freeze_target floors the round at 1 even with zero reachable peers: a target of 0 would
+// make the empty-tip threshold (target*2) zero and instantly declare a false tip.
+TEST (bootstrap_topo_scan, freeze_target_floors_at_one)
+{
+	auto cfg = default_config ();
+	cfg.consideration_count = 4;
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	scan.freeze_target (0, 0); // no capable peers
+	ASSERT_FALSE (scan.round_full (0)); // target floored to 1, 0 queried < 1
+	scan.record_query (0, nano::node_id{ 7 });
+	ASSERT_TRUE (scan.round_full (0)); // 1 queried >= floored target
+
+	// cap_target with nothing reached is a no-op (never sets target to 0).
+	nano::bootstrap::topo_scan_index fresh{ cfg };
+	fresh.freeze_target (0, 4);
+	fresh.cap_target (0); // no peers recorded
+	ASSERT_FALSE (fresh.round_full (0)); // target unchanged at 4, 0 < 4
+}
+
 // When fewer peers are reachable than the frozen target, cap_target shrinks the round to the
 // peers actually reached so the gather can finalize instead of stalling.
 TEST (bootstrap_topo_scan, distinct_peers_cap_target)

@@ -116,22 +116,22 @@ public:
 	// keys become fetchable members.
 	bool process (std::size_t head, nano::topo_key start, std::deque<nano::topo_key> const & entries);
 
-	// --- Spear distinct-peer round (driven by the strategy, which holds the channels) ---
+	// --- Distinct-peer round, per head (driven by the strategy, which holds the channels) ---
 
-	// Freeze the spear round size to min(consideration_count, capable_peers) on the first
-	// request of a page (no-op once frozen / for repair heads). Sizes the quorum to the
-	// reachable peer pool so it can finalize even when fewer peers than consideration_count exist.
+	// Freeze the head's round size to min(head_consideration, capable_peers) on the first
+	// request of a page (no-op once frozen). Sizes the quorum to the reachable peer pool so it
+	// can finalize even when fewer peers than head_consideration exist.
 	void freeze_target (std::size_t head, std::size_t capable_peers);
-	// Record a distinct peer (by node id) queried for the spear's current page.
+	// Record a distinct peer (by node id) queried for the head's current page.
 	void record_query (std::size_t head, nano::node_id peer);
 	// Cooldown re-fire of a full round: reopen the distinct-peer pool for a retry round.
 	void new_round (std::size_t head);
 	// The distinct-peer pool is exhausted (fewer reachable peers than the frozen target):
 	// cap the round to the peers actually reached so the gather can finalize, not stall.
 	void cap_target (std::size_t head);
-	// True once the spear has queried `target` distinct peers this round.
+	// True once the head has queried `target` distinct peers this round.
 	bool round_full (std::size_t head) const;
-	// Distinct peer node ids queried for the spear's current page (for the exclusion filter).
+	// Distinct peer node ids queried for the head's current page (for the exclusion filter).
 	std::vector<nano::node_id> seen_peers (std::size_t head) const;
 
 	// --- Fetch (shared across heads) ---

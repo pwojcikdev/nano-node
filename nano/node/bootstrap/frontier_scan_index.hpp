@@ -13,6 +13,7 @@
 #include <boost/multi_index_container.hpp>
 
 #include <chrono>
+#include <iterator>
 #include <map>
 #include <set>
 #include <vector>
@@ -116,5 +117,19 @@ private:
 	// Round size for the head: the frozen adaptive target, or consideration_count when not
 	// yet frozen (the latter preserves behavior when the index is driven without the strategy).
 	std::size_t frontier_target (frontier_head const &) const;
+
+	// Map a requested account back to the head whose [start, end) range covers it. The
+	// distinct-peer helpers are keyed by account (next() returns one) rather than head index.
+	frontier_head const * find_head (nano::account start) const;
+	template <typename Op>
+	void modify_head (nano::account start, Op op)
+	{
+		auto & by_start = heads.get<tag_start> ();
+		auto it = by_start.upper_bound (start);
+		if (it != by_start.begin ())
+		{
+			by_start.modify (std::prev (it), op);
+		}
+	}
 };
 }

@@ -558,13 +558,7 @@ void topo_scan_index::new_round (std::size_t h)
 void topo_scan_index::cap_target (std::size_t h)
 {
 	debug_assert (h < heads.size ());
-	auto & head = heads[h];
-	// Distinct pool exhausted: finalize on the peers actually reached (>=1) instead of
-	// waiting forever for a quorum that can't be filled.
-	if (head.peers.size () >= 1)
-	{
-		head.peers.target = static_cast<unsigned> (std::clamp<std::size_t> (head.peers.size (), 1, distinct_peers::capacity));
-	}
+	heads[h].peers.cap_to_seen ();
 }
 
 bool topo_scan_index::round_full (std::size_t h) const
@@ -577,8 +571,7 @@ bool topo_scan_index::round_full (std::size_t h) const
 std::vector<nano::node_id> topo_scan_index::seen_peers (std::size_t h) const
 {
 	debug_assert (h < heads.size ());
-	auto const & head = heads[h];
-	return std::vector<nano::node_id> (head.peers.seen.begin (), head.peers.seen.begin () + head.peers.count);
+	return heads[h].peers.to_vector ();
 }
 
 std::size_t topo_scan_index::outstanding () const
