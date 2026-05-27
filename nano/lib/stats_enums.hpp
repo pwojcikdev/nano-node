@@ -712,6 +712,8 @@ enum class detail
 	received,
 	indexed,
 	redundant,
+	orient,
+	oriented,
 
 	// bootstrap scan loop wait reasons (bootstrap_topo_wait / bootstrap_frontier_wait types):
 	// which gate is parking the scan loop

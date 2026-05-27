@@ -177,6 +177,13 @@ public:
 
 	void reset ();
 
+	// Startup orientation: seed the spear's start cursor and the reported watermark to
+	// `start` so a restarted bootstrap resumes near where its data already ends instead of
+	// re-paging from genesis. Must be called before any discovery (right after reset()); the
+	// watermark stays monotonic, so a later repair head filling a dependency below `start`
+	// cannot drag it back. No-op for the default (genesis) key.
+	void seed (nano::topo_key const & start);
+
 	// Poll mode: re-arm the spear (after `caught_up`) to re-page from its cursor
 	// and pick up blocks appended to the index since the tip was reached.
 	void repoll ();

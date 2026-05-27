@@ -413,6 +413,17 @@ void topo_scan_index::reset ()
 	}
 }
 
+void topo_scan_index::seed (nano::topo_key const & start)
+{
+	// Position the spear above the already-synced prefix and report the watermark there.
+	// Repair head ceilings are snapshotted from the spear frontier, so they derive from this
+	// seeded position too. Intended for the fresh state right after reset(); guard against a
+	// non-empty member set just in case.
+	debug_assert (members.empty ());
+	heads[0].cursor = start;
+	confirmed_watermark = start;
+}
+
 void topo_scan_index::repoll ()
 {
 	// Poll mode: re-arm the spear to re-page from its cursor and detect new

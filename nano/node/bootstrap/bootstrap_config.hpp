@@ -81,6 +81,22 @@ public:
 	// the spear's height skips that phase. Each head still covers its full range
 	// (head 1 down to genesis) once active. Tune to where the dense low layer ends.
 	uint64_t repair_activation_height{ 100 };
+
+	// Startup orientation: before the spear begins scanning, binary-search the network's
+	// topo index for the watermark — the highest topo_key whose entire prefix our ledger
+	// already holds — and seed the spear there. Without it a restarted bootstrap re-pages
+	// the whole index from genesis, re-discovering already-synced blocks (redundant) for
+	// hours before reaching real work. The local index can't reveal the watermark (the
+	// topo-height invariant makes it height-contiguous up to any out-of-range block we
+	// hold), so the search probes PEERS and checks each returned key against our ledger.
+	bool enable_orient{ true };
+	// Starting probe height for the exponential climb. Probed before doubling; if the
+	// watermark is below it the search just binary-searches down from here. Keep it above
+	// the dense low layer so a high watermark is found in a few hops.
+	uint64_t orient_base_height{ 1024 };
+	// Distinct peers unioned per probe so a behind peer's short page can't falsely lower
+	// the watermark (the more caught-up peer's page dominates the union). Minimum 1.
+	unsigned orient_consideration_count{ 2 };
 };
 
 class bootstrap_config final

@@ -71,6 +71,9 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("max_blocks_queued", max_blocks_queued);
 	toml.get ("gap_threshold", gap_threshold);
 	toml.get ("repair_activation_height", repair_activation_height);
+	toml.get ("enable_orient", enable_orient);
+	toml.get ("orient_base_height", orient_base_height);
+	toml.get ("orient_consideration_count", orient_consideration_count);
 
 	return toml.get_error ();
 }
@@ -89,6 +92,9 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("max_blocks_queued", max_blocks_queued, "Pause spear scanning when the held member window hits this number.\ntype:uint64");
 	toml.put ("gap_threshold", gap_threshold, "Number of pending dependency gaps the spear tolerates before pausing for the repair heads to catch up. 1 = pause at the first gap.\ntype:uint64");
 	toml.put ("repair_activation_height", repair_activation_height, "Repair heads stay idle until the spear frontier's topo_height reaches this, skipping the dense dependency-free low layer at the start of a bootstrap.\ntype:uint64");
+	toml.put ("enable_orient", enable_orient, "Binary-search peers' topo index at startup to find the watermark and seed the spear there, instead of re-paging the whole index from genesis on every restart.\ntype:bool");
+	toml.put ("orient_base_height", orient_base_height, "Starting probe height for the orientation exponential climb. Keep above the dense low layer.\ntype:uint64");
+	toml.put ("orient_consideration_count", orient_consideration_count, "Distinct peers unioned per orientation probe so a behind peer can't falsely lower the watermark. Minimum 1.\ntype:uint64");
 
 	return toml.get_error ();
 }

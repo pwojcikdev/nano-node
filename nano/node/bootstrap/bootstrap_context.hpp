@@ -57,6 +57,7 @@ struct topo_index_tag_payload
 {
 	nano::topo_key cursor{};
 	std::size_t head{ 0 }; // scanning head that issued the request
+	bool orient{ false }; // startup orientation probe (routed to the watermark search, not the scan)
 };
 
 struct blocks_random_tag_payload

@@ -4,6 +4,7 @@
 #include <nano/lib/thread_roles.hpp>
 #include <nano/messages/asc_pull.hpp>
 #include <nano/node/block_processor.hpp>
+#include <nano/node/bootstrap/topo_orient.hpp>
 #include <nano/node/bootstrap/topo_strategy.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/transport/channel.hpp>
@@ -11,7 +12,10 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 
+#include <algorithm>
+#include <set>
 #include <utility>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -95,6 +99,10 @@ void topo_strategy::run_scan ()
 {
 	auto const poll_interval = nano::is_dev_run () ? 1s : 15s;
 
+	// One-time startup orientation: locate the watermark and seed the spear there before the
+	// steady-state scan begins, so a restart resumes near its data instead of from genesis.
+	orient ();
+
 	while (!ctx.stopped)
 	{
 		// Spear poll mode: once caught up, periodically re-page from the tip to detect
@@ -122,6 +130,226 @@ void topo_strategy::run_scan ()
 		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::loop_topo_index);
 		request_index (request->head, request->cursor, request->channel);
 	}
+}
+
+void topo_strategy::orient ()
+{
+	if (!ctx.config.topo_scan.enable_orient)
+	{
+		return;
+	}
+
+	// Bound the whole phase: a node that never sees a capable peer falls through to scanning
+	// from genesis (no worse than the pre-orientation behaviour).
+	auto const overall_timeout = nano::is_dev_run () ? 10s : 60s;
+	auto const deadline = std::chrono::steady_clock::now () + overall_timeout;
+
+	nano::bootstrap::topo_orient search{ ctx.config.topo_scan.orient_base_height };
+
+	while (!ctx.stopped)
+	{
+		auto const probe = search.next ();
+		if (!probe)
+		{
+			break; // Converged.
+		}
+		if (std::chrono::steady_clock::now () >= deadline)
+		{
+			ctx.logger.debug (nano::log::type::bootstrap, "Topo orientation timed out; scanning from genesis");
+			return;
+		}
+
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::orient);
+
+		auto page = orient_gather (*probe, deadline);
+		if (!page)
+		{
+			// No capable peer reachable right now: wait briefly and retry the same probe (the
+			// search state is unchanged, so next() returns the same height).
+			nano::unique_lock<nano::mutex> lock{ ctx.mutex };
+			ctx.condition.wait_for (lock, 500ms, [this] () { return ctx.stopped; });
+			continue;
+		}
+
+		// Intersect the peers' page with our ledger: the contiguous-present prefix is our
+		// confirmed floor, the first missing key (or an empty page) bounds the watermark from
+		// above. Ledger reads run WITHOUT ctx.mutex (off the message-processing thread).
+		std::optional<nano::topo_key> present_through;
+		bool bounded = false;
+		uint64_t bound_height = 0;
+		if (page->empty ())
+		{
+			bounded = true; // Nothing at/above the probe: above the network top.
+			bound_height = *probe;
+		}
+		else
+		{
+			auto tx = ctx.ledger.tx_begin_read ();
+			for (auto const & key : *page)
+			{
+				if (ctx.ledger.any.block_exists (tx, key.hash))
+				{
+					present_through = key;
+				}
+				else
+				{
+					bounded = true;
+					bound_height = key.topo_height;
+					break;
+				}
+			}
+		}
+
+		search.observe (*probe, present_through, bounded, bound_height);
+	}
+
+	if (ctx.stopped)
+	{
+		return;
+	}
+
+	auto const watermark = search.watermark ();
+	if (watermark != nano::topo_key{})
+	{
+		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+		ctx.topology.seed (watermark);
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::oriented);
+		ctx.logger.info (nano::log::type::bootstrap, "Topo orientation seeded watermark at topo_height={} hash={}", watermark.topo_height, watermark.hash.to_string ());
+	}
+}
+
+bool topo_strategy::orient_capable (std::shared_ptr<nano::transport::channel> const & channel)
+{
+	return channel->get_flags ().test (nano::node_capabilities::topo_index);
+}
+
+std::optional<std::deque<nano::topo_key>> topo_strategy::orient_gather (uint64_t height, std::chrono::steady_clock::time_point deadline)
+{
+	auto const want = std::max<unsigned> (1, ctx.config.topo_scan.orient_consideration_count);
+
+	// Union distinct peers' pages so a behind peer's short/empty page is dominated by a more
+	// caught-up peer's: a key missing from our ledger only registers if SOME peer reports it.
+	std::vector<nano::node_id> seen;
+	std::set<nano::topo_key> merged;
+	std::size_t responses = 0;
+
+	while (!ctx.stopped)
+	{
+		// Adapt the target to the reachable capable pool so the gather finalizes on however many
+		// distinct peers actually exist (one response in the two-node / early-network case)
+		// instead of waiting out the deadline hunting for an absent second peer.
+		std::size_t capable;
+		{
+			nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+			capable = ctx.scoring.count (&orient_capable);
+		}
+		std::size_t const target = std::min<std::size_t> (want, std::max<std::size_t> (1, capable));
+		if (responses >= target)
+		{
+			break;
+		}
+
+		auto channel = wait_orient_channel (seen, deadline);
+		if (!channel)
+		{
+			break; // No (further) distinct capable peer reachable within the window.
+		}
+		seen.push_back (channel->get_node_id ());
+
+		if (auto entries = orient_request (height, channel))
+		{
+			for (auto const & key : *entries)
+			{
+				merged.insert (key);
+			}
+			++responses;
+		}
+	}
+
+	if (responses == 0)
+	{
+		return std::nullopt; // Reached no one — caller retries or gives up.
+	}
+	return std::deque<nano::topo_key> (merged.begin (), merged.end ());
+}
+
+std::optional<std::deque<nano::topo_key>> topo_strategy::orient_request (uint64_t height, std::shared_ptr<nano::transport::channel> const & channel)
+{
+	nano::topo_key const cursor{ height, nano::block_hash{ 0 } };
+
+	async_tag tag{};
+	tag.type = query_type::topo_index;
+	tag.source = query_source::topology_index;
+	tag.hash = cursor.hash;
+
+	topo_index_tag_payload payload{};
+	payload.cursor = cursor;
+	payload.head = 0;
+	payload.orient = true;
+	tag.payload = payload;
+
+	nano::messages::asc_pull_req message{ ctx.network_constants };
+	message.id = tag.id;
+	message.type = nano::messages::asc_pull_type::topo_index;
+
+	nano::messages::asc_pull_req::topo_index_payload msg_pld;
+	msg_pld.start = cursor;
+	msg_pld.count = nano::narrow_cast<uint16_t> (std::min<std::size_t> (ctx.config.topo_scan.candidates, nano::messages::asc_pull_ack::topo_index_payload::max_entries));
+	message.payload = msg_pld;
+	message.update_header ();
+
+	// Arm the rendezvous before sending so the response can never race ahead of it.
+	{
+		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+		orient_id = tag.id;
+		orient_response.reset ();
+	}
+
+	if (!ctx.send (channel, std::move (message), tag))
+	{
+		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+		orient_id = 0;
+		return std::nullopt;
+	}
+
+	// Wait for process() to stash the matching response, or time out.
+	auto const deadline = std::chrono::steady_clock::now () + ctx.config.request_timeout;
+	std::optional<std::deque<nano::topo_key>> result;
+	{
+		nano::unique_lock<nano::mutex> lock{ ctx.mutex };
+		ctx.condition.wait_until (lock, deadline, [this] () {
+			return ctx.stopped || orient_response.has_value ();
+		});
+		result = std::move (orient_response);
+		orient_response.reset ();
+		orient_id = 0;
+	}
+	return result;
+}
+
+std::shared_ptr<nano::transport::channel> topo_strategy::wait_orient_channel (std::vector<nano::node_id> const & seen, std::chrono::steady_clock::time_point deadline)
+{
+	// A capable peer (advertises the topo_index capability) whose node id we haven't queried
+	// for this probe yet.
+	auto const filter = [&seen] (std::shared_ptr<nano::transport::channel> const & channel) {
+		if (!orient_capable (channel))
+		{
+			return false;
+		}
+		return std::find (seen.begin (), seen.end (), channel->get_node_id ()) == seen.end ();
+	};
+
+	std::shared_ptr<nano::transport::channel> result;
+	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
+	ctx.condition.wait_until (lock, deadline, [&] () {
+		if (ctx.stopped)
+		{
+			return true;
+		}
+		result = ctx.scoring.channel (filter);
+		return result != nullptr;
+	});
+	return ctx.stopped ? nullptr : result;
 }
 
 std::optional<topo_strategy::scan_request> topo_strategy::wait_scan_request ()
@@ -495,6 +723,19 @@ bool topo_strategy::process (nano::messages::asc_pull_ack::topo_index_payload co
 
 	release_assert (std::holds_alternative<topo_index_tag_payload> (tag.payload));
 	auto const & payload = std::get<topo_index_tag_payload> (tag.payload);
+
+	if (payload.orient)
+	{
+		// Startup orientation probe: hand the entries to the orient() driver (matched by id; a
+		// stale late response for a probe we've already moved past is dropped). The driver waits
+		// on ctx.condition, which this call's caller (bootstrap_context::process) notifies after
+		// releasing the lock.
+		if (tag.id == orient_id)
+		{
+			orient_response = response.entries;
+		}
+		return true;
+	}
 
 	ctx.stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::topo_index);
 

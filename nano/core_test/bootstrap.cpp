@@ -513,3 +513,37 @@ TEST (bootstrap, reset)
 	// Bootstrap should automatically restart and eventually sync all blocks
 	ASSERT_TIMELY_EQ (30s, node_client.block_count (), total_blocks);
 }
+
+// Startup orientation runs end-to-end against a real peer: a topology-isolated client binary-
+// searches the peer's topo index, seeds the spear at the discovered watermark (emitting the
+// `oriented` stat), and syncs the whole chain. Guards the orient() driver / rendezvous / seed
+// wiring against regressions; the binary-search math itself is unit-tested separately
+// (bootstrap_topo_orient.*).
+TEST (bootstrap, topo_orient_end_to_end)
+{
+	nano::test::system system;
+
+	nano::node_config config;
+	// Disable election activation so the client only advances via bootstrap.
+	config.backlog_scan->enable = false;
+	config.priority_scheduler->enable = false;
+	config.optimistic_scheduler->enable = false;
+	config.hinted_scheduler->enable = false;
+	// Isolate the topology strategy so the client must sync through the topo bootstrap (and
+	// therefore run orientation at startup).
+	config.bootstrap->enable_priorities = false;
+	config.bootstrap->enable_database_scan = false;
+	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_frontier_scan = false;
+	config.bootstrap->enable_topology = true;
+
+	auto & node_server = *system.add_node (config);
+	nano::test::setup_chains (system, node_server, /* chain_count */ 10, /* blocks_per_chain */ 5);
+	auto const total_blocks = node_server.block_count ();
+
+	auto & node_client = *system.add_node (config);
+
+	// Orientation seeds the spear at the watermark, then the topo bootstrap syncs the chain.
+	ASSERT_TIMELY (30s, node_client.stats.count (nano::stat::type::bootstrap_topo, nano::stat::detail::oriented) >= 1);
+	ASSERT_TIMELY_EQ (30s, node_client.block_count (), total_blocks);
+}

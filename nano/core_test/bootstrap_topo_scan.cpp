@@ -1,8 +1,13 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/node/bootstrap/topo_orient.hpp>
 #include <nano/node/bootstrap/topo_scan_index.hpp>
 #include <nano/test_common/testutil.hpp>
 
 #include <gtest/gtest.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <optional>
 
 using namespace std::chrono_literals;
 
@@ -764,4 +769,125 @@ TEST (bootstrap_topo_scan, spear_tip_uses_adaptive_target)
 	ASSERT_FALSE (scan.caught_up ());
 	ASSERT_TRUE (scan.process (0, nano::topo_key{}, entries ({}))); // 4th empty -> tip
 	ASSERT_TRUE (scan.caught_up ());
+}
+
+// Seeding positions the spear above the already-synced prefix: the reported watermark and the
+// spear's first probe both start at the seeded key, and discovery proceeds from there.
+TEST (bootstrap_topo_scan, seed_resumes_above_prefix)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	scan.seed (key (500, 5000));
+	ASSERT_EQ (scan.cursor (), key (500, 5000)); // reported watermark
+
+	auto pos = scan.next (0);
+	ASSERT_TRUE (pos);
+	ASSERT_EQ (*pos, key (500, 5000)); // spear resumes at the seed, not genesis
+
+	// Discovery above the seed tracks new members as usual.
+	ASSERT_TRUE (scan.process (0, *pos, entries ({ key (501, 5010) })));
+	ASSERT_EQ (scan.count_members (), 1);
+}
+
+// A repair head filling a dependency BELOW the seeded watermark must not drag the reported
+// position back down (the watermark is monotonic).
+TEST (bootstrap_topo_scan, seed_watermark_monotonic)
+{
+	auto cfg = default_config ();
+	nano::bootstrap::topo_scan_index scan{ cfg };
+
+	scan.seed (key (500, 5000));
+	scan.process (1, nano::topo_key{}, entries ({ key (10, 100) })); // repair discovers a low key
+	submit_member (scan, 100);
+	scan.block_indexed (nano::block_hash{ 100 });
+	ASSERT_EQ (scan.cursor (), key (500, 5000)); // unchanged
+}
+
+namespace
+{
+// Simulate orientation against a synthetic DENSE network with one key per height 1..top, of
+// which our ledger holds heights 1..wm. Drives the real next()/observe() contract exactly as
+// topo_strategy::orient would (page-prefix present check, first-missing / empty-page bound) and
+// returns the converged watermark height. Iterations are capped so a non-converging search
+// fails the test loudly instead of hanging.
+uint64_t simulate_orient (uint64_t base, uint64_t wm, uint64_t top, uint64_t page = 100)
+{
+	nano::bootstrap::topo_orient search{ base };
+	for (int i = 0; i < 500; ++i)
+	{
+		auto probe = search.next ();
+		if (!probe)
+		{
+			break;
+		}
+		uint64_t const h = *probe;
+		std::optional<nano::topo_key> present_through;
+		bool bounded = false;
+		uint64_t bound_height = 0;
+		if (h > top || h > wm)
+		{
+			// Above the network top (empty page) or above our held range (lowest returned key
+			// missing): nothing present, bound at the probe height.
+			bounded = true;
+			bound_height = h;
+		}
+		else
+		{
+			uint64_t const page_top = std::min (top, h + page - 1);
+			uint64_t const present_top = std::min (page_top, wm);
+			present_through = key (present_top, present_top);
+			if (page_top > wm)
+			{
+				bounded = true;
+				bound_height = wm + 1; // first missing key sits just past our held range
+			}
+		}
+		search.observe (h, present_through, bounded, bound_height);
+	}
+	return search.watermark ().topo_height;
+}
+}
+
+// Orientation converges to the exact watermark height across the regimes that matter: a fresh
+// ledger, a watermark below / above the climb base, and a fully-caught-up node.
+TEST (bootstrap_topo_orient, converges)
+{
+	EXPECT_EQ (simulate_orient (1024, 0, 5000), 0); // nothing held
+	EXPECT_EQ (simulate_orient (1024, 1, 5000), 1); // genesis only
+	EXPECT_EQ (simulate_orient (1024, 600, 5000), 600); // below the climb base
+	EXPECT_EQ (simulate_orient (1024, 5000, 20000), 5000); // above the base (exercises the climb)
+	EXPECT_EQ (simulate_orient (1024, 20000, 20000), 20000); // fully caught up
+	EXPECT_EQ (simulate_orient (1, 600, 5000), 600); // tiny base still converges
+}
+
+// Step through the contract: exponential climb while pages are fully present, then binary search
+// once a probe bounds the watermark from above.
+TEST (bootstrap_topo_orient, climb_then_binary)
+{
+	nano::bootstrap::topo_orient search{ 1000 };
+
+	ASSERT_EQ (search.next (), 1000u); // first probe at the base
+	search.observe (1000, key (1500, 1500), false, 0); // page present through 1500 -> climb
+	ASSERT_EQ (search.next (), 2000u); // doubled
+
+	search.observe (2000, std::nullopt, true, 2000); // 2000 missing -> ceiling 2000
+	ASSERT_FALSE (search.done ());
+	ASSERT_EQ (search.next (), 1750u); // binary mid of (1500, 2000)
+
+	// 1750's page is present through 1749 then missing at 1750: pins lo=1749, hi=1750.
+	search.observe (1750, key (1749, 1749), true, 1750);
+	ASSERT_TRUE (search.done ());
+	ASSERT_EQ (search.watermark (), key (1749, 1749));
+}
+
+// An immediately-bounded first probe (we hold nothing at or above it) leaves the watermark at the
+// default and still terminates.
+TEST (bootstrap_topo_orient, bounded_immediately)
+{
+	nano::bootstrap::topo_orient search{ 1 };
+	ASSERT_EQ (search.next (), 1u);
+	search.observe (1, std::nullopt, true, 1); // nothing present, ceiling 1
+	ASSERT_TRUE (search.done ()); // hi(1) <= lo(0)+1
+	ASSERT_EQ (search.watermark (), nano::topo_key{});
 }
