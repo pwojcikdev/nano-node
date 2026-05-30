@@ -140,6 +140,7 @@ void nano::add_node_flag_options (boost::program_options::options_description & 
 		("disable_bootstrap_bulk_push_client", "Disables the legacy bulk push client for bootstrap operations")
 		("disable_tcp_realtime", "Disables TCP realtime connections")
 		("disable_search_pending", "Disables the periodic search for pending transactions")
+		("disable_bounded_backlog", "Disables the bounded backlog that rolls back unconfirmed blocks to keep the ledger backlog within configured limits")
 		("disable_topo_index", "Initialize a fresh ledger without the topology index. Required for pruning. Has no effect on an existing ledger; use --drop_topo_index to disable on an existing ledger.")
 		("enable_pruning", "Enable experimental ledger pruning")
 		("enable_rpc", "Enable RPC")
@@ -177,6 +178,7 @@ void nano::update_flags (nano::node_flags & flags_a, boost::program_options::var
 	flags_a.disable_bootstrap_bulk_push_client = (vm.count ("disable_bootstrap_bulk_push_client") > 0);
 	flags_a.disable_tcp_realtime = (vm.count ("disable_tcp_realtime") > 0);
 	flags_a.disable_search_pending = (vm.count ("disable_search_pending") > 0);
+	flags_a.disable_bounded_backlog = (vm.count ("disable_bounded_backlog") > 0);
 	if (!flags_a.inactive_node)
 	{
 		flags_a.disable_bootstrap_listener = (vm.count ("disable_bootstrap_listener") > 0);

@@ -61,6 +61,10 @@ nano::node_config nano::apply_flag_overrides (nano::node_config config, nano::no
 		config.hinted_scheduler->enable = false;
 		config.optimistic_scheduler->enable = false;
 	}
+	if (flags.disable_bounded_backlog)
+	{
+		config.bounded_backlog->enable = false;
+	}
 	return config;
 }
 
