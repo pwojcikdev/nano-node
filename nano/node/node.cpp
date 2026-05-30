@@ -878,8 +878,14 @@ nano::node_capabilities_flags nano::node::get_capabilities () const
 	{
 		return *flags.capabilities_override;
 	}
-	// TODO: Set capabilities flags based on node configuration and state
+
 	nano::node_capabilities_flags caps;
+
+	// Advertise topology index support only when the ledger maintains the topo index
+	if (ledger.flags.topo_index)
+	{
+		caps.set (nano::node_capabilities::topo_index);
+	}
 	return caps;
 }
 
