@@ -703,7 +703,7 @@ enum class detail
 
 	// bootstrap_topo_scan
 	loop_topo_index,
-	loop_topo_blocks,
+	loop_topo_fetch,
 	loop_topo_processing,
 	next_topo_index,
 	next_topo_block,

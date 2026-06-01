@@ -55,8 +55,8 @@ struct frontier_tag_payload
 
 struct topo_index_tag_payload
 {
+	nano::bootstrap::topo_head_index head{ 0 };
 	nano::topo_key cursor{};
-	std::size_t head{ 0 }; // scanning head that issued the request
 };
 
 struct blocks_random_tag_payload

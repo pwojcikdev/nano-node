@@ -52,7 +52,7 @@ enum class name
 	bootstrap_frontier_scan,
 	bootstrap_frontier_processing,
 	bootstrap_topo_index,
-	bootstrap_topo_blocks,
+	bootstrap_topo_fetch,
 	bootstrap_topo_processing,
 	bootstrap_cleanup,
 	bootstrap_worker,

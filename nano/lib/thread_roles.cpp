@@ -139,8 +139,8 @@ std::string nano::thread_role::get_string (nano::thread_role::name role)
 		case nano::thread_role::name::bootstrap_topo_index:
 			thread_role_name_string = "Topo index";
 			break;
-		case nano::thread_role::name::bootstrap_topo_blocks:
-			thread_role_name_string = "Topo blocks";
+		case nano::thread_role::name::bootstrap_topo_fetch:
+			thread_role_name_string = "Topo fetch";
 			break;
 		case nano::thread_role::name::bootstrap_topo_processing:
 			thread_role_name_string = "Topo process";

@@ -62,14 +62,12 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("head_count", head_count);
 	toml.get ("spear_weight", spear_weight);
 	toml.get ("consideration_count", consideration_count);
-	toml.get_duration ("cooldown", cooldown);
 	toml.get_duration ("block_retry", block_retry);
 	toml.get ("candidates", candidates);
-	toml.get ("block_batch_size", block_batch_size);
 	toml.get ("max_blocks_outstanding", max_blocks_outstanding);
 	toml.get ("max_blocks_queued", max_blocks_queued);
 	toml.get ("gap_threshold", gap_threshold);
-	toml.get ("repair_activation_height", repair_activation_height);
+	// TODO: deserialize the rest
 
 	return toml.get_error ();
 }
@@ -79,14 +77,12 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("head_count", head_count, "Number of concurrent scanning heads (1 spear + repair heads). Minimum 1.\ntype:uint64");
 	toml.put ("spear_weight", spear_weight, "Scheduling ratio of the spear to the repair heads on the scan thread: the spear gets this many requests per 1 given to a repair head. 4 = spear gets 4/5. Minimum 1.\ntype:uint64");
 	toml.put ("consideration_count", consideration_count, "Number of peer responses unioned at each cursor before advancing the index scan.\ntype:uint64");
-	toml.put ("cooldown", cooldown.count (), "Delay before re-querying the same cursor when consideration_count requests are in flight.\ntype:milliseconds");
 	toml.put ("block_retry", block_retry.count (), "Retry timeout for in-flight block hashes and re-submit interval for gapped blocks.\ntype:milliseconds");
 	toml.put ("candidates", candidates, "Maximum number of topo index entries kept per chunk.\ntype:uint64");
-	toml.put ("block_batch_size", block_batch_size, "Maximum number of hashes requested per blocks_random call.\ntype:uint64");
 	toml.put ("max_blocks_outstanding", max_blocks_outstanding, "Pause block fetching when this many blocks are actively in-flight.\ntype:uint64");
 	toml.put ("max_blocks_queued", max_blocks_queued, "Pause spear scanning when the held member window hits this number.\ntype:uint64");
 	toml.put ("gap_threshold", gap_threshold, "Number of pending dependency gaps the spear tolerates before pausing for the repair heads to catch up. 1 = pause at the first gap.\ntype:uint64");
-	toml.put ("repair_activation_height", repair_activation_height, "Repair heads stay idle until the spear frontier's topo_height reaches this, skipping the dense dependency-free low layer at the start of a bootstrap.\ntype:uint64");
+	// TODO: serialize the rest
 
 	return toml.get_error ();
 }

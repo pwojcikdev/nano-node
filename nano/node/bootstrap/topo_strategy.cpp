@@ -28,15 +28,14 @@ void topo_strategy::start ()
 	debug_assert (!thread_blocks.joinable ());
 	debug_assert (!thread_processing.joinable ());
 
-	// A single thread drives all scanning heads, weighting the spear (spear_weight:1).
 	thread_scan = std::thread ([this] () {
 		nano::thread_role::set (nano::thread_role::name::bootstrap_topo_index);
 		run_scan ();
 	});
 
 	thread_blocks = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bootstrap_topo_blocks);
-		run_blocks ();
+		nano::thread_role::set (nano::thread_role::name::bootstrap_topo_fetch);
+		run_fetch ();
 	});
 
 	thread_processing = std::thread ([this] () {
@@ -67,8 +66,8 @@ void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_
 		case nano::block_status::old:
 		{
 			// The block reached the ledger
-			ctx.topology.mark_indexed (hash);
-			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::indexed);
+			ctx.topology.mark_processed (hash);
+			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::processed);
 		}
 		break;
 		case nano::block_status::gap_previous:
@@ -92,23 +91,9 @@ void topo_strategy::inspect (nano::secure::transaction const & txn, nano::block_
 
 void topo_strategy::run_scan ()
 {
-	auto const poll_interval = nano::is_dev_run () ? 1s : 15s;
-
 	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
 	while (!ctx.stopped)
 	{
-		// TODO: Finish this, idk if this works fine
-		// Spear poll mode: once caught up, periodically re-page from the tip to detect blocks appended to the index.
-		if (ctx.topology.caught_up ())
-		{
-			ctx.condition.wait_for (lock, poll_interval, [this] () { return ctx.stopped; });
-			if (!ctx.stopped)
-			{
-				ctx.topology.repoll ();
-			}
-			continue;
-		}
-
 		// Wait for a head to have work
 		auto picked = wait_scan_head ();
 		if (!picked)
@@ -116,7 +101,7 @@ void topo_strategy::run_scan ()
 			continue;
 		}
 
-		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::loop_topo_index);
+		ctx.stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_topo_index);
 
 		auto channel = wait_topo_channel ();
 		if (!channel)
@@ -132,9 +117,6 @@ std::optional<std::pair<std::size_t, nano::topo_key>> topo_strategy::wait_scan_h
 {
 	std::optional<std::pair<std::size_t, nano::topo_key>> result;
 	ctx.wait ([this, &result] () {
-		debug_assert (!ctx.mutex.try_lock ());
-		// Nothing more to schedule once the topology stops indexing (drives the outer
-		// loop into poll mode / parking).
 		if (!ctx.topology.indexing ())
 		{
 			return true;
@@ -185,7 +167,7 @@ std::optional<std::pair<std::size_t, nano::topo_key>> topo_strategy::pick_scan_h
 	return std::nullopt;
 }
 
-void topo_strategy::run_blocks ()
+void topo_strategy::run_fetch ()
 {
 	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
 	while (!ctx.stopped)
@@ -198,23 +180,22 @@ void topo_strategy::run_blocks ()
 
 		lock.unlock ();
 
-		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::loop_topo_blocks);
-		run_one_blocks ();
+		ctx.stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_topo_fetch);
+		run_one_fetch ();
 
 		lock.lock ();
 	}
 }
 
-void topo_strategy::run_one_blocks ()
+void topo_strategy::run_one_fetch ()
 {
-	auto hashes = wait_block_batch ();
+	auto hashes = wait_fetch_batch ();
 	if (hashes.empty ())
 	{
 		return;
 	}
 
-	// Pre-fetch redundancy filter: never fetch a block we already have. Ledger
-	// reads run WITHOUT ctx.mutex; only the in-memory tag takes the lock.
+	// Pre-fetch redundancy filter: never fetch a block we already have
 	std::deque<nano::block_hash> to_fetch;
 	std::deque<nano::block_hash> redundant;
 	{
@@ -247,7 +228,7 @@ void topo_strategy::run_one_blocks ()
 		return;
 	}
 
-	auto channel = wait_topo_index_channel ();
+	auto channel = wait_topo_channel ();
 	if (!channel)
 	{
 		return;
@@ -269,7 +250,7 @@ void topo_strategy::run_processing ()
 
 		lock.unlock ();
 
-		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::loop_topo_processing);
+		ctx.stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_topo_processing);
 		run_one_processing ();
 
 		lock.lock ();
@@ -278,7 +259,7 @@ void topo_strategy::run_processing ()
 
 void topo_strategy::run_one_processing ()
 {
-	ctx.wait_block_processor (strategy::topology, ctx.config.topo_scan.block_processor_threshold);
+	ctx.wait_block_processor (strategy::topology, ctx.config.block_processor_threshold);
 
 	auto ordered = wait_submit_batch ();
 	if (ordered.empty ())
@@ -299,25 +280,21 @@ void topo_strategy::run_one_processing ()
 	ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::submitted, submitted);
 }
 
-std::deque<nano::block_hash> topo_strategy::wait_block_batch ()
+std::deque<nano::block_hash> topo_strategy::wait_fetch_batch ()
 {
 	std::deque<nano::block_hash> result;
 	ctx.wait ([this, &result] () {
-		debug_assert (!ctx.mutex.try_lock ());
-		result = ctx.topology.next_blocks (ctx.config.topo_scan.block_batch_size);
+		result = ctx.topology.next_fetch ();
 		return !result.empty () || !ctx.topology.indexing ();
 	});
 	return result;
 }
 
-std::deque<std::shared_ptr<nano::block>> topo_strategy::wait_submit_batch ()
+std::deque<std::shared_ptr<nano::block>> topo_strategy::wait_block_batch ()
 {
 	std::deque<std::shared_ptr<nano::block>> result;
 	ctx.wait ([this, &result] () {
-		debug_assert (!ctx.mutex.try_lock ());
-		// Bound the drain so a single add_many can't overshoot the processor's
-		// per-source queue cap.
-		result = ctx.topology.next_submit (ctx.config.block_processor_threshold);
+		result = ctx.topology.next_blocks ();
 		return !result.empty () || !ctx.topology.indexing ();
 	});
 	return result;
@@ -388,11 +365,7 @@ bool topo_strategy::process (nano::messages::asc_pull_ack::topo_index_payload co
 			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::process_topo);
 			ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::topo_index, response.entries.size ());
 
-			bool advanced = ctx.topology.process (payload.head, payload.cursor, response.entries);
-			if (advanced)
-			{
-				ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::advance);
-			}
+			ctx.topology.process (payload.head, payload.cursor, response.entries);
 		}
 		break;
 		case verify_result::nothing_new:
@@ -423,7 +396,7 @@ bool topo_strategy::process_blocks (nano::messages::asc_pull_ack::blocks_payload
 	{
 		if (block)
 		{
-			ctx.topology.block_received (block->hash (), block);
+			ctx.topology.block_received (block);
 		}
 	}
 

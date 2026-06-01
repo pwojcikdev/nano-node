@@ -44,38 +44,19 @@ public:
 	nano::error serialize (nano::tomlconfig &) const;
 
 public:
-	// Number of concurrent scanning heads: head 0 is the spear (scans the frontier
-	// forward in topo order), the rest are repair heads (re-scan nested top-fraction
-	// ranges below the frontier to refetch keys the spear's union skipped). Minimum 1
-	// (spear only).
-	unsigned head_count{ 4 };
-	// Weighted scheduling ratio of the spear to the repair heads on the single scan
-	// thread: the spear is served this many requests for every 1 given to a repair head
-	// (round-robin across the repair heads). 4 = spear gets 4/5 of the requests, the
-	// repair heads share 1/5. Minimum 1 (1:1). Raise to favour frontier progress.
+	unsigned head_count{ 8 };
+	// Weighted scheduling ratio of the spear to the repair heads. Raise to favour frontier progress.
 	unsigned spear_weight{ 4 };
 	unsigned consideration_count{ 4 };
 	std::size_t candidates{ 1000 };
-	std::chrono::milliseconds cooldown{ 3s };
+	std::chrono::milliseconds index_retry{ 5s };
 	std::chrono::milliseconds block_retry{ 5s };
-	std::size_t block_batch_size{ 128 };
 	std::size_t max_blocks_outstanding{ 10'000 };
 	std::size_t max_blocks_queued{ 40'000 };
-	std::size_t block_processor_threshold{ 2000 };
-	// Number of pending dependency gaps the spear tolerates before pausing. Below
-	// this the spear keeps discovering and keeps submitting past gaps (making
-	// progress on independent account chains); once the gap count reaches the
-	// threshold the spear pauses and waits for the repair heads to clear every gap
-	// before resuming. 1 = pause at the first gap. Clamped to a minimum of 1.
+	// Number of pending dependency gaps the spear tolerates before pausing.
 	std::size_t gap_threshold{ 1000 };
-	// The repair heads stay idle until the spear frontier's topo_height reaches this
-	// threshold ("kick in once the spear is established"). At the start of a bootstrap
-	// the spear sits at topo_height ~1 for a long time — genesis + the very many
-	// dependency-free epoch-open blocks all share that height — and those root blocks
-	// can never gap, so repair is useless there and only thrashes. Gating activation on
-	// the spear's height skips that phase. Each head still covers its full range
-	// (head 1 down to genesis) once active. Tune to where the dense low layer ends.
-	uint64_t repair_activation_height{ 100 };
+	// The repair heads stay idle until the target range height reaches this level.
+	uint64_t repair_threshold{ 100 };
 };
 
 class bootstrap_config final
