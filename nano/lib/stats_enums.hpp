@@ -85,6 +85,15 @@ enum class type
 	bootstrap_verify,
 	bootstrap_verify_blocks,
 	bootstrap_verify_frontiers,
+	bootstrap_verify_topo,
+	bootstrap_inspect,
+	bootstrap_inspect_source,
+	bootstrap_inspect_priority,
+	bootstrap_inspect_database,
+	bootstrap_inspect_dependencies,
+	bootstrap_inspect_frontiers,
+	bootstrap_inspect_topo,
+	bootstrap_inspect_other,
 	bootstrap_wait_channel,
 	bootstrap_wait_block_processor,
 	bootstrap_process,
@@ -96,6 +105,7 @@ enum class type
 	bootstrap_frontiers,
 	bootstrap_account_sets,
 	bootstrap_frontier_scan,
+	bootstrap_topo,
 	bootstrap_timeout,
 	bootstrap_server,
 	bootstrap_server_request,
@@ -162,8 +172,9 @@ enum class detail
 	inserted,
 	erased,
 	request,
-	request_failed,
 	request_success,
+	request_failed,
+	request_dropped,
 	broadcast,
 	cleanup,
 	top,
@@ -199,6 +210,8 @@ enum class detail
 	close,
 	read,
 	oversize,
+	submitted,
+	ordered,
 
 	// processing queue
 	queue,
@@ -279,7 +292,7 @@ enum class detail
 	initiate_lazy,
 	initiate_wallet_lazy,
 
-	// bootstrap specific
+	// bootstrap
 	bulk_pull,
 	bulk_pull_account,
 	bulk_pull_error_starting_request,
@@ -563,8 +576,11 @@ enum class detail
 	frontiers_dropped,
 	sync_accounts,
 	topo_indexes,
+	process_blocks,
+	process_topo,
 	dependency,
 	frontier,
+	topology,
 
 	prioritize,
 	prioritize_failed,
@@ -607,6 +623,7 @@ enum class detail
 
 	request_blocks,
 	request_account_info,
+	request_index,
 
 	safe,
 	base,
@@ -681,6 +698,20 @@ enum class detail
 	// query_source
 	database,
 	dependencies,
+	topology_index,
+	topology_blocks,
+
+	// bootstrap_topo_scan
+	loop_topo_index,
+	loop_topo_blocks,
+	loop_topo_processing,
+	next_topo_index,
+	next_topo_block,
+	received,
+	indexed,
+	redundant,
+	gapped,
+	terminal,
 
 	// bounded backlog,
 	gathered_targets,
@@ -770,7 +801,7 @@ template <>
 struct magic_enum::customize::enum_range<nano::stat::type>
 {
 	static constexpr int min = 0;
-	static constexpr int max = 128;
+	static constexpr int max = 256;
 };
 
 // Ensure that the enum_range is large enough to hold all values (including future ones)
@@ -778,5 +809,5 @@ template <>
 struct magic_enum::customize::enum_range<nano::stat::detail>
 {
 	static constexpr int min = 0;
-	static constexpr int max = 512;
+	static constexpr int max = 720;
 };
