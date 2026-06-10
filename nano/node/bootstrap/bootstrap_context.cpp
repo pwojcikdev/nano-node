@@ -51,7 +51,7 @@ nano::ledger_notifications & ledger_notifications_a, nano::block_processor & blo
 	database_scan{ ledger },
 	frontiers{ config.frontier_scan, stats },
 	throttle{ compute_throttle_size () },
-	scoring{ config, node_config_a.network_params.network },
+	peers{ config },
 	priority_limiter{ config.priority_rate_limit },
 	database_limiter{ config.database_rate_limit },
 	dependency_limiter{ config.dependency_rate_limit },
@@ -160,7 +160,7 @@ void bootstrap_context::reset ()
 	accounts.reset ();
 	database_scan.reset ();
 	frontiers.reset ();
-	scoring.reset ();
+	peers.reset ();
 	throttle.reset ();
 }
 
@@ -178,6 +178,8 @@ bool bootstrap_context::send (std::shared_ptr<nano::transport::channel> const & 
 	// Build the outgoing message from the query descriptor
 	auto message = build_message (tag.query, network_constants, tag.id);
 
+	// Note: a failed send deliberately does not release the reserved capacity; the elevated outstanding count acts as
+	// an implicit penalty against an unresponsive peer until decay () heals it. Only a processed response releases.
 	return transmit (channel, std::move (message), std::move (tag));
 }
 
@@ -299,7 +301,8 @@ std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano:
 	// Wait until a channel is available
 	std::shared_ptr<nano::transport::channel> channel;
 	wait ([this, &channel, strat] () {
-		channel = scoring.channel ();
+		auto result = peers.acquire ();
+		channel = result.channel;
 		if (!channel)
 		{
 			stats.inc (nano::stat::type::bootstrap_wait_channel, to_stat_detail (strat));
@@ -408,11 +411,13 @@ void bootstrap_context::maintenance (nano::unique_lock<nano::mutex> & lock)
 
 	// Snapshot peers without the bootstrap mutex held, to avoid nesting the network mutex under it
 	lock.unlock ();
+
 	auto channels = network.list (/* all */ 0, network_constants.bootstrap_protocol_version_min);
+
 	lock.lock ();
 
-	scoring.sync (channels);
-	scoring.timeout ();
+	peers.update (channels);
+	peers.decay ();
 
 	throttle.resize (compute_throttle_size ());
 
@@ -504,7 +509,7 @@ void bootstrap_context::process (nano::messages::asc_pull_ack const & message, s
 	bool ok = std::visit ([this, &tag] (auto && request) { return process (request, tag); }, message.payload);
 	if (ok)
 	{
-		scoring.received_message (channel);
+		peers.release (channel);
 	}
 	else
 	{
@@ -674,7 +679,7 @@ nano::container_info bootstrap_context::container_info () const
 	info.add ("database_scan", database_scan.container_info ());
 	info.add ("frontiers", frontiers.container_info ());
 	info.add ("workers", workers.container_info ());
-	info.add ("peers", scoring.container_info ());
+	info.add ("peers", peers.container_info ());
 	info.add ("limiters", collect_limiters ());
 	return info;
 }
