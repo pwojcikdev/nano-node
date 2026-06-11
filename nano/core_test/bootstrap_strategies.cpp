@@ -301,6 +301,8 @@ TEST (bootstrap_strategies, frontier_round_concludes_on_peer_exhaustion)
 
 	ASSERT_TRUE (fixture.poll_until ([&] () { return fixture.stats ().count (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::done_partial) >= 1; }));
 
+	// A partial conclusion paces the next round by the cooldown
+	fixture.advance (fixture.config.bootstrap->frontier_scan.cooldown);
 	ASSERT_TRUE (fixture.poll_until ([&] () { return fixture.request_count () >= 3; }));
 	ASSERT_EQ (frontier_start (fixture.request (2).request), nano::account{ 9 });
 }
@@ -352,7 +354,8 @@ TEST (bootstrap_strategies, frontier_empty_range_wraps)
 	ASSERT_TRUE (fixture.poll_until ([&] () { return fixture.stats ().count (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::done_empty) >= 1; }));
 	ASSERT_TRUE (fixture.poll_until ([&] () { return fixture.stats ().count (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::done_range) >= 1; }));
 
-	// The scan wrapped and resumes from the range start
+	// The scan wrapped and resumes from the range start after the inter-round cooldown
+	fixture.advance (fixture.config.bootstrap->frontier_scan.cooldown);
 	ASSERT_TRUE (fixture.poll_until ([&] () { return fixture.request_count () >= 3; }));
 	ASSERT_EQ (frontier_start (fixture.request (2).request).number (), 1);
 }

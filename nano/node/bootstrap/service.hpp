@@ -205,6 +205,7 @@ private:
 	std::optional<nano::async::task> supervisor;
 	nano::async::condition_any restart_condition;
 	bool restart_requested{ false }; // Strand-confined
+	std::atomic<bool> accepting{ false }; // True while the executor is being run and queries can complete
 	std::atomic<bool> stopped{ false };
 
 	// Bounds the response ingress so that a flood of unsolicited replies cannot grow the post queue
@@ -214,12 +215,30 @@ private:
 	std::default_random_engine rng;
 
 public:
-	// Helper for accessors: runs the function on the strand and waits for the result
-	template <typename F>
-	auto on_strand (F && function) const
+	/*
+	 * Helper for accessors: runs the function on the strand and waits for the result, falling back
+	 * to the given default when the executor is not running. The dispatched handler is silently
+	 * dropped by a stopped io_context, so an unguarded wait would hang the caller forever -- the
+	 * shutdown window is exactly when RPC and diagnostics can still call in.
+	 */
+	template <typename F, typename R = std::invoke_result_t<F>>
+	R query_strand (F && function, R fallback = R{}) const
 	{
 		debug_assert (!strand.running_in_this_thread ());
-		return asio::dispatch (strand, asio::use_future (std::forward<F> (function))).get ();
+		if (!accepting || stopped)
+		{
+			return fallback;
+		}
+		auto future = asio::dispatch (strand, asio::use_future (std::forward<F> (function)));
+		// Re-check for a stop that raced the dispatch, in which case the handler may never run
+		while (future.wait_for (std::chrono::milliseconds{ 100 }) != std::future_status::ready)
+		{
+			if (stopped)
+			{
+				return fallback;
+			}
+		}
+		return future.get ();
 	}
 };
 }

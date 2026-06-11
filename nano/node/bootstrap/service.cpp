@@ -115,6 +115,8 @@ void service::start ()
 {
 	debug_assert (!supervisor);
 
+	accepting = true; // The facade runs the executor from this point on, queries can complete
+
 	if (!config.enable)
 	{
 		logger.warn (nano::log::type::bootstrap, "Bootstrap is disabled, node will not be able to synchronize with the network");
@@ -179,10 +181,13 @@ asio::awaitable<void> service::run_supervisor ()
 		bool restarting = false;
 		try
 		{
+			// `stopped` is consulted as well: the one-shot stop cancellation can latch while the
+			// wait completes normally for a concurrent reset (), and the reset_cancellation_state
+			// below would silently wipe it, leaving stop () waiting forever
 			co_await nano::async::until (restart_condition, clock, [this] () {
-				return restart_requested;
+				return restart_requested || stopped;
 			});
-			restarting = true;
+			restarting = !stopped;
 		}
 		catch (boost::system::system_error const & ex)
 		{
@@ -210,7 +215,7 @@ asio::awaitable<void> service::run_supervisor ()
 			co_await roots.join ();
 		}
 
-		if (!restarting)
+		if (!restarting || stopped)
 		{
 			break;
 		}
@@ -380,18 +385,22 @@ asio::awaitable<request_outcome> service::request (std::shared_ptr<nano::transpo
 	{
 		std::rethrow_exception (ex.first_exception ()); // Both operands cancelled, surface the underlying abort
 	}
-	if (sent_result.index () != 0) // The callback never fired
+	bool const confirmed = sent_result.index () == 0 && std::get<0> (sent_result);
+	if (confirmed)
 	{
-		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::timeout);
-		stats.inc (nano::stat::type::bootstrap_timeout, to_stat_detail (type));
-		co_return request_outcome{ .status = request_outcome::status_t::timeout };
+		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::request_success, nano::stat::dir::out);
 	}
-	if (!std::get<0> (sent_result))
+	else if (!slot->ready ()) // A response may have arrived despite the unconfirmed send; salvage it below
 	{
+		if (sent_result.index () != 0) // The callback never fired
+		{
+			stats.inc (nano::stat::type::bootstrap, nano::stat::detail::timeout);
+			stats.inc (nano::stat::type::bootstrap_timeout, to_stat_detail (type));
+			co_return request_outcome{ .status = request_outcome::status_t::timeout };
+		}
 		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::request_failed, nano::stat::dir::out);
 		co_return request_outcome{ .status = request_outcome::status_t::send_failed };
 	}
-	stats.inc (nano::stat::type::bootstrap, nano::stat::detail::request_success, nano::stat::dir::out);
 
 	// Phase 2: once the request hit the wire, the peer has a limited time to respond
 	std::optional<std::variant<reply, std::monostate>> response_result;
@@ -654,7 +663,9 @@ std::size_t service::compute_throttle_size () const
 
 void service::prioritize (nano::account const & account)
 {
-	on_strand ([this, account] () {
+	// Fire and forget: callers (e.g. the stale election observer) must never block on the bootstrap
+	// executor, which may already be stopping when they are still running
+	asio::post (strand, [this, account] () {
 		accounts.priority_set (account);
 		accounts_changed.notify_all ();
 	});
@@ -662,42 +673,42 @@ void service::prioritize (nano::account const & account)
 
 std::size_t service::priority_size () const
 {
-	return on_strand ([this] () {
+	return query_strand ([this] () {
 		return accounts.priority_size ();
 	});
 }
 
 std::size_t service::blocked_size () const
 {
-	return on_strand ([this] () {
+	return query_strand ([this] () {
 		return accounts.blocked_size ();
 	});
 }
 
 bool service::prioritized (nano::account const & account) const
 {
-	return on_strand ([this, account] () {
+	return query_strand ([this, account] () {
 		return accounts.prioritized (account);
 	});
 }
 
 bool service::blocked (nano::account const & account) const
 {
-	return on_strand ([this, account] () {
+	return query_strand ([this, account] () {
 		return accounts.blocked (account);
 	});
 }
 
 auto service::info () const -> account_sets_index::info_t
 {
-	return on_strand ([this] () {
+	return query_strand ([this] () {
 		return accounts.info ();
 	});
 }
 
 nano::container_info service::container_info () const
 {
-	return on_strand ([this] () {
+	return query_strand ([this] () {
 		auto collect_limiters = [this] () {
 			nano::container_info info;
 			info.put ("total", limiter.size ());

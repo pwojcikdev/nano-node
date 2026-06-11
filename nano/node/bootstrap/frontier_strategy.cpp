@@ -128,6 +128,20 @@ asio::awaitable<void> frontier_strategy::run_round (head_state & head)
 			}
 		}
 
+		// Probe for a sampleable peer BEFORE consuming rate limiter tokens: the probe itself is free,
+		// so a round that cannot launch (exhausted peers, empty pool) does not burn the budget that
+		// the other heads need. A spinning head would otherwise starve the whole scan.
+		if (!ctx.peers.has_candidate ({}, state->used))
+		{
+			if (state->inflight == 0)
+			{
+				exhausted = true; // Every distinct peer sampled (or none connected); conclude with what was gathered
+				continue;
+			}
+			co_await wait_progress (head, ctx.config.request_timeout); // Ride out the in-flight samples
+			continue;
+		}
+
 		// Backpressure gates, in the same order as before
 		co_await nano::async::until (ctx.accounts_changed, ctx.clock, [this] () {
 			return !ctx.accounts.priority_half_full ();
@@ -171,6 +185,7 @@ asio::awaitable<void> frontier_strategy::run_round (head_state & head)
 				}
 				else
 				{
+					budget.release (); // Do not pin the global request budget while riding out responses
 					co_await wait_progress (head, ctx.config.request_timeout);
 				}
 			}
@@ -178,7 +193,9 @@ asio::awaitable<void> frontier_strategy::run_round (head_state & head)
 			case acquire_status::busy:
 			case acquire_status::no_peers:
 			{
-				// Wait for peer capacity, or for a settlement that may conclude the round meanwhile
+				// Wait for peer capacity, or for a settlement that may conclude the round meanwhile.
+				// The budget token is returned first: many parked heads must not starve the other strategies.
+				budget.release ();
 				co_await nano::async::wait_any (ctx.peers_changed.wait (), wait_progress (head, 1s));
 			}
 			break;
@@ -189,11 +206,13 @@ asio::awaitable<void> frontier_strategy::run_round (head_state & head)
 	state->open = false;
 	head.rounds += 1;
 
+	bool clean = false;
 	if (auto target = state->round.conclude ())
 	{
 		if (state->round.done ())
 		{
 			ctx.stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::done);
+			clean = true;
 		}
 		else if (state->round.empty_range ())
 		{
@@ -215,10 +234,22 @@ asio::awaitable<void> frontier_strategy::run_round (head_state & head)
 			head.cursor = head.start;
 		}
 	}
-	else
+
+	// Pace the next round unless this one concluded with a clean quorum: a head that wraps or
+	// concludes partially (e.g. on a single-peer network) must not respin immediately, it would
+	// monopolize the frontier request budget and starve the other heads
+	if (!clean)
 	{
-		// Nothing was learned (all samples lost); pace the retry of the same position
-		co_await wait_progress (head, ctx.config.frontier_scan.cooldown);
+		if (launched == 0)
+		{
+			// No sample was ever launched (no usable peers), so no budget was consumed;
+			// retry as soon as the peer set changes
+			co_await nano::async::wait_any (ctx.peers_changed.wait (), ctx.clock.sleep_for (ctx.config.frontier_scan.cooldown));
+		}
+		else
+		{
+			co_await ctx.clock.sleep_for (ctx.config.frontier_scan.cooldown);
+		}
 	}
 }
 

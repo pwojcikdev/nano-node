@@ -304,6 +304,38 @@ TEST (async, condition_any_cancellation)
 	ctx.flush ();
 }
 
+// Waiters cancelled by a raced timeout must not accumulate: a rarely-notified condition inside an
+// until () loop parks and cancels one waiter per recheck interval, for the lifetime of the process
+TEST (async, condition_any_cancelled_waiters_cleaned)
+{
+	stepped_context ctx;
+	nano::async::condition_any condition{ ctx.strand };
+
+	bool ready = false;
+	std::atomic<bool> done{ false };
+
+	asio::co_spawn (
+	ctx.strand,
+	[&] () -> asio::awaitable<void> {
+		co_await nano::async::until (condition, ctx.clock, [&] () { return ready; });
+		done = true;
+	},
+	asio::detached);
+
+	// Each recheck interval cancels the parked waiter and parks a new one
+	for (int i = 0; i < 10; ++i)
+	{
+		ctx.advance (std::chrono::seconds{ 1 });
+	}
+	ASSERT_FALSE (done);
+	ASSERT_LE (condition.waiter_count (), 1); // Only the live waiter remains, the cancelled ones were removed
+
+	ready = true;
+	ctx.advance (std::chrono::seconds{ 1 });
+	ASSERT_TRUE (done);
+	ASSERT_EQ (condition.waiter_count (), 0);
+}
+
 TEST (async, semaphore_fifo)
 {
 	stepped_context ctx;

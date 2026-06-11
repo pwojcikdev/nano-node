@@ -234,7 +234,10 @@ public:
 			auto slot = asio::get_associated_cancellation_slot (waiter->handler);
 			if (slot.is_connected ())
 			{
-				slot.assign ([waiter] (asio::cancellation_type) {
+				// The cancelled waiter must also be removed from the list, otherwise conditions that
+				// are rarely notified accumulate dead waiters without bound
+				slot.assign ([state_l, waiter] (asio::cancellation_type) {
+					state_l->waiters.erase (std::remove (state_l->waiters.begin (), state_l->waiters.end (), waiter), state_l->waiters.end ());
 					waiter->complete (asio::error::operation_aborted);
 				});
 			}
@@ -255,6 +258,12 @@ public:
 				waiter->complete ({}); // Success
 			}
 		});
+	}
+
+	// Number of currently parked waiters, for tests; only meaningful between polls of a stepped executor
+	std::size_t waiter_count () const
+	{
+		return state->waiters.size ();
 	}
 
 	nano::async::strand & strand;
