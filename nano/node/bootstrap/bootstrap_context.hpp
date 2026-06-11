@@ -50,13 +50,6 @@ struct async_tag
 	query_type type () const;
 };
 
-enum class verify_result
-{
-	ok,
-	nothing_new,
-	invalid,
-};
-
 class bootstrap_context
 {
 public:

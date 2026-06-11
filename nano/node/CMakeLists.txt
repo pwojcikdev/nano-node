@@ -59,8 +59,12 @@ add_library(
   bootstrap/throttle.cpp
   bootstrap/database_scan_index.hpp
   bootstrap/database_scan_index.cpp
+  bootstrap/frontier_scan.hpp
+  bootstrap/frontier_scan.cpp
   bootstrap/frontier_scan_index.hpp
   bootstrap/frontier_scan_index.cpp
+  bootstrap/verify.hpp
+  bootstrap/verify.cpp
   bootstrap/peer_pool.hpp
   bootstrap/peer_pool.cpp
   cli.hpp
