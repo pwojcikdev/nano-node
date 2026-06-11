@@ -16,6 +16,7 @@ add_executable(
   bootstrap.cpp
   bootstrap_account_sets.cpp
   bootstrap_policy.cpp
+  bootstrap_strategies.cpp
   bootstrap_server.cpp
   bounded_dfs.cpp
   bucketing.cpp

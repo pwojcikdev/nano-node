@@ -108,14 +108,20 @@ asio::awaitable<void> frontier_strategy::run_round (head_state & head)
 
 	size_t launched = 0;
 	bool exhausted = false;
+	auto last_launch = ctx.clock.now ();
 
 	while (!state->round.settled () && !exhausted)
 	{
 		// The first consideration_count samples go out eagerly, further re-samples of a stuck round
-		// wait out the cooldown first (this used to be frontier_scan_index::next ()'s scheduling)
+		// wait out the cooldown first (this used to be frontier_scan_index::next ()'s scheduling).
+		// Wakes from non-settling samples do not bypass the pacing.
 		if (launched >= ctx.config.frontier_scan.consideration_count)
 		{
-			co_await wait_progress (head, ctx.config.frontier_scan.cooldown);
+			while (!state->round.settled () && ctx.clock.now () < last_launch + ctx.config.frontier_scan.cooldown)
+			{
+				auto const remaining = std::chrono::duration_cast<std::chrono::milliseconds> (last_launch + ctx.config.frontier_scan.cooldown - ctx.clock.now ());
+				co_await wait_progress (head, remaining);
+			}
 			if (state->round.settled ())
 			{
 				break;
@@ -150,6 +156,7 @@ asio::awaitable<void> frontier_strategy::run_round (head_state & head)
 				state->used.push_back (result.node_id);
 				state->inflight += 1;
 				launched += 1;
+				last_launch = ctx.clock.now ();
 
 				head.children.spawn (run_sample (head, state, start, result.channel, std::move (budget)));
 			}
@@ -171,7 +178,8 @@ asio::awaitable<void> frontier_strategy::run_round (head_state & head)
 			case acquire_status::busy:
 			case acquire_status::no_peers:
 			{
-				co_await wait_progress (head, 1s); // Retried when peer capacity frees up
+				// Wait for peer capacity, or for a settlement that may conclude the round meanwhile
+				co_await nano::async::wait_any (ctx.peers_changed.wait (), wait_progress (head, 1s));
 			}
 			break;
 		}

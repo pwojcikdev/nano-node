@@ -26,14 +26,14 @@ using namespace std::chrono_literals;
 namespace nano::bootstrap
 {
 service::service (nano::node_config const & node_config_a, nano::ledger & ledger_a, nano::ledger_notifications & ledger_notifications_a,
-nano::block_processor & block_processor_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a,
+nano::block_processor & block_processor_a, peer_source_t peer_source_a, nano::stats & stats_a, nano::logger & logger_a,
 asio::io_context & io_ctx_a, nano::async::clock & clock_a, unsigned rng_seed) :
 	config{ *node_config_a.bootstrap },
 	network_constants{ node_config_a.network_params.network },
 	ledger{ ledger_a },
 	ledger_notifications{ ledger_notifications_a },
 	block_processor{ block_processor_a },
-	network{ network_a },
+	peer_source{ std::move (peer_source_a) },
 	stats{ stats_a },
 	logger{ logger_a },
 	strand{ io_ctx_a.get_executor () },
@@ -244,7 +244,7 @@ asio::awaitable<void> service::run_maintenance ()
 
 		// Snapshot peers off the strand: listing locks the network mutex and may block
 		auto channels = co_await nano::async::offload (workers, [this] () {
-			return network.list (/* all */ 0, network_constants.bootstrap_protocol_version_min);
+			return peer_source ();
 		});
 		peers.update (channels);
 		peers.decay ();

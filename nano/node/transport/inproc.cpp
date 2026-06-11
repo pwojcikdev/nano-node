@@ -9,6 +9,7 @@
 
 nano::transport::inproc::channel::channel (nano::node & node, nano::node & destination) :
 	transport::channel{ node },
+	node{ node },
 	destination{ destination },
 	endpoint{ node.network.endpoint () }
 {

@@ -7,15 +7,22 @@
 #include <nano/secure/network_params.hpp>
 
 nano::transport::channel::channel (nano::node & node_a) :
-	node{ node_a }
+	node_m{ &node_a },
+	stats{ node_a.stats }
 {
 	set_network_version (node_a.network_params.network.protocol_version);
+}
+
+nano::transport::channel::channel (nano::stats & stats_a, uint8_t network_version_a) :
+	stats{ stats_a }
+{
+	set_network_version (network_version_a);
 }
 
 bool nano::transport::channel::send (nano::messages::message const & message, nano::transport::traffic_type traffic_type, callback_t callback)
 {
 	bool sent = send_impl (message, traffic_type, std::move (callback));
-	node.stats.inc (sent ? nano::stat::type::message : nano::stat::type::message_drop, to_stat_detail (message.type ()), nano::stat::dir::out, /* aggregate all */ true);
+	stats.inc (sent ? nano::stat::type::message : nano::stat::type::message_drop, to_stat_detail (message.type ()), nano::stat::dir::out, /* aggregate all */ true);
 	return sent;
 }
 
@@ -53,7 +60,8 @@ std::optional<nano::messages::keepalive> nano::transport::channel::pop_last_keep
 
 std::shared_ptr<nano::node> nano::transport::channel::owner () const
 {
-	return node.shared ();
+	release_assert (node_m != nullptr, "channel has no owning node");
+	return node_m->shared ();
 }
 
 void nano::transport::channel::operator() (nano::object_stream & obs) const

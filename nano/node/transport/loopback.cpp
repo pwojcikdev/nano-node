@@ -9,6 +9,7 @@
 
 nano::transport::loopback_channel::loopback_channel (nano::node & node) :
 	transport::channel{ node },
+	node{ node },
 	endpoint{ node.network.endpoint () }
 {
 	set_node_id (node.get_node_id ());

@@ -2,6 +2,8 @@
 #include <nano/messages/asc_pull.hpp>
 #include <nano/node/bootstrap/bootstrap_service.hpp>
 #include <nano/node/bootstrap/service.hpp>
+#include <nano/node/network.hpp>
+#include <nano/node/nodeconfig.hpp>
 
 #include <boost/property_tree/ptree.hpp>
 
@@ -11,8 +13,12 @@ nano::bootstrap_service::bootstrap_service (nano::node_config const & config_a, 
 nano::block_processor & block_processor_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a) :
 	logger{ logger_a },
 	io_ctx{ std::make_shared<asio::io_context> () },
-	service_impl{ std::make_unique<nano::bootstrap::service> (config_a, ledger_a, ledger_notifications_a, block_processor_a, network_a, stats_a, logger_a,
-	*io_ctx, clock, /* rng seed */ std::random_device{}()) },
+	service_impl{ std::make_unique<nano::bootstrap::service> (
+	config_a, ledger_a, ledger_notifications_a, block_processor_a,
+	[&network_a, min_version = config_a.network_params.network.bootstrap_protocol_version_min] () {
+		return network_a.list (/* all */ 0, min_version);
+	},
+	stats_a, logger_a, *io_ctx, clock, /* rng seed */ std::random_device{}()) },
 	service{ *service_impl }
 {
 }

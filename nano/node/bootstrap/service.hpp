@@ -55,12 +55,15 @@ struct request_outcome
  * The coroutine-driven bootstrap engine. One strand confines all shared state (indexes, peers,
  * in-flight bookkeeping); strategies run as cooperating coroutines on it, blocking ledger reads are
  * offloaded to a small worker pool, and the entire request lifecycle lives in the request () primitive.
- * The executor and clock are injected so tests can drive the whole subsystem deterministically.
+ * The executor, clock and peer source are injected so tests can drive the subsystem deterministically.
  */
 class service
 {
 public:
-	service (nano::node_config const &, nano::ledger &, nano::ledger_notifications &, nano::block_processor &, nano::network &, nano::stats &, nano::logger &,
+	// Periodically polled source of bootstrap-capable peers; may block (it is called off the strand)
+	using peer_source_t = std::function<std::deque<std::shared_ptr<nano::transport::channel>> ()>;
+
+	service (nano::node_config const &, nano::ledger &, nano::ledger_notifications &, nano::block_processor &, peer_source_t, nano::stats &, nano::logger &,
 	asio::io_context &, nano::async::clock &, unsigned rng_seed);
 	~service ();
 
@@ -89,7 +92,7 @@ public: // Dependencies
 	nano::ledger & ledger;
 	nano::ledger_notifications & ledger_notifications;
 	nano::block_processor & block_processor;
-	nano::network & network;
+	peer_source_t peer_source;
 	nano::stats & stats;
 	nano::logger & logger;
 

@@ -29,6 +29,8 @@ public:
 
 public:
 	explicit channel (nano::node &);
+	// Node-free construction for tests; owner () is unavailable on such channels
+	channel (nano::stats &, uint8_t network_version);
 	virtual ~channel () = default;
 
 	/// @returns true if the message was sent (or queued to be sent), false if it was immediately dropped
@@ -133,8 +135,11 @@ protected:
 	virtual bool send_impl (nano::messages::message const &, nano::transport::traffic_type, callback_t) = 0;
 
 protected:
-	nano::node & node;
 	mutable nano::mutex mutex;
+
+private:
+	nano::node * node_m{ nullptr }; // Not available on node-free (test) channels
+	nano::stats & stats;
 
 private:
 	std::chrono::steady_clock::time_point last_bootstrap_attempt{ std::chrono::steady_clock::time_point () };

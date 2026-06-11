@@ -79,6 +79,8 @@ public:
 	std::shared_ptr<nano::transport::tcp_socket> socket;
 
 private:
+	nano::node & node;
+
 	nano::endpoint remote_endpoint;
 	nano::endpoint local_endpoint;
 
