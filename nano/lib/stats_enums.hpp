@@ -563,6 +563,7 @@ enum class detail
 	processing_frontiers,
 	frontiers_dropped,
 	sync_accounts,
+	response_overflow,
 
 	prioritize,
 	prioritize_failed,
@@ -575,6 +576,7 @@ enum class detail
 
 	done_range,
 	done_empty,
+	done_partial,
 	next_by_requests,
 	next_by_timestamp,
 	advance,

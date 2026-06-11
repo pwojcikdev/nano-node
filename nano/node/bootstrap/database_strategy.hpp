@@ -1,28 +1,34 @@
 #pragma once
 
-#include <nano/node/bootstrap/bootstrap_context.hpp>
+#include <nano/lib/async.hpp>
+#include <nano/lib/numbers_templ.hpp>
+#include <nano/node/bootstrap/queries.hpp>
+#include <nano/node/fwd.hpp>
 
-#include <optional>
-#include <thread>
+#include <unordered_set>
 
 namespace nano::bootstrap
 {
+/*
+ * Issues safe pull requests for accounts crawled directly from the ledger. Paced by the database
+ * rate limiter, with the throttle increasing the request cost while results are unproductive.
+ */
 class database_strategy
 {
 public:
-	explicit database_strategy (bootstrap_context & ctx);
+	explicit database_strategy (service &);
 
-	void start ();
-	void stop ();
-	void run_one (bool should_throttle);
+	// Root coroutine, spawned by the service supervisor; invoked again after a service reset
+	asio::awaitable<void> run ();
 
 private:
-	void run ();
+	asio::awaitable<void> run_requests ();
+	asio::awaitable<void> run_pull (blocks_query, std::shared_ptr<nano::transport::channel>, nano::async::semaphore::token budget);
 
-	std::optional<blocks_query> next_database (bool should_throttle);
-	std::optional<blocks_query> wait_database (bool should_throttle);
+	service & ctx;
+	nano::async::scope pulls;
 
-	bootstrap_context & ctx;
-	std::thread thread;
+	// Accounts with a request in flight (the old count_tags == 0 filter)
+	std::unordered_set<nano::account> inflight;
 };
 }

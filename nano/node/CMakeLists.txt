@@ -37,8 +37,6 @@ add_library(
   bootstrap/account_sets_index.cpp
   bootstrap/bootstrap_config.hpp
   bootstrap/bootstrap_config.cpp
-  bootstrap/bootstrap_context.hpp
-  bootstrap/bootstrap_context.cpp
   bootstrap/bootstrap_server.hpp
   bootstrap/bootstrap_server.cpp
   bootstrap/bootstrap_service.hpp
@@ -47,6 +45,8 @@ add_library(
   bootstrap/common.cpp
   bootstrap/queries.hpp
   bootstrap/queries.cpp
+  bootstrap/service.hpp
+  bootstrap/service.cpp
   bootstrap/database_strategy.hpp
   bootstrap/database_strategy.cpp
   bootstrap/dependency_strategy.hpp
@@ -61,8 +61,6 @@ add_library(
   bootstrap/database_scan_index.cpp
   bootstrap/frontier_scan.hpp
   bootstrap/frontier_scan.cpp
-  bootstrap/frontier_scan_index.hpp
-  bootstrap/frontier_scan_index.cpp
   bootstrap/verify.hpp
   bootstrap/verify.cpp
   bootstrap/peer_pool.hpp

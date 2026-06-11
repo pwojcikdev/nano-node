@@ -528,6 +528,25 @@ public:
 	}
 };
 
+/**
+ * Races two awaitables, completing when the first of them does, cancelling the other.
+ * Normalizes the cancellation behavior of awaitable operators: when the race itself is cancelled,
+ * BOTH operands fail and operator|| throws asio::multiple_exceptions, which would sail past
+ * operation_aborted handlers; the underlying first exception is rethrown instead.
+ */
+inline asio::awaitable<void> wait_any (asio::awaitable<void> first, asio::awaitable<void> second)
+{
+	try
+	{
+		using namespace asio::experimental::awaitable_operators;
+		co_await (std::move (first) || std::move (second));
+	}
+	catch (asio::multiple_exceptions const & ex)
+	{
+		std::rethrow_exception (ex.first_exception ());
+	}
+}
+
 // Repeatedly evaluates the predicate, parking on the condition between attempts.
 // The periodic recheck acts as a liveness safety net against missed notifications.
 template <typename Pred>
@@ -535,8 +554,7 @@ asio::awaitable<void> until (condition_any & condition, clock & clock, Pred && p
 {
 	while (!predicate ())
 	{
-		using namespace asio::experimental::awaitable_operators;
-		co_await (condition.wait () || clock.sleep_until (clock.now () + recheck_interval));
+		co_await wait_any (condition.wait (), clock.sleep_until (clock.now () + recheck_interval));
 	}
 }
 
@@ -608,6 +626,10 @@ public:
 			{
 				debug_assert (ex.code () == asio::error::operation_aborted);
 			}
+			catch (asio::multiple_exceptions const &)
+			{
+				// All operands of a raced await were cancelled together
+			}
 		},
 		make_completion ());
 	}
@@ -654,6 +676,10 @@ private:
 		catch (boost::system::system_error const & ex)
 		{
 			debug_assert (ex.code () == asio::error::operation_aborted);
+		}
+		catch (asio::multiple_exceptions const &)
+		{
+			// All operands of a raced await were cancelled together
 		}
 	}
 

@@ -7,6 +7,10 @@ namespace nano::bootstrap
 {
 using id_t = uint64_t;
 
+// Identifies a scan head. Scans that divide the keyspace into ranges (frontier scan, topology scan)
+// address their heads by this explicit index, it is also used to key per-head logging and statistics.
+using head_index_t = uint32_t;
+
 static nano::bootstrap::id_t generate_id ()
 {
 	nano::bootstrap::id_t id;

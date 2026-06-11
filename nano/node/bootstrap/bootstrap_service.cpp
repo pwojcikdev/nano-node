@@ -1,85 +1,84 @@
+#include <nano/lib/thread_runner.hpp>
 #include <nano/messages/asc_pull.hpp>
-#include <nano/node/bootstrap/bootstrap_context.hpp>
 #include <nano/node/bootstrap/bootstrap_service.hpp>
+#include <nano/node/bootstrap/service.hpp>
 
 #include <boost/property_tree/ptree.hpp>
 
+#include <random>
+
 nano::bootstrap_service::bootstrap_service (nano::node_config const & config_a, nano::ledger & ledger_a, nano::ledger_notifications & ledger_notifications_a,
 nano::block_processor & block_processor_a, nano::network & network_a, nano::stats & stats_a, nano::logger & logger_a) :
-	config{ config_a },
-	ledger{ ledger_a },
-	ledger_notifications{ ledger_notifications_a },
-	block_processor{ block_processor_a },
-	network{ network_a },
-	stats{ stats_a },
 	logger{ logger_a },
-	ctx_impl{ std::make_unique<nano::bootstrap::bootstrap_context> (config_a, ledger_a, ledger_notifications_a, block_processor_a, network_a, stats_a, logger_a) },
-	ctx{ *ctx_impl }
+	io_ctx{ std::make_shared<asio::io_context> () },
+	service_impl{ std::make_unique<nano::bootstrap::service> (config_a, ledger_a, ledger_notifications_a, block_processor_a, network_a, stats_a, logger_a,
+	*io_ctx, clock, /* rng seed */ std::random_device{}()) },
+	service{ *service_impl }
 {
 }
 
 nano::bootstrap_service::~bootstrap_service ()
 {
+	debug_assert (!runner, "must be stopped before destruction");
 }
 
 void nano::bootstrap_service::start ()
 {
-	ctx.start ();
+	debug_assert (!runner);
+	runner = std::make_unique<nano::thread_runner> (io_ctx, logger, 1, nano::thread_role::name::bootstrap);
+	service.start ();
 }
 
 void nano::bootstrap_service::stop ()
 {
-	ctx.stop ();
+	service.stop ();
+	if (runner)
+	{
+		runner->abort ();
+		runner->join ();
+		runner.reset ();
+	}
 }
 
 void nano::bootstrap_service::process (nano::messages::asc_pull_ack const & message, std::shared_ptr<nano::transport::channel> const & channel)
 {
-	ctx.process (message, channel);
+	service.process (message, channel);
 }
 
 void nano::bootstrap_service::reset ()
 {
-	ctx.reset ();
+	service.reset ();
 }
 
 void nano::bootstrap_service::prioritize (nano::account const & account)
 {
-	nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-	ctx.accounts.priority_set (account);
+	service.prioritize (account);
 }
 
 std::size_t nano::bootstrap_service::priority_size () const
 {
-	nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-	return ctx.accounts.priority_size ();
+	return service.priority_size ();
 }
 
 std::size_t nano::bootstrap_service::blocked_size () const
 {
-	nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-	return ctx.accounts.blocked_size ();
+	return service.blocked_size ();
 }
 
 bool nano::bootstrap_service::prioritized (nano::account const & account) const
 {
-	nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-	return ctx.accounts.prioritized (account);
+	return service.prioritized (account);
 }
 
 bool nano::bootstrap_service::blocked (nano::account const & account) const
 {
-	nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-	return ctx.accounts.blocked (account);
+	return service.blocked (account);
 }
 
 boost::property_tree::ptree nano::bootstrap_service::info () const
 {
-	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
-
-	// Copy the data under the lock, then serialize outside it
-	auto [blocking, priorities] = ctx.accounts.info ();
-
-	lock.unlock ();
+	// Copy the data via the strand, then serialize outside it
+	auto [blocking, priorities] = service.info ();
 
 	boost::property_tree::ptree result;
 
@@ -114,14 +113,13 @@ boost::property_tree::ptree nano::bootstrap_service::info () const
 
 auto nano::bootstrap_service::status () const -> status_result
 {
-	nano::lock_guard<nano::mutex> lock{ ctx.mutex };
 	return {
-		.priorities = ctx.accounts.priority_size (),
-		.blocking = ctx.accounts.blocked_size (),
+		.priorities = service.priority_size (),
+		.blocking = service.blocked_size (),
 	};
 }
 
 nano::container_info nano::bootstrap_service::container_info () const
 {
-	return ctx.container_info ();
+	return service.container_info ();
 }

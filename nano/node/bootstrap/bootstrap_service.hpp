@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/async.hpp>
 #include <nano/messages/fwd.hpp>
 #include <nano/node/fwd.hpp>
 
@@ -9,6 +10,10 @@
 
 namespace nano
 {
+/*
+ * Public face of the bootstrap subsystem. Owns the dedicated single-threaded execution context the
+ * coroutine engine runs on, so bootstrap work cannot starve the transport io threads.
+ */
 class bootstrap_service
 {
 public:
@@ -51,16 +56,15 @@ public:
 	nano::container_info container_info () const;
 
 private: // Dependencies
-	nano::node_config const & config;
-	nano::ledger & ledger;
-	nano::ledger_notifications & ledger_notifications;
-	nano::block_processor & block_processor;
-	nano::network & network;
-	nano::stats & stats;
 	nano::logger & logger;
 
 private:
-	std::unique_ptr<nano::bootstrap::bootstrap_context> ctx_impl;
-	nano::bootstrap::bootstrap_context & ctx;
+	std::shared_ptr<asio::io_context> io_ctx;
+	nano::async::steady_clock_source clock;
+
+	std::unique_ptr<nano::bootstrap::service> service_impl;
+	nano::bootstrap::service & service;
+
+	std::unique_ptr<nano::thread_runner> runner;
 };
 }

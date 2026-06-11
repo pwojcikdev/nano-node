@@ -1,32 +1,36 @@
 #pragma once
 
-#include <nano/node/bootstrap/bootstrap_context.hpp>
+#include <nano/lib/async.hpp>
+#include <nano/lib/numbers.hpp>
+#include <nano/lib/numbers_templ.hpp>
+#include <nano/node/fwd.hpp>
 
-#include <thread>
+#include <unordered_set>
 
 namespace nano::bootstrap
 {
+/*
+ * Walks the blocked set: for each missing dependency it asks a peer which account contains the
+ * block, then inserts that account into the priority set. A periodic companion coroutine reinserts
+ * already known dependencies.
+ */
 class dependency_strategy
 {
 public:
-	explicit dependency_strategy (bootstrap_context & ctx);
+	explicit dependency_strategy (service &);
 
-	void start ();
-	void stop ();
-	void run_one ();
-
-	bool process (nano::messages::asc_pull_ack::account_info_payload const & response, async_tag const & tag);
+	// Root coroutine, spawned by the service supervisor; invoked again after a service reset
+	asio::awaitable<void> run ();
 
 private:
-	void run ();
-	void run_sync ();
+	asio::awaitable<void> run_requests ();
+	asio::awaitable<void> run_sync ();
+	asio::awaitable<void> run_walk (nano::block_hash, std::shared_ptr<nano::transport::channel>, nano::async::semaphore::token budget);
 
-	nano::block_hash next_blocking ();
-	nano::block_hash wait_blocking ();
-	bool request_info (nano::block_hash hash, std::shared_ptr<nano::transport::channel> const & channel);
+	service & ctx;
+	nano::async::scope children;
 
-	bootstrap_context & ctx;
-	std::thread thread;
-	std::thread sync_thread;
+	// Dependencies with a request in flight (the old count_tags == 0 filter)
+	std::unordered_set<nano::block_hash> inflight;
 };
 }

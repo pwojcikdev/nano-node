@@ -1,140 +1,122 @@
+#include <nano/lib/config.hpp>
 #include <nano/lib/logging.hpp>
+#include <nano/lib/stats.hpp>
 #include <nano/lib/stats_enums.hpp>
-#include <nano/lib/thread_roles.hpp>
+#include <nano/lib/utility.hpp>
 #include <nano/messages/asc_pull.hpp>
 #include <nano/node/bootstrap/dependency_strategy.hpp>
-#include <nano/node/bootstrap/queries.hpp>
-#include <nano/node/nodeconfig.hpp>
+#include <nano/node/bootstrap/service.hpp>
+#include <nano/node/transport/channel.hpp>
 #include <nano/node/transport/formatting.hpp>
 
 using namespace std::chrono_literals;
 
 namespace nano::bootstrap
 {
-dependency_strategy::dependency_strategy (bootstrap_context & ctx_a) :
-	ctx{ ctx_a }
+dependency_strategy::dependency_strategy (service & ctx_a) :
+	ctx{ ctx_a },
+	children{ ctx_a.strand }
 {
 }
 
-void dependency_strategy::start ()
+asio::awaitable<void> dependency_strategy::run ()
 {
-	debug_assert (!thread.joinable ());
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bootstrap_dependency_walker);
-		run ();
-	});
+	debug_assert (ctx.strand.running_in_this_thread ());
 
-	debug_assert (!sync_thread.joinable ());
-	sync_thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bootstrap_dependency_sync);
-		run_sync ();
-	});
-}
+	children.spawn (run_requests ());
+	children.spawn (run_sync ());
 
-void dependency_strategy::stop ()
-{
-	nano::join_or_pass (thread);
-	nano::join_or_pass (sync_thread);
-}
-
-void dependency_strategy::run ()
-{
-	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
-	while (!ctx.stopped)
+	try
 	{
-		lock.unlock ();
+		co_await children.join (); // Runs until cancelled
+	}
+	catch (boost::system::system_error const & ex)
+	{
+		debug_assert (ex.code () == asio::error::operation_aborted);
+	}
+	co_await asio::this_coro::reset_cancellation_state ();
+	children.cancel ();
+	co_await children.join ();
+
+	inflight.clear ();
+}
+
+asio::awaitable<void> dependency_strategy::run_requests ()
+{
+	while (true)
+	{
 		ctx.stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_dependencies);
-		run_one ();
-		lock.lock ();
+
+		// No need to wait for block_processor, as we are not processing blocks
+
+		auto budget = co_await ctx.request_budget.acquire ();
+		co_await ctx.wait_limiter (ctx.limiter, 1);
+		auto channel = co_await ctx.wait_channel ();
+
+		// Wait until a blocked dependency without an in-flight request is available
+		nano::block_hash blocking{ 0 };
+		co_await nano::async::until (ctx.accounts_changed, ctx.clock, [this, &blocking] () {
+			blocking = ctx.accounts.next_blocking ([this] (nano::block_hash const & hash) {
+				return !inflight.contains (hash);
+			});
+			return !blocking.is_zero ();
+		});
+
+		ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_blocking);
+		ctx.logger.debug (nano::log::type::bootstrap, "Requesting account info for: {} from: {}", blocking, channel);
+
+		inflight.insert (blocking);
+		children.spawn (run_walk (blocking, channel, std::move (budget)));
 	}
 }
 
-void dependency_strategy::run_one ()
+asio::awaitable<void> dependency_strategy::run_walk (nano::block_hash hash, std::shared_ptr<nano::transport::channel> channel, nano::async::semaphore::token budget)
 {
-	// No need to wait for block_processor, as we are not processing blocks
-	auto channel = ctx.wait_channel ();
-	if (!channel)
+	nano::scope_guard guard{ [this, hash] () {
+		inflight.erase (hash);
+	} };
+
+	account_info_query query{ .target = hash };
+
+	auto outcome = co_await ctx.request (channel, query, query_source::dependencies, std::move (budget));
+	if (!outcome)
 	{
-		return;
+		co_return; // Timeout or send failure: the reserved peer slot stays as an implicit penalty
 	}
-	auto blocking = wait_blocking ();
-	if (blocking.is_zero ())
-	{
-		return;
-	}
-	request_info (blocking, channel);
-}
 
-nano::block_hash dependency_strategy::next_blocking ()
-{
-	debug_assert (!ctx.mutex.try_lock ());
+	auto const & response = std::get<nano::messages::asc_pull_ack::account_info_payload> (outcome.message->payload);
 
-	auto blocking = ctx.accounts.next_blocking ([this] (nano::block_hash const & hash) {
-		return ctx.count_tags (hash, query_source::dependencies) == 0;
-	});
-	if (blocking.is_zero ())
-	{
-		return { 0 };
-	}
-	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_blocking);
-	return blocking;
-}
-
-nano::block_hash dependency_strategy::wait_blocking ()
-{
-	nano::block_hash result{ 0 };
-	ctx.wait ([this, &result] () {
-		result = next_blocking ();
-		if (!result.is_zero ())
-		{
-			return true;
-		}
-		return false;
-	});
-	return result;
-}
-
-bool dependency_strategy::request_info (nano::block_hash hash, std::shared_ptr<nano::transport::channel> const & channel)
-{
-	account_info_query query{};
-	query.target = hash;
-
-	ctx.logger.debug (nano::log::type::bootstrap, "Requesting account info for: {} from: {}", hash, channel);
-
-	return ctx.send (channel, query, query_source::dependencies);
-}
-
-bool dependency_strategy::process (nano::messages::asc_pull_ack::account_info_payload const & response, async_tag const & tag)
-{
-	debug_assert (!ctx.mutex.try_lock ());
-	debug_assert (tag.type () == query_type::account_info_by_hash);
-	debug_assert (!tag.hash.is_zero ());
+	// There is no way to verify the response, so it is processed (and the peer released) regardless
+	ctx.peers.release (outcome.channel);
+	ctx.peers_changed.notify_all ();
 
 	if (response.account.is_zero ())
 	{
 		ctx.stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::account_info_empty);
-		return true; // OK, but nothing to do
+		co_return; // OK, but nothing to do
 	}
 
 	ctx.stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::account_info);
 
 	// Prioritize account containing the dependency
-	ctx.accounts.dependency_update (tag.hash, response.account);
+	ctx.accounts.dependency_update (hash, response.account);
 	ctx.accounts.priority_set (response.account, account_sets_index::priority_cutoff); // Use the lowest possible priority here
-
-	return true; // OK, no way to verify the response
+	ctx.accounts_changed.notify_all ();
 }
 
-void dependency_strategy::run_sync ()
+asio::awaitable<void> dependency_strategy::run_sync ()
 {
-	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
-	while (!ctx.stopped)
+	while (true)
 	{
 		// Reinsert known dependencies into the priority set
 		ctx.stats.inc (nano::stat::type::bootstrap, nano::stat::detail::sync_dependencies);
 		auto synced = ctx.accounts.sync_dependencies ();
 		ctx.logger.debug (nano::log::type::bootstrap, "Synced {} dependencies", synced);
-		ctx.condition.wait_for (lock, nano::is_dev_run () ? 500ms : 60s, [this] () { return ctx.stopped; });
+		if (synced > 0)
+		{
+			ctx.accounts_changed.notify_all ();
+		}
+		co_await ctx.clock.sleep_for (nano::is_dev_run () ? 500ms : 60s);
 	}
 }
 }

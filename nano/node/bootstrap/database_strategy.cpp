@@ -1,94 +1,87 @@
+#include <nano/lib/stats.hpp>
 #include <nano/lib/stats_enums.hpp>
-#include <nano/lib/thread_roles.hpp>
+#include <nano/lib/utility.hpp>
 #include <nano/node/bootstrap/database_strategy.hpp>
-#include <nano/node/nodeconfig.hpp>
+#include <nano/node/bootstrap/service.hpp>
+#include <nano/node/transport/channel.hpp>
+
+using namespace std::chrono_literals;
 
 namespace nano::bootstrap
 {
-database_strategy::database_strategy (bootstrap_context & ctx_a) :
-	ctx{ ctx_a }
+database_strategy::database_strategy (service & ctx_a) :
+	ctx{ ctx_a },
+	pulls{ ctx_a.strand }
 {
 }
 
-void database_strategy::start ()
+asio::awaitable<void> database_strategy::run ()
 {
-	debug_assert (!thread.joinable ());
-	thread = std::thread ([this] () {
-		nano::thread_role::set (nano::thread_role::name::bootstrap_database_scan);
-		run ();
-	});
-}
+	debug_assert (ctx.strand.running_in_this_thread ());
 
-void database_strategy::stop ()
-{
-	join_or_pass (thread);
-}
-
-void database_strategy::run ()
-{
-	nano::unique_lock<nano::mutex> lock{ ctx.mutex };
-	while (!ctx.stopped)
+	try
 	{
-		// Avoid high churn rate of database requests
-		bool should_throttle = !ctx.database_scan.warmed_up () && ctx.throttle.throttled ();
-		lock.unlock ();
+		co_await run_requests ();
+	}
+	catch (boost::system::system_error const & ex)
+	{
+		debug_assert (ex.code () == asio::error::operation_aborted);
+	}
+	co_await asio::this_coro::reset_cancellation_state ();
+	pulls.cancel ();
+	co_await pulls.join ();
+
+	inflight.clear ();
+}
+
+asio::awaitable<void> database_strategy::run_requests ()
+{
+	while (true)
+	{
 		ctx.stats.inc (nano::stat::type::bootstrap, nano::stat::detail::loop_database);
-		run_one (should_throttle);
-		lock.lock ();
+
+		co_await ctx.wait_block_processor ();
+
+		auto budget = co_await ctx.request_budget.acquire ();
+		co_await ctx.wait_limiter (ctx.limiter, 1);
+		auto channel = co_await ctx.wait_channel ();
+
+		// Avoid high churn rate of database requests: throttling increases the request cost while
+		// the ledger scan is unproductive and the database has not yet been fully crawled
+		bool const should_throttle = !ctx.database_scan.warmed_up () && ctx.throttle.throttled ();
+		debug_assert (ctx.config.database_warmup_ratio > 0);
+		co_await ctx.wait_limiter (ctx.database_limiter, should_throttle ? ctx.config.database_warmup_ratio : 1);
+
+		// The scan refills its queue from the ledger internally; this is blocking store IO, but it was
+		// equally blocking under the old shared mutex, so strand residence is parity, not a regression
+		std::optional<blocks_query> query;
+		while (!query)
+		{
+			query = ctx.database_scan.next ([this] (nano::account const & account) {
+				return !inflight.contains (account);
+			});
+			if (!query)
+			{
+				co_await ctx.clock.sleep_for (100ms);
+			}
+		}
+
+		ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_database);
+
+		// The database scan always issues safe requests; record the pull start point
+		ctx.stats.inc (nano::stat::type::bootstrap_database, query->type == query_type::blocks_by_hash ? nano::stat::detail::from_confirmed : nano::stat::detail::from_open);
+
+		inflight.insert (query->account);
+		pulls.spawn (run_pull (*query, channel, std::move (budget)));
 	}
 }
 
-void database_strategy::run_one (bool should_throttle)
+asio::awaitable<void> database_strategy::run_pull (blocks_query query, std::shared_ptr<nano::transport::channel> channel, nano::async::semaphore::token budget)
 {
-	ctx.wait_block_processor ();
+	nano::scope_guard guard{ [this, account = query.account] () {
+		inflight.erase (account);
+	} };
 
-	auto channel = ctx.wait_channel ();
-	if (!channel)
-	{
-		return;
-	}
-
-	auto query = wait_database (should_throttle);
-	if (!query)
-	{
-		return;
-	}
-
-	// The database scan always issues safe requests; record the pull start point
-	ctx.stats.inc (nano::stat::type::bootstrap_database, query->type == query_type::blocks_by_hash ? nano::stat::detail::from_confirmed : nano::stat::detail::from_open);
-
-	ctx.send (channel, *query, query_source::database);
-}
-
-std::optional<blocks_query> database_strategy::next_database (bool should_throttle)
-{
-	debug_assert (!ctx.mutex.try_lock ());
-	debug_assert (ctx.config.database_warmup_ratio > 0);
-
-	// Throttling increases the weight of database requests
-	if (!ctx.database_limiter.should_pass (should_throttle ? ctx.config.database_warmup_ratio : 1))
-	{
-		return std::nullopt;
-	}
-	auto query = ctx.database_scan.next ([this] (nano::account const & account) {
-		return ctx.count_tags (account, query_source::database) == 0;
-	});
-	if (!query)
-	{
-		return std::nullopt;
-	}
-	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_database);
-	return query;
-}
-
-std::optional<blocks_query> database_strategy::wait_database (bool should_throttle)
-{
-	std::optional<blocks_query> result;
-	ctx.wait ([this, &result, should_throttle] () {
-		debug_assert (!ctx.mutex.try_lock ());
-		result = next_database (should_throttle);
-		return result.has_value ();
-	});
-	return result;
+	co_await ctx.run_pull (channel, query, query_source::database, std::move (budget));
 }
 }

@@ -35,6 +35,28 @@ struct overloaded : Ts...
 template <class... Ts>
 overloaded (Ts...) -> overloaded<Ts...>;
 
+// Runs the given function when the guard goes out of scope, including exceptional and coroutine unwinds
+template <class F>
+class scope_guard
+{
+public:
+	explicit scope_guard (F && func) :
+		func{ std::move (func) }
+	{
+	}
+
+	~scope_guard ()
+	{
+		func ();
+	}
+
+	scope_guard (scope_guard const &) = delete;
+	scope_guard & operator= (scope_guard const &) = delete;
+
+private:
+	F func;
+};
+
 // Lower priority of calling work generating thread
 void work_thread_reprioritize ();
 

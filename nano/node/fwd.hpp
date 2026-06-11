@@ -88,7 +88,12 @@ enum class vote_source;
 
 namespace nano::bootstrap
 {
-class bootstrap_context;
+class database_strategy;
+class dependency_strategy;
+class frontier_strategy;
+class peer_pool;
+class priority_strategy;
+class service;
 }
 
 namespace nano::ipc
