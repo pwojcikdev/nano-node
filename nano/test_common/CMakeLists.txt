@@ -1,5 +1,6 @@
 add_library(
   test_common
+  async.hpp
   chains.hpp
   chains.cpp
   common.hpp
