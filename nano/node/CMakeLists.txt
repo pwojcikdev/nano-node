@@ -57,6 +57,8 @@ add_library(
   bootstrap/frontier_scan.cpp
   bootstrap/topo_scan.hpp
   bootstrap/topo_scan.cpp
+  bootstrap/topo_strategy.hpp
+  bootstrap/topo_strategy.cpp
   bootstrap/priority_strategy.hpp
   bootstrap/priority_strategy.cpp
   bootstrap/throttle.hpp
