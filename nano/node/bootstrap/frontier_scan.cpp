@@ -266,6 +266,15 @@ void frontier_scan_engine::erase_sample (size_t head_index, id_t tag_id)
 	}
 }
 
+void frontier_scan_engine::erase_sample (id_t tag_id, nano::account const & start)
+{
+	auto & head = find_head (start);
+	if (!head.round || head.round->position != start || !head.round->erase (tag_id))
+	{
+		stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::unknown_id);
+	}
+}
+
 bool frontier_scan_engine::process (id_t tag_id, nano::account const & start, std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers)
 {
 	auto & head = find_head (start);

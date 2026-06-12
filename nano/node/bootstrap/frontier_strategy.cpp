@@ -15,12 +15,23 @@
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/pending.hpp>
 
+#include <algorithm>
+#include <span>
+
 using namespace std::chrono_literals;
 
 namespace nano::bootstrap
 {
 frontier_strategy::frontier_strategy (bootstrap_context & ctx_a) :
 	ctx{ ctx_a },
+	probes{
+		.peer_status = [this] (std::span<nano::account const> exclude) { return ctx.peers.probe ({}, exclude); },
+		.count_inflight = [this] (std::span<id_t const> ids) {
+			auto const & by_id = ctx.tags.get<bootstrap_context::tag_id> ();
+			return static_cast<size_t> (std::count_if (ids.begin (), ids.end (), [&] (id_t id) {
+				return by_id.find (id) != by_id.end ();
+			})); },
+	},
 	workers{ 1, nano::thread_role::name::bootstrap_frontier_processing }
 {
 }
@@ -55,51 +66,68 @@ void frontier_strategy::run ()
 
 void frontier_strategy::run_one ()
 {
-	// No need to wait for block_processor, as we are not processing blocks
-	ctx.wait ([this] () {
-		return !ctx.accounts.priority_half_full ();
+	std::shared_ptr<nano::transport::channel> channel;
+	nano::account position{ 0 };
+	id_t id{ 0 };
+
+	ctx.wait ([&] () {
+		debug_assert (!ctx.mutex.try_lock ());
+
+		auto const now = std::chrono::steady_clock::now ();
+		ctx.frontiers.settle (now, probes);
+
+		if (ctx.accounts.priority_half_full ())
+		{
+			return false;
+		}
+		if (workers.queued_tasks () >= ctx.config.frontier_scan.max_pending)
+		{
+			return false;
+		}
+		if (ctx.tags.size () >= ctx.config.max_requests)
+		{
+			return false;
+		}
+
+		auto slot = ctx.frontiers.next_launch (now, probes);
+		if (!slot)
+		{
+			return false;
+		}
+
+		if (!ctx.frontier_limiter.should_pass (1))
+		{
+			return false;
+		}
+
+		auto result = ctx.peers.acquire ({}, slot->exclude);
+		if (result.status != acquire_status::acquired)
+		{
+			debug_assert (result.status == acquire_status::busy);
+			ctx.stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::busy);
+			return false;
+		}
+
+		id = generate_id ();
+		position = slot->position;
+		channel = result.channel;
+		ctx.frontiers.commit (slot->head_index, slot->position, result.node_id, id, now);
+		ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_frontier);
+		return true;
 	});
-	ctx.wait ([this] () {
-		return workers.queued_tasks () < ctx.config.frontier_scan.max_pending;
-	});
-	auto channel = ctx.wait_channel (strategy::frontier);
+
 	if (!channel)
 	{
 		return;
 	}
-	auto frontier = wait_frontier ();
-	if (frontier.is_zero ())
-	{
-		return;
-	}
-	request_frontiers (frontier, channel);
-}
 
-nano::account frontier_strategy::wait_frontier ()
-{
-	nano::account result{ 0 };
-	ctx.wait ([this, &result] () {
-		debug_assert (!ctx.mutex.try_lock ());
-		result = ctx.frontiers.next ();
-		if (!result.is_zero ())
-		{
-			ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_frontier);
-			return true;
-		}
-		return false;
-	});
-	return result;
-}
-
-bool frontier_strategy::request_frontiers (nano::account start, std::shared_ptr<nano::transport::channel> const & channel)
-{
 	frontiers_query query{};
-	query.start = start;
+	query.start = position;
 	query.count = nano::messages::asc_pull_ack::frontiers_payload::max_frontiers;
 
-	ctx.logger.debug (nano::log::type::bootstrap, "Requesting frontiers starting from: {} from: {}", start, channel);
+	ctx.logger.debug (nano::log::type::bootstrap, "Requesting frontiers starting from: {} from: {}", position, channel);
 
-	return ctx.send (channel, query, strategy::frontier);
+	ctx.send (channel, query, strategy::frontier, id);
 }
 
 bool frontier_strategy::process (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag)
@@ -111,45 +139,44 @@ bool frontier_strategy::process (nano::messages::asc_pull_ack::frontiers_payload
 	auto const & query = std::get<frontiers_query> (tag.query);
 	debug_assert (!query.start.is_zero ());
 
-	if (response.frontiers.empty ())
-	{
-		ctx.stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::frontiers_empty);
-		return true; // OK, but nothing to do
-	}
-
-	ctx.stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::frontiers);
+	ctx.stats.inc (nano::stat::type::bootstrap_process, response.frontiers.empty () ? nano::stat::detail::frontiers_empty : nano::stat::detail::frontiers);
 
 	auto result = verify (response, query);
 	switch (result)
 	{
 		case verify_result::ok:
-		{
-			ctx.stats.inc (nano::stat::type::bootstrap_verify_frontiers, nano::stat::detail::ok);
-			ctx.stats.add (nano::stat::type::bootstrap, nano::stat::detail::frontiers, nano::stat::dir::in, response.frontiers.size ());
-
-			ctx.frontiers.process (query.start, response.frontiers);
-
-			// Allow some overfill to avoid unnecessarily dropping responses
-			if (workers.queued_tasks () < ctx.config.frontier_scan.max_pending * 4)
-			{
-				workers.post ([this, frontiers_l = response.frontiers] {
-					process_frontiers (frontiers_l);
-				});
-			}
-			else
-			{
-				ctx.stats.add (nano::stat::type::bootstrap, nano::stat::detail::frontiers_dropped, response.frontiers.size ());
-			}
-		}
-		break;
 		case verify_result::nothing_new:
 		{
-			ctx.stats.inc (nano::stat::type::bootstrap_verify_frontiers, nano::stat::detail::nothing_new);
+			ctx.stats.inc (nano::stat::type::bootstrap_verify_frontiers, response.frontiers.empty () ? nano::stat::detail::nothing_new : nano::stat::detail::ok);
+
+			auto const fed = ctx.frontiers.process (tag.id, query.start, response.frontiers);
+			if (!fed)
+			{
+				ctx.stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::stale);
+			}
+
+			if (!response.frontiers.empty ())
+			{
+				ctx.stats.add (nano::stat::type::bootstrap, nano::stat::detail::frontiers, nano::stat::dir::in, response.frontiers.size ());
+
+				// Allow some overfill to avoid unnecessarily dropping responses
+				if (workers.queued_tasks () < ctx.config.frontier_scan.max_pending * 4)
+				{
+					workers.post ([this, frontiers_l = response.frontiers] {
+						process_frontiers (frontiers_l);
+					});
+				}
+				else
+				{
+					ctx.stats.add (nano::stat::type::bootstrap, nano::stat::detail::frontiers_dropped, response.frontiers.size ());
+				}
+			}
 		}
 		break;
 		case verify_result::invalid:
 		{
 			ctx.stats.inc (nano::stat::type::bootstrap_verify_frontiers, nano::stat::detail::invalid);
+			ctx.frontiers.erase_sample (tag.id, query.start);
 		}
 		break;
 	}
@@ -161,14 +188,22 @@ void frontier_strategy::timeout (async_tag const & tag)
 {
 	debug_assert (!ctx.mutex.try_lock ());
 	debug_assert (tag.type () == query_type::frontiers);
-	(void)tag;
+
+	if (std::holds_alternative<frontiers_query> (tag.query))
+	{
+		ctx.frontiers.erase_sample (tag.id, std::get<frontiers_query> (tag.query).start);
+	}
 }
 
 void frontier_strategy::failure (async_tag const & tag)
 {
 	debug_assert (!ctx.mutex.try_lock ());
 	debug_assert (tag.type () == query_type::frontiers);
-	(void)tag;
+
+	if (std::holds_alternative<frontiers_query> (tag.query))
+	{
+		ctx.frontiers.erase_sample (tag.id, std::get<frontiers_query> (tag.query).start);
+	}
 }
 
 void frontier_strategy::confirm (async_tag const & tag, std::chrono::steady_clock::time_point deadline)
@@ -214,10 +249,7 @@ void frontier_strategy::process_frontiers (std::deque<std::pair<nano::account, n
 
 	lock.unlock ();
 
-	if (!result.prioritize.empty ())
-	{
-		ctx.condition.notify_all ();
-	}
+	ctx.condition.notify_all ();
 }
 
 /*
