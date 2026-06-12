@@ -9,6 +9,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <span>
 #include <unordered_map>
 
 namespace nano::bootstrap
@@ -25,6 +26,7 @@ struct acquire_result
 {
 	std::shared_ptr<nano::transport::channel> channel;
 	acquire_status status{ acquire_status::no_peers };
+	nano::account node_id{ 0 }; // Cached identity of the acquired peer
 };
 
 /*
@@ -46,14 +48,15 @@ public:
 
 	explicit peer_pool (nano::bootstrap_config const &);
 
-	// Reserves the least-loaded peer that satisfies the capability requirement
-	acquire_result acquire (nano::node_capabilities_flags required = {}, nano::transport::traffic_type traffic = default_traffic_type);
+	// Reserves the least-loaded peer that satisfies the capability requirement and is not excluded.
+	// The exclusion list lets a fanout round route each of its requests to a distinct peer.
+	acquire_result acquire (nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}, nano::transport::traffic_type traffic = default_traffic_type);
 
 	// Returns one reserved capacity slot when a response arrives
 	void release (std::shared_ptr<nano::transport::channel> const &);
 
-	// Returns true if any peer satisfies the capability requirement, ignoring capacity
-	bool has_candidate (nano::node_capabilities_flags required = {}) const;
+	// Returns true if any peer satisfies the capability requirement and is not excluded, ignoring capacity
+	bool has_candidate (nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}) const;
 
 	// Tracks newly connected channels and drops closed ones
 	void update (std::deque<std::shared_ptr<nano::transport::channel>> const & channels);
