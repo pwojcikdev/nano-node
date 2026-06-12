@@ -57,6 +57,44 @@ nano::error nano::frontier_scan_config::serialize (nano::tomlconfig & toml) cons
  * bootstrap_config
  */
 
+nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
+{
+	toml.get ("head_count", head_count);
+	toml.get ("consideration_count", consideration_count);
+	toml.get ("repair_consideration_count", repair_consideration_count);
+	toml.get ("candidates", candidates);
+	toml.get_duration ("cooldown", cooldown);
+	toml.get_duration ("retry_interval", retry_interval);
+	toml.get_duration ("poll_interval", poll_interval);
+	toml.get ("block_batch_size", block_batch_size);
+	toml.get ("max_blocks_outstanding", max_blocks_outstanding);
+	toml.get ("max_blocks_queued", max_blocks_queued);
+	toml.get ("gap_threshold", gap_threshold);
+	toml.get ("repair_activation_height", repair_activation_height);
+	toml.get ("enable_orient", enable_orient);
+
+	return toml.get_error ();
+}
+
+nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
+{
+	toml.put ("head_count", head_count, "Number of topology scan heads. One head is the spear; the rest are repair heads.\ntype:uint64");
+	toml.put ("consideration_count", consideration_count, "Distinct-peer quorum target for the topology spear.\ntype:uint64");
+	toml.put ("repair_consideration_count", repair_consideration_count, "Distinct-peer quorum target for topology repair heads.\ntype:uint64");
+	toml.put ("candidates", candidates, "Maximum topology keys kept from a finalized page.\ntype:uint64");
+	toml.put ("cooldown", cooldown.count (), "Cooldown period between topology page attempts.\ntype:milliseconds");
+	toml.put ("retry_interval", retry_interval.count (), "Retry interval for topology fetches and dependency gaps.\ntype:milliseconds");
+	toml.put ("poll_interval", poll_interval.count (), "Interval for polling topology after the spear reaches an empty tip.\ntype:milliseconds");
+	toml.put ("block_batch_size", block_batch_size, "Maximum hashes requested per topology blocks_random request.\ntype:uint64");
+	toml.put ("max_blocks_outstanding", max_blocks_outstanding, "Maximum topology fetch requests outstanding.\ntype:uint64");
+	toml.put ("max_blocks_queued", max_blocks_queued, "Maximum topology members queued before discovery backpressure.\ntype:uint64");
+	toml.put ("gap_threshold", gap_threshold, "Frontier dependency gaps tolerated before topology discovery pauses.\ntype:uint64");
+	toml.put ("repair_activation_height", repair_activation_height, "Topology height before repair heads activate.\ntype:uint64");
+	toml.put ("enable_orient", enable_orient, "Orient topology scan from the local topology index at startup.\ntype:bool");
+
+	return toml.get_error ();
+}
+
 nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 {
 	toml.get ("enable", enable);
@@ -64,6 +102,7 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("enable_database_scan", enable_database_scan);
 	toml.get ("enable_dependency_walker", enable_dependency_walker);
 	toml.get ("enable_frontier_scan", enable_frontier_scan);
+	toml.get ("enable_topology_scan", enable_topology_scan);
 
 	toml.get ("channel_limit", channel_limit);
 	toml.get ("rate_limit", rate_limit);
@@ -71,6 +110,7 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("database_rate_limit", database_rate_limit);
 	toml.get ("dependency_rate_limit", dependency_rate_limit);
 	toml.get ("frontier_rate_limit", frontier_rate_limit);
+	toml.get ("topology_rate_limit", topology_rate_limit);
 	toml.get ("database_warmup_ratio", database_warmup_ratio);
 	toml.get ("max_pull_count", max_pull_count);
 	toml.get_duration ("request_timeout", request_timeout);
@@ -92,6 +132,12 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 		frontier_scan.deserialize (config_l);
 	}
 
+	if (toml.has_key ("topo_scan"))
+	{
+		auto config_l = toml.get_required_child ("topo_scan");
+		topo_scan.deserialize (config_l);
+	}
+
 	return toml.get_error ();
 }
 
@@ -102,6 +148,7 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("enable_database_scan", enable_database_scan, "Enable or disable the 'database scan` strategy for the ascending bootstrap.\ntype:bool");
 	toml.put ("enable_dependency_walker", enable_dependency_walker, "Enable or disable the 'dependency walker` strategy for the ascending bootstrap.\ntype:bool");
 	toml.put ("enable_frontier_scan", enable_frontier_scan, "Enable or disable the 'frontier scan` strategy for the ascending bootstrap.\ntype:bool");
+	toml.put ("enable_topology_scan", enable_topology_scan, "Enable or disable the 'topology scan` strategy for the ascending bootstrap.\ntype:bool");
 
 	toml.put ("channel_limit", channel_limit, "Maximum number of un-responded requests per channel.\nNote: changing to unlimited (0) is not recommended.\ntype:uint64");
 	toml.put ("rate_limit", rate_limit, "Retained for back-compat; rate limiting is now per-strategy and this value is ignored.\ntype:uint64");
@@ -109,6 +156,7 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("database_rate_limit", database_rate_limit, "Rate limit on scanning accounts and pending entries from database.\nNote: changing to unlimited (0) is not recommended as this operation competes for resources on querying the database.\ntype:uint64");
 	toml.put ("dependency_rate_limit", dependency_rate_limit, "Rate limit on dependency walker requests.\nNote: changing to unlimited (0) is not recommended as this operation competes for resources with realtime traffic.\ntype:uint64");
 	toml.put ("frontier_rate_limit", frontier_rate_limit, "Rate limit on scanning frontiers.\nNote: changing to unlimited (0) is not recommended as this operation competes for resources on querying the network.\ntype:uint64");
+	toml.put ("topology_rate_limit", topology_rate_limit, "Rate limit on topology index and random block requests.\ntype:uint64");
 	toml.put ("database_warmup_ratio", database_warmup_ratio, "Ratio of the database rate limit to use for the initial warmup.\ntype:uint64");
 	toml.put ("max_pull_count", max_pull_count, "Maximum number of requested blocks for bootstrap request.\ntype:uint64");
 	toml.put ("request_timeout", request_timeout.count (), "Timeout in milliseconds for incoming bootstrap messages to be processed.\ntype:milliseconds");
@@ -125,6 +173,10 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	nano::tomlconfig frontier_scan_l;
 	frontier_scan.serialize (frontier_scan_l);
 	toml.put_child ("frontier_scan", frontier_scan_l);
+
+	nano::tomlconfig topo_scan_l;
+	topo_scan.serialize (topo_scan_l);
+	toml.put_child ("topo_scan", topo_scan_l);
 
 	return toml.get_error ();
 }
