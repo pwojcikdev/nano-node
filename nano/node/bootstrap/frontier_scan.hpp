@@ -64,6 +64,7 @@ public:
 	std::optional<launch_slot> next_launch (std::chrono::steady_clock::time_point now, probes const &);
 	void commit (size_t head_index, nano::account const & position, nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now);
 	void erase_sample (size_t head_index, id_t tag_id);
+	void erase_sample (id_t tag_id, nano::account const & start);
 	bool process (id_t tag_id, nano::account const & start, std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
 
 	void reset ();
