@@ -10,7 +10,7 @@
 #include <nano/node/bootstrap/bootstrap_config.hpp>
 #include <nano/node/bootstrap/common.hpp>
 #include <nano/node/bootstrap/database_scan_index.hpp>
-#include <nano/node/bootstrap/frontier_scan_index.hpp>
+#include <nano/node/bootstrap/frontier_scan.hpp>
 #include <nano/node/bootstrap/peer_pool.hpp>
 #include <nano/node/bootstrap/queries.hpp>
 #include <nano/node/bootstrap/throttle.hpp>
@@ -155,7 +155,7 @@ public: // Strategies
 public: // Shared state
 	nano::bootstrap::account_sets_index accounts;
 	nano::bootstrap::database_scan_index database_scan;
-	nano::bootstrap::frontier_scan_index frontiers;
+	nano::bootstrap::frontier_scan_engine frontiers;
 	nano::bootstrap::throttle throttle;
 	nano::bootstrap::peer_pool peers;
 

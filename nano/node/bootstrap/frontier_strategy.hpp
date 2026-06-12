@@ -27,11 +27,10 @@ public:
 private:
 	void run ();
 
-	nano::account wait_frontier ();
-	bool request_frontiers (nano::account start, std::shared_ptr<nano::transport::channel> const & channel);
 	void process_frontiers (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
 
 	bootstrap_context & ctx;
+	frontier_scan_engine::probes probes;
 	std::thread thread;
 
 	// Dedicated pool for the frontier processing tasks (ledger reads)
