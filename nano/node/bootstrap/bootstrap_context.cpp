@@ -58,6 +58,7 @@ nano::ledger_notifications & ledger_notifications_a, nano::block_processor & blo
 	database_limiter{ config.database_rate_limit },
 	dependency_limiter{ config.dependency_rate_limit },
 	frontier_limiter{ config.frontier_rate_limit },
+	topology_limiter{ config.topology_rate_limit },
 	priority_channel{ std::make_shared<nano::transport::null_channel> (node_a) },
 	database_channel{ std::make_shared<nano::transport::null_channel> (node_a) },
 	topology_channel{ std::make_shared<nano::transport::null_channel> (node_a) },
@@ -212,6 +213,7 @@ void bootstrap_context::conclude (async_tag const & tag, conclusion result)
 		case strategy::priority:
 		case strategy::database:
 		case strategy::dependency:
+		case strategy::topo:
 			break;
 	}
 }
@@ -344,6 +346,8 @@ std::shared_ptr<nano::transport::channel> const & bootstrap_context::block_proce
 			return priority_channel;
 		case strategy::database:
 			return database_channel;
+		case strategy::topo:
+			return topology_channel;
 		case strategy::invalid:
 		case strategy::dependency:
 		case strategy::frontier:
@@ -365,6 +369,8 @@ std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano:
 				return dependency_limiter;
 			case strategy::frontier:
 				return frontier_limiter;
+			case strategy::topo:
+				return topology_limiter;
 			case strategy::invalid:
 				break;
 		}
@@ -781,6 +787,7 @@ nano::container_info bootstrap_context::container_info () const
 		info.put ("database", database_limiter.size ());
 		info.put ("dependency", dependency_limiter.size ());
 		info.put ("frontier", frontier_limiter.size ());
+		info.put ("topology", topology_limiter.size ());
 		return info;
 	};
 

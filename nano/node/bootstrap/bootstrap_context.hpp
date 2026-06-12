@@ -167,6 +167,7 @@ public: // Shared state
 	nano::rate_limiter database_limiter;
 	nano::rate_limiter dependency_limiter;
 	nano::rate_limiter frontier_limiter;
+	nano::rate_limiter topology_limiter;
 
 	// Per-strategy placeholder channels. Tagging block_processor submissions with a distinct
 	// channel per strategy gives each its own fair-queue bucket, so the processor round-robins

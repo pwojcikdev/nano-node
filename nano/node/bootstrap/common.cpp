@@ -34,6 +34,8 @@ nano::stat::type to_inspect_stat_type (nano::bootstrap::strategy source)
 			return nano::stat::type::bootstrap_inspect_dependency;
 		case strategy::frontier:
 			return nano::stat::type::bootstrap_inspect_frontier;
+		case strategy::topo:
+			return nano::stat::type::bootstrap_inspect_topo;
 	}
 	debug_assert (false);
 	return nano::stat::type::bootstrap_inspect_other;
