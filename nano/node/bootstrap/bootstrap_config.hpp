@@ -38,6 +38,28 @@ public:
 	std::size_t max_pending{ 16 };
 };
 
+class topo_scan_config final
+{
+public:
+	nano::error deserialize (nano::tomlconfig & toml);
+	nano::error serialize (nano::tomlconfig & toml) const;
+
+public:
+	unsigned head_count{ 8 };
+	unsigned consideration_count{ 4 };
+	unsigned repair_consideration_count{ 2 };
+	std::size_t candidates{ 1000 };
+	std::chrono::milliseconds cooldown{ 1000 * 3 };
+	std::chrono::milliseconds retry_interval{ 1000 * 5 };
+	std::chrono::milliseconds poll_interval{ 1000 * 15 };
+	std::size_t block_batch_size{ 128 };
+	std::size_t max_blocks_outstanding{ 10000 };
+	std::size_t max_blocks_queued{ 40000 };
+	std::size_t gap_threshold{ 1000 };
+	uint64_t repair_activation_height{ 100 };
+	bool enable_orient{ true };
+};
+
 class bootstrap_config final
 {
 public:
@@ -50,6 +72,7 @@ public:
 	bool enable_database_scan{ false };
 	bool enable_dependency_walker{ true };
 	bool enable_frontier_scan{ true };
+	bool enable_topology_scan{ true };
 
 	// Maximum number of un-responded requests per channel, should be lower or equal to bootstrap server max queue size
 	std::size_t channel_limit{ 16 };
@@ -62,6 +85,7 @@ public:
 	std::size_t database_rate_limit{ 250 };
 	std::size_t dependency_rate_limit{ 500 };
 	std::size_t frontier_rate_limit{ 15 };
+	std::size_t topology_rate_limit{ 500 };
 
 	std::size_t database_warmup_ratio{ 10 };
 	std::size_t max_pull_count{ nano::bootstrap_server::max_blocks };
@@ -72,5 +96,6 @@ public:
 
 	account_sets_config account_sets;
 	frontier_scan_config frontier_scan;
+	topo_scan_config topo_scan;
 };
 }

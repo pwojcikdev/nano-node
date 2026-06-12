@@ -17,6 +17,8 @@ enum class query_type
 	blocks_by_account,
 	account_info_by_hash,
 	frontiers,
+	blocks_random,
+	topo_index,
 };
 
 enum class strategy
@@ -26,6 +28,7 @@ enum class strategy
 	database,
 	dependency,
 	frontier,
+	topo,
 };
 
 enum class verify_result

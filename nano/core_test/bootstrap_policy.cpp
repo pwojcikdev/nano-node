@@ -74,6 +74,59 @@ TEST (bootstrap_queries, frontiers_index_keys)
 	ASSERT_EQ (keys.hash, nano::block_hash{ 0 });
 }
 
+TEST (bootstrap_queries, topology_index_keys)
+{
+	topo_index_query query{ .start = nano::topo_key{ 42, nano::block_hash{ 7 } }, .count = 1000 };
+	auto keys = index_keys (query);
+
+	ASSERT_EQ (keys.account, nano::account{ 0 });
+	ASSERT_EQ (keys.hash, query.start.hash);
+	ASSERT_EQ (to_query_type (query), query_type::topo_index);
+}
+
+TEST (bootstrap_queries, blocks_random_index_keys)
+{
+	blocks_random_query query{ .hashes = { nano::block_hash{ 7 }, nano::block_hash{ 9 } } };
+	auto keys = index_keys (query);
+
+	ASSERT_EQ (keys.account, nano::account{ 0 });
+	ASSERT_EQ (keys.hash, query.hashes.front ());
+	ASSERT_EQ (to_query_type (query), query_type::blocks_random);
+}
+
+TEST (bootstrap_verify, topo_index_ok)
+{
+	topo_index_query query{ .start = nano::topo_key{ 10, nano::block_hash{ 1 } }, .count = 1000 };
+	nano::messages::asc_pull_ack::topo_index_payload response;
+	response.entries = {
+		nano::topo_key{ 10, nano::block_hash{ 2 } },
+		nano::topo_key{ 11, nano::block_hash{ 3 } },
+		nano::topo_key{ 11, nano::block_hash{ 4 } },
+	};
+	ASSERT_EQ (verify (response, query), verify_result::ok);
+}
+
+TEST (bootstrap_verify, topo_index_height_gap)
+{
+	topo_index_query query{ .start = nano::topo_key{ 10, nano::block_hash{ 1 } }, .count = 1000 };
+	nano::messages::asc_pull_ack::topo_index_payload response;
+	response.entries = {
+		nano::topo_key{ 10, nano::block_hash{ 2 } },
+		nano::topo_key{ 12, nano::block_hash{ 3 } },
+	};
+	ASSERT_EQ (verify (response, query), verify_result::invalid);
+}
+
+TEST (bootstrap_verify, topo_index_below_start)
+{
+	topo_index_query query{ .start = nano::topo_key{ 10, nano::block_hash{ 5 } }, .count = 1000 };
+	nano::messages::asc_pull_ack::topo_index_payload response;
+	response.entries = {
+		nano::topo_key{ 10, nano::block_hash{ 4 } },
+	};
+	ASSERT_EQ (verify (response, query), verify_result::invalid);
+}
+
 /*
  * Response verification: blocks
  */
@@ -166,5 +219,23 @@ TEST (bootstrap_verify, blocks_by_account_mismatch)
 	blocks_query query{ .account = nano::account{ 999 }, .start = nano::account{ 999 }, .count = 128, .type = query_type::blocks_by_account };
 	nano::messages::asc_pull_ack::blocks_payload response;
 	response.blocks = chain;
+	ASSERT_EQ (verify (response, query), verify_result::invalid);
+}
+
+TEST (bootstrap_verify, blocks_random_ok)
+{
+	auto chain = make_chain (2);
+	blocks_random_query query{ .hashes = { chain[0]->hash (), chain[1]->hash () } };
+	nano::messages::asc_pull_ack::blocks_payload response;
+	response.blocks = chain;
+	ASSERT_EQ (verify (response, query), verify_result::ok);
+}
+
+TEST (bootstrap_verify, blocks_random_unrequested)
+{
+	auto chain = make_chain (2);
+	blocks_random_query query{ .hashes = { chain[0]->hash () } };
+	nano::messages::asc_pull_ack::blocks_payload response;
+	response.blocks = { chain[1] };
 	ASSERT_EQ (verify (response, query), verify_result::invalid);
 }

@@ -577,6 +577,7 @@ enum class detail
 	topo_indexes,
 	dependency,
 	frontier,
+	topo,
 
 	prioritize,
 	prioritize_failed,
