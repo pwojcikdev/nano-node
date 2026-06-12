@@ -53,6 +53,8 @@ add_library(
   bootstrap/dependency_strategy.cpp
   bootstrap/frontier_strategy.hpp
   bootstrap/frontier_strategy.cpp
+  bootstrap/frontier_scan.hpp
+  bootstrap/frontier_scan.cpp
   bootstrap/priority_strategy.hpp
   bootstrap/priority_strategy.cpp
   bootstrap/throttle.hpp
