@@ -35,7 +35,7 @@ auto peer_pool::acquire (nano::node_capabilities_flags required, std::span<nano:
 			continue; // Already used by the requesting round
 		}
 		candidate_present = true;
-		if (entry.outstanding >= config.channel_limit)
+		if (config.channel_limit != 0 && entry.outstanding >= config.channel_limit)
 		{
 			continue; // At capacity, may free up later
 		}
@@ -81,6 +81,30 @@ bool peer_pool::has_candidate (nano::node_capabilities_flags required, std::span
 		auto const & entry = item.second;
 		return entry.capable (required) && std::find (exclude.begin (), exclude.end (), entry.node_id) == exclude.end ();
 	});
+}
+
+peer_probe_status peer_pool::probe (nano::node_capabilities_flags required, std::span<nano::account const> exclude) const
+{
+	bool candidate_present = false;
+
+	for (auto const & [_, entry] : entries)
+	{
+		if (!entry.capable (required))
+		{
+			continue;
+		}
+		if (std::find (exclude.begin (), exclude.end (), entry.node_id) != exclude.end ())
+		{
+			continue;
+		}
+		candidate_present = true;
+		if (config.channel_limit == 0 || entry.outstanding < config.channel_limit)
+		{
+			return peer_probe_status::available;
+		}
+	}
+
+	return candidate_present ? peer_probe_status::busy : peer_probe_status::none;
 }
 
 void peer_pool::update (std::deque<std::shared_ptr<nano::transport::channel>> const & channels)
@@ -135,7 +159,7 @@ std::size_t peer_pool::available () const
 {
 	return std::count_if (entries.begin (), entries.end (), [this] (auto const & item) {
 		auto const & entry = item.second;
-		return entry.outstanding < config.channel_limit;
+		return config.channel_limit == 0 || entry.outstanding < config.channel_limit;
 	});
 }
 

@@ -22,6 +22,13 @@ enum class acquire_status
 	no_peers, // No connected peer satisfies the capability requirement; the caller should wait for peers
 };
 
+enum class peer_probe_status
+{
+	available, // acquire () would reserve a peer right now, ignoring the channel send queue residual
+	busy, // Matching peers exist but are all at capacity
+	none, // No capable non-excluded peer exists
+};
+
 struct acquire_result
 {
 	std::shared_ptr<nano::transport::channel> channel;
@@ -57,6 +64,10 @@ public:
 
 	// Returns true if any peer satisfies the capability requirement and is not excluded, ignoring capacity
 	bool has_candidate (nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}) const;
+
+	// Capacity-aware, non-reserving mirror of acquire (). This intentionally does not inspect the
+	// channel send queue; acquire () performs that final check on the selected candidate.
+	peer_probe_status probe (nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}) const;
 
 	// Tracks newly connected channels and drops closed ones
 	void update (std::deque<std::shared_ptr<nano::transport::channel>> const & channels);
