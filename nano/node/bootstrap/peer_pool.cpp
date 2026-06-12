@@ -12,10 +12,14 @@ peer_pool::peer_pool (nano::bootstrap_config const & config_a) :
 {
 }
 
-auto peer_pool::acquire (nano::node_capabilities_flags required, nano::transport::traffic_type traffic) -> acquire_result
+auto peer_pool::acquire (nano::node_capabilities_flags required, std::span<nano::account const> exclude, nano::transport::traffic_type traffic) -> acquire_result
 {
 	bool capable_present = false; // Some connected peer satisfies the capability requirement
 	bool candidate_present = false; // Some capable peer is not excluded, though it may be at capacity
+
+	auto excluded = [&exclude] (entry const & entry) {
+		return std::find (exclude.begin (), exclude.end (), entry.node_id) != exclude.end ();
+	};
 
 	auto best = entries.end ();
 	for (auto it = entries.begin (); it != entries.end (); ++it)
@@ -26,7 +30,10 @@ auto peer_pool::acquire (nano::node_capabilities_flags required, nano::transport
 			continue;
 		}
 		capable_present = true;
-		// TODO: Filtering here
+		if (excluded (entry))
+		{
+			continue; // Already used by the requesting round
+		}
 		candidate_present = true;
 		if (entry.outstanding >= config.channel_limit)
 		{
@@ -46,7 +53,7 @@ auto peer_pool::acquire (nano::node_capabilities_flags required, nano::transport
 	if (best != entries.end ())
 	{
 		best->second.outstanding += 1;
-		return { best->second.channel, acquire_status::acquired };
+		return { best->second.channel, acquire_status::acquired, best->second.node_id };
 	}
 	if (candidate_present)
 	{
@@ -68,11 +75,11 @@ void peer_pool::release (std::shared_ptr<nano::transport::channel> const & chann
 	}
 }
 
-bool peer_pool::has_candidate (nano::node_capabilities_flags required) const
+bool peer_pool::has_candidate (nano::node_capabilities_flags required, std::span<nano::account const> exclude) const
 {
 	return std::any_of (entries.begin (), entries.end (), [&] (auto const & item) {
 		auto const & entry = item.second;
-		return entry.capable (required);
+		return entry.capable (required) && std::find (exclude.begin (), exclude.end (), entry.node_id) == exclude.end ();
 	});
 }
 
