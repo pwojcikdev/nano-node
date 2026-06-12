@@ -12,6 +12,7 @@
 #include <nano/node/bootstrap/frontier_strategy.hpp>
 #include <nano/node/bootstrap/priority_strategy.hpp>
 #include <nano/node/bootstrap/queries.hpp>
+#include <nano/node/bootstrap/topo_strategy.hpp>
 #include <nano/node/bootstrap/verify.hpp>
 #include <nano/node/ledger_notifications.hpp>
 #include <nano/node/network.hpp>
@@ -49,9 +50,12 @@ nano::ledger_notifications & ledger_notifications_a, nano::block_processor & blo
 	dependency_strat{ *dependency_strat_impl },
 	frontier_strat_impl{ std::make_unique<frontier_strategy> (*this) },
 	frontier_strat{ *frontier_strat_impl },
+	topo_strat_impl{ std::make_unique<topo_strategy> (*this) },
+	topo_strat{ *topo_strat_impl },
 	accounts{ config.account_sets, stats },
 	database_scan{ ledger },
 	frontiers{ config.frontier_scan, stats },
+	topologies{ config.topo_scan, stats },
 	throttle{ compute_throttle_size () },
 	peers{ config },
 	priority_limiter{ config.priority_rate_limit },
@@ -130,6 +134,11 @@ void bootstrap_context::start ()
 		frontier_strat.start ();
 	}
 
+	if (config.enable_topology_scan)
+	{
+		topo_strat.start ();
+	}
+
 	maintenance_thread = std::thread ([this] () {
 		nano::thread_role::set (nano::thread_role::name::bootstrap_maintenance);
 		run_maintenance ();
@@ -148,6 +157,7 @@ void bootstrap_context::stop ()
 	database_strat.stop ();
 	dependency_strat.stop ();
 	frontier_strat.stop ();
+	topo_strat.stop ();
 	nano::join_or_pass (maintenance_thread);
 
 	workers.stop ();
@@ -163,6 +173,7 @@ void bootstrap_context::reset ()
 	accounts.reset ();
 	database_scan.reset ();
 	frontiers.reset ();
+	topologies.reset ();
 	peers.reset ();
 	throttle.reset ();
 }
@@ -245,11 +256,23 @@ void bootstrap_context::conclude (async_tag const & tag, conclusion result)
 			}
 		}
 		break;
+		case strategy::topo:
+		{
+			switch (result)
+			{
+				case conclusion::timeout:
+					topo_strat.timeout (tag);
+					break;
+				case conclusion::failure:
+					topo_strat.failure (tag);
+					break;
+			}
+		}
+		break;
 		case strategy::invalid:
 		case strategy::priority:
 		case strategy::database:
 		case strategy::dependency:
-		case strategy::topo:
 			break;
 	}
 }
@@ -470,6 +493,14 @@ void bootstrap_context::inspect (secure::transaction const & tx, nano::block_sta
 		return strategy::invalid;
 	}();
 
+	if (source == nano::block_source::bootstrap)
+	{
+		if (tag_source == nano::bootstrap::strategy::topo)
+		{
+			topo_strat.inspect (result, context);
+		}
+	}
+
 	switch (result)
 	{
 		case nano::block_status::progress:
@@ -621,7 +652,7 @@ void bootstrap_context::process (nano::messages::asc_pull_ack const & message, s
 
 		bool operator() (const nano::messages::asc_pull_ack::blocks_payload & response) const
 		{
-			return type == query_type::blocks_by_hash || type == query_type::blocks_by_account;
+			return type == query_type::blocks_by_hash || type == query_type::blocks_by_account || type == query_type::blocks_random;
 		}
 		bool operator() (const nano::messages::asc_pull_ack::account_info_payload & response) const
 		{
@@ -633,7 +664,7 @@ void bootstrap_context::process (nano::messages::asc_pull_ack const & message, s
 		}
 		bool operator() (const nano::messages::asc_pull_ack::topo_index_payload & response) const
 		{
-			return false; // Topology strategy not implemented yet, we never request topo indexes
+			return type == query_type::topo_index;
 		}
 		bool operator() (const nano::messages::empty_payload & response) const
 		{
@@ -674,7 +705,12 @@ void bootstrap_context::process (nano::messages::asc_pull_ack const & message, s
 bool bootstrap_context::process (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag)
 {
 	debug_assert (!mutex.try_lock ());
-	debug_assert (tag.type () == query_type::blocks_by_hash || tag.type () == query_type::blocks_by_account);
+	debug_assert (tag.type () == query_type::blocks_by_hash || tag.type () == query_type::blocks_by_account || tag.type () == query_type::blocks_random);
+
+	if (tag.type () == query_type::blocks_random)
+	{
+		return topo_strat.process (response, tag);
+	}
 
 	release_assert (std::holds_alternative<blocks_query> (tag.query));
 
@@ -791,8 +827,7 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::frontiers_payload
 
 bool bootstrap_context::process (nano::messages::asc_pull_ack::topo_index_payload const & response, async_tag const & tag)
 {
-	debug_assert (false, "topo_index payload"); // Topology strategy not implemented yet; verifier rejects these before we get here
-	return false; // Invalid
+	return topo_strat.process (response, tag);
 }
 
 bool bootstrap_context::process (nano::messages::empty_payload const & response, async_tag const & tag)
@@ -831,6 +866,7 @@ nano::container_info bootstrap_context::container_info () const
 	info.add ("accounts", accounts.container_info ());
 	info.add ("database_scan", database_scan.container_info ());
 	info.add ("frontiers", frontiers.container_info ());
+	info.add ("topo", topologies.container_info ());
 	info.add ("workers", workers.container_info ());
 	info.add ("peers", peers.container_info ());
 	info.add ("limiters", collect_limiters ());

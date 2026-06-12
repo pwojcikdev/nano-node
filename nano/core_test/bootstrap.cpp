@@ -138,6 +138,7 @@ TEST (bootstrap, priority_filters_known_blocks)
 	config.bootstrap->enable_database_scan = false;
 	config.bootstrap->enable_dependency_walker = false;
 	config.bootstrap->enable_frontier_scan = false;
+	config.bootstrap->enable_topology_scan = false;
 	// Force safe requests (start from the confirmed frontier) so responses include blocks we
 	// already hold above the confirmed frontier
 	config.bootstrap->optimistic_request_percentage = 0;
@@ -188,6 +189,7 @@ TEST (bootstrap, frontier_scan)
 	// Disable other bootstrap strategies
 	config.bootstrap->enable_priorities = false;
 	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_topology_scan = false;
 	// Disable election activation
 	config.backlog_scan->enable = false;
 
@@ -282,6 +284,7 @@ TEST (bootstrap, frontier_scan_pending)
 	// Disable other bootstrap strategies
 	config.bootstrap->enable_priorities = false;
 	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_topology_scan = false;
 	// Disable election activation
 	config.backlog_scan->enable = false;
 
@@ -362,6 +365,7 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 	// Disable other bootstrap strategies
 	config.bootstrap->enable_priorities = false;
 	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_topology_scan = false;
 	// Disable election activation
 	config.backlog_scan->enable = false;
 
@@ -454,6 +458,35 @@ TEST (bootstrap, frontier_scan_cannot_prioritize)
 	ASSERT_ALWAYS (1s, std::none_of (opens2.begin (), opens2.end (), [&node1] (auto const & block) {
 		return node1.bootstrap.prioritized (block->account ());
 	}));
+}
+
+/*
+ * Tests that topology scan can synchronize blocks without the account priority, database,
+ * dependency, or frontier strategies.
+ */
+TEST (bootstrap, topology_scan)
+{
+	nano::test::system system;
+
+	nano::node_flags flags;
+	flags.disable_legacy_bootstrap = true;
+	flags.disable_elections = true;
+
+	nano::node_config config;
+	config.bootstrap->enable_priorities = false;
+	config.bootstrap->enable_database_scan = false;
+	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_frontier_scan = false;
+	config.bootstrap->enable_topology_scan = true;
+	config.backlog_scan->enable = false;
+
+	auto & node0 = *system.add_node (config, flags);
+	auto chains = nano::test::setup_chains (system, node0, 4, 4, nano::dev::genesis_key, false);
+	(void)chains;
+	auto const total_blocks = node0.block_count ();
+
+	auto & node1 = *system.add_node (config, flags);
+	ASSERT_TIMELY_EQ (20s, node1.block_count (), total_blocks);
 }
 
 /*

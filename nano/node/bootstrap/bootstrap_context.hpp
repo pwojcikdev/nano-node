@@ -14,6 +14,7 @@
 #include <nano/node/bootstrap/peer_pool.hpp>
 #include <nano/node/bootstrap/queries.hpp>
 #include <nano/node/bootstrap/throttle.hpp>
+#include <nano/node/bootstrap/topo_scan.hpp>
 #include <nano/node/fwd.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
@@ -34,6 +35,7 @@ class priority_strategy;
 class database_strategy;
 class dependency_strategy;
 class frontier_strategy;
+class topo_strategy;
 
 struct async_tag
 {
@@ -151,11 +153,14 @@ public: // Strategies
 	nano::bootstrap::dependency_strategy & dependency_strat;
 	std::unique_ptr<nano::bootstrap::frontier_strategy> frontier_strat_impl;
 	nano::bootstrap::frontier_strategy & frontier_strat;
+	std::unique_ptr<nano::bootstrap::topo_strategy> topo_strat_impl;
+	nano::bootstrap::topo_strategy & topo_strat;
 
 public: // Shared state
 	nano::bootstrap::account_sets_index accounts;
 	nano::bootstrap::database_scan_index database_scan;
 	nano::bootstrap::frontier_scan_engine frontiers;
+	nano::bootstrap::topo_scan_engine topologies;
 	nano::bootstrap::throttle throttle;
 	nano::bootstrap::peer_pool peers;
 
