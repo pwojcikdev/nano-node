@@ -15,31 +15,27 @@ nano::stat::detail to_stat_detail (nano::bootstrap::query_type type)
 	return nano::enum_convert<nano::stat::detail> (type);
 }
 
-nano::stat::detail to_stat_detail (nano::bootstrap::query_source source)
-{
-	return nano::enum_convert<nano::stat::detail> (source);
-}
-
 nano::stat::detail to_stat_detail (nano::bootstrap::strategy strat)
 {
 	return nano::enum_convert<nano::stat::detail> (strat);
 }
 
-nano::bootstrap::strategy to_strategy (nano::bootstrap::query_source source)
+nano::stat::type to_inspect_stat_type (nano::bootstrap::strategy source)
 {
 	switch (source)
 	{
-		case query_source::priority:
-			return strategy::priority;
-		case query_source::database:
-			return strategy::database;
-		case query_source::dependencies:
-			return strategy::dependency;
-		case query_source::frontiers:
-			return strategy::frontier;
-		case query_source::invalid:
-			break;
+		case strategy::invalid:
+			return nano::stat::type::bootstrap_inspect_other;
+		case strategy::priority:
+			return nano::stat::type::bootstrap_inspect_priority;
+		case strategy::database:
+			return nano::stat::type::bootstrap_inspect_database;
+		case strategy::dependency:
+			return nano::stat::type::bootstrap_inspect_dependency;
+		case strategy::frontier:
+			return nano::stat::type::bootstrap_inspect_frontier;
 	}
-	release_assert (false);
+	debug_assert (false);
+	return nano::stat::type::bootstrap_inspect_other;
 }
 }

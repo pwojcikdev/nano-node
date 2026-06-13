@@ -36,7 +36,7 @@ class frontier_strategy;
 
 struct async_tag
 {
-	query_source source{ query_source::invalid };
+	strategy source{ strategy::invalid };
 	query_descriptor query;
 
 	// Index keys, derived from the query descriptor when the tag is created
@@ -76,10 +76,10 @@ public:
 	// Waits for a channel that is not full. Applies the per-strategy rate limiter.
 	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy);
 
-	bool send (std::shared_ptr<nano::transport::channel> const &, query_descriptor query, query_source source);
+	bool send (std::shared_ptr<nano::transport::channel> const &, query_descriptor query, strategy source);
 
-	size_t count_tags (nano::account const & account, query_source source) const;
-	size_t count_tags (nano::block_hash const & hash, query_source source) const;
+	size_t count_tags (nano::account const & account, strategy source) const;
+	size_t count_tags (nano::block_hash const & hash, strategy source) const;
 
 	// Inspects a block that has been processed by the block processor
 	void inspect (secure::transaction const &, nano::block_status const & result, nano::block_context const & context);
