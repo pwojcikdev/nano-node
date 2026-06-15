@@ -47,9 +47,6 @@ public:
 	std::optional<peek_result> peek (std::function<bool (nano::account const &)> const & filter);
 	blocks_query consume (peek_result const &);
 
-	// Returns the next safe pull query for an account that passes the filter, or nullopt when none are currently available
-	std::optional<blocks_query> next (std::function<bool (nano::account const &)> const & filter);
-
 	// Indicates if a full ledger iteration has taken place e.g. warmed up
 	bool warmed_up () const;
 

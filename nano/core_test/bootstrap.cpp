@@ -606,13 +606,14 @@ TEST (bootstrap, database_scan_safe_queries)
 	std::map<nano::account, nano::bootstrap::blocks_query> queries;
 	for (int i = 0; i < 100 && queries.size () < 2; ++i)
 	{
-		auto query = db_scan.next ([] (nano::account const &) { return true; });
-		if (!query)
-		{
-			break;
+			auto peek = db_scan.peek ([] (nano::account const &) { return true; });
+			if (!peek)
+			{
+				break;
+			}
+			auto query = db_scan.consume (*peek);
+			queries[query.account] = query;
 		}
-		queries[query->account] = *query;
-	}
 
 	// Genesis: safe request starts from the confirmed frontier (send1), NOT the unconfirmed head (send3)
 	ASSERT_TRUE (queries.contains (nano::dev::genesis_key.pub));
