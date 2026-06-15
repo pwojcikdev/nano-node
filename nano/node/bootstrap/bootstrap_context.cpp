@@ -417,6 +417,16 @@ std::shared_ptr<nano::transport::channel> const & bootstrap_context::block_proce
 
 std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::strategy strat)
 {
+	auto grant = wait_result ([this, strat] () {
+		return acquire_launch (strat);
+	});
+	return grant.channel;
+}
+
+launch_grant bootstrap_context::acquire_launch (nano::bootstrap::strategy strat, nano::node_capabilities_flags required, std::span<nano::account const> exclude, std::size_t token_cost)
+{
+	debug_assert (!mutex.try_lock ());
+
 	auto & strategy_limiter = [this, strat] () -> nano::rate_limiter & {
 		switch (strat)
 		{
@@ -436,25 +446,41 @@ std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano:
 		release_assert (false);
 	}();
 
-	// Limit the number of in-flight requests
-	wait ([this] () {
-		return tags.size () < config.max_requests;
-	});
+	launch_grant grant{};
 
-	// Wait until more requests can be sent (per-strategy rate limit)
-	wait ([&strategy_limiter] () {
-		return strategy_limiter.should_pass (1);
-	});
+	if (tags.size () >= config.max_requests)
+	{
+		grant.request_limited = true;
+		return grant;
+	}
+	if (!strategy_limiter.would_pass (token_cost))
+	{
+		grant.rate_limited = true;
+		return grant;
+	}
 
-	// Wait until a channel is available
-	return wait_result ([this, strat] () {
-		auto result = peers.acquire ();
-		if (!result.channel)
+	auto result = peers.acquire (required, exclude);
+	grant.peer_status = result.status;
+	if (result.status != peer_acquire_status::acquired)
+	{
+		if (result.status == peer_acquire_status::busy)
 		{
 			stats.inc (nano::stat::type::bootstrap_wait_channel, to_stat_detail (strat));
 		}
-		return result.channel;
-	});
+		return grant;
+	}
+
+	if (!strategy_limiter.should_pass (token_cost))
+	{
+		peers.release (result.channel);
+		grant.rate_limited = true;
+		return grant;
+	}
+
+	grant.channel = result.channel;
+	grant.node_id = result.node_id;
+	grant.id = generate_id ();
+	return grant;
 }
 
 size_t bootstrap_context::count_tags (nano::account const & account, strategy source) const

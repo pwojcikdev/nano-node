@@ -37,6 +37,7 @@ public:
 	 * more tokens to be available.
 	 */
 	bool try_consume (unsigned tokens_required = 1);
+	bool peek (unsigned tokens_required = 1);
 
 	/** Update the max_token_count and/or refill_rate_a parameters */
 	void reset (std::size_t max_token_count, std::size_t refill_rate);
@@ -70,6 +71,7 @@ public:
 	rate_limiter (std::size_t limit, double burst_ratio = 1.0);
 
 	bool should_pass (std::size_t buffer_size);
+	bool would_pass (std::size_t buffer_size);
 	void reset (std::size_t limit, double burst_ratio = 1.0);
 
 	std::size_t size () const;

@@ -80,6 +80,29 @@ TEST (rate, reset)
 	ASSERT_TRUE (bucket.try_consume (1000000));
 }
 
+TEST (rate, peek)
+{
+	nano::rate::token_bucket bucket (2, 1);
+
+	ASSERT_TRUE (bucket.peek (2));
+	ASSERT_TRUE (bucket.peek (2));
+	ASSERT_EQ (bucket.largest_burst (), 0);
+
+	ASSERT_TRUE (bucket.try_consume (2));
+	ASSERT_EQ (bucket.largest_burst (), 2);
+	ASSERT_FALSE (bucket.peek (1));
+}
+
+TEST (rate_limiter, would_pass)
+{
+	nano::rate_limiter limiter (2);
+
+	ASSERT_TRUE (limiter.would_pass (2));
+	ASSERT_TRUE (limiter.would_pass (2));
+	ASSERT_TRUE (limiter.should_pass (2));
+	ASSERT_FALSE (limiter.would_pass (1));
+}
+
 TEST (rate, unlimited)
 {
 	nano::rate::token_bucket bucket (0, 0);

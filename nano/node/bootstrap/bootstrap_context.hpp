@@ -24,6 +24,7 @@
 
 #include <chrono>
 #include <memory>
+#include <span>
 #include <thread>
 #include <type_traits>
 
@@ -51,6 +52,21 @@ struct async_tag
 	id_t id{ generate_id () };
 
 	query_type type () const;
+};
+
+struct launch_grant
+{
+	std::shared_ptr<nano::transport::channel> channel;
+	nano::account node_id{ 0 };
+	id_t id{ 0 };
+	peer_acquire_status peer_status{ peer_acquire_status::no_peers };
+	bool request_limited{ false };
+	bool rate_limited{ false };
+
+	explicit operator bool () const
+	{
+		return channel != nullptr;
+	}
 };
 
 class bootstrap_context
@@ -91,6 +107,7 @@ public:
 
 	// Waits for a channel that is not full. Applies the per-strategy rate limiter.
 	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy);
+	launch_grant acquire_launch (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}, std::size_t token_cost = 1);
 
 	enum class conclusion
 	{
