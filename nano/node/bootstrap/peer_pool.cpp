@@ -12,7 +12,7 @@ peer_pool::peer_pool (nano::bootstrap_config const & config_a) :
 {
 }
 
-auto peer_pool::acquire (nano::node_capabilities_flags required, std::span<nano::account const> exclude, nano::transport::traffic_type traffic) -> acquire_result
+auto peer_pool::acquire (nano::node_capabilities_flags required, std::span<nano::account const> exclude, nano::transport::traffic_type traffic) -> peer_pool::acquire_result
 {
 	bool capable_present = false; // Some connected peer satisfies the capability requirement
 	bool candidate_present = false; // Some capable peer is not excluded, though it may be at capacity
@@ -35,7 +35,7 @@ auto peer_pool::acquire (nano::node_capabilities_flags required, std::span<nano:
 			continue; // Already used by the requesting round
 		}
 		candidate_present = true;
-		if (entry.outstanding >= config.channel_limit)
+		if (config.channel_limit != 0 && entry.outstanding >= config.channel_limit)
 		{
 			continue; // At capacity, may free up later
 		}
@@ -53,17 +53,17 @@ auto peer_pool::acquire (nano::node_capabilities_flags required, std::span<nano:
 	if (best != entries.end ())
 	{
 		best->second.outstanding += 1;
-		return { best->second.channel, acquire_status::acquired, best->second.node_id };
+		return { best->second.channel, peer_acquire_status::acquired, best->second.node_id };
 	}
 	if (candidate_present)
 	{
-		return { nullptr, acquire_status::busy };
+		return { nullptr, peer_acquire_status::busy };
 	}
 	if (capable_present)
 	{
-		return { nullptr, acquire_status::exhausted };
+		return { nullptr, peer_acquire_status::exhausted };
 	}
-	return { nullptr, acquire_status::no_peers };
+	return { nullptr, peer_acquire_status::no_peers };
 }
 
 void peer_pool::release (std::shared_ptr<nano::transport::channel> const & channel)
@@ -81,6 +81,30 @@ bool peer_pool::has_candidate (nano::node_capabilities_flags required, std::span
 		auto const & entry = item.second;
 		return entry.capable (required) && std::find (exclude.begin (), exclude.end (), entry.node_id) == exclude.end ();
 	});
+}
+
+peer_probe_status peer_pool::probe (nano::node_capabilities_flags required, std::span<nano::account const> exclude) const
+{
+	bool candidate_present = false;
+
+	for (auto const & [_, entry] : entries)
+	{
+		if (!entry.capable (required))
+		{
+			continue;
+		}
+		if (std::find (exclude.begin (), exclude.end (), entry.node_id) != exclude.end ())
+		{
+			continue;
+		}
+		candidate_present = true;
+		if (config.channel_limit == 0 || entry.outstanding < config.channel_limit)
+		{
+			return peer_probe_status::available;
+		}
+	}
+
+	return candidate_present ? peer_probe_status::busy : peer_probe_status::none;
 }
 
 void peer_pool::update (std::deque<std::shared_ptr<nano::transport::channel>> const & channels)
@@ -135,7 +159,7 @@ std::size_t peer_pool::available () const
 {
 	return std::count_if (entries.begin (), entries.end (), [this] (auto const & item) {
 		auto const & entry = item.second;
-		return entry.outstanding < config.channel_limit;
+		return config.channel_limit == 0 || entry.outstanding < config.channel_limit;
 	});
 }
 
