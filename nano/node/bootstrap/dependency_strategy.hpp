@@ -23,7 +23,7 @@ private:
 
 	nano::block_hash next_blocking ();
 	nano::block_hash wait_blocking ();
-	bool request_info (nano::block_hash hash, std::shared_ptr<nano::transport::channel> const & channel);
+	bool request_info (nano::block_hash hash, std::shared_ptr<nano::transport::channel> const & channel, id_t id);
 
 	bootstrap_context & ctx;
 	std::thread thread;
