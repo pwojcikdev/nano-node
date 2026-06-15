@@ -25,6 +25,7 @@ void frontier_round::feed (std::deque<std::pair<nano::account, nano::block_hash>
 {
 	++completed_m;
 
+	// Only accounts after the current cursor can advance this range
 	for (auto const & [account, _] : frontiers)
 	{
 		if (account.number () > position.number ())
@@ -33,6 +34,7 @@ void frontier_round::feed (std::deque<std::pair<nano::account, nano::block_hash>
 		}
 	}
 
+	// Keep the nearest candidates; the far end is least useful for incremental scanning
 	while (candidates.size () > config.candidates)
 	{
 		candidates.erase (std::prev (candidates.end ()));
@@ -58,10 +60,12 @@ std::optional<nano::account> frontier_round::conclude () const
 {
 	if (!candidates.empty ())
 	{
+		// Advance to the farthest retained nearby candidate so the next round resumes after useful work
 		return *std::prev (candidates.end ());
 	}
 	if (completed_m > 0)
 	{
+		// Completed samples with no candidates indicate the rest of this head range is empty
 		return range_end;
 	}
 	return std::nullopt;
@@ -130,7 +134,9 @@ frontier_scan_engine::frontier_scan_engine (nano::frontier_scan_config const & c
 	heads.reserve (config.head_parallelism);
 	for (unsigned i = 0; i < config.head_parallelism; ++i)
 	{
+		// Account zero is not a real frontier position, so the first range starts at one
 		nano::uint256_t start = (i == 0) ? 1 : i * range_size;
+		// The last range absorbs division remainder and reaches the full uint256 account space
 		nano::uint256_t end = (i == config.head_parallelism - 1) ? max_account : start + range_size;
 		heads.emplace_back (i, nano::account{ start }, nano::account{ end });
 	}
@@ -148,21 +154,25 @@ void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, pr
 		}
 
 		auto & round = *head.round;
+
 		bool ripe = round.votes.settled ();
 		bool capped = round.launched >= config.consideration_count * max_round_samples_factor;
 
 		if (!ripe)
 		{
+			// Before the quorum target we launch eagerly; after that we pace extra samples by cooldown
 			bool const pacing_open = round.launched < config.consideration_count || now >= round.last_launch + config.cooldown;
 			if ((pacing_open || capped) && probes_a.count_inflight (round.tag_ids) == 0)
 			{
 				if (capped)
 				{
+					// Avoid unbounded sampling if peers keep disappearing or disagreeing
 					stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::sample_cap);
 					ripe = true;
 				}
 				else if (probes_a.peer_status (round.used) == peer_probe_status::none)
 				{
+					// No unsampled peer remains, so the best available evidence must conclude the round
 					ripe = true;
 				}
 			}
@@ -189,6 +199,7 @@ std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::peek_laun
 			auto const & round = *head.round;
 			if (round.votes.settled ())
 			{
+				// Settled rounds are handled by settle (); peek_launch never mutates the cursor
 				continue;
 			}
 			if (round.launched >= config.consideration_count * max_round_samples_factor)
@@ -200,6 +211,7 @@ std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::peek_laun
 				continue;
 			}
 
+			// Excluding already-used node IDs keeps all samples in a round on distinct peers
 			auto const status = probes_a.peer_status (round.used);
 			if (status == peer_probe_status::available)
 			{
@@ -214,6 +226,7 @@ std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::peek_laun
 		}
 		if (!empty_probe)
 		{
+			// Empty exclusion probes are identical for idle heads, so perform it at most once per peek
 			empty_probe = probes_a.peer_status (std::span<nano::account const>{});
 		}
 		if (*empty_probe == peer_probe_status::available)
@@ -234,6 +247,7 @@ void frontier_scan_engine::commit (size_t head_index, nano::account const & posi
 	if (!head.round)
 	{
 		debug_assert (position == head.cursor);
+		// The first committed sample lazily opens the round so abandoned peeks do not create state
 		head.round = std::make_unique<round_state> (config, head.cursor, head.end);
 	}
 
@@ -244,6 +258,7 @@ void frontier_scan_engine::commit (size_t head_index, nano::account const & posi
 
 	round.used.push_back (node_id);
 	round.tag_ids.push_back (tag_id);
+	// tag_ids track live authority to update the round; launched counts total sampling pressure
 	++round.launched;
 	round.last_launch = now;
 
@@ -261,6 +276,7 @@ void frontier_scan_engine::erase_sample (size_t head_index, id_t tag_id)
 	auto & head = heads[head_index];
 	if (!head.round || !head.round->erase (tag_id))
 	{
+		// Missing tags usually mean a late cancellation after reset or round conclusion
 		stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::unknown_id);
 	}
 }
@@ -279,6 +295,7 @@ bool frontier_scan_engine::process (id_t tag_id, nano::account const & start, st
 	auto & head = find_head (start);
 	if (!head.round || head.round->position != start || !head.round->erase (tag_id))
 	{
+		// Guard against stale responses from an older round at the same head
 		return false;
 	}
 
@@ -301,6 +318,7 @@ nano::container_info frontier_scan_engine::container_info () const
 		nano::container_info info;
 		for (auto const & head : heads)
 		{
+			// Store fixed-point per-million progress to avoid relying on floating container_info values
 			boost::multiprecision::cpp_dec_float_50 start{ head.start.number ().str () };
 			boost::multiprecision::cpp_dec_float_50 cursor{ head.cursor.number ().str () };
 			boost::multiprecision::cpp_dec_float_50 end{ head.end.number ().str () };
@@ -343,6 +361,7 @@ void frontier_scan_engine::conclude (head_state & head, std::chrono::steady_cloc
 	{
 		if (candidates > 0)
 		{
+			// Clean means the configured quorum was reached; otherwise this is a best-effort advance
 			stats.inc (nano::stat::type::bootstrap_frontier_scan, clean ? nano::stat::detail::done : nano::stat::detail::done_partial);
 			head.processed += candidates;
 		}
@@ -355,6 +374,7 @@ void frontier_scan_engine::conclude (head_state & head, std::chrono::steady_cloc
 		head.cursor = *target;
 		if (head.cursor.number () >= head.end.number ())
 		{
+			// Each head loops over its assigned range so the scan keeps refreshing frontier coverage
 			stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::done_range);
 			head.cursor = head.start;
 		}
@@ -369,6 +389,7 @@ void frontier_scan_engine::conclude (head_state & head, std::chrono::steady_cloc
 	head.round.reset ();
 	if (!clean)
 	{
+		// Partial rounds back off before retrying to avoid tight loops when peers are scarce
 		head.pause_until = now + config.cooldown;
 	}
 }
@@ -387,6 +408,7 @@ auto frontier_scan_engine::find_head (nano::account const & position) const -> h
 		{
 			break;
 		}
+		// Ranges are sorted by start, so the last start not greater than position owns it
 		result = it;
 	}
 
