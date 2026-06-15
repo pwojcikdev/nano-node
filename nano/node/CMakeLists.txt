@@ -47,6 +47,8 @@ add_library(
   bootstrap/common.cpp
   bootstrap/queries.hpp
   bootstrap/queries.cpp
+  bootstrap/round.hpp
+  bootstrap/round.cpp
   bootstrap/database_strategy.hpp
   bootstrap/database_strategy.cpp
   bootstrap/dependency_strategy.hpp
