@@ -246,7 +246,7 @@ std::optional<topo_strategy::fetch_launch> topo_strategy::next_fetch_launch ()
 bool topo_strategy::try_page_or_wait ()
 {
 	auto result = ctx.wait_result ([this] () {
-		return next_page_or_ready ();
+		return peek_page_or_ready ();
 	});
 
 	if (!result || result->type == page_wait_result::kind::ready)
@@ -263,7 +263,7 @@ bool topo_strategy::try_page_or_wait ()
 	return ctx.send (launch.channel, query, strategy::topo, launch.id);
 }
 
-std::optional<topo_strategy::page_wait_result> topo_strategy::next_page_or_ready ()
+std::optional<topo_strategy::page_wait_result> topo_strategy::peek_page_or_ready ()
 {
 	debug_assert (!ctx.mutex.try_lock ());
 
@@ -279,7 +279,7 @@ std::optional<topo_strategy::page_wait_result> topo_strategy::next_page_or_ready
 		return std::nullopt;
 	}
 
-	auto slot = ctx.topologies.next_page (now, probes);
+	auto slot = ctx.topologies.peek_page (now, probes);
 	if (!slot)
 	{
 		return std::nullopt;

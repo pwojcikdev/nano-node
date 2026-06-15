@@ -209,7 +209,7 @@ void topo_scan_engine::settle (std::chrono::steady_clock::time_point now, probes
 	}
 }
 
-std::optional<topo_scan_engine::page_slot> topo_scan_engine::next_page (std::chrono::steady_clock::time_point now, probes const & probes_a)
+std::optional<topo_scan_engine::page_slot> topo_scan_engine::peek_page (std::chrono::steady_clock::time_point now, probes const & probes_a)
 {
 	if (discovery_backpressured ())
 	{
@@ -243,7 +243,6 @@ std::optional<topo_scan_engine::page_slot> topo_scan_engine::next_page (std::chr
 			auto const status = probes_a.peer_status (round.used);
 			if (status == peer_probe_status::available)
 			{
-				robin = (index + 1) % heads.size ();
 				return page_slot{ index, round.position, round.used, !head.spear () };
 			}
 			continue;
@@ -276,7 +275,6 @@ std::optional<topo_scan_engine::page_slot> topo_scan_engine::next_page (std::chr
 		}
 		if (*empty_probe == peer_probe_status::available)
 		{
-			robin = (index + 1) % heads.size ();
 			return page_slot{ index, head.cursor, std::span<nano::account const>{}, !head.spear () };
 		}
 	}
@@ -287,6 +285,7 @@ std::optional<topo_scan_engine::page_slot> topo_scan_engine::next_page (std::chr
 void topo_scan_engine::commit_page (size_t head_index, nano::topo_key const & position, nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now)
 {
 	release_assert (head_index < heads.size ());
+	robin = (head_index + 1) % heads.size ();
 	auto & head = heads[head_index];
 
 	if (!head.round)

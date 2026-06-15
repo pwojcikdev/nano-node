@@ -69,7 +69,7 @@ public:
 	nano::topo_key cursor () const;
 
 	void settle (std::chrono::steady_clock::time_point now, probes const &);
-	std::optional<page_slot> next_page (std::chrono::steady_clock::time_point now, probes const &);
+	std::optional<page_slot> peek_page (std::chrono::steady_clock::time_point now, probes const &);
 	void commit_page (size_t head_index, nano::topo_key const & position, nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now);
 	bool process_page (id_t tag_id, nano::topo_key const & start, std::deque<nano::topo_key> const & entries);
 	void erase_page (id_t tag_id, nano::topo_key const & start);
