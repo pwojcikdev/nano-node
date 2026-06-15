@@ -33,6 +33,13 @@ bool nano::rate::token_bucket::try_consume (unsigned tokens_required_a)
 	return possible || refill_rate == unlimited_rate_sentinel;
 }
 
+bool nano::rate::token_bucket::peek (unsigned tokens_required_a)
+{
+	debug_assert (tokens_required_a <= 1e9);
+	refill ();
+	return current_size >= tokens_required_a || refill_rate == unlimited_rate_sentinel;
+}
+
 void nano::rate::token_bucket::refill ()
 {
 	auto now (std::chrono::steady_clock::now ());
@@ -83,6 +90,12 @@ bool nano::rate_limiter::should_pass (std::size_t message_size_a)
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
 	return bucket.try_consume (nano::narrow_cast<unsigned int> (message_size_a));
+}
+
+bool nano::rate_limiter::would_pass (std::size_t message_size_a)
+{
+	nano::lock_guard<nano::mutex> guard{ mutex };
+	return bucket.peek (nano::narrow_cast<unsigned int> (message_size_a));
 }
 
 void nano::rate_limiter::reset (std::size_t limit_a, double burst_ratio_a)
