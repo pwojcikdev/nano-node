@@ -415,7 +415,7 @@ std::shared_ptr<nano::transport::channel> const & bootstrap_context::block_proce
 	release_assert (false);
 }
 
-launch_grant bootstrap_context::acquire_launch (nano::bootstrap::strategy strat, nano::node_capabilities_flags required, std::span<nano::account const> exclude, std::size_t token_cost)
+launch_grant bootstrap_context::acquire (nano::bootstrap::strategy strat, nano::node_capabilities_flags required, std::span<nano::account const> exclude, std::size_t token_cost)
 {
 	debug_assert (!mutex.try_lock ());
 

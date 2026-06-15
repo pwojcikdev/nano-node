@@ -68,7 +68,7 @@ std::optional<database_strategy::launch_result> database_strategy::next_database
 	}
 
 	auto token_cost = should_throttle ? ctx.config.database_warmup_ratio : 1;
-	auto grant = ctx.acquire_launch (strategy::database, {}, {}, token_cost);
+	auto grant = ctx.acquire (strategy::database, {}, {}, token_cost);
 	if (!grant)
 	{
 		return std::nullopt;

@@ -64,7 +64,7 @@ void priority_strategy::run_one ()
 	}
 
 	auto grant = ctx.wait_result ([this] () {
-		return ctx.acquire_launch (strategy::priority);
+		return ctx.acquire (strategy::priority);
 	});
 	if (!grant)
 	{

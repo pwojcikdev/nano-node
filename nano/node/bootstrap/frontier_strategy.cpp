@@ -107,7 +107,7 @@ std::optional<frontier_strategy::launch_result> frontier_strategy::next_frontier
 		return std::nullopt;
 	}
 
-	auto grant = ctx.acquire_launch (strategy::frontier, {}, round->exclude ());
+	auto grant = ctx.acquire (strategy::frontier, {}, round->exclude ());
 	if (!grant)
 	{
 		ctx.stats.inc (nano::stat::type::bootstrap_frontier_wait, to_stat_detail (grant.peer_status));

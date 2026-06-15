@@ -60,7 +60,7 @@ void dependency_strategy::run_one ()
 	}
 
 	auto grant = ctx.wait_result ([this] () {
-		return ctx.acquire_launch (strategy::dependency);
+		return ctx.acquire (strategy::dependency);
 	});
 	if (!grant)
 	{

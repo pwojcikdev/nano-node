@@ -105,7 +105,7 @@ public:
 	// Placeholder channel used as a fair-queue partition key so the block processor equalizes ingest across strategies
 	std::shared_ptr<nano::transport::channel> const & block_processor_channel (nano::bootstrap::strategy) const;
 
-	launch_grant acquire_launch (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}, std::size_t token_cost = 1);
+	launch_grant acquire (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}, std::size_t token_cost = 1);
 
 	enum class conclusion
 	{
