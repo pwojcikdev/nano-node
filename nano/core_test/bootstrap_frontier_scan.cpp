@@ -55,14 +55,14 @@ struct test_context
 
 	nano::bootstrap::frontier_scan_engine::launch_slot next ()
 	{
-		auto slot = engine.peek_launch (now, probes ());
+		auto slot = engine.next_round (now, probes ());
 		release_assert (slot.has_value ());
 		return *slot;
 	}
 
 	void commit (nano::bootstrap::frontier_scan_engine::launch_slot const & slot, nano::account node_id, nano::bootstrap::id_t id)
 	{
-		engine.commit (slot.head_index, slot.position, node_id, id, now);
+		slot.round->reserve_sample (node_id, id, now);
 		live_tags.insert (id);
 	}
 
@@ -143,10 +143,10 @@ TEST (bootstrap_frontier_scan, eager_fanout_tracks_distinct_peers)
 	ASSERT_EQ (third.exclude[1], nano::account{ 11 });
 	ctx.commit (third, nano::account{ 12 }, 3);
 
-	ASSERT_FALSE (ctx.engine.peek_launch (ctx.now, ctx.probes ()).has_value ());
+	ASSERT_FALSE (ctx.engine.next_round (ctx.now, ctx.probes ()).has_value ());
 }
 
-TEST (bootstrap_frontier_scan, peek_does_not_advance_round_robin)
+TEST (bootstrap_frontier_scan, next_round_reuses_unreserved_round)
 {
 	nano::frontier_scan_config config;
 	config.head_parallelism = 2;
@@ -155,7 +155,7 @@ TEST (bootstrap_frontier_scan, peek_does_not_advance_round_robin)
 	auto first = ctx.next ();
 	auto second = ctx.next ();
 
-	ASSERT_EQ (second.head_index, first.head_index);
+	ASSERT_EQ (second.round, first.round);
 	ASSERT_EQ (second.position, first.position);
 }
 
@@ -195,7 +195,7 @@ TEST (bootstrap_frontier_scan, exhausted_partial_concludes_after_response)
 	ASSERT_TRUE (ctx.feed (1, first.position, frontiers ({ 2 })));
 	ctx.engine.settle (ctx.now, ctx.probes ());
 
-	ASSERT_FALSE (ctx.engine.peek_launch (ctx.now, ctx.probes ()).has_value ());
+	ASSERT_FALSE (ctx.engine.next_round (ctx.now, ctx.probes ()).has_value ());
 	ctx.now += config.cooldown;
 	auto next = ctx.next ();
 	ASSERT_EQ (next.position, nano::account{ 2 });
@@ -236,7 +236,7 @@ TEST (bootstrap_frontier_scan, ride_out_inflight_before_done_none)
 	};
 
 	ctx.engine.settle (ctx.now, ctx.probes ());
-	ASSERT_FALSE (ctx.engine.peek_launch (ctx.now, ctx.probes ()).has_value ());
+	ASSERT_FALSE (ctx.engine.next_round (ctx.now, ctx.probes ()).has_value ());
 
 	ctx.live_tags.erase (1);
 	ctx.engine.settle (ctx.now, ctx.probes ());
@@ -307,7 +307,7 @@ TEST (bootstrap_frontier_scan, busy_head_is_skipped)
 	};
 
 	auto next = ctx.next ();
-	ASSERT_NE (next.head_index, first.head_index);
+	ASSERT_NE (next.round, first.round);
 	ASSERT_TRUE (next.exclude.empty ());
 }
 
@@ -321,7 +321,7 @@ TEST (bootstrap_frontier_scan, erase_sample_after_reset_is_noop)
 	ctx.commit (first, nano::account{ 10 }, 1);
 	ctx.engine.reset ();
 
-	ctx.engine.erase_sample (first.head_index, 1);
+	ctx.engine.erase_sample (1, first.position);
 	auto next = ctx.next ();
 	ASSERT_EQ (next.position, nano::account{ 1 });
 }

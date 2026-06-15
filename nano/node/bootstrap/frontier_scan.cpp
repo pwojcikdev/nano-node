@@ -14,10 +14,11 @@
 
 namespace nano::bootstrap
 {
-frontier_round::frontier_round (nano::frontier_scan_config const & config_a, nano::account position_a, nano::account range_end_a) :
+frontier_round::frontier_round (nano::frontier_scan_config const & config_a, nano::account position_a, nano::account range_end_a, std::function<void ()> sample_reserved_a) :
 	config{ config_a },
-	position{ position_a },
-	range_end{ range_end_a }
+	position_m{ position_a },
+	range_end_m{ range_end_a },
+	sample_reserved_m{ std::move (sample_reserved_a) }
 {
 }
 
@@ -28,7 +29,7 @@ void frontier_round::feed (std::deque<std::pair<nano::account, nano::block_hash>
 	// Only accounts after the current cursor can advance this range
 	for (auto const & [account, _] : frontiers)
 	{
-		if (account.number () > position.number ())
+		if (account.number () > position_m.number ())
 		{
 			candidates.insert (account);
 		}
@@ -66,9 +67,14 @@ std::optional<nano::account> frontier_round::conclude () const
 	if (completed_m > 0)
 	{
 		// Completed samples with no candidates indicate the rest of this head range is empty
-		return range_end;
+		return range_end_m;
 	}
 	return std::nullopt;
+}
+
+nano::account const & frontier_round::position () const
+{
+	return position_m;
 }
 
 size_t frontier_round::completed () const
@@ -81,30 +87,12 @@ size_t frontier_round::candidate_count () const
 	return candidates.size ();
 }
 
-/*
- *
- */
-
-frontier_scan_engine::round_state::round_state (nano::frontier_scan_config const & config, nano::account position_a, nano::account range_end) :
-	position{ position_a },
-	votes{ config, position_a, range_end }
+void frontier_round::sample_reserved ()
 {
-}
-
-bool frontier_scan_engine::round_state::owns (id_t tag_id) const
-{
-	return std::find (tag_ids.begin (), tag_ids.end (), tag_id) != tag_ids.end ();
-}
-
-bool frontier_scan_engine::round_state::erase (id_t tag_id)
-{
-	auto const it = std::find (tag_ids.begin (), tag_ids.end (), tag_id);
-	if (it == tag_ids.end ())
+	if (sample_reserved_m)
 	{
-		return false;
+		sample_reserved_m ();
 	}
-	tag_ids.erase (it);
-	return true;
 }
 
 frontier_scan_engine::head_state::head_state (size_t index_a, nano::account start_a, nano::account end_a) :
@@ -155,14 +143,19 @@ void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, pr
 
 		auto & round = *head.round;
 
-		bool ripe = round.votes.settled ();
-		bool capped = round.launched >= config.consideration_count * max_round_samples_factor;
+		if (round.launched () == 0)
+		{
+			continue;
+		}
+
+		bool ripe = round.settled ();
+		bool capped = round.launched () >= config.consideration_count * max_round_samples_factor;
 
 		if (!ripe)
 		{
 			// Before the quorum target we launch eagerly; after that we pace extra samples by cooldown
-			bool const pacing_open = round.launched < config.consideration_count || now >= round.last_launch + config.cooldown;
-			if ((pacing_open || capped) && probes_a.count_inflight (round.tag_ids) == 0)
+			bool const pacing_open = round.launched () < config.consideration_count || now >= round.last_launch () + config.cooldown;
+			if ((pacing_open || capped) && probes_a.count_inflight (round.tag_ids ()) == 0)
 			{
 				if (capped)
 				{
@@ -170,7 +163,7 @@ void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, pr
 					stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::sample_cap);
 					ripe = true;
 				}
-				else if (probes_a.peer_status (round.used) == peer_probe_status::none)
+				else if (probes_a.peer_status (round.used ()) == peer_probe_status::none)
 				{
 					// No unsampled peer remains, so the best available evidence must conclude the round
 					ripe = true;
@@ -185,7 +178,7 @@ void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, pr
 	}
 }
 
-std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::peek_launch (std::chrono::steady_clock::time_point now, probes const & probes_a)
+std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::next_round (std::chrono::steady_clock::time_point now, probes const & probes_a)
 {
 	std::optional<peer_probe_status> empty_probe;
 
@@ -196,26 +189,26 @@ std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::peek_laun
 
 		if (head.round)
 		{
-			auto const & round = *head.round;
-			if (round.votes.settled ())
+			auto const & round = head.round;
+			if (round->settled ())
 			{
-				// Settled rounds are handled by settle (); peek_launch never mutates the cursor
+				// Settled rounds are handled by settle (); next_round never mutates the cursor
 				continue;
 			}
-			if (round.launched >= config.consideration_count * max_round_samples_factor)
+			if (round->launched () >= config.consideration_count * max_round_samples_factor)
 			{
 				continue;
 			}
-			if (round.launched >= config.consideration_count && now < round.last_launch + config.cooldown)
+			if (round->launched () >= config.consideration_count && now < round->last_launch () + config.cooldown)
 			{
 				continue;
 			}
 
 			// Excluding already-used node IDs keeps all samples in a round on distinct peers
-			auto const status = probes_a.peer_status (round.used);
+			auto const status = probes_a.peer_status (round->used ());
 			if (status == peer_probe_status::available)
 			{
-				return launch_slot{ index, round.position, round.used };
+				return launch_slot{ round, round->position (), round->exclude () };
 			}
 			continue;
 		}
@@ -226,65 +219,27 @@ std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::peek_laun
 		}
 		if (!empty_probe)
 		{
-			// Empty exclusion probes are identical for idle heads, so perform it at most once per peek
+			// Empty exclusion probes are identical for idle heads, so perform it at most once per next_round
 			empty_probe = probes_a.peer_status (std::span<nano::account const>{});
 		}
 		if (*empty_probe == peer_probe_status::available)
 		{
-			return launch_slot{ index, head.cursor, std::span<nano::account const>{} };
+			auto round = std::make_shared<frontier_round> (config, head.cursor, head.end, [this, index] () {
+				robin = (index + 1) % heads.size ();
+				stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::sample);
+			});
+			head.round = round;
+			return launch_slot{ round, round->position (), round->exclude () };
 		}
 	}
 
 	return std::nullopt;
 }
 
-void frontier_scan_engine::commit (size_t head_index, nano::account const & position, nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now)
-{
-	release_assert (head_index < heads.size ());
-	robin = (head_index + 1) % heads.size ();
-	auto & head = heads[head_index];
-
-	if (!head.round)
-	{
-		debug_assert (position == head.cursor);
-		// The first committed sample lazily opens the round so abandoned peeks do not create state
-		head.round = std::make_unique<round_state> (config, head.cursor, head.end);
-	}
-
-	auto & round = *head.round;
-	debug_assert (position == round.position);
-	debug_assert (!round.owns (tag_id));
-	debug_assert (std::find (round.used.begin (), round.used.end (), node_id) == round.used.end ());
-
-	round.used.push_back (node_id);
-	round.tag_ids.push_back (tag_id);
-	// tag_ids track live authority to update the round; launched counts total sampling pressure
-	++round.launched;
-	round.last_launch = now;
-
-	stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::sample);
-}
-
-void frontier_scan_engine::erase_sample (size_t head_index, id_t tag_id)
-{
-	if (head_index >= heads.size ())
-	{
-		stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::unknown_id);
-		return;
-	}
-
-	auto & head = heads[head_index];
-	if (!head.round || !head.round->erase (tag_id))
-	{
-		// Missing tags usually mean a late cancellation after reset or round conclusion
-		stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::unknown_id);
-	}
-}
-
 void frontier_scan_engine::erase_sample (id_t tag_id, nano::account const & start)
 {
 	auto & head = find_head (start);
-	if (!head.round || head.round->position != start || !head.round->erase (tag_id))
+	if (!head.round || head.round->position () != start || !head.round->erase (tag_id))
 	{
 		stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::unknown_id);
 	}
@@ -293,13 +248,13 @@ void frontier_scan_engine::erase_sample (id_t tag_id, nano::account const & star
 bool frontier_scan_engine::process (id_t tag_id, nano::account const & start, std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers)
 {
 	auto & head = find_head (start);
-	if (!head.round || head.round->position != start || !head.round->erase (tag_id))
+	if (!head.round || head.round->position () != start || !head.round->erase (tag_id))
 	{
 		// Guard against stale responses from an older round at the same head
 		return false;
 	}
 
-	head.round->votes.feed (frontiers);
+	head.round->feed (frontiers);
 	return true;
 }
 
@@ -335,7 +290,7 @@ nano::container_info frontier_scan_engine::container_info () const
 		return head.round != nullptr;
 	});
 	auto tracked_ids = std::accumulate (heads.begin (), heads.end (), std::size_t{ 0 }, [] (auto total, auto const & head) {
-		return total + (head.round ? head.round->tag_ids.size () : 0);
+		return total + (head.round ? head.round->tag_ids ().size () : 0);
 	});
 
 	nano::container_info info;
@@ -351,11 +306,11 @@ void frontier_scan_engine::conclude (head_state & head, std::chrono::steady_cloc
 	release_assert (head.round != nullptr);
 	auto & round = *head.round;
 
-	bool const clean = round.votes.done ();
-	bool const empty_clean = round.votes.empty_range ();
-	auto const completed = round.votes.completed ();
-	auto const candidates = round.votes.candidate_count ();
-	auto target = round.votes.conclude ();
+	bool const clean = round.done ();
+	bool const empty_clean = round.empty_range ();
+	auto const completed = round.completed ();
+	auto const candidates = round.candidate_count ();
+	auto target = round.conclude ();
 
 	if (target)
 	{

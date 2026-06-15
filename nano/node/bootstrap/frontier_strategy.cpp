@@ -100,7 +100,7 @@ std::optional<frontier_strategy::launch_result> frontier_strategy::next_frontier
 		return std::nullopt;
 	}
 
-	auto slot = ctx.frontiers.peek_launch (now, probes);
+	auto slot = ctx.frontiers.next_round (now, probes);
 	if (!slot)
 	{
 		ctx.stats.inc (nano::stat::type::bootstrap_frontier_wait, nano::stat::detail::wait_slot);
@@ -114,7 +114,7 @@ std::optional<frontier_strategy::launch_result> frontier_strategy::next_frontier
 		return std::nullopt;
 	}
 
-	ctx.frontiers.commit (slot->head_index, slot->position, grant.node_id, grant.id, now);
+	slot->round->reserve_sample (grant.node_id, grant.id, now);
 
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_frontier);
 	return launch_result{ grant.channel, slot->position, grant.id };

@@ -1,3 +1,4 @@
+#include <nano/lib/assert.hpp>
 #include <nano/node/bootstrap/round.hpp>
 
 #include <algorithm>

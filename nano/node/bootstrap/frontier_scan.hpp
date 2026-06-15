@@ -5,6 +5,7 @@
 #include <nano/node/bootstrap/bootstrap_config.hpp>
 #include <nano/node/bootstrap/common.hpp>
 #include <nano/node/bootstrap/peer_pool.hpp>
+#include <nano/node/bootstrap/round.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -19,11 +20,11 @@
 
 namespace nano::bootstrap
 {
-class frontier_round final
+class frontier_round final : public round
 {
 public:
 	// Opens a voting round for the scan position within the owning head range
-	frontier_round (nano::frontier_scan_config const &, nano::account position, nano::account range_end);
+	frontier_round (nano::frontier_scan_config const &, nano::account position, nano::account range_end, std::function<void ()> sample_reserved = {});
 
 	// Records one frontier response and retains the nearest candidate accounts after position
 	void feed (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
@@ -37,15 +38,20 @@ public:
 	// Returns the selected next scan cursor, range end, or nullopt when no sample completed
 	std::optional<nano::account> conclude () const;
 
+	// Account cursor this round samples from
+	nano::account const & position () const;
 	// Number of responses incorporated into this round
 	size_t completed () const;
 	// Number of retained candidate accounts
 	size_t candidate_count () const;
 
 private:
+	void sample_reserved () override;
+
 	nano::frontier_scan_config const & config; // Tuning values that bound samples and candidate retention
-	nano::account const position; // Account cursor this round samples from
-	nano::account const range_end; // End of the head range, used when samples find no frontier
+	nano::account const position_m; // Account cursor this round samples from
+	nano::account const range_end_m; // End of the head range, used when samples find no frontier
+	std::function<void ()> sample_reserved_m; // Engine callback for reservation side effects
 	std::set<nano::account> candidates; // Smallest candidate accounts greater than position
 	size_t completed_m{ 0 }; // Count of processed frontier responses
 };
@@ -61,7 +67,7 @@ public:
 
 	struct launch_slot
 	{
-		size_t head_index; // Head to commit against if the caller launches this sample
+		std::shared_ptr<frontier_round> round; // Round to reserve if the caller launches this sample
 		nano::account position; // Scan cursor to request frontiers from
 		std::span<nano::account const> exclude; // Peers already sampled in the current round
 	};
@@ -71,12 +77,8 @@ public:
 
 	// Concludes any open rounds whose samples, peer availability, or caps make them settled
 	void settle (std::chrono::steady_clock::time_point now, probes const &);
-	// Returns the next sample that can be launched without mutating engine state
-	std::optional<launch_slot> peek_launch (std::chrono::steady_clock::time_point now, probes const &);
-	// Commits a launched sample to its head and tracks its peer and tag until completion
-	void commit (size_t head_index, nano::account const & position, nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now);
-	// Drops a sample by head index when the owning request is cancelled or expires
-	void erase_sample (size_t head_index, id_t tag_id);
+	// Returns the next round that can accept a launched sample
+	std::optional<launch_slot> next_round (std::chrono::steady_clock::time_point now, probes const &);
 	// Drops a sample by scan position when only the original request start is known
 	void erase_sample (id_t tag_id, nano::account const & start);
 	// Applies a frontier response to its round and returns false for stale or unknown samples
@@ -92,30 +94,13 @@ public:
 	static size_t constexpr max_round_samples_factor = 4;
 
 private:
-	struct round_state
-	{
-		nano::account const position; // Cursor all samples in this round are querying
-		frontier_round votes; // Aggregated frontier responses for this cursor
-		std::vector<nano::account> used; // Peer node IDs already sampled, preserving launch order
-		std::vector<id_t> tag_ids; // Request tags still allowed to update this round
-		size_t launched{ 0 }; // Total samples launched, including ones already completed or erased
-		std::chrono::steady_clock::time_point last_launch{}; // Last launch time for cooldown pacing
-
-		// Creates the vote accumulator for one scan cursor
-		round_state (nano::frontier_scan_config const &, nano::account position, nano::account range_end);
-		// Returns true if the request tag still belongs to this round
-		bool owns (id_t tag_id) const;
-		// Removes a live request tag and reports whether it belonged to this round
-		bool erase (id_t tag_id);
-	};
-
 	struct head_state
 	{
 		size_t const index; // Stable slot index used by callers to commit launch slots
 		nano::account const start; // Inclusive lower bound for this head range
 		nano::account const end; // Upper bound used to wrap the head back to start
 		nano::account cursor; // Next account position to scan within the head range
-		std::unique_ptr<round_state> round; // Active round for the cursor, if samples are outstanding
+		std::shared_ptr<frontier_round> round; // Active round for the cursor, if samples are outstanding
 		std::chrono::steady_clock::time_point pause_until{}; // Cooldown gate after partial conclusions
 		size_t rounds{ 0 }; // Number of concluded rounds for diagnostics
 		size_t processed{ 0 }; // Number of retained candidates advanced past for diagnostics
