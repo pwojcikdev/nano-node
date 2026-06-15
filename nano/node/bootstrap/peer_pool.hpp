@@ -8,7 +8,6 @@
 #include <nano/node/transport/traffic_type.hpp>
 
 #include <deque>
-#include <functional>
 #include <memory>
 #include <span>
 #include <unordered_map>

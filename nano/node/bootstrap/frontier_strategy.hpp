@@ -5,6 +5,7 @@
 
 #include <deque>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <utility>
 
@@ -17,18 +18,23 @@ public:
 
 	void start ();
 	void stop ();
+	
 	void run_one ();
 
 	bool process (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag);
-	void timeout (async_tag const & tag);
-	void failure (async_tag const & tag);
-	void confirm (async_tag const & tag, std::chrono::steady_clock::time_point deadline);
 
 private:
-	void run ();
+	struct launch_result
+	{
+		std::shared_ptr<nano::transport::channel> channel;
+		std::shared_ptr<frontier_round> round;
+		nano::account position{ 0 };
+		id_t id{ 0 };
+	};
 
-	nano::account wait_frontier ();
-	bool request_frontiers (nano::account start, std::shared_ptr<nano::transport::channel> const & channel);
+	void run ();
+	std::optional<launch_result> next_frontier_launch ();
+
 	void process_frontiers (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
 
 	bootstrap_context & ctx;

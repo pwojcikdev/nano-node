@@ -1,8 +1,12 @@
 #pragma once
 
+#include <nano/lib/numbers.hpp>
 #include <nano/lib/stats_enums.hpp>
 
+#include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <span>
 #include <string_view>
 
 namespace nano::bootstrap
@@ -18,6 +22,8 @@ enum class query_type
 	blocks_by_account,
 	account_info_by_hash,
 	frontiers,
+	blocks_random,
+	topo_index,
 };
 
 enum class strategy
@@ -27,6 +33,7 @@ enum class strategy
 	database,
 	dependency,
 	frontier,
+	topo,
 };
 
 enum class verify_result
@@ -34,6 +41,19 @@ enum class verify_result
 	ok,
 	nothing_new,
 	invalid,
+};
+
+enum class conclusion
+{
+	timeout,
+	failure,
+};
+
+enum class peer_probe_status;
+
+struct peer_probes
+{
+	std::function<peer_probe_status (std::span<nano::account const> exclude)> peer_status;
 };
 
 nano::stat::detail to_stat_detail (nano::bootstrap::query_type);
