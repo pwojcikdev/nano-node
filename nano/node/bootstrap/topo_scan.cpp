@@ -10,10 +10,11 @@
 
 namespace nano::bootstrap
 {
-topo_round::topo_round (nano::topo_scan_config const & config_a, nano::topo_key position_a, unsigned quorum_a) :
+topo_round::topo_round (nano::topo_scan_config const & config_a, nano::topo_key position_a, unsigned quorum_a, std::function<void ()> sample_reserved_a) :
 	config{ config_a },
-	position{ position_a },
-	quorum_m{ std::max (1u, quorum_a) }
+	position_m{ position_a },
+	quorum_m{ std::max (1u, quorum_a) },
+	sample_reserved_m{ std::move (sample_reserved_a) }
 {
 }
 
@@ -23,7 +24,7 @@ void topo_round::feed (std::deque<nano::topo_key> const & entries)
 
 	for (auto const & key : entries)
 	{
-		if (position < key)
+		if (position_m < key)
 		{
 			candidates_m.insert (key);
 		}
@@ -58,7 +59,7 @@ std::optional<nano::topo_key> topo_round::conclude () const
 	}
 	if (completed_m > 0)
 	{
-		return position;
+		return position_m;
 	}
 	return std::nullopt;
 }
@@ -66,6 +67,11 @@ std::optional<nano::topo_key> topo_round::conclude () const
 std::deque<nano::topo_key> topo_round::candidates () const
 {
 	return { candidates_m.begin (), candidates_m.end () };
+}
+
+nano::topo_key const & topo_round::position () const
+{
+	return position_m;
 }
 
 size_t topo_round::completed () const
@@ -83,30 +89,12 @@ unsigned topo_round::quorum () const
 	return quorum_m;
 }
 
-/*
- *
- */
-
-topo_scan_engine::round_state::round_state (nano::topo_scan_config const & config, nano::topo_key position_a, unsigned quorum_a) :
-	position{ position_a },
-	votes{ config, position_a, quorum_a }
+void topo_round::sample_reserved ()
 {
-}
-
-bool topo_scan_engine::round_state::owns (id_t tag_id) const
-{
-	return std::find (tag_ids.begin (), tag_ids.end (), tag_id) != tag_ids.end ();
-}
-
-bool topo_scan_engine::round_state::erase (id_t tag_id)
-{
-	auto const it = std::find (tag_ids.begin (), tag_ids.end (), tag_id);
-	if (it == tag_ids.end ())
+	if (sample_reserved_m)
 	{
-		return false;
+		sample_reserved_m ();
 	}
-	tag_ids.erase (it);
-	return true;
 }
 
 topo_scan_engine::head_state::head_state (size_t index_a) :
@@ -181,21 +169,26 @@ void topo_scan_engine::settle (std::chrono::steady_clock::time_point now, probes
 		}
 
 		auto & round = *head.round;
-		bool ripe = round.votes.settled ();
-		auto const quorum_l = round.votes.quorum ();
-		bool capped = round.launched >= quorum_l * max_round_samples_factor;
+		if (round.launched () == 0)
+		{
+			continue;
+		}
+
+		bool ripe = round.settled ();
+		auto const quorum_l = round.quorum ();
+		bool capped = round.launched () >= quorum_l * max_round_samples_factor;
 
 		if (!ripe)
 		{
-			bool const pacing_open = round.launched < quorum_l || now >= round.last_launch + config.cooldown;
-			if ((pacing_open || capped) && probes_a.count_inflight (round.tag_ids) == 0)
+			bool const pacing_open = round.launched () < quorum_l || now >= round.last_launch () + config.cooldown;
+			if ((pacing_open || capped) && probes_a.count_inflight (round.tag_ids ()) == 0)
 			{
 				if (capped)
 				{
 					stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::sample_cap);
 					ripe = true;
 				}
-				else if (probes_a.peer_status (round.used) == peer_probe_status::none)
+				else if (probes_a.peer_status (round.used ()) == peer_probe_status::none)
 				{
 					ripe = true;
 				}
@@ -209,11 +202,11 @@ void topo_scan_engine::settle (std::chrono::steady_clock::time_point now, probes
 	}
 }
 
-std::optional<topo_scan_engine::page_slot> topo_scan_engine::peek_page (std::chrono::steady_clock::time_point now, probes const & probes_a)
+std::shared_ptr<topo_round> topo_scan_engine::next_round (std::chrono::steady_clock::time_point now, probes const & probes_a)
 {
 	if (discovery_backpressured ())
 	{
-		return std::nullopt;
+		return nullptr;
 	}
 
 	std::optional<peer_probe_status> empty_probe;
@@ -226,24 +219,24 @@ std::optional<topo_scan_engine::page_slot> topo_scan_engine::peek_page (std::chr
 
 		if (head.round)
 		{
-			auto const & round = *head.round;
-			if (round.votes.settled ())
+			auto const & round = head.round;
+			if (round->settled ())
 			{
 				continue;
 			}
-			if (round.launched >= quorum_l * max_round_samples_factor)
+			if (round->launched () >= quorum_l * max_round_samples_factor)
 			{
 				continue;
 			}
-			if (round.launched >= quorum_l && now < round.last_launch + config.cooldown)
+			if (round->launched () >= quorum_l && now < round->last_launch () + config.cooldown)
 			{
 				continue;
 			}
 
-			auto const status = probes_a.peer_status (round.used);
+			auto const status = probes_a.peer_status (round->used ());
 			if (status == peer_probe_status::available)
 			{
-				return page_slot{ index, round.position, round.used, !head.spear () };
+				return round;
 			}
 			continue;
 		}
@@ -275,49 +268,29 @@ std::optional<topo_scan_engine::page_slot> topo_scan_engine::peek_page (std::chr
 		}
 		if (*empty_probe == peer_probe_status::available)
 		{
-			return page_slot{ index, head.cursor, std::span<nano::account const>{}, !head.spear () };
+			auto round = std::make_shared<topo_round> (config, head.cursor, quorum_l, [this, index] () {
+				robin = (index + 1) % heads.size ();
+				if (heads[index].spear ())
+				{
+					spear_at_tip = false;
+				}
+				stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::sample);
+			});
+			head.round = round;
+			return round;
 		}
 	}
 
-	return std::nullopt;
-}
-
-void topo_scan_engine::commit_page (size_t head_index, nano::topo_key const & position, nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now)
-{
-	release_assert (head_index < heads.size ());
-	robin = (head_index + 1) % heads.size ();
-	auto & head = heads[head_index];
-
-	if (!head.round)
-	{
-		debug_assert (position == head.cursor);
-		head.round = std::make_unique<round_state> (config, head.cursor, quorum (head));
-	}
-
-	auto & round = *head.round;
-	debug_assert (position == round.position);
-	debug_assert (!round.owns (tag_id));
-	debug_assert (std::find (round.used.begin (), round.used.end (), node_id) == round.used.end ());
-
-	round.used.push_back (node_id);
-	round.tag_ids.push_back (tag_id);
-	++round.launched;
-	round.last_launch = now;
-	if (head.spear ())
-	{
-		spear_at_tip = false;
-	}
-
-	stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::sample);
+	return nullptr;
 }
 
 bool topo_scan_engine::process_page (id_t tag_id, nano::topo_key const & start, std::deque<nano::topo_key> const & entries)
 {
 	for (auto & head : heads)
 	{
-		if (head.round && head.round->position == start && head.round->erase (tag_id))
+		if (head.round && head.round->position () == start && head.round->erase (tag_id))
 		{
-			head.round->votes.feed (entries);
+			head.round->feed (entries);
 			return true;
 		}
 	}
@@ -328,7 +301,7 @@ void topo_scan_engine::erase_page (id_t tag_id, nano::topo_key const & start)
 {
 	for (auto & head : heads)
 	{
-		if (head.round && head.round->position == start && head.round->erase (tag_id))
+		if (head.round && head.round->position () == start && head.round->erase (tag_id))
 		{
 			return;
 		}
@@ -620,7 +593,7 @@ bool topo_scan_engine::inspect (nano::block_hash const & hash, nano::block_statu
 bool topo_scan_engine::caught_up () const
 {
 	bool const pages_inflight = std::any_of (heads.begin (), heads.end (), [] (auto const & head) {
-		return head.round != nullptr && !head.round->tag_ids.empty ();
+		return head.round != nullptr && !head.round->tag_ids ().empty ();
 	});
 	return spear_at_tip && members.empty () && fetches.empty () && !pages_inflight;
 }
@@ -687,11 +660,11 @@ void topo_scan_engine::conclude (head_state & head, std::chrono::steady_clock::t
 	release_assert (head.round != nullptr);
 	auto & round = *head.round;
 
-	auto const target = round.votes.conclude ();
-	auto const candidates = round.votes.candidates ();
-	bool const clean = round.votes.done () || round.votes.empty_page ();
+	auto const target = round.conclude ();
+	auto const candidates = round.candidates ();
+	bool const clean = round.done () || round.empty_page ();
 
-	if (target && *target != round.position)
+	if (target && *target != round.position ())
 	{
 		++head.pages;
 		auto discovered = discover (candidates);

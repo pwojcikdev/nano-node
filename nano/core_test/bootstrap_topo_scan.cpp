@@ -75,16 +75,16 @@ struct test_context
 		};
 	}
 
-	nano::bootstrap::topo_scan_engine::page_slot peek_page ()
+	std::shared_ptr<nano::bootstrap::topo_round> next_round ()
 	{
-		auto slot = engine.peek_page (now, probes ());
-		release_assert (slot.has_value ());
-		return *slot;
+		auto round = engine.next_round (now, probes ());
+		release_assert (round != nullptr);
+		return round;
 	}
 
-	void commit_page (nano::bootstrap::topo_scan_engine::page_slot const & slot, nano::account node_id, nano::bootstrap::id_t id)
+	void reserve (std::shared_ptr<nano::bootstrap::topo_round> const & round, nano::account node_id, nano::bootstrap::id_t id)
 	{
-		engine.commit_page (slot.head_index, slot.start, node_id, id, now);
+		round->reserve (node_id, id, now);
 		live_tags.insert (id);
 	}
 
@@ -131,37 +131,37 @@ TEST (bootstrap_topo_scan, eager_fanout_tracks_distinct_peers)
 	config.consideration_count = 3;
 	test_context ctx{ config };
 
-	auto first = ctx.peek_page ();
-	ASSERT_EQ (first.start, nano::topo_key{});
-	ASSERT_TRUE (first.exclude.empty ());
-	ctx.commit_page (first, nano::account{ 10 }, 1);
+	auto first = ctx.next_round ();
+	ASSERT_EQ (first->position (), nano::topo_key{});
+	ASSERT_TRUE (first->exclude ().empty ());
+	ctx.reserve (first, nano::account{ 10 }, 1);
 
-	auto second = ctx.peek_page ();
-	ASSERT_EQ (second.start, first.start);
-	ASSERT_EQ (second.exclude.size (), 1);
-	ASSERT_EQ (second.exclude[0], nano::account{ 10 });
-	ctx.commit_page (second, nano::account{ 11 }, 2);
+	auto second = ctx.next_round ();
+	ASSERT_EQ (second->position (), first->position ());
+	ASSERT_EQ (second->exclude ().size (), 1);
+	ASSERT_EQ (second->exclude ()[0], nano::account{ 10 });
+	ctx.reserve (second, nano::account{ 11 }, 2);
 
-	auto third = ctx.peek_page ();
-	ASSERT_EQ (third.exclude.size (), 2);
-	ASSERT_EQ (third.exclude[0], nano::account{ 10 });
-	ASSERT_EQ (third.exclude[1], nano::account{ 11 });
-	ctx.commit_page (third, nano::account{ 12 }, 3);
+	auto third = ctx.next_round ();
+	ASSERT_EQ (third->exclude ().size (), 2);
+	ASSERT_EQ (third->exclude ()[0], nano::account{ 10 });
+	ASSERT_EQ (third->exclude ()[1], nano::account{ 11 });
+	ctx.reserve (third, nano::account{ 12 }, 3);
 
-	ASSERT_FALSE (ctx.engine.peek_page (ctx.now, ctx.probes ()).has_value ());
+	ASSERT_EQ (ctx.engine.next_round (ctx.now, ctx.probes ()), nullptr);
 }
 
-TEST (bootstrap_topo_scan, peek_does_not_advance_round_robin)
+TEST (bootstrap_topo_scan, next_round_reuses_unreserved_round)
 {
 	nano::topo_scan_config config;
 	config.head_count = 2;
 	test_context ctx{ config };
 
-	auto first = ctx.peek_page ();
-	auto second = ctx.peek_page ();
+	auto first = ctx.next_round ();
+	auto second = ctx.next_round ();
 
-	ASSERT_EQ (second.head_index, first.head_index);
-	ASSERT_EQ (second.start, first.start);
+	ASSERT_EQ (second, first);
+	ASSERT_EQ (second->position (), first->position ());
 }
 
 TEST (bootstrap_topo_scan, quorum_discovers_fetch_candidates)
@@ -176,13 +176,13 @@ TEST (bootstrap_topo_scan, quorum_discovers_fetch_candidates)
 	config.consideration_count = 2;
 	test_context ctx{ config };
 
-	auto first = ctx.peek_page ();
-	ctx.commit_page (first, nano::account{ 10 }, 1);
-	auto second = ctx.peek_page ();
-	ctx.commit_page (second, nano::account{ 11 }, 2);
+	auto first = ctx.next_round ();
+	ctx.reserve (first, nano::account{ 10 }, 1);
+	auto second = ctx.next_round ();
+	ctx.reserve (second, nano::account{ 11 }, 2);
 
-	ASSERT_TRUE (ctx.feed_page (1, first.start, page));
-	ASSERT_TRUE (ctx.feed_page (2, first.start, page));
+	ASSERT_TRUE (ctx.feed_page (1, first->position (), page));
+	ASSERT_TRUE (ctx.feed_page (2, first->position (), page));
 	ctx.engine.settle (ctx.now, ctx.probes ());
 
 	auto hashes = ctx.engine.next_fetch_candidates (ctx.now, 10);
@@ -203,9 +203,9 @@ TEST (bootstrap_topo_scan, fetched_blocks_submit_in_topo_order)
 	config.consideration_count = 1;
 	test_context ctx{ config };
 
-	auto slot = ctx.peek_page ();
-	ctx.commit_page (slot, nano::account{ 10 }, 1);
-	ASSERT_TRUE (ctx.feed_page (1, slot.start, page));
+	auto round = ctx.next_round ();
+	ctx.reserve (round, nano::account{ 10 }, 1);
+	ASSERT_TRUE (ctx.feed_page (1, round->position (), page));
 	ctx.engine.settle (ctx.now, ctx.probes ());
 
 	auto hashes = ctx.engine.next_fetch_candidates (ctx.now, 10);
@@ -229,9 +229,9 @@ TEST (bootstrap_topo_scan, frontier_gap_is_retained_and_retried)
 	config.retry_interval = 5s;
 	test_context ctx{ config };
 
-	auto slot = ctx.peek_page ();
-	ctx.commit_page (slot, nano::account{ 10 }, 1);
-	ASSERT_TRUE (ctx.feed_page (1, slot.start, page));
+	auto round = ctx.next_round ();
+	ctx.reserve (round, nano::account{ 10 }, 1);
+	ASSERT_TRUE (ctx.feed_page (1, round->position (), page));
 	ctx.engine.settle (ctx.now, ctx.probes ());
 
 	auto hashes = ctx.engine.next_fetch_candidates (ctx.now, 10);
@@ -264,16 +264,16 @@ TEST (bootstrap_topo_scan, empty_tip_requires_two_rounds)
 	config.cooldown = 1s;
 	test_context ctx{ config };
 
-	auto first = ctx.peek_page ();
-	ctx.commit_page (first, nano::account{ 10 }, 1);
-	ASSERT_TRUE (ctx.feed_page (1, first.start, {}));
+	auto first = ctx.next_round ();
+	ctx.reserve (first, nano::account{ 10 }, 1);
+	ASSERT_TRUE (ctx.feed_page (1, first->position (), {}));
 	ctx.engine.settle (ctx.now, ctx.probes ());
 	ASSERT_FALSE (ctx.engine.caught_up ());
 
 	ctx.now += config.cooldown;
-	auto second = ctx.peek_page ();
-	ctx.commit_page (second, nano::account{ 11 }, 2);
-	ASSERT_TRUE (ctx.feed_page (2, second.start, {}));
+	auto second = ctx.next_round ();
+	ctx.reserve (second, nano::account{ 11 }, 2);
+	ASSERT_TRUE (ctx.feed_page (2, second->position (), {}));
 	ctx.engine.settle (ctx.now, ctx.probes ());
 	ASSERT_TRUE (ctx.engine.caught_up ());
 }

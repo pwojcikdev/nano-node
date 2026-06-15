@@ -4,6 +4,7 @@
 #include <nano/node/bootstrap/bootstrap_config.hpp>
 #include <nano/node/bootstrap/common.hpp>
 #include <nano/node/bootstrap/peer_pool.hpp>
+#include <nano/node/bootstrap/round.hpp>
 #include <nano/secure/common.hpp>
 
 #include <chrono>
@@ -21,10 +22,10 @@
 
 namespace nano::bootstrap
 {
-class topo_round final
+class topo_round final : public round
 {
 public:
-	topo_round (nano::topo_scan_config const &, nano::topo_key position, unsigned quorum);
+	topo_round (nano::topo_scan_config const &, nano::topo_key position, unsigned quorum, std::function<void ()> sample_reserved = {});
 
 	void feed (std::deque<nano::topo_key> const & entries);
 
@@ -34,14 +35,18 @@ public:
 	std::optional<nano::topo_key> conclude () const;
 	std::deque<nano::topo_key> candidates () const;
 
+	nano::topo_key const & position () const;
 	size_t completed () const;
 	size_t candidate_count () const;
 	unsigned quorum () const;
 
 private:
+	void sample_reserved () override;
+
 	nano::topo_scan_config const & config;
-	nano::topo_key const position;
+	nano::topo_key const position_m;
 	unsigned const quorum_m;
+	std::function<void ()> sample_reserved_m;
 	std::set<nano::topo_key> candidates_m;
 	size_t completed_m{ 0 };
 };
@@ -55,22 +60,13 @@ public:
 		std::function<size_t (std::span<id_t const> tag_ids)> count_inflight;
 	};
 
-	struct page_slot
-	{
-		size_t head_index;
-		nano::topo_key start;
-		std::span<nano::account const> exclude;
-		bool repair{ false };
-	};
-
 	topo_scan_engine (nano::topo_scan_config const &, nano::stats &);
 
 	void orient (nano::topo_key const &);
 	nano::topo_key cursor () const;
 
 	void settle (std::chrono::steady_clock::time_point now, probes const &);
-	std::optional<page_slot> peek_page (std::chrono::steady_clock::time_point now, probes const &);
-	void commit_page (size_t head_index, nano::topo_key const & position, nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now);
+	std::shared_ptr<topo_round> next_round (std::chrono::steady_clock::time_point now, probes const &);
 	bool process_page (id_t tag_id, nano::topo_key const & start, std::deque<nano::topo_key> const & entries);
 	void erase_page (id_t tag_id, nano::topo_key const & start);
 
@@ -118,25 +114,11 @@ private:
 		std::chrono::steady_clock::time_point next_action{};
 	};
 
-	struct round_state
-	{
-		nano::topo_key const position;
-		topo_round votes;
-		std::vector<nano::account> used;
-		std::vector<id_t> tag_ids;
-		size_t launched{ 0 };
-		std::chrono::steady_clock::time_point last_launch{};
-
-		round_state (nano::topo_scan_config const &, nano::topo_key position, unsigned quorum);
-		bool owns (id_t tag_id) const;
-		bool erase (id_t tag_id);
-	};
-
 	struct head_state
 	{
 		size_t const index;
 		nano::topo_key cursor{};
-		std::unique_ptr<round_state> round;
+		std::shared_ptr<topo_round> round;
 		std::chrono::steady_clock::time_point pause_until{};
 		uint64_t floor_height{ 0 };
 		uint64_t ceiling_height{ 0 };

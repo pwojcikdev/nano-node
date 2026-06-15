@@ -230,7 +230,7 @@ std::optional<topo_strategy::fetch_launch> topo_strategy::next_fetch_launch (std
 bool topo_strategy::try_page_or_wait ()
 {
 	auto result = ctx.wait_result ([this] () {
-		return peek_page_or_ready ();
+		return next_page_or_ready ();
 	});
 
 	if (!result || result->type == page_wait_result::kind::ready)
@@ -247,7 +247,7 @@ bool topo_strategy::try_page_or_wait ()
 	return ctx.send (launch.channel, query, strategy::topo, launch.id);
 }
 
-std::optional<topo_strategy::page_wait_result> topo_strategy::peek_page_or_ready ()
+std::optional<topo_strategy::page_wait_result> topo_strategy::next_page_or_ready ()
 {
 	debug_assert (!ctx.mutex.try_lock ());
 
@@ -258,22 +258,22 @@ std::optional<topo_strategy::page_wait_result> topo_strategy::peek_page_or_ready
 	{
 		return page_wait_result{ page_wait_result::kind::ready, {} };
 	}
-	auto slot = ctx.topologies.peek_page (now, probes);
-	if (!slot)
+	auto round = ctx.topologies.next_round (now, probes);
+	if (!round)
 	{
 		return std::nullopt;
 	}
 
-	auto grant = ctx.acquire_launch (strategy::topo, topo_capability (), slot->exclude);
+	auto grant = ctx.acquire_launch (strategy::topo, topo_capability (), round->exclude ());
 	if (!grant)
 	{
 		ctx.stats.inc (nano::stat::type::bootstrap_topo_scan, to_stat_detail (grant.peer_status));
 		return std::nullopt;
 	}
 
-	ctx.topologies.commit_page (slot->head_index, slot->start, grant.node_id, grant.id, now);
+	round->reserve (grant.node_id, grant.id, now);
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::topo_index);
-	return page_wait_result{ page_wait_result::kind::launch, page_launch{ grant.channel, slot->start, grant.id } };
+	return page_wait_result{ page_wait_result::kind::launch, page_launch{ grant.channel, round->position (), grant.id } };
 }
 
 bool topo_strategy::process (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag)
