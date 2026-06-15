@@ -65,20 +65,13 @@ public:
 		std::function<size_t (std::span<id_t const> tag_ids)> count_inflight; // Counts still-active samples by request tag
 	};
 
-	struct launch_slot
-	{
-		std::shared_ptr<frontier_round> round; // Round to reserve if the caller launches this sample
-		nano::account position; // Scan cursor to request frontiers from
-		std::span<nano::account const> exclude; // Peers already sampled in the current round
-	};
-
 	// Splits the account space into independently scanned heads
 	frontier_scan_engine (nano::frontier_scan_config const &, nano::stats &);
 
 	// Concludes any open rounds whose samples, peer availability, or caps make them settled
 	void settle (std::chrono::steady_clock::time_point now, probes const &);
 	// Returns the next round that can accept a launched sample
-	std::optional<launch_slot> next_round (std::chrono::steady_clock::time_point now, probes const &);
+	std::shared_ptr<frontier_round> next_round (std::chrono::steady_clock::time_point now, probes const &);
 	// Drops a sample by scan position when only the original request start is known
 	void erase_sample (id_t tag_id, nano::account const & start);
 	// Applies a frontier response to its round and returns false for stale or unknown samples
@@ -96,7 +89,7 @@ public:
 private:
 	struct head_state
 	{
-		size_t const index; // Stable slot index used by callers to commit launch slots
+		size_t const index; // Stable head index used for round-robin launch ordering
 		nano::account const start; // Inclusive lower bound for this head range
 		nano::account const end; // Upper bound used to wrap the head back to start
 		nano::account cursor; // Next account position to scan within the head range

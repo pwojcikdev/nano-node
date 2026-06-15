@@ -178,7 +178,7 @@ void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, pr
 	}
 }
 
-std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::next_round (std::chrono::steady_clock::time_point now, probes const & probes_a)
+std::shared_ptr<frontier_round> frontier_scan_engine::next_round (std::chrono::steady_clock::time_point now, probes const & probes_a)
 {
 	std::optional<peer_probe_status> empty_probe;
 
@@ -208,7 +208,7 @@ std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::next_roun
 			auto const status = probes_a.peer_status (round->used ());
 			if (status == peer_probe_status::available)
 			{
-				return launch_slot{ round, round->position (), round->exclude () };
+				return round;
 			}
 			continue;
 		}
@@ -229,11 +229,11 @@ std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::next_roun
 				stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::sample);
 			});
 			head.round = round;
-			return launch_slot{ round, round->position (), round->exclude () };
+			return round;
 		}
 	}
 
-	return std::nullopt;
+	return nullptr;
 }
 
 void frontier_scan_engine::erase_sample (id_t tag_id, nano::account const & start)

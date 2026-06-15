@@ -100,24 +100,24 @@ std::optional<frontier_strategy::launch_result> frontier_strategy::next_frontier
 		return std::nullopt;
 	}
 
-	auto slot = ctx.frontiers.next_round (now, probes);
-	if (!slot)
+	auto round = ctx.frontiers.next_round (now, probes);
+	if (!round)
 	{
 		ctx.stats.inc (nano::stat::type::bootstrap_frontier_wait, nano::stat::detail::wait_slot);
 		return std::nullopt;
 	}
 
-	auto grant = ctx.acquire_launch (strategy::frontier, {}, slot->exclude);
+	auto grant = ctx.acquire_launch (strategy::frontier, {}, round->exclude ());
 	if (!grant)
 	{
 		ctx.stats.inc (nano::stat::type::bootstrap_frontier_wait, to_stat_detail (grant.peer_status));
 		return std::nullopt;
 	}
 
-	slot->round->reserve_sample (grant.node_id, grant.id, now);
+	round->reserve_sample (grant.node_id, grant.id, now);
 
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_frontier);
-	return launch_result{ grant.channel, slot->position, grant.id };
+	return launch_result{ grant.channel, round->position (), grant.id };
 }
 
 bool frontier_strategy::process (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag)
