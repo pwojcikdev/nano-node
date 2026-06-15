@@ -66,7 +66,7 @@ std::optional<blocks_query> database_strategy::next_database (bool should_thrott
 	debug_assert (ctx.config.database_warmup_ratio > 0);
 
 	// Throttling consumes extra tokens from the database limiter on top of the one already consumed in wait_channel
-	if (should_throttle && !ctx.database_limiter.should_pass (ctx.config.database_warmup_ratio))
+	if (should_throttle && !ctx.database_limiter.try_consume (ctx.config.database_warmup_ratio))
 	{
 		return std::nullopt;
 	}
