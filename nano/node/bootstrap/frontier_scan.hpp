@@ -59,19 +59,13 @@ private:
 class frontier_scan_engine final
 {
 public:
-	struct probes
-	{
-		std::function<peer_probe_status (std::span<nano::account const> exclude)> peer_status; // Capacity check for a non-excluded peer
-		std::function<size_t (std::span<id_t const> tag_ids)> count_inflight; // Counts still-active samples by request tag
-	};
-
 	// Splits the account space into independently scanned heads
 	frontier_scan_engine (nano::frontier_scan_config const &, nano::stats &);
 
 	// Concludes any open rounds whose samples, peer availability, or caps make them settled
-	void settle (std::chrono::steady_clock::time_point now, probes const &);
+	void settle (std::chrono::steady_clock::time_point now, peer_probes const &);
 	// Returns the next round that can accept a launched sample
-	std::shared_ptr<frontier_round> next_round (std::chrono::steady_clock::time_point now, probes const &);
+	std::shared_ptr<frontier_round> next_round (std::chrono::steady_clock::time_point now, peer_probes const &);
 	// Drops a sample by scan position when only the original request start is known
 	void erase_sample (id_t tag_id, nano::account const & start);
 	// Applies a frontier response to its round and returns false for stale or unknown samples

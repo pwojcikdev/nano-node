@@ -60,7 +60,7 @@ private:
 	std::optional<page_wait_result> next_page_or_ready ();
 
 	bootstrap_context & ctx;
-	topo_scan_engine::probes probes;
+	nano::bootstrap::peer_probes probes;
 	std::thread thread;
 };
 }

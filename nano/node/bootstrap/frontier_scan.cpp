@@ -132,7 +132,7 @@ frontier_scan_engine::frontier_scan_engine (nano::frontier_scan_config const & c
 	release_assert (!heads.empty ());
 }
 
-void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, probes const & probes_a)
+void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, peer_probes const & probe)
 {
 	for (auto & head : heads)
 	{
@@ -155,7 +155,7 @@ void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, pr
 		{
 			// Before the quorum target we launch eagerly; after that we pace extra samples by cooldown
 			bool const pacing_open = round.launched () < config.consideration_count || now >= round.last_launch () + config.cooldown;
-			if ((pacing_open || capped) && probes_a.count_inflight (round.tag_ids ()) == 0)
+			if ((pacing_open || capped) && probe.count_inflight (round.tag_ids ()) == 0)
 			{
 				if (capped)
 				{
@@ -163,7 +163,7 @@ void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, pr
 					stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::sample_cap);
 					ripe = true;
 				}
-				else if (probes_a.peer_status (round.used ()) == peer_probe_status::none)
+				else if (probe.peer_status (round.used ()) == peer_probe_status::none)
 				{
 					// No unsampled peer remains, so the best available evidence must conclude the round
 					ripe = true;
@@ -178,7 +178,7 @@ void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, pr
 	}
 }
 
-std::shared_ptr<frontier_round> frontier_scan_engine::next_round (std::chrono::steady_clock::time_point now, probes const & probes_a)
+std::shared_ptr<frontier_round> frontier_scan_engine::next_round (std::chrono::steady_clock::time_point now, peer_probes const & probe)
 {
 	std::optional<peer_probe_status> empty_probe;
 
@@ -205,7 +205,7 @@ std::shared_ptr<frontier_round> frontier_scan_engine::next_round (std::chrono::s
 			}
 
 			// Excluding already-used node IDs keeps all samples in a round on distinct peers
-			auto const status = probes_a.peer_status (round->used ());
+			auto const status = probe.peer_status (round->used ());
 			if (status == peer_probe_status::available)
 			{
 				return round;
@@ -220,7 +220,7 @@ std::shared_ptr<frontier_round> frontier_scan_engine::next_round (std::chrono::s
 		if (!empty_probe)
 		{
 			// Empty exclusion probes are identical for idle heads, so perform it at most once per next_round
-			empty_probe = probes_a.peer_status (std::span<nano::account const>{});
+			empty_probe = probe.peer_status (std::span<nano::account const>{});
 		}
 		if (*empty_probe == peer_probe_status::available)
 		{

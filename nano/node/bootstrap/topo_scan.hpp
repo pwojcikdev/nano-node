@@ -54,19 +54,13 @@ private:
 class topo_scan_engine final
 {
 public:
-	struct probes
-	{
-		std::function<peer_probe_status (std::span<nano::account const> exclude)> peer_status;
-		std::function<size_t (std::span<id_t const> tag_ids)> count_inflight;
-	};
-
 	topo_scan_engine (nano::topo_scan_config const &, nano::stats &);
 
 	void orient (nano::topo_key const &);
 	nano::topo_key cursor () const;
 
-	void settle (std::chrono::steady_clock::time_point now, probes const &);
-	std::shared_ptr<topo_round> next_round (std::chrono::steady_clock::time_point now, probes const &);
+	void settle (std::chrono::steady_clock::time_point now, peer_probes const &);
+	std::shared_ptr<topo_round> next_round (std::chrono::steady_clock::time_point now, peer_probes const &);
 	bool process_page (id_t tag_id, nano::topo_key const & start, std::deque<nano::topo_key> const & entries);
 	void erase_page (id_t tag_id, nano::topo_key const & start);
 

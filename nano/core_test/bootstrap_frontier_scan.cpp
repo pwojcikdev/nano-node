@@ -41,7 +41,7 @@ struct test_context
 	{
 	}
 
-	nano::bootstrap::frontier_scan_engine::probes probes ()
+	nano::bootstrap::peer_probes probes ()
 	{
 		return {
 			.peer_status = peer_status,

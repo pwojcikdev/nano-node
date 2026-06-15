@@ -159,7 +159,7 @@ nano::topo_key topo_scan_engine::cursor () const
 	return submit_frontier;
 }
 
-void topo_scan_engine::settle (std::chrono::steady_clock::time_point now, probes const & probes_a)
+void topo_scan_engine::settle (std::chrono::steady_clock::time_point now, peer_probes const & probe)
 {
 	for (auto & head : heads)
 	{
@@ -181,14 +181,14 @@ void topo_scan_engine::settle (std::chrono::steady_clock::time_point now, probes
 		if (!ripe)
 		{
 			bool const pacing_open = round.launched () < quorum_l || now >= round.last_launch () + config.cooldown;
-			if ((pacing_open || capped) && probes_a.count_inflight (round.tag_ids ()) == 0)
+			if ((pacing_open || capped) && probe.count_inflight (round.tag_ids ()) == 0)
 			{
 				if (capped)
 				{
 					stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::sample_cap);
 					ripe = true;
 				}
-				else if (probes_a.peer_status (round.used ()) == peer_probe_status::none)
+				else if (probe.peer_status (round.used ()) == peer_probe_status::none)
 				{
 					ripe = true;
 				}
@@ -202,7 +202,7 @@ void topo_scan_engine::settle (std::chrono::steady_clock::time_point now, probes
 	}
 }
 
-std::shared_ptr<topo_round> topo_scan_engine::next_round (std::chrono::steady_clock::time_point now, probes const & probes_a)
+std::shared_ptr<topo_round> topo_scan_engine::next_round (std::chrono::steady_clock::time_point now, peer_probes const & probe)
 {
 	if (discovery_backpressured ())
 	{
@@ -233,7 +233,7 @@ std::shared_ptr<topo_round> topo_scan_engine::next_round (std::chrono::steady_cl
 				continue;
 			}
 
-			auto const status = probes_a.peer_status (round->used ());
+			auto const status = probe.peer_status (round->used ());
 			if (status == peer_probe_status::available)
 			{
 				return round;
@@ -264,7 +264,7 @@ std::shared_ptr<topo_round> topo_scan_engine::next_round (std::chrono::steady_cl
 
 		if (!empty_probe)
 		{
-			empty_probe = probes_a.peer_status (std::span<nano::account const>{});
+			empty_probe = probe.peer_status (std::span<nano::account const>{});
 		}
 		if (*empty_probe == peer_probe_status::available)
 		{

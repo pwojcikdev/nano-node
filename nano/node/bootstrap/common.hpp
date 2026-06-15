@@ -1,8 +1,12 @@
 #pragma once
 
+#include <nano/lib/numbers.hpp>
 #include <nano/lib/stats_enums.hpp>
 
+#include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <span>
 #include <string_view>
 
 namespace nano::bootstrap
@@ -37,6 +41,14 @@ enum class verify_result
 	ok,
 	nothing_new,
 	invalid,
+};
+
+enum class peer_probe_status;
+
+struct peer_probes
+{
+	std::function<peer_probe_status (std::span<nano::account const> exclude)> peer_status;
+	std::function<size_t (std::span<id_t const> tag_ids)> count_inflight;
 };
 
 nano::stat::detail to_stat_detail (nano::bootstrap::query_type);

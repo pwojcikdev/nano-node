@@ -63,7 +63,7 @@ struct test_context
 		engine.orient ({});
 	}
 
-	nano::bootstrap::topo_scan_engine::probes probes ()
+	nano::bootstrap::peer_probes probes ()
 	{
 		return {
 			.peer_status = peer_status,
