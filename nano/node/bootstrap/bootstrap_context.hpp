@@ -105,8 +105,6 @@ public:
 	// Placeholder channel used as a fair-queue partition key so the block processor equalizes ingest across strategies
 	std::shared_ptr<nano::transport::channel> const & block_processor_channel (nano::bootstrap::strategy) const;
 
-	// Waits for a channel that is not full. Applies the per-strategy rate limiter.
-	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy);
 	launch_grant acquire_launch (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}, std::size_t token_cost = 1);
 
 	enum class conclusion

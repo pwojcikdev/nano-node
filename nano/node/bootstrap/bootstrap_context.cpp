@@ -415,14 +415,6 @@ std::shared_ptr<nano::transport::channel> const & bootstrap_context::block_proce
 	release_assert (false);
 }
 
-std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::strategy strat)
-{
-	auto grant = wait_result ([this, strat] () {
-		return acquire_launch (strat);
-	});
-	return grant.channel;
-}
-
 launch_grant bootstrap_context::acquire_launch (nano::bootstrap::strategy strat, nano::node_capabilities_flags required, std::span<nano::account const> exclude, std::size_t token_cost)
 {
 	debug_assert (!mutex.try_lock ());
