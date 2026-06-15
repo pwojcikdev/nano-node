@@ -24,6 +24,7 @@
 #include <chrono>
 #include <memory>
 #include <thread>
+#include <type_traits>
 
 namespace mi = boost::multi_index;
 
@@ -66,6 +67,19 @@ public:
 
 	// Waits for a condition to be satisfied with incremental backoff
 	void wait (std::function<bool ()> const & predicate) const;
+
+	template <typename ResultProvider>
+	auto wait_result (ResultProvider && provider) const -> std::invoke_result_t<ResultProvider &>
+	{
+		using result_type = std::invoke_result_t<ResultProvider &>;
+
+		result_type result{};
+		wait ([&] () {
+			result = provider ();
+			return static_cast<bool> (result);
+		});
+		return result;
+	}
 
 	// Wait until there is enough space in block_processor for new blocks
 	void wait_block_processor (nano::bootstrap::strategy, std::size_t threshold) const;
