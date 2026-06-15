@@ -475,6 +475,16 @@ launch_grant bootstrap_context::acquire (nano::bootstrap::strategy strat, nano::
 	return grant;
 }
 
+launch_grant bootstrap_context::acquire (nano::bootstrap::strategy strat, nano::node_capabilities_flags required, nano::bootstrap::round & round, std::chrono::steady_clock::time_point now, std::size_t token_cost)
+{
+	auto grant = acquire (strat, required, round.exclude (), token_cost);
+	if (grant)
+	{
+		round.reserve (grant.node_id, grant.id, now);
+	}
+	return grant;
+}
+
 size_t bootstrap_context::count_tags (nano::account const & account, strategy source) const
 {
 	debug_assert (!mutex.try_lock ());

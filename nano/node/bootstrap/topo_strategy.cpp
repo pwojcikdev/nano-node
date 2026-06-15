@@ -264,14 +264,13 @@ std::optional<topo_strategy::page_wait_result> topo_strategy::next_page_or_ready
 		return std::nullopt;
 	}
 
-	auto grant = ctx.acquire (strategy::topo, topo_capability (), round->exclude ());
+	auto grant = ctx.acquire (strategy::topo, topo_capability (), *round, now);
 	if (!grant)
 	{
 		ctx.stats.inc (nano::stat::type::bootstrap_topo_scan, to_stat_detail (grant.peer_status));
 		return std::nullopt;
 	}
 
-	round->reserve (grant.node_id, grant.id, now);
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::topo_index);
 	return page_wait_result{ page_wait_result::kind::launch, page_launch{ grant.channel, round->position (), grant.id } };
 }

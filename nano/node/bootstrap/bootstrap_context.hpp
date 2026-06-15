@@ -106,6 +106,7 @@ public:
 	std::shared_ptr<nano::transport::channel> const & block_processor_channel (nano::bootstrap::strategy) const;
 
 	launch_grant acquire (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}, std::size_t token_cost = 1);
+	launch_grant acquire (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required, nano::bootstrap::round &, std::chrono::steady_clock::time_point now, std::size_t token_cost = 1);
 
 	enum class conclusion
 	{
