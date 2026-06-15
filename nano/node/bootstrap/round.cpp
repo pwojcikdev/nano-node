@@ -46,7 +46,7 @@ bool round::erase (id_t tag_id)
 	return true;
 }
 
-void round::reserve_sample (nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now)
+void round::reserve (nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now)
 {
 	debug_assert (!owns (tag_id));
 	debug_assert (std::find (used_m.begin (), used_m.end (), node_id) == used_m.end ());

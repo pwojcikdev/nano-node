@@ -23,7 +23,7 @@ public:
 
 	bool owns (id_t tag_id) const;
 	bool erase (id_t tag_id);
-	void reserve_sample (nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now);
+	void reserve (nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now);
 
 protected:
 	round () = default;

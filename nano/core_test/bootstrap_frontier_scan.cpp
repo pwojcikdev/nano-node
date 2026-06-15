@@ -62,7 +62,7 @@ struct test_context
 
 	void commit (std::shared_ptr<nano::bootstrap::frontier_round> const & round, nano::account node_id, nano::bootstrap::id_t id)
 	{
-		round->reserve_sample (node_id, id, now);
+		round->reserve (node_id, id, now);
 		live_tags.insert (id);
 	}
 

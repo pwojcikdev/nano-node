@@ -114,7 +114,7 @@ std::optional<frontier_strategy::launch_result> frontier_strategy::next_frontier
 		return std::nullopt;
 	}
 
-	round->reserve_sample (grant.node_id, grant.id, now);
+	round->reserve (grant.node_id, grant.id, now);
 
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_frontier);
 	return launch_result{ grant.channel, round->position (), grant.id };
