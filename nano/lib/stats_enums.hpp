@@ -105,6 +105,7 @@ enum class type
 	bootstrap_frontiers,
 	bootstrap_account_sets,
 	bootstrap_frontier_scan,
+	bootstrap_frontier_wait,
 	bootstrap_verify_topo,
 	bootstrap_topo_scan,
 	bootstrap_timeout,
@@ -650,6 +651,10 @@ enum class detail
 
 	request_blocks,
 	request_account_info,
+
+	wait_priority,
+	wait_workers,
+	wait_slot,
 
 	// bootstrap pull start point
 	from_frontier,

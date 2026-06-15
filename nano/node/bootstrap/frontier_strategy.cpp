@@ -86,33 +86,36 @@ std::optional<frontier_strategy::launch_result> frontier_strategy::next_frontier
 	debug_assert (!ctx.mutex.try_lock ());
 
 	auto const now = std::chrono::steady_clock::now ();
+
 	ctx.frontiers.settle (now, probes);
 
 	if (ctx.accounts.priority_half_full ())
 	{
+		ctx.stats.inc (nano::stat::type::bootstrap_frontier_wait, nano::stat::detail::wait_priority);
 		return std::nullopt;
 	}
 	if (workers.queued_tasks () >= ctx.config.frontier_scan.max_pending)
 	{
+		ctx.stats.inc (nano::stat::type::bootstrap_frontier_wait, nano::stat::detail::wait_workers);
 		return std::nullopt;
 	}
+
 	auto slot = ctx.frontiers.peek_launch (now, probes);
 	if (!slot)
 	{
+		ctx.stats.inc (nano::stat::type::bootstrap_frontier_wait, nano::stat::detail::wait_slot);
 		return std::nullopt;
 	}
 
 	auto grant = ctx.acquire_launch (strategy::frontier, {}, slot->exclude);
 	if (!grant)
 	{
-		if (grant.peer_status == peer_acquire_status::busy)
-		{
-			ctx.stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::busy);
-		}
+		ctx.stats.inc (nano::stat::type::bootstrap_frontier_wait, to_stat_detail (grant.peer_status));
 		return std::nullopt;
 	}
 
 	ctx.frontiers.commit (slot->head_index, slot->position, grant.node_id, grant.id, now);
+
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_frontier);
 	return launch_result{ grant.channel, slot->position, grant.id };
 }
