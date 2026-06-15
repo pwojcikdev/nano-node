@@ -99,34 +99,25 @@ std::optional<frontier_strategy::launch_result> frontier_strategy::next_frontier
 	{
 		return std::nullopt;
 	}
-	if (ctx.tags.size () >= ctx.config.max_requests)
-	{
-		return std::nullopt;
-	}
-
 	auto slot = ctx.frontiers.peek_launch (now, probes);
 	if (!slot)
 	{
 		return std::nullopt;
 	}
 
-	if (!ctx.frontier_limiter.should_pass (1))
+	auto grant = ctx.acquire_launch (strategy::frontier, {}, slot->exclude);
+	if (!grant)
 	{
+		if (grant.peer_status == peer_acquire_status::busy)
+		{
+			ctx.stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::busy);
+		}
 		return std::nullopt;
 	}
 
-	auto result = ctx.peers.acquire ({}, slot->exclude);
-	if (result.status != peer_acquire_status::acquired)
-	{
-		debug_assert (result.status == peer_acquire_status::busy);
-		ctx.stats.inc (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::busy);
-		return std::nullopt;
-	}
-
-	auto id = generate_id ();
-	ctx.frontiers.commit (slot->head_index, slot->position, result.node_id, id, now);
+	ctx.frontiers.commit (slot->head_index, slot->position, grant.node_id, grant.id, now);
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_frontier);
-	return launch_result{ result.channel, slot->position, id };
+	return launch_result{ grant.channel, slot->position, grant.id };
 }
 
 bool frontier_strategy::process (nano::messages::asc_pull_ack::frontiers_payload const & response, async_tag const & tag)
