@@ -56,7 +56,7 @@ private:
 	bool try_submit ();
 	bool try_fetch ();
 	bool try_page_or_wait ();
-	std::optional<fetch_launch> next_fetch_launch ();
+	std::optional<fetch_launch> next_fetch_launch (std::deque<nano::block_hash> const & missing);
 	std::optional<page_wait_result> peek_page_or_ready ();
 
 	bootstrap_context & ctx;

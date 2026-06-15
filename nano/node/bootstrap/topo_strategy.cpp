@@ -200,8 +200,8 @@ bool topo_strategy::try_fetch ()
 		return true;
 	}
 
-	auto launch = ctx.wait_result ([this] () {
-		return next_fetch_launch ();
+	auto launch = ctx.wait_result ([this, &missing] () {
+		return next_fetch_launch (missing);
 	});
 
 	if (!launch)
@@ -209,40 +209,27 @@ bool topo_strategy::try_fetch ()
 		return false;
 	}
 
-	{
-		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-		ctx.topologies.commit_fetch (missing, {}, launch->id, std::chrono::steady_clock::now ());
-	}
-
 	blocks_random_query query{ .hashes = missing };
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::blocks_random);
 	return ctx.send (launch->channel, query, strategy::topo, launch->id);
 }
 
-std::optional<topo_strategy::fetch_launch> topo_strategy::next_fetch_launch ()
+std::optional<topo_strategy::fetch_launch> topo_strategy::next_fetch_launch (std::deque<nano::block_hash> const & missing)
 {
 	debug_assert (!ctx.mutex.try_lock ());
 
-	if (ctx.tags.size () >= ctx.config.max_requests)
+	auto grant = ctx.acquire_launch (strategy::topo, topo_capability ());
+	if (!grant)
 	{
-		return std::nullopt;
-	}
-	if (!ctx.topology_limiter.should_pass (1))
-	{
-		return std::nullopt;
-	}
-
-	auto result = ctx.peers.acquire (topo_capability ());
-	if (result.status != peer_acquire_status::acquired)
-	{
-		if (result.status == peer_acquire_status::busy)
+		if (grant.peer_status == peer_acquire_status::busy)
 		{
 			ctx.stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::busy);
 		}
 		return std::nullopt;
 	}
 
-	return fetch_launch{ result.channel, generate_id () };
+	ctx.topologies.commit_fetch (missing, {}, grant.id, std::chrono::steady_clock::now ());
+	return fetch_launch{ grant.channel, grant.id };
 }
 
 bool topo_strategy::try_page_or_wait ()
@@ -277,35 +264,25 @@ std::optional<topo_strategy::page_wait_result> topo_strategy::peek_page_or_ready
 	{
 		return page_wait_result{ page_wait_result::kind::ready, {} };
 	}
-	if (ctx.tags.size () >= ctx.config.max_requests)
-	{
-		return std::nullopt;
-	}
-
 	auto slot = ctx.topologies.peek_page (now, probes);
 	if (!slot)
 	{
 		return std::nullopt;
 	}
-	if (!ctx.topology_limiter.should_pass (1))
-	{
-		return std::nullopt;
-	}
 
-	auto result = ctx.peers.acquire (topo_capability (), slot->exclude);
-	if (result.status != peer_acquire_status::acquired)
+	auto grant = ctx.acquire_launch (strategy::topo, topo_capability (), slot->exclude);
+	if (!grant)
 	{
-		if (result.status == peer_acquire_status::busy)
+		if (grant.peer_status == peer_acquire_status::busy)
 		{
 			ctx.stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::busy);
 		}
 		return std::nullopt;
 	}
 
-	auto id = generate_id ();
-	ctx.topologies.commit_page (slot->head_index, slot->start, result.node_id, id, now);
+	ctx.topologies.commit_page (slot->head_index, slot->start, grant.node_id, grant.id, now);
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::topo_index);
-	return page_wait_result{ page_wait_result::kind::launch, page_launch{ result.channel, slot->start, id } };
+	return page_wait_result{ page_wait_result::kind::launch, page_launch{ grant.channel, slot->start, grant.id } };
 }
 
 bool topo_strategy::process (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag)
