@@ -406,7 +406,7 @@ std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano:
 
 	// Wait until more requests can be sent (per-strategy rate limit)
 	wait ([&strategy_limiter] () {
-		return strategy_limiter.should_pass (1);
+		return strategy_limiter.try_consume (1);
 	});
 
 	// Wait until a channel is available
