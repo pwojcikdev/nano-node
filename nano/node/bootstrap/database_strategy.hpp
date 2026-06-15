@@ -17,10 +17,16 @@ public:
 	void run_one (bool should_throttle);
 
 private:
+	struct launch_result
+	{
+		blocks_query query;
+		launch_grant grant;
+	};
+
 	void run ();
 
-	std::optional<blocks_query> next_database (bool should_throttle);
-	std::optional<blocks_query> wait_database (bool should_throttle);
+	std::optional<launch_result> next_database (bool should_throttle);
+	std::optional<launch_result> wait_database (bool should_throttle);
 
 	bootstrap_context & ctx;
 	std::thread thread;

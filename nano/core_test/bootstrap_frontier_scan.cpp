@@ -1,242 +1,328 @@
-#include <nano/lib/blocks.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
-#include <nano/lib/tomlconfig.hpp>
-#include <nano/node/bootstrap/bootstrap_service.hpp>
-#include <nano/node/bootstrap/frontier_scan_index.hpp>
-#include <nano/test_common/system.hpp>
-#include <nano/test_common/testutil.hpp>
+#include <nano/node/bootstrap/frontier_scan.hpp>
+#include <nano/node/bootstrap/peer_pool.hpp>
 
 #include <gtest/gtest.h>
 
-#include <sstream>
+#include <algorithm>
+#include <chrono>
+#include <functional>
+#include <set>
 
 using namespace std::chrono_literals;
 
 namespace
 {
+std::deque<std::pair<nano::account, nano::block_hash>> frontiers (std::initializer_list<uint64_t> accounts)
+{
+	std::deque<std::pair<nano::account, nano::block_hash>> result;
+	for (auto account : accounts)
+	{
+		result.push_back ({ nano::account{ account }, nano::block_hash{ account } });
+	}
+	return result;
+}
+
 struct test_context
 {
-	nano::stats stats;
+	nano::stats stats{ nano::default_logger () };
 	nano::frontier_scan_config config;
-	nano::bootstrap::frontier_scan_index frontier_scan;
+	nano::bootstrap::frontier_scan_engine engine;
+	std::chrono::steady_clock::time_point now{};
+	std::set<nano::bootstrap::id_t> live_tags;
+	std::function<nano::bootstrap::peer_probe_status (std::span<nano::account const>)> peer_status;
 
 	explicit test_context (nano::frontier_scan_config config_a = {}) :
-		stats{ nano::default_logger () },
 		config{ config_a },
-		frontier_scan{ config, stats }
+		engine{ config, stats },
+		peer_status{ [] (std::span<nano::account const>) {
+			return nano::bootstrap::peer_probe_status::available;
+		} }
 	{
+	}
+
+	nano::bootstrap::peer_probes probes ()
+	{
+		return {
+			.peer_status = peer_status,
+			.count_inflight = [this] (std::span<nano::bootstrap::id_t const> tag_ids) {
+				return static_cast<size_t> (std::count_if (tag_ids.begin (), tag_ids.end (), [this] (auto id) {
+					return live_tags.contains (id);
+				}));
+			},
+		};
+	}
+
+	std::shared_ptr<nano::bootstrap::frontier_round> next ()
+	{
+		auto round = engine.next_round (now, probes ());
+		release_assert (round != nullptr);
+		return round;
+	}
+
+	void commit (std::shared_ptr<nano::bootstrap::frontier_round> const & round, nano::account node_id, nano::bootstrap::id_t id)
+	{
+		round->reserve (node_id, id, now);
+		live_tags.insert (id);
+	}
+
+	bool feed (nano::bootstrap::id_t id, nano::account const & start, std::deque<std::pair<nano::account, nano::block_hash>> const & response)
+	{
+		live_tags.erase (id);
+		return engine.process (id, start, response);
 	}
 };
 }
 
-TEST (bootstrap_frontier_scan, construction)
-{
-	test_context ctx{};
-	auto & frontier_scan = ctx.frontier_scan;
-}
-
-TEST (bootstrap_frontier_scan, next_basic)
+TEST (bootstrap_frontier_round, quorum_done)
 {
 	nano::frontier_scan_config config;
-	config.head_parallelism = 2; // Two heads for simpler testing
 	config.consideration_count = 3;
-	test_context ctx{ config };
-	auto & frontier_scan = ctx.frontier_scan;
+	config.candidates = 8;
+	nano::bootstrap::frontier_round round{ config, nano::account{ 1 }, nano::account{ 100 } };
 
-	// First call should return first head, account number 1 (avoiding burn account 0)
-	auto first = frontier_scan.next ();
-	ASSERT_EQ (first.number (), 1);
+	round.feed (frontiers ({ 2, 3 }));
+	round.feed (frontiers ({ 2, 4 }));
+	ASSERT_FALSE (round.done ());
 
-	// Second call should return second head, account number 0x7FF... (half the range)
-	auto second = frontier_scan.next ();
-	ASSERT_EQ (second.number (), nano::account{ "7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF" });
-
-	// Third call should return first head again, sequentially iterating through heads
-	auto third = frontier_scan.next ();
-	ASSERT_EQ (third.number (), 1);
+	round.feed (frontiers ({ 3, 5 }));
+	ASSERT_TRUE (round.done ());
+	ASSERT_EQ (round.conclude (), nano::account{ 5 });
 }
 
-TEST (bootstrap_frontier_scan, process_basic)
+TEST (bootstrap_frontier_round, empty_range)
 {
 	nano::frontier_scan_config config;
-	config.head_parallelism = 1; // Single head for simpler testing
-	config.consideration_count = 3;
-	config.candidates = 5;
-	test_context ctx{ config };
-	auto & frontier_scan = ctx.frontier_scan;
-
-	// Get initial account to scan
-	auto start = frontier_scan.next ();
-	ASSERT_EQ (start.number (), 1);
-
-	// Create response with some frontiers
-	std::deque<std::pair<nano::account, nano::block_hash>> response;
-	response.push_back ({ nano::account{ 2 }, nano::block_hash{ 1 } });
-	response.push_back ({ nano::account{ 3 }, nano::block_hash{ 2 } });
-
-	// Process should not be done until consideration_count is reached
-	ASSERT_FALSE (frontier_scan.process (start, response));
-	ASSERT_FALSE (frontier_scan.process (start, response));
-
-	// Head should not advance before reaching `consideration_count` responses
-	ASSERT_EQ (frontier_scan.next (), 1);
-
-	// After consideration_count responses, should be done
-	ASSERT_TRUE (frontier_scan.process (start, response));
-
-	// Head should advance to next account and start subsequent scan from there
-	ASSERT_EQ (frontier_scan.next (), 3);
-}
-
-TEST (bootstrap_frontier_scan, range_wrap_around)
-{
-	nano::frontier_scan_config config;
-	config.head_parallelism = 1;
-	config.consideration_count = 1;
-	config.candidates = 1;
-	test_context ctx{ config };
-	auto & frontier_scan = ctx.frontier_scan;
-
-	auto start = frontier_scan.next ();
-
-	// Create response that would push next beyond the range end
-	std::deque<std::pair<nano::account, nano::block_hash>> response;
-	response.push_back ({ nano::account{ std::numeric_limits<nano::uint256_t>::max () }, nano::block_hash{ 1 } });
-
-	// Process should succeed and wrap around
-	ASSERT_TRUE (frontier_scan.process (start, response));
-
-	// Next account should be back at start of range
-	auto next = frontier_scan.next ();
-	ASSERT_EQ (next.number (), 1);
-}
-
-TEST (bootstrap_frontier_scan, cooldown)
-{
-	nano::frontier_scan_config config;
-	config.head_parallelism = 1;
-	config.consideration_count = 1;
-	config.cooldown = 250ms;
-	test_context ctx{ config };
-	auto & frontier_scan = ctx.frontier_scan;
-
-	// First call should succeed
-	auto first = frontier_scan.next ();
-	ASSERT_NE (first.number (), 0);
-
-	// Immediate second call should fail (return 0)
-	auto second = frontier_scan.next ();
-	ASSERT_EQ (second.number (), 0);
-
-	// After cooldown, should succeed again
-	std::this_thread::sleep_for (500ms);
-	auto third = frontier_scan.next ();
-	ASSERT_NE (third.number (), 0);
-}
-
-TEST (bootstrap_frontier_scan, candidate_trimming)
-{
-	nano::frontier_scan_config config;
-	config.head_parallelism = 1;
 	config.consideration_count = 2;
-	config.candidates = 3; // Only keep the lowest candidates
-	test_context ctx{ config };
-	auto & frontier_scan = ctx.frontier_scan;
+	nano::bootstrap::frontier_round round{ config, nano::account{ 1 }, nano::account{ 100 } };
 
-	auto start = frontier_scan.next ();
-	ASSERT_EQ (start.number (), 1);
+	round.feed ({});
+	round.feed ({});
+	round.feed ({});
+	ASSERT_FALSE (round.empty_range ());
 
-	// Create response with more candidates than limit
-	// Response contains: 1, 4, 7, 10
-	std::deque<std::pair<nano::account, nano::block_hash>> response1;
-	for (int i = 0; i <= 9; i += 3)
-	{
-		response1.push_back ({ nano::account{ start.number () + i }, nano::block_hash{ static_cast<uint64_t> (i) } });
-	}
-	ASSERT_FALSE (frontier_scan.process (start, response1));
-
-	// Response contains: 1, 3, 5, 7, 9
-	std::deque<std::pair<nano::account, nano::block_hash>> response2;
-	for (int i = 0; i <= 8; i += 2)
-	{
-		response2.push_back ({ nano::account{ start.number () + i }, nano::block_hash{ static_cast<uint64_t> (i) } });
-	}
-	ASSERT_TRUE (frontier_scan.process (start, response2));
-
-	// After processing replies candidates should be ordered and trimmed
-	auto next = frontier_scan.next ();
-	ASSERT_EQ (next.number (), 5);
+	round.feed ({});
+	ASSERT_TRUE (round.empty_range ());
+	ASSERT_EQ (round.conclude (), nano::account{ 100 });
 }
 
-TEST (bootstrap_frontier_scan, heads_distribution)
+TEST (bootstrap_frontier_round, trim_keeps_smallest_candidates)
 {
 	nano::frontier_scan_config config;
-	config.head_parallelism = 4;
-	test_context ctx{ config };
-	auto & frontier_scan = ctx.frontier_scan;
+	config.consideration_count = 1;
+	config.candidates = 3;
+	nano::bootstrap::frontier_round round{ config, nano::account{ 1 }, nano::account{ 100 } };
 
-	// Collect initial accounts from each head
-	std::vector<nano::account> initial_accounts;
-	for (int i = 0; i < 4; i++)
-	{
-		initial_accounts.push_back (frontier_scan.next ());
-	}
+	round.feed (frontiers ({ 2, 5, 9, 4 }));
 
-	// Verify accounts are properly distributed across the range
-	for (size_t i = 1; i < initial_accounts.size (); i++)
-	{
-		ASSERT_GT (initial_accounts[i].number (), initial_accounts[i - 1].number ());
-	}
+	ASSERT_EQ (round.candidate_count (), 3);
+	ASSERT_EQ (round.conclude (), nano::account{ 5 });
 }
 
-TEST (bootstrap_frontier_scan, invalid_response_ordering)
+TEST (bootstrap_frontier_scan, eager_fanout_tracks_distinct_peers)
 {
 	nano::frontier_scan_config config;
 	config.head_parallelism = 1;
-	config.consideration_count = 1;
+	config.consideration_count = 3;
 	test_context ctx{ config };
-	auto & frontier_scan = ctx.frontier_scan;
 
-	auto start = frontier_scan.next ();
+	auto first = ctx.next ();
+	ASSERT_EQ (first->position (), nano::account{ 1 });
+	ASSERT_TRUE (first->exclude ().empty ());
+	ctx.commit (first, nano::account{ 10 }, 1);
 
-	// Create response with out-of-order accounts
-	std::deque<std::pair<nano::account, nano::block_hash>> response;
-	response.push_back ({ nano::account{ start.number () + 2 }, nano::block_hash{ 1 } });
-	response.push_back ({ nano::account{ start.number () + 1 }, nano::block_hash{ 2 } }); // Out of order
+	auto second = ctx.next ();
+	ASSERT_EQ (second->position (), first->position ());
+	ASSERT_EQ (second->exclude ().size (), 1);
+	ASSERT_EQ (second->exclude ()[0], nano::account{ 10 });
+	ctx.commit (second, nano::account{ 11 }, 2);
 
-	// Should still process successfully
-	ASSERT_TRUE (frontier_scan.process (start, response));
-	ASSERT_EQ (frontier_scan.next (), start.number () + 2);
+	auto third = ctx.next ();
+	ASSERT_EQ (third->exclude ().size (), 2);
+	ASSERT_EQ (third->exclude ()[0], nano::account{ 10 });
+	ASSERT_EQ (third->exclude ()[1], nano::account{ 11 });
+	ctx.commit (third, nano::account{ 12 }, 3);
+
+	ASSERT_EQ (ctx.engine.next_round (ctx.now, ctx.probes ()), nullptr);
 }
 
-TEST (bootstrap_frontier_scan, empty_responses)
+TEST (bootstrap_frontier_scan, next_round_reuses_unreserved_round)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 2;
+	test_context ctx{ config };
+
+	auto first = ctx.next ();
+	auto second = ctx.next ();
+
+	ASSERT_EQ (second, first);
+	ASSERT_EQ (second->position (), first->position ());
+}
+
+TEST (bootstrap_frontier_scan, quorum_settles_clean)
 {
 	nano::frontier_scan_config config;
 	config.head_parallelism = 1;
 	config.consideration_count = 2;
 	test_context ctx{ config };
-	auto & frontier_scan = ctx.frontier_scan;
 
-	auto start = frontier_scan.next ();
+	auto first = ctx.next ();
+	ctx.commit (first, nano::account{ 10 }, 1);
+	auto second = ctx.next ();
+	ctx.commit (second, nano::account{ 11 }, 2);
 
-	// Empty response should not advance head even after receiving `consideration_count` responses
-	std::deque<std::pair<nano::account, nano::block_hash>> empty_response;
-	ASSERT_FALSE (frontier_scan.process (start, empty_response));
-	ASSERT_FALSE (frontier_scan.process (start, empty_response));
-	ASSERT_EQ (frontier_scan.next (), start);
+	ASSERT_TRUE (ctx.feed (1, first->position (), frontiers ({ 2 })));
+	ASSERT_TRUE (ctx.feed (2, first->position (), frontiers ({ 3 })));
+	ctx.engine.settle (ctx.now, ctx.probes ());
 
-	// Let the head advance
-	std::deque<std::pair<nano::account, nano::block_hash>> response;
-	response.push_back ({ nano::account{ start.number () + 1 }, nano::block_hash{ 1 } });
-	ASSERT_TRUE (frontier_scan.process (start, response));
-	ASSERT_EQ (frontier_scan.next (), start.number () + 1);
+	auto next = ctx.next ();
+	ASSERT_EQ (next->position (), nano::account{ 3 });
+}
 
-	// However, after receiving enough empty responses, head should wrap around to the start
-	ASSERT_FALSE (frontier_scan.process (start, empty_response));
-	ASSERT_FALSE (frontier_scan.process (start, empty_response));
-	ASSERT_FALSE (frontier_scan.process (start, empty_response));
-	ASSERT_EQ (frontier_scan.next (), start.number () + 1);
-	ASSERT_TRUE (frontier_scan.process (start, empty_response));
-	ASSERT_EQ (frontier_scan.next (), start); // Wraps around
+TEST (bootstrap_frontier_scan, exhausted_partial_concludes_after_response)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 1;
+	config.consideration_count = 4;
+	test_context ctx{ config };
+
+	auto first = ctx.next ();
+	ctx.commit (first, nano::account{ 10 }, 1);
+	ctx.peer_status = [] (std::span<nano::account const> exclude) {
+		return exclude.empty () ? nano::bootstrap::peer_probe_status::available : nano::bootstrap::peer_probe_status::none;
+	};
+
+	ASSERT_TRUE (ctx.feed (1, first->position (), frontiers ({ 2 })));
+	ctx.engine.settle (ctx.now, ctx.probes ());
+
+	ASSERT_EQ (ctx.engine.next_round (ctx.now, ctx.probes ()), nullptr);
+	ctx.now += config.cooldown;
+	auto next = ctx.next ();
+	ASSERT_EQ (next->position (), nano::account{ 2 });
+}
+
+TEST (bootstrap_frontier_scan, exhausted_empty_wraps_with_partial_stat)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 1;
+	config.consideration_count = 4;
+	test_context ctx{ config };
+
+	auto first = ctx.next ();
+	ctx.commit (first, nano::account{ 10 }, 1);
+	ctx.peer_status = [] (std::span<nano::account const> exclude) {
+		return exclude.empty () ? nano::bootstrap::peer_probe_status::available : nano::bootstrap::peer_probe_status::none;
+	};
+
+	ASSERT_TRUE (ctx.feed (1, first->position (), {}));
+	ctx.engine.settle (ctx.now, ctx.probes ());
+
+	ctx.now += config.cooldown;
+	auto next = ctx.next ();
+	ASSERT_EQ (next->position (), nano::account{ 1 });
+}
+
+TEST (bootstrap_frontier_scan, ride_out_inflight_before_done_none)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 1;
+	config.consideration_count = 4;
+	test_context ctx{ config };
+
+	auto first = ctx.next ();
+	ctx.commit (first, nano::account{ 10 }, 1);
+	ctx.peer_status = [] (std::span<nano::account const> exclude) {
+		return exclude.empty () ? nano::bootstrap::peer_probe_status::available : nano::bootstrap::peer_probe_status::none;
+	};
+
+	ctx.engine.settle (ctx.now, ctx.probes ());
+	ASSERT_EQ (ctx.engine.next_round (ctx.now, ctx.probes ()), nullptr);
+
+	ctx.live_tags.erase (1);
+	ctx.engine.settle (ctx.now, ctx.probes ());
+	ctx.now += config.cooldown;
+	auto retry = ctx.next ();
+	ASSERT_EQ (retry->position (), first->position ());
+}
+
+TEST (bootstrap_frontier_scan, straggler_rejected_after_settlement)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 1;
+	config.consideration_count = 2;
+	test_context ctx{ config };
+
+	auto first = ctx.next ();
+	ctx.commit (first, nano::account{ 10 }, 1);
+	auto second = ctx.next ();
+	ctx.commit (second, nano::account{ 11 }, 2);
+
+	ctx.now += config.cooldown;
+	auto third = ctx.next ();
+	ctx.commit (third, nano::account{ 12 }, 3);
+
+	ASSERT_TRUE (ctx.feed (1, first->position (), frontiers ({ 2 })));
+	ASSERT_TRUE (ctx.feed (2, first->position (), frontiers ({ 3 })));
+	ctx.engine.settle (ctx.now, ctx.probes ());
+
+	ASSERT_FALSE (ctx.feed (3, first->position (), frontiers ({ 4 })));
+	auto next = ctx.next ();
+	ASSERT_EQ (next->position (), nano::account{ 3 });
+}
+
+TEST (bootstrap_frontier_scan, retry_round_ignores_predecessor_id)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 1;
+	config.consideration_count = 4;
+	test_context ctx{ config };
+
+	auto first = ctx.next ();
+	ctx.commit (first, nano::account{ 10 }, 1);
+	ctx.peer_status = [] (std::span<nano::account const> exclude) {
+		return exclude.empty () ? nano::bootstrap::peer_probe_status::available : nano::bootstrap::peer_probe_status::none;
+	};
+	ctx.live_tags.erase (1);
+	ctx.engine.settle (ctx.now, ctx.probes ());
+
+	ctx.now += config.cooldown;
+	auto retry = ctx.next ();
+	ctx.commit (retry, nano::account{ 10 }, 2);
+
+	ASSERT_FALSE (ctx.engine.process (1, first->position (), frontiers ({ 2 })));
+	ASSERT_TRUE (ctx.feed (2, retry->position (), frontiers ({ 2 })));
+}
+
+TEST (bootstrap_frontier_scan, busy_head_is_skipped)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 2;
+	config.consideration_count = 4;
+	test_context ctx{ config };
+
+	auto first = ctx.next ();
+	ctx.commit (first, nano::account{ 10 }, 1);
+	ctx.peer_status = [] (std::span<nano::account const> exclude) {
+		return exclude.empty () ? nano::bootstrap::peer_probe_status::available : nano::bootstrap::peer_probe_status::busy;
+	};
+
+	auto next = ctx.next ();
+	ASSERT_NE (next, first);
+	ASSERT_TRUE (next->exclude ().empty ());
+}
+
+TEST (bootstrap_frontier_scan, erase_sample_after_reset_is_noop)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 1;
+	test_context ctx{ config };
+
+	auto first = ctx.next ();
+	ctx.commit (first, nano::account{ 10 }, 1);
+	ctx.engine.reset ();
+
+	ctx.engine.erase_sample (1, first->position ());
+	auto next = ctx.next ();
+	ASSERT_EQ (next->position (), nano::account{ 1 });
 }

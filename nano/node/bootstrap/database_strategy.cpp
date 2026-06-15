@@ -42,46 +42,43 @@ void database_strategy::run_one (bool should_throttle)
 {
 	ctx.wait_block_processor (strategy::database, ctx.config.block_processor_threshold);
 
-	auto channel = ctx.wait_channel (strategy::database);
-	if (!channel)
-	{
-		return;
-	}
-
-	auto query = wait_database (should_throttle);
-	if (!query)
+	auto launch = wait_database (should_throttle);
+	if (!launch)
 	{
 		return;
 	}
 
 	// The database scan always issues safe requests; record the pull start point
-	ctx.stats.inc (nano::stat::type::bootstrap_database, query->type == query_type::blocks_by_hash ? nano::stat::detail::from_confirmed : nano::stat::detail::from_open);
+	ctx.stats.inc (nano::stat::type::bootstrap_database, launch->query.type == query_type::blocks_by_hash ? nano::stat::detail::from_confirmed : nano::stat::detail::from_open);
 
-	ctx.send (channel, *query, strategy::database);
+	ctx.send (launch->grant.channel, launch->query, strategy::database, launch->grant.id);
 }
 
-std::optional<blocks_query> database_strategy::next_database (bool should_throttle)
+std::optional<database_strategy::launch_result> database_strategy::next_database (bool should_throttle)
 {
 	debug_assert (!ctx.mutex.try_lock ());
 	debug_assert (ctx.config.database_warmup_ratio > 0);
 
-	// Throttling consumes extra tokens from the database limiter on top of the one already consumed in wait_channel
-	if (should_throttle && !ctx.database_limiter.try_consume (ctx.config.database_warmup_ratio))
-	{
-		return std::nullopt;
-	}
-	auto query = ctx.database_scan.next ([this] (nano::account const & account) {
+	auto query = ctx.database_scan.peek ([this] (nano::account const & account) {
 		return ctx.count_tags (account, strategy::database) == 0;
 	});
 	if (!query)
 	{
 		return std::nullopt;
 	}
+
+	auto token_cost = should_throttle ? ctx.config.database_warmup_ratio : 1;
+	auto grant = ctx.acquire (strategy::database, {}, {}, token_cost);
+	if (!grant)
+	{
+		return std::nullopt;
+	}
+
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_database);
-	return query;
+	return launch_result{ ctx.database_scan.consume (*query), grant };
 }
 
-std::optional<blocks_query> database_strategy::wait_database (bool should_throttle)
+std::optional<database_strategy::launch_result> database_strategy::wait_database (bool should_throttle)
 {
 	return ctx.wait_result ([this, should_throttle] () {
 		return next_database (should_throttle);

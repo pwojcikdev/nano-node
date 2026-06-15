@@ -5,6 +5,7 @@
 
 #include <deque>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <utility>
 
@@ -25,13 +26,20 @@ public:
 	void confirm (async_tag const & tag, std::chrono::steady_clock::time_point deadline);
 
 private:
-	void run ();
+	struct launch_result
+	{
+		std::shared_ptr<nano::transport::channel> channel;
+		nano::account position{ 0 };
+		id_t id{ 0 };
+	};
 
-	nano::account wait_frontier ();
-	bool request_frontiers (nano::account start, std::shared_ptr<nano::transport::channel> const & channel);
+	void run ();
+	std::optional<launch_result> next_frontier_launch ();
+
 	void process_frontiers (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
 
 	bootstrap_context & ctx;
+	nano::bootstrap::peer_probes probes;
 	std::thread thread;
 
 	// Dedicated pool for the frontier processing tasks (ledger reads)

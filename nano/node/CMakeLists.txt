@@ -47,6 +47,8 @@ add_library(
   bootstrap/common.cpp
   bootstrap/queries.hpp
   bootstrap/queries.cpp
+  bootstrap/round.hpp
+  bootstrap/round.cpp
   bootstrap/database_strategy.hpp
   bootstrap/database_strategy.cpp
   bootstrap/dependency_strategy.hpp
@@ -55,14 +57,16 @@ add_library(
   bootstrap/frontier_strategy.cpp
   bootstrap/frontier_scan.hpp
   bootstrap/frontier_scan.cpp
+  bootstrap/topo_scan.hpp
+  bootstrap/topo_scan.cpp
+  bootstrap/topo_strategy.hpp
+  bootstrap/topo_strategy.cpp
   bootstrap/priority_strategy.hpp
   bootstrap/priority_strategy.cpp
   bootstrap/throttle.hpp
   bootstrap/throttle.cpp
   bootstrap/database_scan_index.hpp
   bootstrap/database_scan_index.cpp
-  bootstrap/frontier_scan_index.hpp
-  bootstrap/frontier_scan_index.cpp
   bootstrap/verify.hpp
   bootstrap/verify.cpp
   bootstrap/peer_pool.hpp

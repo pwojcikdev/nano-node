@@ -3,6 +3,8 @@
 
 #include <boost/multiprecision/cpp_int.hpp>
 
+#include <set>
+
 namespace nano::bootstrap
 {
 verify_result verify (nano::messages::asc_pull_ack::blocks_payload const & response, blocks_query const & query)
@@ -85,6 +87,66 @@ verify_result verify (nano::messages::asc_pull_ack::frontiers_payload const & re
 	if (frontiers.front ().first.number () < query.start.number ())
 	{
 		return verify_result::invalid;
+	}
+
+	return verify_result::ok;
+}
+
+verify_result verify (nano::messages::asc_pull_ack::blocks_payload const & response, blocks_random_query const & query)
+{
+	if (response.blocks.empty ())
+	{
+		return verify_result::nothing_new;
+	}
+	if (response.blocks.size () > query.hashes.size ())
+	{
+		return verify_result::invalid;
+	}
+
+	std::set<nano::block_hash> requested{ query.hashes.begin (), query.hashes.end () };
+	std::set<nano::block_hash> seen;
+	for (auto const & block : response.blocks)
+	{
+		if (!block)
+		{
+			return verify_result::invalid;
+		}
+		auto const hash = block->hash ();
+		if (!requested.contains (hash) || !seen.insert (hash).second)
+		{
+			return verify_result::invalid;
+		}
+	}
+
+	return verify_result::ok;
+}
+
+verify_result verify (nano::messages::asc_pull_ack::topo_index_payload const & response, topo_index_query const & query)
+{
+	auto const & entries = response.entries;
+	if (entries.empty ())
+	{
+		return verify_result::nothing_new;
+	}
+	if (entries.size () > query.count)
+	{
+		return verify_result::invalid;
+	}
+	if (entries.front () < query.start)
+	{
+		return verify_result::invalid;
+	}
+
+	for (size_t n = 1; n < entries.size (); ++n)
+	{
+		if (!(entries[n - 1] < entries[n]))
+		{
+			return verify_result::invalid;
+		}
+		if (entries[n].topo_height > entries[n - 1].topo_height + 1)
+		{
+			return verify_result::invalid;
+		}
 	}
 
 	return verify_result::ok;

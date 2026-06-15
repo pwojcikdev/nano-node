@@ -10,10 +10,11 @@
 #include <nano/node/bootstrap/bootstrap_config.hpp>
 #include <nano/node/bootstrap/common.hpp>
 #include <nano/node/bootstrap/database_scan_index.hpp>
-#include <nano/node/bootstrap/frontier_scan_index.hpp>
+#include <nano/node/bootstrap/frontier_scan.hpp>
 #include <nano/node/bootstrap/peer_pool.hpp>
 #include <nano/node/bootstrap/queries.hpp>
 #include <nano/node/bootstrap/throttle.hpp>
+#include <nano/node/bootstrap/topo_scan.hpp>
 #include <nano/node/fwd.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
@@ -23,6 +24,7 @@
 
 #include <chrono>
 #include <memory>
+#include <span>
 #include <thread>
 #include <type_traits>
 
@@ -34,6 +36,7 @@ class priority_strategy;
 class database_strategy;
 class dependency_strategy;
 class frontier_strategy;
+class topo_strategy;
 
 struct async_tag
 {
@@ -49,6 +52,21 @@ struct async_tag
 	id_t id{ generate_id () };
 
 	query_type type () const;
+};
+
+struct launch_grant
+{
+	std::shared_ptr<nano::transport::channel> channel;
+	nano::account node_id{ 0 };
+	id_t id{ 0 };
+	peer_acquire_status peer_status{ peer_acquire_status::no_peers };
+	bool request_limited{ false };
+	bool rate_limited{ false };
+
+	explicit operator bool () const
+	{
+		return channel != nullptr;
+	}
 };
 
 class bootstrap_context
@@ -87,8 +105,8 @@ public:
 	// Placeholder channel used as a fair-queue partition key so the block processor equalizes ingest across strategies
 	std::shared_ptr<nano::transport::channel> const & block_processor_channel (nano::bootstrap::strategy) const;
 
-	// Waits for a channel that is not full. Applies the per-strategy rate limiter.
-	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy);
+	launch_grant acquire (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}, std::size_t token_cost = 1);
+	launch_grant acquire (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required, nano::bootstrap::round &, std::chrono::steady_clock::time_point now, std::size_t token_cost = 1);
 
 	enum class conclusion
 	{
@@ -151,11 +169,14 @@ public: // Strategies
 	nano::bootstrap::dependency_strategy & dependency_strat;
 	std::unique_ptr<nano::bootstrap::frontier_strategy> frontier_strat_impl;
 	nano::bootstrap::frontier_strategy & frontier_strat;
+	std::unique_ptr<nano::bootstrap::topo_strategy> topo_strat_impl;
+	nano::bootstrap::topo_strategy & topo_strat;
 
 public: // Shared state
 	nano::bootstrap::account_sets_index accounts;
 	nano::bootstrap::database_scan_index database_scan;
-	nano::bootstrap::frontier_scan_index frontiers;
+	nano::bootstrap::frontier_scan_engine frontiers;
+	nano::bootstrap::topo_scan_engine topologies;
 	nano::bootstrap::throttle throttle;
 	nano::bootstrap::peer_pool peers;
 
@@ -183,6 +204,7 @@ public: // Shared state
 	nano::rate_limiter database_limiter;
 	nano::rate_limiter dependency_limiter;
 	nano::rate_limiter frontier_limiter;
+	nano::rate_limiter topology_limiter;
 
 	// Per-strategy placeholder channels. Tagging block_processor submissions with a distinct
 	// channel per strategy gives each its own fair-queue bucket, so the processor round-robins
