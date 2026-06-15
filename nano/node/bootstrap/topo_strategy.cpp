@@ -219,10 +219,7 @@ std::optional<topo_strategy::fetch_launch> topo_strategy::next_fetch_launch (std
 	auto grant = ctx.acquire_launch (strategy::topo, topo_capability ());
 	if (!grant)
 	{
-		if (grant.peer_status == peer_acquire_status::busy)
-		{
-			ctx.stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::busy);
-		}
+		ctx.stats.inc (nano::stat::type::bootstrap_topo_scan, to_stat_detail (grant.peer_status));
 		return std::nullopt;
 	}
 
@@ -270,10 +267,7 @@ std::optional<topo_strategy::page_wait_result> topo_strategy::peek_page_or_ready
 	auto grant = ctx.acquire_launch (strategy::topo, topo_capability (), slot->exclude);
 	if (!grant)
 	{
-		if (grant.peer_status == peer_acquire_status::busy)
-		{
-			ctx.stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::busy);
-		}
+		ctx.stats.inc (nano::stat::type::bootstrap_topo_scan, to_stat_detail (grant.peer_status));
 		return std::nullopt;
 	}
 
