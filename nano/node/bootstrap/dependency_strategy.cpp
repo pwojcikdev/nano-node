@@ -53,17 +53,20 @@ void dependency_strategy::run ()
 void dependency_strategy::run_one ()
 {
 	// No need to wait for block_processor, as we are not processing blocks
-	auto channel = ctx.wait_channel (strategy::dependency);
-	if (!channel)
-	{
-		return;
-	}
 	auto blocking = wait_blocking ();
 	if (blocking.is_zero ())
 	{
 		return;
 	}
-	request_info (blocking, channel);
+
+	auto grant = ctx.wait_result ([this] () {
+		return ctx.acquire_launch (strategy::dependency);
+	});
+	if (!grant)
+	{
+		return;
+	}
+	request_info (blocking, grant.channel, grant.id);
 }
 
 nano::block_hash dependency_strategy::next_blocking ()
@@ -94,12 +97,12 @@ nano::block_hash dependency_strategy::wait_blocking ()
 	return result.value_or (nano::block_hash{ 0 });
 }
 
-bool dependency_strategy::request_info (nano::block_hash hash, std::shared_ptr<nano::transport::channel> const & channel)
+bool dependency_strategy::request_info (nano::block_hash hash, std::shared_ptr<nano::transport::channel> const & channel, id_t id)
 {
 	account_info_query query{};
 	query.target = hash;
 
-	return ctx.send (channel, query, strategy::dependency);
+	return ctx.send (channel, query, strategy::dependency, id);
 }
 
 bool dependency_strategy::process (nano::messages::asc_pull_ack::account_info_payload const & response, async_tag const & tag)
