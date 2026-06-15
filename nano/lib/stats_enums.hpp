@@ -589,6 +589,12 @@ enum class detail
 
 	done_range,
 	done_empty,
+	done_partial,
+	done_empty_partial,
+	done_none,
+	sample_cap,
+	busy,
+	unknown_id,
 	next_by_requests,
 	next_by_timestamp,
 	advance,
