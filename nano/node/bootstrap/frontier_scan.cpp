@@ -175,7 +175,7 @@ void frontier_scan_engine::settle (std::chrono::steady_clock::time_point now, pr
 	}
 }
 
-std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::next_launch (std::chrono::steady_clock::time_point now, probes const & probes_a)
+std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::peek_launch (std::chrono::steady_clock::time_point now, probes const & probes_a)
 {
 	std::optional<peer_probe_status> empty_probe;
 
@@ -203,7 +203,6 @@ std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::next_laun
 			auto const status = probes_a.peer_status (round.used);
 			if (status == peer_probe_status::available)
 			{
-				robin = (index + 1) % heads.size ();
 				return launch_slot{ index, round.position, round.used };
 			}
 			continue;
@@ -219,7 +218,6 @@ std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::next_laun
 		}
 		if (*empty_probe == peer_probe_status::available)
 		{
-			robin = (index + 1) % heads.size ();
 			return launch_slot{ index, head.cursor, std::span<nano::account const>{} };
 		}
 	}
@@ -230,6 +228,7 @@ std::optional<frontier_scan_engine::launch_slot> frontier_scan_engine::next_laun
 void frontier_scan_engine::commit (size_t head_index, nano::account const & position, nano::account const & node_id, id_t tag_id, std::chrono::steady_clock::time_point now)
 {
 	release_assert (head_index < heads.size ());
+	robin = (head_index + 1) % heads.size ();
 	auto & head = heads[head_index];
 
 	if (!head.round)

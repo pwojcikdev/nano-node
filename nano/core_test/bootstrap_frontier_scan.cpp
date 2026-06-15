@@ -55,7 +55,7 @@ struct test_context
 
 	nano::bootstrap::frontier_scan_engine::launch_slot next ()
 	{
-		auto slot = engine.next_launch (now, probes ());
+		auto slot = engine.peek_launch (now, probes ());
 		release_assert (slot.has_value ());
 		return *slot;
 	}
@@ -143,7 +143,20 @@ TEST (bootstrap_frontier_scan, eager_fanout_tracks_distinct_peers)
 	ASSERT_EQ (third.exclude[1], nano::account{ 11 });
 	ctx.commit (third, nano::account{ 12 }, 3);
 
-	ASSERT_FALSE (ctx.engine.next_launch (ctx.now, ctx.probes ()).has_value ());
+	ASSERT_FALSE (ctx.engine.peek_launch (ctx.now, ctx.probes ()).has_value ());
+}
+
+TEST (bootstrap_frontier_scan, peek_does_not_advance_round_robin)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 2;
+	test_context ctx{ config };
+
+	auto first = ctx.next ();
+	auto second = ctx.next ();
+
+	ASSERT_EQ (second.head_index, first.head_index);
+	ASSERT_EQ (second.position, first.position);
 }
 
 TEST (bootstrap_frontier_scan, quorum_settles_clean)
@@ -182,7 +195,7 @@ TEST (bootstrap_frontier_scan, exhausted_partial_concludes_after_response)
 	ASSERT_TRUE (ctx.feed (1, first.position, frontiers ({ 2 })));
 	ctx.engine.settle (ctx.now, ctx.probes ());
 
-	ASSERT_FALSE (ctx.engine.next_launch (ctx.now, ctx.probes ()).has_value ());
+	ASSERT_FALSE (ctx.engine.peek_launch (ctx.now, ctx.probes ()).has_value ());
 	ctx.now += config.cooldown;
 	auto next = ctx.next ();
 	ASSERT_EQ (next.position, nano::account{ 2 });
@@ -223,7 +236,7 @@ TEST (bootstrap_frontier_scan, ride_out_inflight_before_done_none)
 	};
 
 	ctx.engine.settle (ctx.now, ctx.probes ());
-	ASSERT_FALSE (ctx.engine.next_launch (ctx.now, ctx.probes ()).has_value ());
+	ASSERT_FALSE (ctx.engine.peek_launch (ctx.now, ctx.probes ()).has_value ());
 
 	ctx.live_tags.erase (1);
 	ctx.engine.settle (ctx.now, ctx.probes ());

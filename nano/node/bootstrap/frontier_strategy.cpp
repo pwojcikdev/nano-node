@@ -101,7 +101,7 @@ std::optional<frontier_strategy::launch_result> frontier_strategy::next_frontier
 		return std::nullopt;
 	}
 
-	auto slot = ctx.frontiers.next_launch (now, probes);
+	auto slot = ctx.frontiers.peek_launch (now, probes);
 	if (!slot)
 	{
 		return std::nullopt;
