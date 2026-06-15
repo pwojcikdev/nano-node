@@ -71,16 +71,6 @@ blocks_query database_scan_index::consume (peek_result const & result)
 	return query;
 }
 
-std::optional<blocks_query> database_scan_index::next (std::function<bool (nano::account const &)> const & filter)
-{
-	auto result = peek (filter);
-	if (!result)
-	{
-		return std::nullopt;
-	}
-	return consume (*result);
-}
-
 void database_scan_index::fill ()
 {
 	auto transaction = ledger.store.tx_begin_read ();
