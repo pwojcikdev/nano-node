@@ -186,9 +186,37 @@ bool bootstrap_context::send (std::shared_ptr<nano::transport::channel> const & 
 	// Build the outgoing message from the query descriptor
 	auto message = build_message (tag.query, network_constants, tag.id);
 
+	log_request (channel, tag.query, source);
+
 	// Note: a failed send deliberately does not release the reserved capacity; the elevated outstanding count acts as
 	// an implicit penalty against an unresponsive peer until decay () heals it. Only a processed response releases.
 	return transmit (channel, std::move (message), std::move (tag));
+}
+
+void bootstrap_context::log_request (std::shared_ptr<nano::transport::channel> const & channel, query_descriptor const & query, strategy source) const
+{
+	auto const source_name = to_string (source);
+
+	struct visitor
+	{
+		nano::logger & logger;
+		std::shared_ptr<nano::transport::channel> const & channel;
+		std::string_view source;
+
+		void operator() (blocks_query const & query) const
+		{
+			logger.debug (nano::log::type::bootstrap, "Requesting blocks for: {} starting from: {} count: {} from: {} ({})", query.account, query.start, query.count, channel, source);
+		}
+		void operator() (account_info_query const & query) const
+		{
+			logger.debug (nano::log::type::bootstrap, "Requesting account info for: {} from: {} ({})", query.target, channel, source);
+		}
+		void operator() (frontiers_query const & query) const
+		{
+			logger.debug (nano::log::type::bootstrap, "Requesting frontiers starting from: {} count: {} from: {} ({})", query.start, query.count, channel, source);
+		}
+	};
+	std::visit (visitor{ logger, channel, source_name }, query);
 }
 
 void bootstrap_context::conclude (async_tag const & tag, conclusion result)
