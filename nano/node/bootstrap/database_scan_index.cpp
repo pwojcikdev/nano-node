@@ -31,25 +31,54 @@ void database_scan_index::reset ()
 	pending_scanner.completed = 0;
 }
 
-std::optional<blocks_query> database_scan_index::next (std::function<bool (nano::account const &)> const & filter)
+std::optional<database_scan_index::peek_result> database_scan_index::peek (std::function<bool (nano::account const &)> const & filter)
 {
 	if (queue.empty ())
 	{
 		fill ();
 	}
 
-	while (!queue.empty ())
+	std::size_t consume_count = 0;
+	for (auto const & result : queue)
 	{
-		auto result = queue.front ();
-		queue.pop_front ();
+		++consume_count;
 
 		if (filter (result.account))
 		{
-			return result;
+			return peek_result{ result, consume_count };
 		}
 	}
 
 	return std::nullopt;
+}
+
+blocks_query database_scan_index::consume (peek_result const & result)
+{
+	debug_assert (result.consume_count > 0);
+	debug_assert (result.consume_count <= queue.size ());
+
+	for (std::size_t i = 1; i < result.consume_count; ++i)
+	{
+		queue.pop_front ();
+	}
+
+	auto query = queue.front ();
+	debug_assert (query.account == result.query.account);
+	debug_assert (query.start == result.query.start);
+	debug_assert (query.count == result.query.count);
+	debug_assert (query.type == result.query.type);
+	queue.pop_front ();
+	return query;
+}
+
+std::optional<blocks_query> database_scan_index::next (std::function<bool (nano::account const &)> const & filter)
+{
+	auto result = peek (filter);
+	if (!result)
+	{
+		return std::nullopt;
+	}
+	return consume (*result);
 }
 
 void database_scan_index::fill ()
