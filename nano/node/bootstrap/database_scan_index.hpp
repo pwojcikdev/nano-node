@@ -6,6 +6,7 @@
 #include <nano/node/fwd.hpp>
 #include <nano/secure/pending_info.hpp>
 
+#include <cstddef>
 #include <deque>
 #include <optional>
 
@@ -35,6 +36,16 @@ class database_scan_index
 {
 public:
 	explicit database_scan_index (nano::ledger &);
+
+	struct peek_result
+	{
+		blocks_query query;
+		std::size_t consume_count{ 0 };
+	};
+
+	// Returns the next safe pull query for an account that passes the filter without consuming it.
+	std::optional<peek_result> peek (std::function<bool (nano::account const &)> const & filter);
+	blocks_query consume (peek_result const &);
 
 	// Returns the next safe pull query for an account that passes the filter, or nullopt when none are currently available
 	std::optional<blocks_query> next (std::function<bool (nano::account const &)> const & filter);
