@@ -63,8 +63,10 @@ void priority_strategy::run_one ()
 		refill (batch);
 	}
 
-	auto channel = ctx.wait_channel (strategy::priority);
-	if (!channel)
+	auto grant = ctx.wait_result ([this] () {
+		return ctx.acquire_launch (strategy::priority);
+	});
+	if (!grant)
 	{
 		return;
 	}
@@ -74,7 +76,7 @@ void priority_strategy::run_one ()
 
 	ctx.stats.inc (nano::stat::type::bootstrap_next, nano::stat::detail::next_priority);
 
-	bool sent = ctx.send (channel, entry.query, strategy::priority);
+	bool sent = ctx.send (grant.channel, entry.query, strategy::priority, grant.id);
 
 	// Only cooldown accounts that are likely to have more blocks
 	// This is to avoid requesting blocks from the same frontier multiple times, before the block processor had a chance to process them
