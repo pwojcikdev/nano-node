@@ -3,6 +3,7 @@
 #include <nano/lib/stats_enums.hpp>
 
 #include <cstdint>
+#include <string_view>
 
 namespace nano::bootstrap
 {
@@ -40,6 +41,8 @@ enum class verify_result
 
 nano::stat::detail to_stat_detail (nano::bootstrap::query_type);
 nano::stat::detail to_stat_detail (nano::bootstrap::strategy);
+
+std::string_view to_string (nano::bootstrap::strategy);
 
 nano::stat::type to_inspect_stat_type (strategy);
 }

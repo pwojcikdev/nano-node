@@ -1,5 +1,4 @@
 #include <nano/lib/blocks.hpp>
-#include <nano/lib/logging.hpp>
 #include <nano/lib/node_capabilities.hpp>
 #include <nano/lib/stats_enums.hpp>
 #include <nano/lib/thread_roles.hpp>
@@ -11,7 +10,6 @@
 #include <nano/node/bootstrap/verify.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
-#include <nano/node/transport/formatting.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/store/ledger/topology.hpp>
@@ -249,7 +247,6 @@ bool topo_strategy::try_page_or_wait ()
 	query.start = launch.position;
 	query.count = nano::messages::asc_pull_ack::topo_index_payload::max_entries;
 
-	ctx.logger.debug (nano::log::type::bootstrap, "Requesting topology page from: {}", launch.channel);
 	return ctx.send (launch.channel, query, strategy::topo, launch.id);
 }
 

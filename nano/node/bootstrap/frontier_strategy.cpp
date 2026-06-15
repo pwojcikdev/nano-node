@@ -8,7 +8,6 @@
 #include <nano/node/bootstrap/verify.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
-#include <nano/node/transport/formatting.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
@@ -78,8 +77,6 @@ void frontier_strategy::run_one ()
 	frontiers_query query{};
 	query.start = launch->position;
 	query.count = nano::messages::asc_pull_ack::frontiers_payload::max_frontiers;
-
-	ctx.logger.debug (nano::log::type::bootstrap, "Requesting frontiers starting from: {} from: {}", launch->position, launch->channel);
 
 	ctx.send (launch->channel, query, strategy::frontier, launch->id);
 }

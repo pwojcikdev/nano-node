@@ -147,6 +147,8 @@ private:
 	void maintenance (nano::unique_lock<nano::mutex> & lock);
 	void run_maintenance ();
 
+	void log_request (std::shared_ptr<nano::transport::channel> const &, query_descriptor const &, strategy) const;
+
 public: // Dependencies
 	nano::bootstrap_config const & config;
 	nano::network_constants const & network_constants;
