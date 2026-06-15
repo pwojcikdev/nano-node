@@ -57,7 +57,7 @@ private:
 	bool try_fetch ();
 	bool try_page_or_wait ();
 	std::optional<fetch_launch> next_fetch_launch ();
-	std::optional<page_wait_result> next_page_or_ready ();
+	std::optional<page_wait_result> peek_page_or_ready ();
 
 	bootstrap_context & ctx;
 	topo_scan_engine::probes probes;
