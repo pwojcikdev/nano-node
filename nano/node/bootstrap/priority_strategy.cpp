@@ -10,6 +10,8 @@
 #include <nano/store/ledger/confirmation_height.hpp>
 
 #include <algorithm>
+#include <optional>
+#include <utility>
 
 namespace nano::bootstrap
 {
@@ -87,15 +89,22 @@ void priority_strategy::run_one ()
 auto priority_strategy::wait_priority_batch () -> std::deque<priority_result>
 {
 	// Wait until at least one priority account is available, then grab a batch
-	std::deque<priority_result> batch;
-	ctx.wait ([this, &batch] () {
-		batch = ctx.accounts.next_priority_batch ([this] (nano::account const & account) {
+	auto result = ctx.wait_result ([this] () -> std::optional<std::deque<priority_result>> {
+		auto batch = ctx.accounts.next_priority_batch ([this] (nano::account const & account) {
 			return ctx.count_tags (account, strategy::priority) < 4;
 		},
 		batch_size);
-		return !batch.empty ();
+		if (batch.empty ())
+		{
+			return std::nullopt;
+		}
+		return batch;
 	});
-	return batch;
+	if (!result)
+	{
+		return {};
+	}
+	return std::move (*result);
 }
 
 void priority_strategy::refill (std::deque<priority_result> const & batch)
