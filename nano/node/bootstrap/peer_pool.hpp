@@ -3,6 +3,7 @@
 #include <nano/lib/node_capabilities.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
+#include <nano/lib/stats_enums.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/transport/traffic_type.hpp>
 
@@ -14,7 +15,7 @@
 
 namespace nano::bootstrap
 {
-enum class acquire_status
+enum class peer_acquire_status
 {
 	acquired, // A matching peer was reserved
 	busy, // Matching peers exist but are all at capacity; the caller should wait for capacity
@@ -22,12 +23,15 @@ enum class acquire_status
 	no_peers, // No connected peer satisfies the capability requirement; the caller should wait for peers
 };
 
-struct acquire_result
+enum class peer_probe_status
 {
-	std::shared_ptr<nano::transport::channel> channel;
-	acquire_status status{ acquire_status::no_peers };
-	nano::account node_id{ 0 }; // Cached identity of the acquired peer
+	available, // acquire () would reserve a peer right now, ignoring the channel send queue residual
+	busy, // Matching peers exist but are all at capacity
+	none, // No capable non-excluded peer exists
 };
+
+nano::stat::detail to_stat_detail (peer_acquire_status);
+nano::stat::detail to_stat_detail (peer_probe_status);
 
 /*
  * Pool of peers usable for bootstrap requests, tracked together with their in-flight request load.
@@ -48,6 +52,13 @@ public:
 
 	explicit peer_pool (nano::bootstrap_config const &);
 
+	struct acquire_result
+	{
+		std::shared_ptr<nano::transport::channel> channel;
+		peer_acquire_status status{ peer_acquire_status::no_peers };
+		nano::account node_id{ 0 }; // Cached identity of the acquired peer
+	};
+
 	// Reserves the least-loaded peer that satisfies the capability requirement and is not excluded.
 	// The exclusion list lets a fanout round route each of its requests to a distinct peer.
 	acquire_result acquire (nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}, nano::transport::traffic_type traffic = default_traffic_type);
@@ -57,6 +68,10 @@ public:
 
 	// Returns true if any peer satisfies the capability requirement and is not excluded, ignoring capacity
 	bool has_candidate (nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}) const;
+
+	// Capacity-aware, non-reserving mirror of acquire (). This intentionally does not inspect the
+	// channel send queue; acquire () performs that final check on the selected candidate.
+	peer_probe_status probe (nano::node_capabilities_flags required = {}, std::span<nano::account const> exclude = {}) const;
 
 	// Tracks newly connected channels and drops closed ones
 	void update (std::deque<std::shared_ptr<nano::transport::channel>> const & channels);
