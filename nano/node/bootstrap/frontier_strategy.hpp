@@ -38,6 +38,7 @@ private:
 	void process_frontiers (std::deque<std::pair<nano::account, nano::block_hash>> const & frontiers);
 
 	bootstrap_context & ctx;
+	nano::bootstrap::peer_probes probes;
 	std::thread thread;
 
 	// Dedicated pool for the frontier processing tasks (ledger reads)

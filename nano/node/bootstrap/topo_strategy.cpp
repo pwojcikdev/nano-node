@@ -30,7 +30,8 @@ namespace
 }
 
 topo_strategy::topo_strategy (bootstrap_context & ctx_a) :
-	ctx{ ctx_a }
+	ctx{ ctx_a },
+	probes{ ctx.probes (topo_capability ()) }
 {
 }
 
@@ -65,8 +66,7 @@ void topo_strategy::run_one ()
 {
 	{
 		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-		auto const probe = ctx.probes (topo_capability ());
-		ctx.topologies.settle (probe);
+		ctx.topologies.settle (probes);
 	}
 
 	if (try_submit ())
@@ -248,14 +248,13 @@ std::optional<topo_strategy::page_wait_result> topo_strategy::next_page_or_ready
 	debug_assert (!ctx.mutex.try_lock ());
 
 	auto const now = std::chrono::steady_clock::now ();
-	auto const probe = ctx.probes (topo_capability ());
-	ctx.topologies.settle (probe, now);
+	ctx.topologies.settle (probes, now);
 
 	if (ctx.topologies.submit_ready (now) || ctx.topologies.fetch_ready (now))
 	{
 		return page_wait_result{ page_wait_result::kind::ready, {} };
 	}
-	auto round = ctx.topologies.next_round (probe, now);
+	auto round = ctx.topologies.next_round (probes, now);
 	if (!round)
 	{
 		return std::nullopt;

@@ -61,6 +61,7 @@ private:
 	std::optional<page_wait_result> next_page_or_ready ();
 
 	bootstrap_context & ctx;
+	nano::bootstrap::peer_probes probes;
 	std::thread thread;
 };
 }

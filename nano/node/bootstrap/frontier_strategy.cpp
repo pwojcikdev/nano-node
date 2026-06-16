@@ -22,6 +22,7 @@ namespace nano::bootstrap
 {
 frontier_strategy::frontier_strategy (bootstrap_context & ctx_a) :
 	ctx{ ctx_a },
+	probes{ ctx.probes () },
 	workers{ 1, nano::thread_role::name::bootstrap_frontier_processing }
 {
 }
@@ -79,9 +80,8 @@ std::optional<frontier_strategy::launch_result> frontier_strategy::next_frontier
 	debug_assert (!ctx.mutex.try_lock ());
 
 	auto const now = std::chrono::steady_clock::now ();
-	auto const probe = ctx.probes ();
 
-	ctx.frontiers.settle (probe, now);
+	ctx.frontiers.settle (probes, now);
 
 	if (ctx.accounts.priority_half_full ())
 	{
@@ -94,7 +94,7 @@ std::optional<frontier_strategy::launch_result> frontier_strategy::next_frontier
 		return std::nullopt;
 	}
 
-	auto round = ctx.frontiers.next_round (probe, now);
+	auto round = ctx.frontiers.next_round (probes, now);
 	if (!round)
 	{
 		ctx.stats.inc (nano::stat::type::bootstrap_frontier_wait, nano::stat::detail::wait_slot);
