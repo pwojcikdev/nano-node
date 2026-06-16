@@ -46,7 +46,7 @@ void topo_strategy::start ()
 
 void topo_strategy::stop ()
 {
-	nano::join_or_pass (thread);
+	join_or_pass (thread);
 }
 
 void topo_strategy::run ()
@@ -92,7 +92,6 @@ void topo_strategy::orient ()
 			start = *latest;
 		}
 	}
-
 	{
 		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
 		ctx.topologies.orient (start);
