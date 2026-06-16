@@ -22,6 +22,7 @@ void topo_round::feed (std::deque<nano::topo_key> const & entries)
 {
 	++completed_m;
 
+	// Keep only keys ahead of the sampled cursor; earlier keys are already covered by this scan.
 	for (auto const & key : entries)
 	{
 		if (position_m < key)
@@ -32,6 +33,7 @@ void topo_round::feed (std::deque<nano::topo_key> const & entries)
 
 	while (candidates_m.size () > config.candidates)
 	{
+		// The set is ordered ascending, so trimming from the end keeps the nearest next keys.
 		candidates_m.erase (std::prev (candidates_m.end ()));
 	}
 }
@@ -55,6 +57,7 @@ std::optional<nano::topo_key> topo_round::settle () const
 {
 	if (!candidates_m.empty ())
 	{
+		// Advance the cursor to the largest retained key after queueing the whole retained page.
 		return *std::prev (candidates_m.end ());
 	}
 	if (completed_m > 0)
@@ -170,6 +173,8 @@ void topo_scan_engine::settle (peer_probes const & probe, std::chrono::steady_cl
 		auto const quorum_l = round.quorum ();
 		bool capped = round.launched () >= quorum_l * max_round_samples_factor;
 
+		// A round can settle partially when no requests remain and either the sample cap
+		// was reached or peer probing says another distinct sample is unavailable.
 		if (!ripe)
 		{
 			bool const pacing_open = round.launched () < quorum_l || now >= round.last_launch () + config.cooldown;
@@ -198,6 +203,7 @@ std::shared_ptr<topo_round> topo_scan_engine::next_round (peer_probes const & pr
 {
 	if (discovery_backpressured ())
 	{
+		// Pause page discovery while fetch/submit work drains, otherwise the topology queue can run away.
 		return nullptr;
 	}
 
@@ -237,6 +243,7 @@ std::shared_ptr<topo_round> topo_scan_engine::next_round (peer_probes const & pr
 		{
 			if (repair_quiesced () || heads.front ().cursor.topo_height < config.repair_activation_height)
 			{
+				// Repair heads stay idle until the spear has enough height and repair is useful.
 				continue;
 			}
 			if (head.ceiling_height == 0 || head.cursor.topo_height >= head.ceiling_height)
@@ -256,6 +263,7 @@ std::shared_ptr<topo_round> topo_scan_engine::next_round (peer_probes const & pr
 
 		if (!empty_probe)
 		{
+			// New rounds have no exclusions yet, so the same empty probe result applies to all heads.
 			empty_probe = probe.peer_status (std::span<nano::account const>{});
 		}
 		if (*empty_probe == peer_probe_status::available)
@@ -324,6 +332,7 @@ std::deque<nano::block_hash> topo_scan_engine::next_fetch_candidates (std::chron
 
 void topo_scan_engine::commit_fetch (std::deque<nano::block_hash> const & requested, std::deque<nano::block_hash> const & already_local, id_t tag_id, std::chrono::steady_clock::time_point now)
 {
+	// Hashes already present locally can advance the frontier without consuming a network fetch slot.
 	for (auto const & hash : already_local)
 	{
 		if (auto it = members.find (hash); it != members.end ())
@@ -347,6 +356,7 @@ void topo_scan_engine::commit_fetch (std::deque<nano::block_hash> const & reques
 			continue;
 		}
 		erase_fetch_queue (item);
+		// Only committed members are tied to the async tag; stale candidates remain queued for later.
 		item.state = member_state::fetching;
 		item.next_action = now;
 		committed.push_back (hash);
@@ -398,10 +408,12 @@ bool topo_scan_engine::process_blocks (id_t tag_id, std::deque<std::shared_ptr<n
 		item.next_action = now;
 		if (!item.frontier)
 		{
+			// Frontier blocks are submitted by contiguous topology order; repair blocks use the queue.
 			enqueue_submit (item, now);
 		}
 	}
 
+	// Any committed hash not returned by the peer is retried after the configured backoff.
 	for (auto const & hash : remaining)
 	{
 		if (auto member_it = members.find (hash); member_it != members.end ())
@@ -451,6 +463,7 @@ void topo_scan_engine::erase_fetch (id_t tag_id, std::chrono::steady_clock::time
 
 bool topo_scan_engine::submit_ready (std::chrono::steady_clock::time_point now) const
 {
+	// Prefer the next contiguous frontier block so block processor input follows topology order.
 	auto next = members_by_key.upper_bound (submit_frontier);
 	if (next != members_by_key.end ())
 	{
@@ -472,6 +485,7 @@ std::deque<std::shared_ptr<nano::block>> topo_scan_engine::next_submit_batch (st
 	std::deque<std::shared_ptr<nano::block>> result;
 	auto batch_cursor = submit_frontier;
 
+	// First drain a contiguous frontier run; stopping at the first gap preserves insertion order.
 	while (result.size () < max_count)
 	{
 		auto next = members_by_key.upper_bound (batch_cursor);
@@ -495,6 +509,7 @@ std::deque<std::shared_ptr<nano::block>> topo_scan_engine::next_submit_batch (st
 		batch_cursor = item.key;
 	}
 
+	// Then allow fetched repair blocks, which are intentionally independent of the frontier cursor.
 	for (auto it = submit_queue.begin (); it != submit_queue.end () && result.size () < max_count;)
 	{
 		if (it->first > now)
@@ -537,6 +552,7 @@ bool topo_scan_engine::inspect (nano::block_hash const & hash, nano::block_statu
 	{
 		if (item.frontier)
 		{
+			// Frontier gaps are retained so ordered submission can resume from the same key later.
 			item.state = member_state::fetched;
 			item.next_action = now + config.retry_interval;
 			if (!item.frontier_gap)
@@ -548,6 +564,7 @@ bool topo_scan_engine::inspect (nano::block_hash const & hash, nano::block_statu
 		}
 		else
 		{
+			// Repair blocks are speculative; dropping dependency gaps avoids blocking discovery.
 			erase_member (member_it);
 			stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::topo_result_gap);
 		}
@@ -568,6 +585,7 @@ bool topo_scan_engine::inspect (nano::block_hash const & hash, nano::block_statu
 			{
 				stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::topo_result_terminal);
 			}
+			// Removing resolved contiguous members keeps the submit frontier compact.
 			advance_frontier ();
 		}
 		else
@@ -660,6 +678,7 @@ void topo_scan_engine::conclude (head_state & head, std::chrono::steady_clock::t
 		auto discovered = discover (candidates);
 		if (discovered.last)
 		{
+			// When discovery is backpressured, resume from the last accepted key instead of skipping to target.
 			debug_assert (head.cursor < *discovered.last || head.cursor == *discovered.last);
 			head.cursor = *discovered.last;
 		}
@@ -676,6 +695,7 @@ void topo_scan_engine::conclude (head_state & head, std::chrono::steady_clock::t
 		stats.inc (nano::stat::type::bootstrap_topo_scan, clean ? nano::stat::detail::done_empty : nano::stat::detail::done_empty_partial);
 		if (head.spear ())
 		{
+			// Require two empty spear rounds before declaring the tip to smooth over sparse peer responses.
 			++head.empty_rounds;
 			if (head.empty_rounds >= 2)
 			{
@@ -704,6 +724,7 @@ void topo_scan_engine::conclude (head_state & head, std::chrono::steady_clock::t
 
 	if (!head.spear () && head.cursor.topo_height >= head.ceiling_height)
 	{
+		// Repair heads loop over their assigned band while the spear continues moving forward.
 		wrap_repair (head, now);
 	}
 	if (!clean)
@@ -723,11 +744,13 @@ auto topo_scan_engine::discover (std::deque<nano::topo_key> const & keys) -> dis
 		}
 		if (key <= submit_frontier)
 		{
+			// Already resolved heights still move the scan cursor through the sampled page.
 			result.last = key;
 			continue;
 		}
 		if (members_by_key.find (key) != members_by_key.end () || members.find (key.hash) != members.end ())
 		{
+			// Duplicate keys or hashes can appear across heads; keep discovery idempotent.
 			result.last = key;
 			continue;
 		}
@@ -759,6 +782,7 @@ void topo_scan_engine::refresh_repair_band (head_state & head)
 	auto const repair_index = head.index - 1;
 	auto const frontier_height = heads.front ().cursor.topo_height;
 
+	// Divide the current spear height among repair heads so older topology ranges get revisited.
 	head.floor_height = (repair_index * frontier_height) / repair_count;
 	head.ceiling_height = ((repair_index + 1) * frontier_height) / repair_count;
 	if (head.ceiling_height <= head.floor_height)
@@ -777,11 +801,13 @@ void topo_scan_engine::wrap_repair (head_state & head, std::chrono::steady_clock
 
 bool topo_scan_engine::repair_quiesced () const
 {
+	// Once the spear is at the tip, repair only continues while tracked work or gaps remain.
 	return spear_at_tip && frontier_gaps == 0 && members.empty () && fetches.empty ();
 }
 
 bool topo_scan_engine::discovery_backpressured () const
 {
+	// Frontier dependency gaps pause discovery before ordered submission falls too far behind.
 	return members.size () >= config.max_blocks_queued || frontier_gaps > config.gap_threshold;
 }
 
@@ -856,6 +882,7 @@ void topo_scan_engine::advance_frontier ()
 			break;
 		}
 
+		// Consume only a contiguous run of resolved frontier members.
 		submit_frontier = member_it->second.key;
 		erase_member (member_it);
 	}
