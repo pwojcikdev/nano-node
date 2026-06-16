@@ -58,7 +58,7 @@ public:
 	frontier_scan_engine (nano::frontier_scan_config const &, nano::stats &);
 
 	// Concludes any open rounds whose samples, peer availability, or caps make them settled
-	void settle (peer_probes const &, std::chrono::steady_clock::time_point now);
+	void settle (peer_probes const &, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	// Returns the next round that can accept a launched sample
 	std::shared_ptr<frontier_round> next_round (peer_probes const &, std::chrono::steady_clock::time_point now);

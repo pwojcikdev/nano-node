@@ -70,7 +70,7 @@ public:
 	nano::topo_key cursor () const;
 
 	// Concludes any open topology rounds whose samples, peer availability, or caps make them settled
-	void settle (peer_probes const &, std::chrono::steady_clock::time_point now);
+	void settle (peer_probes const &, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 	// Returns the next round that can accept a launched topology page sample
 	std::shared_ptr<topo_round> next_round (peer_probes const &, std::chrono::steady_clock::time_point now);
 	// Moves the first-considered head forward after one acquire attempt

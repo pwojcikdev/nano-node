@@ -65,9 +65,8 @@ void topo_strategy::run_one ()
 {
 	{
 		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-		auto const now = std::chrono::steady_clock::now ();
 		auto const probe = ctx.probes (topo_capability ());
-		ctx.topologies.settle (probe, now);
+		ctx.topologies.settle (probe);
 	}
 
 	if (try_submit ())
