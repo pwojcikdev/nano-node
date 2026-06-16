@@ -33,8 +33,8 @@ public:
 	// True once enough useful samples have identified at least one candidate
 	bool done () const;
 	// True once enough empty samples found no candidates
-	bool empty_page () const;
-	// True when the round can be concluded, either with candidates or with an empty page
+	bool done_empty () const;
+	// True when the round can be concluded, either with candidates or with no candidates
 	bool settled () const;
 	// Returns the selected next scan cursor, the original position, or nullopt when no sample completed
 	std::optional<nano::topo_key> settle () const;

@@ -43,14 +43,14 @@ bool topo_round::done () const
 	return completed_m >= quorum_m && !candidates_m.empty ();
 }
 
-bool topo_round::empty_page () const
+bool topo_round::done_empty () const
 {
 	return completed_m >= quorum_m && candidates_m.empty ();
 }
 
 bool topo_round::settled () const
 {
-	return done () || empty_page ();
+	return done () || done_empty ();
 }
 
 std::optional<nano::topo_key> topo_round::settle () const
@@ -670,7 +670,7 @@ void topo_scan_engine::conclude (head_state & head, std::chrono::steady_clock::t
 
 	auto const target = round.settle ();
 	auto const candidates = round.candidates ();
-	bool const clean = round.done () || round.empty_page ();
+	bool const clean = round.done () || round.done_empty ();
 
 	if (target && *target != round.position ())
 	{

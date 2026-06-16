@@ -103,16 +103,16 @@ TEST (bootstrap_topo_round, quorum_done_keeps_smallest_candidates)
 	ASSERT_EQ (round.settle (), key (10, 5));
 }
 
-TEST (bootstrap_topo_round, empty_page)
+TEST (bootstrap_topo_round, done_empty)
 {
 	nano::topo_scan_config config;
 	nano::bootstrap::topo_round round{ config, key (10, 1), 2 };
 
 	round.feed ({});
-	ASSERT_FALSE (round.empty_page ());
+	ASSERT_FALSE (round.done_empty ());
 
 	round.feed ({ key (10, 1) });
-	ASSERT_TRUE (round.empty_page ());
+	ASSERT_TRUE (round.done_empty ());
 	ASSERT_EQ (round.settle (), key (10, 1));
 }
 
