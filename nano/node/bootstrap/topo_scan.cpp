@@ -92,6 +92,10 @@ unsigned topo_round::quorum () const
 	return quorum_m;
 }
 
+/*
+ *
+ */
+
 topo_scan_engine::head_state::head_state (size_t index_a) :
 	index{ index_a }
 {
