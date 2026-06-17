@@ -34,6 +34,7 @@ class priority_strategy;
 class database_strategy;
 class dependency_strategy;
 class frontier_strategy;
+class topo_strategy;
 
 struct async_tag
 {
@@ -87,8 +88,9 @@ public:
 	// Placeholder channel used as a fair-queue partition key so the block processor equalizes ingest across strategies
 	std::shared_ptr<nano::transport::channel> const & block_processor_channel (nano::bootstrap::strategy) const;
 
-	// Waits for a channel that is not full. Applies the per-strategy rate limiter.
-	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy);
+	// Waits for a channel that is not full. Applies the per-strategy rate limiter and, if given, only
+	// returns a peer that advertises the required capabilities.
+	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required = {});
 
 	enum class conclusion
 	{
@@ -151,6 +153,8 @@ public: // Strategies
 	nano::bootstrap::dependency_strategy & dependency_strat;
 	std::unique_ptr<nano::bootstrap::frontier_strategy> frontier_strat_impl;
 	nano::bootstrap::frontier_strategy & frontier_strat;
+	std::unique_ptr<nano::bootstrap::topo_strategy> topo_strat_impl;
+	nano::bootstrap::topo_strategy & topo_strat;
 
 public: // Shared state
 	nano::bootstrap::account_sets_index accounts;
@@ -183,6 +187,7 @@ public: // Shared state
 	nano::rate_limiter database_limiter;
 	nano::rate_limiter dependency_limiter;
 	nano::rate_limiter frontier_limiter;
+	nano::rate_limiter topo_limiter;
 
 	// Per-strategy placeholder channels. Tagging block_processor submissions with a distinct
 	// channel per strategy gives each its own fair-queue bucket, so the processor round-robins

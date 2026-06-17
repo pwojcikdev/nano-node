@@ -54,6 +54,40 @@ nano::error nano::frontier_scan_config::serialize (nano::tomlconfig & toml) cons
 }
 
 /*
+ * topo_scan_config
+ */
+
+nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
+{
+	toml.get ("repair_heads", repair_heads);
+	toml.get ("consideration_count", consideration_count);
+	toml.get ("candidates", candidates);
+	toml.get ("request_count", request_count);
+	toml.get_duration ("cooldown", cooldown);
+	toml.get ("max_pending", max_pending);
+	toml.get ("fetch_batch", fetch_batch);
+	toml.get ("max_fetch_attempts", max_fetch_attempts);
+	toml.get_duration ("fetch_cooldown", fetch_cooldown);
+
+	return toml.get_error ();
+}
+
+nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
+{
+	toml.put ("repair_heads", repair_heads, "Number of repair heads that continuously re-scan the discovered topo range to fill gaps.\ntype:uint64");
+	toml.put ("consideration_count", consideration_count, "Number of peer replies the spearhead aggregates before advancing the discovery frontier.\ntype:uint64");
+	toml.put ("candidates", candidates, "Maximum number of aggregated entries (the smallest) the spearhead commits per advance.\ntype:uint64");
+	toml.put ("request_count", request_count, "Number of topo index entries requested per page (max 1000).\ntype:uint64");
+	toml.put ("cooldown", cooldown.count (), "Cooldown period between requests for a single scan head.\ntype:milliseconds");
+	toml.put ("max_pending", max_pending, "Spearhead back-pressure: pause forward discovery while this many blocks await fetch.\ntype:uint64");
+	toml.put ("fetch_batch", fetch_batch, "Number of block hashes requested per random blocks fetch (max 128).\ntype:uint64");
+	toml.put ("max_fetch_attempts", max_fetch_attempts, "Demote a block to a tolerated gap after this many failed fetch rounds.\ntype:uint64");
+	toml.put ("fetch_cooldown", fetch_cooldown.count (), "Minimum time before retrying a block that was already requested.\ntype:milliseconds");
+
+	return toml.get_error ();
+}
+
+/*
  * bootstrap_config
  */
 
@@ -64,6 +98,7 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("enable_database_scan", enable_database_scan);
 	toml.get ("enable_dependency_walker", enable_dependency_walker);
 	toml.get ("enable_frontier_scan", enable_frontier_scan);
+	toml.get ("enable_topo_scan", enable_topo_scan);
 
 	toml.get ("channel_limit", channel_limit);
 	toml.get ("rate_limit", rate_limit);
@@ -71,6 +106,7 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("database_rate_limit", database_rate_limit);
 	toml.get ("dependency_rate_limit", dependency_rate_limit);
 	toml.get ("frontier_rate_limit", frontier_rate_limit);
+	toml.get ("topo_rate_limit", topo_rate_limit);
 	toml.get ("database_warmup_ratio", database_warmup_ratio);
 	toml.get ("max_pull_count", max_pull_count);
 	toml.get_duration ("request_timeout", request_timeout);
@@ -92,6 +128,12 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 		frontier_scan.deserialize (config_l);
 	}
 
+	if (toml.has_key ("topo_scan"))
+	{
+		auto config_l = toml.get_required_child ("topo_scan");
+		topo_scan.deserialize (config_l);
+	}
+
 	return toml.get_error ();
 }
 
@@ -102,6 +144,7 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("enable_database_scan", enable_database_scan, "Enable or disable the 'database scan` strategy for the ascending bootstrap.\ntype:bool");
 	toml.put ("enable_dependency_walker", enable_dependency_walker, "Enable or disable the 'dependency walker` strategy for the ascending bootstrap.\ntype:bool");
 	toml.put ("enable_frontier_scan", enable_frontier_scan, "Enable or disable the 'frontier scan` strategy for the ascending bootstrap.\ntype:bool");
+	toml.put ("enable_topo_scan", enable_topo_scan, "Enable or disable the 'topology scan` strategy for the ascending bootstrap.\ntype:bool");
 
 	toml.put ("channel_limit", channel_limit, "Maximum number of un-responded requests per channel.\nNote: changing to unlimited (0) is not recommended.\ntype:uint64");
 	toml.put ("rate_limit", rate_limit, "Retained for back-compat; rate limiting is now per-strategy and this value is ignored.\ntype:uint64");
@@ -109,6 +152,7 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("database_rate_limit", database_rate_limit, "Rate limit on scanning accounts and pending entries from database.\nNote: changing to unlimited (0) is not recommended as this operation competes for resources on querying the database.\ntype:uint64");
 	toml.put ("dependency_rate_limit", dependency_rate_limit, "Rate limit on dependency walker requests.\nNote: changing to unlimited (0) is not recommended as this operation competes for resources with realtime traffic.\ntype:uint64");
 	toml.put ("frontier_rate_limit", frontier_rate_limit, "Rate limit on scanning frontiers.\nNote: changing to unlimited (0) is not recommended as this operation competes for resources on querying the network.\ntype:uint64");
+	toml.put ("topo_rate_limit", topo_rate_limit, "Rate limit on topology index scanning and random block fetching.\nNote: changing to unlimited (0) is not recommended as this operation competes for resources with realtime traffic.\ntype:uint64");
 	toml.put ("database_warmup_ratio", database_warmup_ratio, "Ratio of the database rate limit to use for the initial warmup.\ntype:uint64");
 	toml.put ("max_pull_count", max_pull_count, "Maximum number of requested blocks for bootstrap request.\ntype:uint64");
 	toml.put ("request_timeout", request_timeout.count (), "Timeout in milliseconds for incoming bootstrap messages to be processed.\ntype:milliseconds");
@@ -125,6 +169,10 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	nano::tomlconfig frontier_scan_l;
 	frontier_scan.serialize (frontier_scan_l);
 	toml.put_child ("frontier_scan", frontier_scan_l);
+
+	nano::tomlconfig topo_scan_l;
+	topo_scan.serialize (topo_scan_l);
+	toml.put_child ("topo_scan", topo_scan_l);
 
 	return toml.get_error ();
 }

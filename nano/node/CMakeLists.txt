@@ -63,6 +63,12 @@ add_library(
   bootstrap/database_scan_index.cpp
   bootstrap/frontier_scan_index.hpp
   bootstrap/frontier_scan_index.cpp
+  bootstrap/topo_strategy.hpp
+  bootstrap/topo_strategy.cpp
+  bootstrap/topo_scan.hpp
+  bootstrap/topo_scan.cpp
+  bootstrap/topo_blocks.hpp
+  bootstrap/topo_blocks.cpp
   bootstrap/verify.hpp
   bootstrap/verify.cpp
   bootstrap/peer_pool.hpp

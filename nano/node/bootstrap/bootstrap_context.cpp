@@ -12,6 +12,7 @@
 #include <nano/node/bootstrap/frontier_strategy.hpp>
 #include <nano/node/bootstrap/priority_strategy.hpp>
 #include <nano/node/bootstrap/queries.hpp>
+#include <nano/node/bootstrap/topo_strategy.hpp>
 #include <nano/node/bootstrap/verify.hpp>
 #include <nano/node/ledger_notifications.hpp>
 #include <nano/node/network.hpp>
@@ -49,6 +50,8 @@ nano::ledger_notifications & ledger_notifications_a, nano::block_processor & blo
 	dependency_strat{ *dependency_strat_impl },
 	frontier_strat_impl{ std::make_unique<frontier_strategy> (*this) },
 	frontier_strat{ *frontier_strat_impl },
+	topo_strat_impl{ std::make_unique<topo_strategy> (*this) },
+	topo_strat{ *topo_strat_impl },
 	accounts{ config.account_sets, stats },
 	database_scan{ ledger },
 	frontiers{ config.frontier_scan, stats },
@@ -58,6 +61,7 @@ nano::ledger_notifications & ledger_notifications_a, nano::block_processor & blo
 	database_limiter{ config.database_rate_limit },
 	dependency_limiter{ config.dependency_rate_limit },
 	frontier_limiter{ config.frontier_rate_limit },
+	topo_limiter{ config.topo_rate_limit },
 	priority_channel{ std::make_shared<nano::transport::null_channel> (node_a) },
 	database_channel{ std::make_shared<nano::transport::null_channel> (node_a) },
 	topology_channel{ std::make_shared<nano::transport::null_channel> (node_a) },
@@ -129,6 +133,11 @@ void bootstrap_context::start ()
 		frontier_strat.start ();
 	}
 
+	if (config.enable_topo_scan)
+	{
+		topo_strat.start ();
+	}
+
 	maintenance_thread = std::thread ([this] () {
 		nano::thread_role::set (nano::thread_role::name::bootstrap_maintenance);
 		run_maintenance ();
@@ -147,6 +156,7 @@ void bootstrap_context::stop ()
 	database_strat.stop ();
 	dependency_strat.stop ();
 	frontier_strat.stop ();
+	topo_strat.stop ();
 	nano::join_or_pass (maintenance_thread);
 
 	workers.stop ();
@@ -164,6 +174,7 @@ void bootstrap_context::reset ()
 	frontiers.reset ();
 	peers.reset ();
 	throttle.reset ();
+	topo_strat.reset ();
 }
 
 bool bootstrap_context::send (std::shared_ptr<nano::transport::channel> const & channel, query_descriptor query, strategy source)
@@ -215,6 +226,14 @@ void bootstrap_context::log_request (std::shared_ptr<nano::transport::channel> c
 		{
 			logger.debug (nano::log::type::bootstrap, "Requesting frontiers starting from: {} count: {} from: {} ({})", query.start, query.count, channel, source);
 		}
+		void operator() (topo_index_query const & query) const
+		{
+			logger.debug (nano::log::type::bootstrap, "Requesting topo index from height: {} count: {} from: {} ({})", query.start.topo_height, query.count, channel, source);
+		}
+		void operator() (blocks_random_query const & query) const
+		{
+			logger.debug (nano::log::type::bootstrap, "Requesting {} random blocks from: {} ({})", query.hashes.size (), channel, source);
+		}
 	};
 	std::visit (visitor{ logger, channel, source_name }, query);
 }
@@ -232,6 +251,19 @@ void bootstrap_context::conclude (async_tag const & tag, conclusion result)
 					break;
 				case conclusion::failure:
 					frontier_strat.failure (tag);
+					break;
+			}
+		}
+		break;
+		case strategy::topology:
+		{
+			switch (result)
+			{
+				case conclusion::timeout:
+					topo_strat.timeout (tag);
+					break;
+				case conclusion::failure:
+					topo_strat.failure (tag);
 					break;
 			}
 		}
@@ -372,6 +404,8 @@ std::shared_ptr<nano::transport::channel> const & bootstrap_context::block_proce
 			return priority_channel;
 		case strategy::database:
 			return database_channel;
+		case strategy::topology:
+			return topology_channel;
 		case strategy::invalid:
 		case strategy::dependency:
 		case strategy::frontier:
@@ -380,7 +414,7 @@ std::shared_ptr<nano::transport::channel> const & bootstrap_context::block_proce
 	release_assert (false);
 }
 
-std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::strategy strat)
+std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano::bootstrap::strategy strat, nano::node_capabilities_flags required)
 {
 	auto & strategy_limiter = [this, strat] () -> nano::rate_limiter & {
 		switch (strat)
@@ -393,6 +427,8 @@ std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano:
 				return dependency_limiter;
 			case strategy::frontier:
 				return frontier_limiter;
+			case strategy::topology:
+				return topo_limiter;
 			case strategy::invalid:
 				break;
 		}
@@ -410,8 +446,8 @@ std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano:
 	});
 
 	// Wait until a channel is available
-	return wait_result ([this, strat] () {
-		auto result = peers.acquire ();
+	return wait_result ([this, strat, required] () {
+		auto result = peers.acquire (required);
 		if (!result.channel)
 		{
 			stats.inc (nano::stat::type::bootstrap_wait_channel, to_stat_detail (strat));
@@ -607,7 +643,8 @@ void bootstrap_context::process (nano::messages::asc_pull_ack const & message, s
 
 		bool operator() (const nano::messages::asc_pull_ack::blocks_payload & response) const
 		{
-			return type == query_type::blocks_by_hash || type == query_type::blocks_by_account;
+			// A blocks_random response reuses the blocks_payload format
+			return type == query_type::blocks_by_hash || type == query_type::blocks_by_account || type == query_type::blocks_random;
 		}
 		bool operator() (const nano::messages::asc_pull_ack::account_info_payload & response) const
 		{
@@ -619,7 +656,7 @@ void bootstrap_context::process (nano::messages::asc_pull_ack const & message, s
 		}
 		bool operator() (const nano::messages::asc_pull_ack::topo_index_payload & response) const
 		{
-			return false; // Topology strategy not implemented yet, we never request topo indexes
+			return type == query_type::topo_index;
 		}
 		bool operator() (const nano::messages::empty_payload & response) const
 		{
@@ -660,6 +697,13 @@ void bootstrap_context::process (nano::messages::asc_pull_ack const & message, s
 bool bootstrap_context::process (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag)
 {
 	debug_assert (!mutex.try_lock ());
+
+	// A blocks_random response reuses the blocks_payload format but belongs to the topology strategy
+	if (tag.type () == query_type::blocks_random)
+	{
+		return topo_strat.process (response, tag);
+	}
+
 	debug_assert (tag.type () == query_type::blocks_by_hash || tag.type () == query_type::blocks_by_account);
 
 	release_assert (std::holds_alternative<blocks_query> (tag.query));
@@ -747,7 +791,8 @@ void bootstrap_context::submit_blocks (std::deque<std::shared_ptr<nano::block>> 
 		return;
 	}
 
-	block_processor.add_many (blocks, nano::block_source::bootstrap, block_processor_channel (source), [this, account = tag.account] (auto result) {
+	block_processor.add_many (
+	blocks, nano::block_source::bootstrap, block_processor_channel (source), [this, account = tag.account] (auto result) {
 		// It's the last block submitted for this account chain, reset timestamp to allow more requests
 		stats.inc (nano::stat::type::bootstrap, nano::stat::detail::timestamp_reset);
 		{
@@ -777,8 +822,7 @@ bool bootstrap_context::process (nano::messages::asc_pull_ack::frontiers_payload
 
 bool bootstrap_context::process (nano::messages::asc_pull_ack::topo_index_payload const & response, async_tag const & tag)
 {
-	debug_assert (false, "topo_index payload"); // Topology strategy not implemented yet; verifier rejects these before we get here
-	return false; // Invalid
+	return topo_strat.process (response, tag);
 }
 
 bool bootstrap_context::process (nano::messages::empty_payload const & response, async_tag const & tag)
@@ -806,6 +850,7 @@ nano::container_info bootstrap_context::container_info () const
 		info.put ("database", database_limiter.size ());
 		info.put ("dependency", dependency_limiter.size ());
 		info.put ("frontier", frontier_limiter.size ());
+		info.put ("topo", topo_limiter.size ());
 		return info;
 	};
 
@@ -816,6 +861,7 @@ nano::container_info bootstrap_context::container_info () const
 	info.add ("accounts", accounts.container_info ());
 	info.add ("database_scan", database_scan.container_info ());
 	info.add ("frontiers", frontiers.container_info ());
+	info.add ("topo", topo_strat.container_info ());
 	info.add ("workers", workers.container_info ());
 	info.add ("peers", peers.container_info ());
 	info.add ("limiters", collect_limiters ());
