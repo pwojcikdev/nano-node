@@ -23,8 +23,10 @@
 
 #include <chrono>
 #include <memory>
+#include <span>
 #include <thread>
 #include <type_traits>
+#include <vector>
 
 namespace mi = boost::multi_index;
 
@@ -34,6 +36,7 @@ class priority_strategy;
 class database_strategy;
 class dependency_strategy;
 class frontier_strategy;
+class topo_strategy;
 
 struct async_tag
 {
@@ -90,8 +93,27 @@ public:
 	// Placeholder channel used as a fair-queue partition key so the block processor equalizes ingest across strategies
 	std::shared_ptr<nano::transport::channel> const & block_processor_channel (nano::bootstrap::strategy) const;
 
-	// Waits for a channel that is not full. Applies the per-strategy rate limiter.
-	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy);
+	// Waits for a channel that is not full. Applies the per-strategy rate limiter and, if given, only returns a peer that advertises the required capabilities
+	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required = {});
+
+	// One reserved peer of a fanout round
+	struct channel_lease
+	{
+		std::shared_ptr<nano::transport::channel> channel;
+		nano::account node_id{ 0 };
+	};
+
+	// Outcome of a fanout acquire: the leases obtained, and whether the distinct-peer pool ran out
+	struct fanout_result
+	{
+		std::vector<channel_lease> leases;
+		bool exhausted{ false };
+	};
+
+	// Reserves up to `max` distinct capable peers (each excluded from the next pick, on top of `exclude`).
+	// Blocks for the first lease only on a fresh round (empty `exclude`); the rest are best-effort.
+	// `exhausted` is set when the capable pool runs dry before reaching `max`. Applies the per-strategy rate limiter.
+	fanout_result wait_channels (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required, std::span<nano::account const> exclude, unsigned max);
 
 	enum class conclusion
 	{
@@ -108,6 +130,9 @@ public:
 
 	// Inspects a block that has been processed by the block processor
 	void inspect (secure::transaction const &, nano::block_status const & result, nano::block_context const & context);
+
+	// Handles a block that has been rolled back from the ledger
+	void rollback (nano::block const & block);
 
 	// Calculates a lookback size based on the size of the ledger
 	std::size_t compute_throttle_size () const;
@@ -154,6 +179,8 @@ public: // Strategies
 	nano::bootstrap::dependency_strategy & dependency_strat;
 	std::unique_ptr<nano::bootstrap::frontier_strategy> frontier_strat_impl;
 	nano::bootstrap::frontier_strategy & frontier_strat;
+	std::unique_ptr<nano::bootstrap::topo_strategy> topo_strat_impl;
+	nano::bootstrap::topo_strategy & topo_strat;
 
 public: // Shared state
 	nano::bootstrap::account_sets_index accounts;
@@ -186,6 +213,7 @@ public: // Shared state
 	nano::rate_limiter database_limiter;
 	nano::rate_limiter dependency_limiter;
 	nano::rate_limiter frontier_limiter;
+	nano::rate_limiter topo_limiter;
 
 	// Per-strategy placeholder channels. Tagging block_processor submissions with a distinct
 	// channel per strategy gives each its own fair-queue bucket, so the processor round-robins
