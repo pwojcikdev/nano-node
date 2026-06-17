@@ -7,11 +7,16 @@
 #include <nano/node/fwd.hpp>
 #include <nano/node/transport/traffic_type.hpp>
 
+#include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_index/member.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index_container.hpp>
+
 #include <deque>
-#include <functional>
 #include <memory>
 #include <span>
-#include <unordered_map>
+
+namespace mi = boost::multi_index;
 
 namespace nano::bootstrap
 {
@@ -92,6 +97,8 @@ private: // Dependencies
 private:
 	struct entry
 	{
+		entry (std::shared_ptr<nano::transport::channel>, nano::account, nano::node_capabilities_flags);
+
 		std::shared_ptr<nano::transport::channel> channel;
 
 		// Cached so selection scans do not need to lock the channel
@@ -105,8 +112,26 @@ private:
 		{
 			return (capabilities & required) == required;
 		}
+
+		void decay ()
+		{
+			outstanding -= outstanding > 0 ? 1 : 0;
+		}
 	};
 
-	std::unordered_map<nano::transport::channel *, entry> entries;
+	// clang-format off
+	class tag_channel {};
+	class tag_outstanding {};
+
+	using ordered_entries = boost::multi_index_container<entry,
+	mi::indexed_by<
+		mi::hashed_unique<mi::tag<tag_channel>,
+			mi::member<entry, std::shared_ptr<nano::transport::channel>, &entry::channel>>,
+		mi::ordered_non_unique<mi::tag<tag_outstanding>,
+			mi::member<entry, uint64_t, &entry::outstanding>>
+	>>;
+	// clang-format on
+
+	ordered_entries entries;
 };
 }
