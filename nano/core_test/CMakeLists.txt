@@ -18,6 +18,8 @@ add_executable(
   bootstrap_frontier_scan.cpp
   bootstrap_policy.cpp
   bootstrap_server.cpp
+  bootstrap_topo_blocks.cpp
+  bootstrap_topo_scan.cpp
   bounded_dfs.cpp
   bucketing.cpp
   cli.cpp
