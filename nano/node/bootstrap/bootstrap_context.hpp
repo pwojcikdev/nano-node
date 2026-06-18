@@ -108,6 +108,9 @@ public:
 	// Inspects a block that has been processed by the block processor
 	void inspect (secure::transaction const &, nano::block_status const & result, nano::block_context const & context);
 
+	// Handles a block that has been rolled back from the ledger
+	void rollback (nano::block const & block);
+
 	// Calculates a lookback size based on the size of the ledger
 	std::size_t compute_throttle_size () const;
 

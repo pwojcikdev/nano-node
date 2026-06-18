@@ -54,6 +54,8 @@ public:
 	std::size_t fetch_batch{ 128 }; // Hashes per blocks_random request (<= 128)
 	unsigned max_fetch_attempts{ 10 }; // Demote an entry to a tolerated gap after this many failed fetch rounds
 	std::chrono::milliseconds fetch_cooldown{ 1000 * 2 }; // Minimum time before retrying a requested entry
+	std::size_t max_gaps{ 1000 * 10 }; // Spearhead back-pressure: pause forward discovery while this many submitted blocks are stuck as gaps
+	std::chrono::milliseconds gap_ttl{ 10min }; // Evict a stuck gap after this long so a permanently-missing dependency cannot wedge the spearhead
 };
 
 class bootstrap_config final

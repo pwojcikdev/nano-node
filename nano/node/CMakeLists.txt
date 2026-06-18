@@ -69,6 +69,8 @@ add_library(
   bootstrap/topo_scan.cpp
   bootstrap/topo_blocks.hpp
   bootstrap/topo_blocks.cpp
+  bootstrap/topo_gaps.hpp
+  bootstrap/topo_gaps.cpp
   bootstrap/verify.hpp
   bootstrap/verify.cpp
   bootstrap/peer_pool.hpp

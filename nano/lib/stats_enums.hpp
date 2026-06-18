@@ -109,6 +109,7 @@ enum class type
 	bootstrap_topo_scan,
 	bootstrap_topo_fetch,
 	bootstrap_topo_submit,
+	bootstrap_topo_gaps,
 	bootstrap_verify_topo,
 	bootstrap_timeout,
 	bootstrap_server,
@@ -597,6 +598,9 @@ enum class detail
 	redundant,
 	rescanned,
 	missing,
+	tracked,
+	resolved,
+	rolled_back,
 
 	prioritize,
 	prioritize_failed,

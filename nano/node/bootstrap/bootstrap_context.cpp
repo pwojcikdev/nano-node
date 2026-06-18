@@ -81,14 +81,17 @@ nano::ledger_notifications & ledger_notifications_a, nano::block_processor & blo
 		condition.notify_all ();
 	});
 
-	// Unblock rolled back accounts as the dependency is no longer valid
+	// Handle all rolled back blocks
 	ledger_notifications.blocks_rolled_back.add ([this] (auto const & blocks, auto const & rollback_root) {
-		nano::lock_guard<nano::mutex> lock{ mutex };
-		for (auto const & block : blocks)
 		{
-			debug_assert (block != nullptr);
-			accounts.unblock (block->account ());
+			nano::lock_guard<nano::mutex> lock{ mutex };
+			for (auto const & block : blocks)
+			{
+				debug_assert (block != nullptr);
+				rollback (*block);
+			}
 		}
+		condition.notify_all ();
 	});
 
 	accounts.priority_set (node_config_a.network_params.ledger.genesis->account_field ().value ());
@@ -562,6 +565,22 @@ void bootstrap_context::inspect (secure::transaction const & tx, nano::block_sta
 		stats.inc (nano::stat::type::bootstrap_inspect_source, to_stat_detail (tag_source));
 		stats.inc (to_inspect_stat_type (tag_source), nano::to_stat_detail (result));
 	}
+
+	// Topo strategy tracks its own submitted blocks that came back as gaps
+	topo_strat.inspect (result, block, tag_source);
+}
+
+void bootstrap_context::rollback (nano::block const & block)
+{
+	debug_assert (!mutex.try_lock ());
+
+	auto const account = block.account ();
+
+	// The dependency this account was blocked on is no longer valid, so reopen it for re-evaluation
+	accounts.unblock (account);
+
+	// Drop any gaps the topo strategy was tracking for this account; its ancestors changed under us
+	topo_strat.rollback (account);
 }
 
 void bootstrap_context::maintenance (nano::unique_lock<nano::mutex> & lock)
@@ -581,6 +600,8 @@ void bootstrap_context::maintenance (nano::unique_lock<nano::mutex> & lock)
 	throttle.resize (compute_throttle_size ());
 
 	accounts.decay_blocking ();
+
+	topo_strat.maintenance ();
 
 	auto const now = std::chrono::steady_clock::now ();
 	auto should_timeout = [&] (async_tag const & tag) {

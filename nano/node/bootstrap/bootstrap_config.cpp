@@ -68,6 +68,8 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("fetch_batch", fetch_batch);
 	toml.get ("max_fetch_attempts", max_fetch_attempts);
 	toml.get_duration ("fetch_cooldown", fetch_cooldown);
+	toml.get ("max_gaps", max_gaps);
+	toml.get_duration ("gap_ttl", gap_ttl);
 
 	return toml.get_error ();
 }
@@ -83,6 +85,8 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("fetch_batch", fetch_batch, "Number of block hashes requested per random blocks fetch (max 128).\ntype:uint64");
 	toml.put ("max_fetch_attempts", max_fetch_attempts, "Demote a block to a tolerated gap after this many failed fetch rounds.\ntype:uint64");
 	toml.put ("fetch_cooldown", fetch_cooldown.count (), "Minimum time before retrying a block that was already requested.\ntype:milliseconds");
+	toml.put ("max_gaps", max_gaps, "Spearhead back-pressure: pause forward discovery while this many submitted blocks are stuck on missing dependencies.\ntype:uint64");
+	toml.put ("gap_ttl", gap_ttl.count (), "Evict a stuck gap after this long so a permanently-missing dependency cannot wedge the spearhead.\ntype:milliseconds");
 
 	return toml.get_error ();
 }

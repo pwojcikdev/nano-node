@@ -10,6 +10,7 @@
 #include <nano/node/bootstrap/queries.hpp>
 #include <nano/node/bootstrap/topo_strategy.hpp>
 #include <nano/node/bootstrap/verify.hpp>
+#include <nano/secure/common.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/store/ledger/topology.hpp>
@@ -29,6 +30,7 @@ topo_strategy::topo_strategy (bootstrap_context & ctx_a) :
 	ctx{ ctx_a },
 	scan{ ctx.config.topo_scan, ctx.stats },
 	blocks{ ctx.config.topo_scan, ctx.stats },
+	gaps{ ctx.config.topo_scan, ctx.stats },
 	workers{ 1, nano::thread_role::name::bootstrap_topo_processing }
 {
 }
@@ -83,6 +85,13 @@ void topo_strategy::reset ()
 {
 	scan.reset ();
 	blocks.reset ();
+	gaps.reset ();
+}
+
+void topo_strategy::maintenance ()
+{
+	debug_assert (!ctx.mutex.try_lock ());
+	gaps.evict (); // Drop stale gaps so a permanently-missing dependency can't wedge the spearhead
 }
 
 nano::container_info topo_strategy::container_info () const
@@ -90,6 +99,7 @@ nano::container_info topo_strategy::container_info () const
 	nano::container_info info;
 	info.add ("scan", scan.container_info ());
 	info.add ("blocks", blocks.container_info ());
+	info.add ("gaps", gaps.container_info ());
 	return info;
 }
 
@@ -127,9 +137,10 @@ void topo_strategy::scan_one ()
 
 	// Reserve the oldest due head for `id`
 	auto const id = nano::bootstrap::generate_id ();
+
 	std::optional<topo_scan::request> req;
 	ctx.wait ([this, &req, id] () {
-		bool const include_spearhead = true; // Spearhead gap back-pressure lands in a later part
+		bool const include_spearhead = gaps.count () < ctx.config.topo_scan.max_gaps;
 		req = scan.next (include_spearhead, id);
 		return req.has_value ();
 	});
@@ -362,5 +373,42 @@ void topo_strategy::precheck (unsigned head, std::deque<nano::topo_key> entries)
 		}
 		ctx.condition.notify_all (); // Wake the fetch loop
 	}
+}
+
+/*
+ * Block-processor feedback
+ */
+
+void topo_strategy::inspect (nano::block_status result, nano::block const & block, strategy tag)
+{
+	debug_assert (!ctx.mutex.try_lock ());
+	switch (result)
+	{
+		case nano::block_status::progress:
+		{
+			// Any source: the block is in the ledger now, so the gap we tracked for it (if any) is resolved
+			gaps.resolve (block.hash ());
+		}
+		break;
+		case nano::block_status::gap_previous:
+		case nano::block_status::gap_source:
+		case nano::block_status::gap_epoch_open_pending:
+		{
+			// Only our own submissions count toward the spearhead back-pressure
+			if (tag == strategy::topology)
+			{
+				gaps.track (block.hash (), block.account_field ().value_or (0));
+			}
+		}
+		break;
+		default:
+			break;
+	}
+}
+
+void topo_strategy::rollback (nano::account const & account)
+{
+	debug_assert (!ctx.mutex.try_lock ());
+	gaps.rollback (account);
 }
 }

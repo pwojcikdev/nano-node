@@ -4,7 +4,9 @@
 #include <nano/messages/fwd.hpp>
 #include <nano/node/bootstrap/bootstrap_context.hpp>
 #include <nano/node/bootstrap/topo_blocks.hpp>
+#include <nano/node/bootstrap/topo_gaps.hpp>
 #include <nano/node/bootstrap/topo_scan.hpp>
+#include <nano/secure/fwd.hpp>
 
 #include <deque>
 #include <memory>
@@ -29,18 +31,21 @@ public:
 	void start ();
 	void stop ();
 
-	// Re-anchor the spearhead and frontier to our local topology tip
-	void orient ();
-
 	void reset ();
+
+	void maintenance ();
 
 	nano::container_info container_info () const;
 
-	// Response/conclusion hooks, invoked by bootstrap_context under ctx.mutex
+	// Response/conclusion hooks
 	bool process (nano::messages::asc_pull_ack::topo_index_payload const & response, async_tag const & tag);
 	bool process (nano::messages::asc_pull_ack::blocks_payload const & response, async_tag const & tag);
 	void timeout (async_tag const & tag);
 	void failure (async_tag const & tag);
+
+	// Block-processor feedback
+	void inspect (nano::block_status result, nano::block const & block, nano::bootstrap::strategy tag);
+	void rollback (nano::account const & account);
 
 private:
 	// Driver loops (one thread each) and their single-iteration bodies
@@ -51,6 +56,9 @@ private:
 	void fetch_one ();
 	void submit_one ();
 
+	// Re-anchor the spearhead to our local topology tip
+	void orient ();
+
 	// Worker-pool task: drop already-present blocks, hand the rest to the fetch engine
 	void precheck (unsigned head, std::deque<nano::topo_key> entries);
 
@@ -58,6 +66,7 @@ private:
 
 	topo_scan scan;
 	topo_blocks blocks;
+	topo_gaps gaps;
 
 	std::thread scan_thread;
 	std::thread fetch_thread;
