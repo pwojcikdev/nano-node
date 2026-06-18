@@ -20,9 +20,6 @@ namespace nano::bootstrap
  *    a ledger pre-check (already-present blocks are dropped, the rest become fetch candidates).
  *  - topo_blocks fetches the candidates via random-block requests and releases them to the block
  *    processor in topological order.
- *
- * Back-pressure lives here, not in the engines: the spearhead head pauses discovery while too many
- * blocks await fetch, but the repair heads keep scanning so gaps are continuously rediscovered.
  */
 class topo_strategy
 {

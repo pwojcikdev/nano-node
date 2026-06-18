@@ -113,19 +113,23 @@ void topo_strategy::run_scan ()
 
 void topo_strategy::scan_one ()
 {
-	// Only peers that advertise the topo index capability can answer topo_index requests
+	// Topo index requests need a peer advertising the capability
 	auto channel = ctx.wait_channel (strategy::topology, nano::node_capabilities::topo_index);
 	if (!channel)
 	{
 		return;
 	}
 
-	// Block until a head is due, reserving it for `id` (mirrors frontier's wait_frontier). The spearhead is
-	// gated by back-pressure (too many blocks awaiting fetch); repair heads stay eligible.
+	// Back-pressure: pause discovery while the fetch buffer is full
+	ctx.wait ([this] () {
+		return blocks.total_count () < ctx.config.topo_scan.max_buffered;
+	});
+
+	// Reserve the oldest due head for `id`
 	auto const id = nano::bootstrap::generate_id ();
 	std::optional<topo_scan::request> req;
 	ctx.wait ([this, &req, id] () {
-		bool const include_spearhead = blocks.pending_count () < ctx.config.topo_scan.max_pending;
+		bool const include_spearhead = true; // Spearhead gap back-pressure lands in a later part
 		req = scan.next (include_spearhead, id);
 		return req.has_value ();
 	});

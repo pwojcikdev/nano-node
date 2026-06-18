@@ -165,6 +165,11 @@ std::size_t topo_blocks::pending_count () const
 	return pending;
 }
 
+std::size_t topo_blocks::total_count () const
+{
+	return entries.size ();
+}
+
 void topo_blocks::reset ()
 {
 	entries.clear ();

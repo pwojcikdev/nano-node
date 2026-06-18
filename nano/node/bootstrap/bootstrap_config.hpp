@@ -50,7 +50,7 @@ public:
 	std::size_t candidates{ 1000 }; // Spearhead: cap on aggregated entries kept (the smallest) per advance
 	std::size_t request_count{ 1000 }; // Topo entries requested per topo_index page (<= 1000)
 	std::chrono::milliseconds cooldown{ 1000 * 5 }; // Per-head cooldown between requests
-	std::size_t max_pending{ 1000 * 40 }; // Spearhead back-pressure: pause discovery when this many blocks await fetch
+	std::size_t max_buffered{ 1000 * 40 }; // Scan back-pressure: pause all discovery while the buffer holds this many entries
 	std::size_t fetch_batch{ 128 }; // Hashes per blocks_random request (<= 128)
 	unsigned max_fetch_attempts{ 10 }; // Demote an entry to a tolerated gap after this many failed fetch rounds
 	std::chrono::milliseconds fetch_cooldown{ 1000 * 2 }; // Minimum time before retrying a requested entry

@@ -55,8 +55,11 @@ public:
 	// The next contiguous topologically-ordered batch of fetched blocks; removes released entries
 	std::deque<std::shared_ptr<nano::block>> next_submit_batch (std::size_t max);
 
-	// Number of entries still awaiting fetch (the spearhead back-pressure signal)
+	// Number of entries still awaiting fetch
 	std::size_t pending_count () const;
+
+	// Total entries held in the buffer: awaiting fetch plus fetched awaiting submit (the scan back-pressure signal)
+	std::size_t total_count () const;
 
 	void reset ();
 
@@ -102,6 +105,6 @@ private:
 	// clang-format on
 
 	ordered_entries entries;
-	std::size_t pending{ 0 }; // Count of entries awaiting fetch (the spearhead back-pressure signal)
+	std::size_t pending{ 0 }; // Count of entries awaiting fetch
 };
 }

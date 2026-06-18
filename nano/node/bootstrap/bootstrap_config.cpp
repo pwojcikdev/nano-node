@@ -64,7 +64,7 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("candidates", candidates);
 	toml.get ("request_count", request_count);
 	toml.get_duration ("cooldown", cooldown);
-	toml.get ("max_pending", max_pending);
+	toml.get ("max_buffered", max_buffered);
 	toml.get ("fetch_batch", fetch_batch);
 	toml.get ("max_fetch_attempts", max_fetch_attempts);
 	toml.get_duration ("fetch_cooldown", fetch_cooldown);
@@ -79,7 +79,7 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("candidates", candidates, "Maximum number of aggregated entries (the smallest) the spearhead commits per advance.\ntype:uint64");
 	toml.put ("request_count", request_count, "Number of topo index entries requested per page (max 1000).\ntype:uint64");
 	toml.put ("cooldown", cooldown.count (), "Cooldown period between requests for a single scan head.\ntype:milliseconds");
-	toml.put ("max_pending", max_pending, "Spearhead back-pressure: pause forward discovery while this many blocks await fetch.\ntype:uint64");
+	toml.put ("max_buffered", max_buffered, "Scan back-pressure: pause all discovery while the fetch/submit buffer holds this many entries.\ntype:uint64");
 	toml.put ("fetch_batch", fetch_batch, "Number of block hashes requested per random blocks fetch (max 128).\ntype:uint64");
 	toml.put ("max_fetch_attempts", max_fetch_attempts, "Demote a block to a tolerated gap after this many failed fetch rounds.\ntype:uint64");
 	toml.put ("fetch_cooldown", fetch_cooldown.count (), "Minimum time before retrying a block that was already requested.\ntype:milliseconds");
