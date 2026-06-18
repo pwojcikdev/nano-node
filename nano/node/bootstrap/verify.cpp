@@ -111,10 +111,15 @@ verify_result verify (nano::messages::asc_pull_ack::topo_index_payload const & r
 		return verify_result::invalid;
 	}
 
-	// Topo keys are unique and must be strictly ascending
+	// Topo keys are unique and must be strictly ascending. Heights are densely packed (a block at height h
+	// depends on one at h-1), so a contiguous page never skips a height: adjacent entries step up by at most one.
 	for (size_t n = 1; n < entries.size (); ++n)
 	{
 		if (!(entries[n - 1] < entries[n]))
+		{
+			return verify_result::invalid;
+		}
+		if (entries[n].topo_height - entries[n - 1].topo_height > 1)
 		{
 			return verify_result::invalid;
 		}
