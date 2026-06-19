@@ -140,13 +140,11 @@ void topo_scan::exhausted (head_index head, nano::topo_key start)
 		return; // gone, or advanced under us
 	}
 
-	std::deque<nano::topo_key> retire;
-	by_id.modify (it, [this, &retire] (auto & h) {
+	by_id.modify (it, [this] (auto & h) {
 		h.exhausted = true;
-		// Lowering the bar to the peers we actually reached may complete the round right away
-		retire = maybe_advance (h);
+		// Lowering the bar to the peers we actually reached may complete the round right away (emitted to the sink)
+		maybe_advance (h);
 	});
-	sink ({ head, std::move (retire) });
 }
 
 void topo_scan::process (id_t id, std::deque<nano::topo_key> const & entries)
@@ -167,8 +165,7 @@ void topo_scan::process (id_t id, std::deque<nano::topo_key> const & entries)
 		return;
 	}
 
-	std::deque<nano::topo_key> retire;
-	by_id.modify (it, [this, &res, &entries, &retire] (head & h) {
+	by_id.modify (it, [this, &res, &entries] (head & h) {
 		// Stale reply: the head advanced past where this request started, so it sampled a different position
 		if (res.start != h.cursor)
 		{
@@ -191,12 +188,11 @@ void topo_scan::process (id_t id, std::deque<nano::topo_key> const & entries)
 			h.candidates.erase (std::prev (h.candidates.end ())); // Drop the largest, keep the smallest
 		}
 
-		retire = maybe_advance (h);
+		maybe_advance (h); // emits the retired page to the sink if the round completed
 	});
-	sink ({ res.head, std::move (retire) });
 }
 
-std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
+void topo_scan::maybe_advance (head & h)
 {
 	// Target distinct replies: the full consideration count, or fewer once the peer pool is exhausted
 	unsigned const target = h.exhausted ? h.requests : h.consideration;
@@ -207,7 +203,7 @@ std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
 		{
 			// Nothing new — tip idle (spearhead) or no gaps in the band right now (repair). Park the finished
 			// round (keep `requests`, so the head stops being want_more) and let the cooldown pace the re-poll.
-			return {};
+			return;
 		}
 
 		// Advance to the largest of the kept (smallest) candidates and retire them for fetching. The next request
@@ -226,10 +222,12 @@ std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
 		{
 			h.disarm (); // Reached the band end; next () re-arms a fresh band
 		}
+		unsigned const samples = h.completed; // distinct peers aggregated into this page (captured before restart)
 		std::deque<nano::topo_key> retire{ h.candidates.begin (), h.candidates.end () };
 		h.restart (); // Begin a fresh round at the new cursor
 		h.timestamp = {}; // Made progress: re-fire promptly (chase the frontier / sweep the band)
-		return retire;
+		sink ({ h.id, samples, std::move (retire) });
+		return;
 	}
 
 	// Every sampled peer timed out without replying: clear the round so the head can retry from scratch
@@ -237,7 +235,6 @@ std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
 	{
 		h.restart ();
 	}
-	return {};
 }
 
 void topo_scan::cancel (id_t id)
@@ -257,8 +254,7 @@ void topo_scan::cancel (id_t id)
 		return;
 	}
 
-	std::deque<nano::topo_key> retire;
-	by_id.modify (it, [this, &res, &retire] (head & h) {
+	by_id.modify (it, [this, &res] (head & h) {
 		// Stale timeout: the head advanced past where this request started; it belongs to a finished round
 		if (res.start != h.cursor)
 		{
@@ -270,9 +266,8 @@ void topo_scan::cancel (id_t id)
 		{
 			h.requests -= 1;
 		}
-		retire = maybe_advance (h);
+		maybe_advance (h); // emits the retired page to the sink if the round completed
 	});
-	sink ({ res.head, std::move (retire) });
 }
 
 nano::container_info topo_scan::container_info () const

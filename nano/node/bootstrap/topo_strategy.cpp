@@ -368,6 +368,12 @@ void topo_strategy::post_precheck (topo_scan::page page)
 		return;
 	}
 
+	// The spearhead should only advance once several peers agree; warn if it committed on thin redundancy
+	if (page.head == 0 && page.samples < 2)
+	{
+		ctx.logger.warn (nano::log::type::bootstrap, "Topo spearhead advanced on only {} sample(s)", page.samples);
+	}
+
 	// Drop the page under overload; repair heads will rediscover it
 	if (workers.queued_tasks () < max_precheck_tasks)
 	{

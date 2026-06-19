@@ -62,10 +62,12 @@ public:
 		std::vector<nano::account> exclude;
 	};
 
-	// A retired page handed back for pre-check, tagged with the head that produced it (0 is the spearhead)
+	// A retired page handed back for pre-check, tagged with the head that produced it (0 is the spearhead) and
+	// the number of distinct peer replies aggregated before the advance (the head's redundancy for this page)
 	struct page
 	{
 		head_index head{ 0 };
+		unsigned samples{ 0 };
 		std::deque<nano::topo_key> entries;
 	};
 
@@ -188,9 +190,9 @@ private:
 	>>;
 	// clang-format on
 
-	// Advance the head once its round has gathered enough distinct replies; returns the retired entries. The
-	// spearhead moves the frontier forward; a repair head moves within its band and disarms at the band's end.
-	std::deque<nano::topo_key> maybe_advance (head &);
+	// Advance the head once its round has gathered enough distinct replies, emitting the retired page to the sink.
+	// The spearhead moves the frontier forward; a repair head moves within its band and disarms at the band's end.
+	void maybe_advance (head &);
 
 	// The band owned by repair head `index`, computed from the current frontier
 	band repair_band (head_index index) const;
