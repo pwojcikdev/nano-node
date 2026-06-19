@@ -59,8 +59,11 @@ private:
 	// Re-anchor the spearhead to our local topology tip
 	void orient ();
 
+	// Queue a retired page for pre-check, dropping it under worker overload
+	void post_precheck (topo_scan::page page);
+
 	// Worker-pool task: drop already-present blocks, hand the rest to the fetch engine
-	void precheck (unsigned head, std::deque<nano::topo_key> entries);
+	void precheck (head_index head, std::deque<nano::topo_key> entries);
 
 	bootstrap_context & ctx;
 

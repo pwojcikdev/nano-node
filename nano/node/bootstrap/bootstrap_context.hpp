@@ -23,8 +23,10 @@
 
 #include <chrono>
 #include <memory>
+#include <span>
 #include <thread>
 #include <type_traits>
+#include <vector>
 
 namespace mi = boost::multi_index;
 
@@ -91,6 +93,25 @@ public:
 	// Waits for a channel that is not full. Applies the per-strategy rate limiter and, if given, only
 	// returns a peer that advertises the required capabilities.
 	std::shared_ptr<nano::transport::channel> wait_channel (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required = {});
+
+	// One reserved peer of a fanout round
+	struct channel_lease
+	{
+		std::shared_ptr<nano::transport::channel> channel;
+		nano::account node_id{ 0 };
+	};
+
+	// Outcome of a fanout acquire: the leases obtained, and whether the distinct-peer pool ran out
+	struct fanout_result
+	{
+		std::vector<channel_lease> leases;
+		bool exhausted{ false };
+	};
+
+	// Reserves up to `max` distinct capable peers (each excluded from the next pick, on top of `exclude`).
+	// Blocks for the first lease only on a fresh round (empty `exclude`); the rest are best-effort. `exhausted`
+	// is set when the capable pool runs dry before reaching `max`. Applies the per-strategy rate limiter.
+	fanout_result wait_channels (nano::bootstrap::strategy strategy, nano::node_capabilities_flags required, std::span<nano::account const> exclude, unsigned max);
 
 	enum class conclusion
 	{

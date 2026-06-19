@@ -459,6 +459,92 @@ std::shared_ptr<nano::transport::channel> bootstrap_context::wait_channel (nano:
 	});
 }
 
+bootstrap_context::fanout_result bootstrap_context::wait_channels (nano::bootstrap::strategy strat, nano::node_capabilities_flags required, std::span<nano::account const> exclude, unsigned max)
+{
+	auto & strategy_limiter = [this, strat] () -> nano::rate_limiter & {
+		switch (strat)
+		{
+			case strategy::priority:
+				return priority_limiter;
+			case strategy::database:
+				return database_limiter;
+			case strategy::dependency:
+				return dependency_limiter;
+			case strategy::frontier:
+				return frontier_limiter;
+			case strategy::topology:
+				return topo_limiter;
+			case strategy::invalid:
+				break;
+		}
+		release_assert (false);
+	}();
+
+	fanout_result result;
+
+	// Working exclusion: the caller's set plus every peer we pick, so each lease is a distinct peer
+	std::vector<nano::account> used (exclude.begin (), exclude.end ());
+
+	// Block for the first lease only on a fresh round (nothing excluded yet): an idle scan then waits
+	// efficiently for a peer, while a top-up never blocks and so can't pin the scan thread on a slow peer.
+	bool const block_first = exclude.empty ();
+
+	for (unsigned i = 0; i < max; ++i)
+	{
+		if (block_first && i == 0)
+		{
+			// Limit the number of in-flight requests
+			wait ([this] () {
+				return tags.size () < config.max_requests;
+			});
+			// Wait until more requests can be sent (per-strategy rate limit)
+			wait ([&strategy_limiter] () {
+				return strategy_limiter.try_consume (1);
+			});
+			// Wait until a channel is available
+			peer_pool::acquire_result acq;
+			wait ([this, &acq, strat, required, &used] () {
+				acq = peers.acquire (required, used);
+				if (!acq.channel)
+				{
+					stats.inc (nano::stat::type::bootstrap_wait_channel, to_stat_detail (strat));
+				}
+				return acq.channel != nullptr;
+			});
+			if (!acq.channel)
+			{
+				break; // stopped
+			}
+			result.leases.push_back ({ acq.channel, acq.node_id });
+			used.push_back (acq.node_id);
+		}
+		else
+		{
+			// Best-effort: take an immediately-available distinct peer, otherwise stop the round
+			nano::lock_guard<nano::mutex> lock{ mutex };
+			if (stopped || tags.size () >= config.max_requests)
+			{
+				break;
+			}
+			auto acq = peers.acquire (required, used);
+			if (!acq.channel)
+			{
+				result.exhausted = (acq.status == peer_acquire_status::exhausted);
+				break;
+			}
+			if (!strategy_limiter.try_consume (1))
+			{
+				peers.release (acq.channel); // rate limited: give the reservation back
+				break;
+			}
+			result.leases.push_back ({ acq.channel, acq.node_id });
+			used.push_back (acq.node_id);
+		}
+	}
+
+	return result;
+}
+
 size_t bootstrap_context::count_tags (nano::account const & account, strategy source) const
 {
 	debug_assert (!mutex.try_lock ());

@@ -16,6 +16,9 @@
 #include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger_store.hpp>
 
+#include <utility>
+#include <vector>
+
 namespace
 {
 // Cap on retire pages queued for pre-check; excess pages are dropped and re-discovered by repair heads
@@ -123,25 +126,16 @@ void topo_strategy::run_scan ()
 
 void topo_strategy::scan_one ()
 {
-	// Topo index requests need a peer advertising the capability
-	auto channel = ctx.wait_channel (strategy::topology, nano::node_capabilities::topo_index);
-	if (!channel)
-	{
-		return;
-	}
-
 	// Back-pressure: pause discovery while the fetch buffer is full
 	ctx.wait ([this] () {
 		return blocks.total_count () < ctx.config.topo_scan.max_buffered;
 	});
 
-	// Reserve the oldest due head for `id`
-	auto const id = nano::bootstrap::generate_id ();
-
+	// Reserve the oldest due head and learn how many distinct peers its round wants
 	std::optional<topo_scan::request> req;
-	ctx.wait ([this, &req, id] () {
+	ctx.wait ([this, &req] () {
 		bool const include_spearhead = gaps.count () < ctx.config.topo_scan.max_gaps;
-		req = scan.next (include_spearhead, id);
+		req = scan.next (include_spearhead);
 		return req.has_value ();
 	});
 	if (!req)
@@ -149,11 +143,49 @@ void topo_strategy::scan_one ()
 		return;
 	}
 
-	topo_index_query query{};
-	query.start = req->start;
-	query.count = req->count;
+	// Acquire up to `fanout` distinct peers (topo index requests need the capability); the cross-round
+	// `exclude` keeps a top-up from re-sampling peers already used for this cursor
+	auto acquired = ctx.wait_channels (strategy::topology, nano::node_capabilities::topo_index, req->exclude, req->fanout);
 
-	ctx.send (channel, query, strategy::topology, id);
+	std::vector<std::pair<std::shared_ptr<nano::transport::channel>, id_t>> sends;
+	topo_scan::page page;
+	{
+		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+		bool stale = false;
+		for (auto const & lease : acquired.leases)
+		{
+			auto const id = nano::bootstrap::generate_id ();
+			if (!scan.dispatch (req->head, req->start, id, lease.node_id))
+			{
+				stale = true; // The head advanced under us; drop the whole round (nothing dispatched yet)
+				break;
+			}
+			sends.emplace_back (lease.channel, id);
+		}
+		if (stale)
+		{
+			for (auto const & lease : acquired.leases)
+			{
+				ctx.peers.release (lease.channel);
+			}
+			return;
+		}
+		if (acquired.exhausted)
+		{
+			page = scan.exhausted (req->head, req->start);
+		}
+	}
+
+	// An exhausted round may complete the spearhead immediately; retire whatever it produced
+	post_precheck (std::move (page));
+
+	for (auto const & [channel, id] : sends)
+	{
+		topo_index_query query{};
+		query.start = req->start;
+		query.count = req->count;
+		ctx.send (channel, query, strategy::topology, id);
+	}
 }
 
 /*
@@ -252,30 +284,14 @@ bool topo_strategy::process (nano::messages::asc_pull_ack::topo_index_payload co
 	if (result == verify_result::invalid)
 	{
 		ctx.stats.inc (nano::stat::type::bootstrap_verify_topo, nano::stat::detail::invalid);
-		scan.cancel (tag.id);
+		post_precheck (scan.cancel (tag.id));
 		return false;
 	}
 
 	ctx.stats.inc (nano::stat::type::bootstrap_verify_topo, result == verify_result::ok ? nano::stat::detail::ok : nano::stat::detail::nothing_new);
 	ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::topo_indexes, response.entries.size ());
 
-	auto page = scan.process (tag.id, response.entries);
-	if (!page.entries.empty ())
-	{
-		// Drop the page under overload; repair heads will rediscover it
-		if (workers.queued_tasks () < max_precheck_tasks)
-		{
-			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::retire);
-
-			workers.post ([this, head = page.head, entries = std::move (page.entries)] () mutable {
-				precheck (head, std::move (entries));
-			});
-		}
-		else
-		{
-			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::dropped);
-		}
-	}
+	post_precheck (scan.process (tag.id, response.entries));
 
 	return true;
 }
@@ -321,7 +337,7 @@ void topo_strategy::timeout (async_tag const & tag)
 	{
 		case query_type::topo_index:
 		{
-			scan.cancel (tag.id);
+			post_precheck (scan.cancel (tag.id));
 		}
 		break;
 		case query_type::blocks_random:
@@ -345,7 +361,29 @@ void topo_strategy::failure (async_tag const & tag)
  * Pre-check (runs on the worker pool, off the message thread)
  */
 
-void topo_strategy::precheck (unsigned head, std::deque<nano::topo_key> entries)
+void topo_strategy::post_precheck (topo_scan::page page)
+{
+	if (page.entries.empty ())
+	{
+		return;
+	}
+
+	// Drop the page under overload; repair heads will rediscover it
+	if (workers.queued_tasks () < max_precheck_tasks)
+	{
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::retire);
+
+		workers.post ([this, head = page.head, entries = std::move (page.entries)] () mutable {
+			precheck (head, std::move (entries));
+		});
+	}
+	else
+	{
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::dropped);
+	}
+}
+
+void topo_strategy::precheck (head_index head, std::deque<nano::topo_key> entries)
 {
 	std::deque<nano::topo_key> missing;
 	{
