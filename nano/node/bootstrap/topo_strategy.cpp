@@ -154,37 +154,36 @@ void topo_strategy::scan_one ()
 	std::vector<std::pair<std::shared_ptr<nano::transport::channel>, id_t>> sends;
 	{
 		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-		bool stale = false;
+
 		for (auto const & lease : acquired.leases)
 		{
 			auto const id = nano::bootstrap::generate_id ();
-			if (!scan.dispatch (req->head, req->start, id, lease.node_id))
+
+			bool dispatched = scan.dispatch (req->head, req->start, id, lease.node_id);
+			if (dispatched)
 			{
-				stale = true; // The head advanced under us; drop the whole round (nothing dispatched yet)
-				break;
+				sends.emplace_back (lease.channel, id);
 			}
-			sends.emplace_back (lease.channel, id);
-		}
-		if (stale)
-		{
-			for (auto const & lease : acquired.leases)
+			else
 			{
-				ctx.peers.release (lease.channel);
+				ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::stale);
 			}
-			return;
 		}
+
 		// An exhausted round may complete the spearhead immediately; the sink retires whatever it produces
 		if (acquired.exhausted)
 		{
 			scan.exhausted (req->head, req->start);
+			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::exhausted);
 		}
 	}
 
+	topo_index_query query{};
+	query.start = req->start;
+	query.count = req->count;
+
 	for (auto const & [channel, id] : sends)
 	{
-		topo_index_query query{};
-		query.start = req->start;
-		query.count = req->count;
 		ctx.send (channel, query, strategy::topology, id);
 	}
 }
