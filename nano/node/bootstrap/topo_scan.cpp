@@ -52,51 +52,60 @@ std::optional<topo_scan::request> topo_scan::next (bool include_spearhead, std::
 {
 	auto const cutoff = now - config.cooldown;
 
-	// Heads are ordered by last-query time, so the first eligible one is always the one queried longest ago
+	// A head is due while it still wants distinct samples, or once its cooldown elapses (which both paces
+	// re-polling a finished cursor and retries a round whose replies are not arriving). The spearhead is
+	// additionally hard-gated by back-pressure.
+	auto is_due = [&] (head const & h) {
+		bool const gate = h.is_spearhead () ? include_spearhead : true;
+		bool const want_more = !h.exhausted && h.requests < h.consideration;
+		bool const cooldown_expired = h.timestamp < cutoff;
+		return gate && (want_more || cooldown_expired);
+	};
+
+	// Arm/restart and stamp a due head, returning the round to issue. A wake that is purely the cooldown (round
+	// already full or exhausted) restarts, so fanout = consideration - requests is always >= 1.
+	auto reserve = [&] (head & h) {
+		// The single place a repair band is set: arm any unarmed head (its first sweep, or after it wrapped)
+		if (!h.is_spearhead () && !h.armed ())
+		{
+			h.start_sweep (repair_band (h.id - 1));
+		}
+		bool const want_more = !h.exhausted && h.requests < h.consideration;
+		if (!want_more)
+		{
+			h.restart ();
+		}
+		h.timestamp = now;
+		std::vector<nano::account> exclude (h.sampled.begin (), h.sampled.end ()); // peers already sampled this cursor
+		return request{ h.id, h.cursor, config.request_count, h.consideration - h.requests, std::move (exclude) };
+	};
+
+	// Issue the round for a due head: count it, reserve it under its own index, and return the request
+	auto issue = [&] (auto & index, auto it, nano::stat::detail detail) {
+		stats.inc (nano::stat::type::bootstrap_topo_scan, detail);
+		request req;
+		index.modify (it, [&] (head & h) { req = reserve (h); });
+		return req;
+	};
+
+	// Always prefer the spearhead; only when it is in progress, at capacity, or back-pressured do repair heads run
+	auto & by_id = heads.get<tag_id> ();
+	if (auto it = by_id.find (0); it != by_id.end ())
+	{
+		if (is_due (*it))
+		{
+			return issue (by_id, it, nano::stat::detail::next_spearhead);
+		}
+	}
+
+	// Fall back to repair heads, the one queried longest ago first
 	auto & by_timestamp = heads.get<tag_timestamp> ();
 	for (auto it = by_timestamp.begin (); it != by_timestamp.end (); ++it)
 	{
-		// Back-pressure hard-pauses the spearhead (too many submitted blocks stuck as gaps); repair heads are exempt
-		bool const gate = it->is_spearhead () ? include_spearhead : true;
-		if (!gate)
+		if (!it->is_spearhead () && is_due (*it))
 		{
-			continue;
+			return issue (by_timestamp, it, nano::stat::detail::next_repair);
 		}
-
-		// A head wants more samples while below its consideration count and not exhausted. It is also due once its
-		// cooldown elapses, which both paces re-polling a finished cursor (tip idle / no new gaps) and retries a
-		// round whose replies are not arriving.
-		bool const want_more = !it->exhausted && it->requests < it->consideration;
-		bool const cooldown_expired = it->timestamp < cutoff;
-		bool const due = want_more || cooldown_expired;
-		if (!due)
-		{
-			continue;
-		}
-
-		stats.inc (nano::stat::type::bootstrap_topo_scan, it->is_spearhead () ? nano::stat::detail::next_spearhead : nano::stat::detail::next_repair);
-
-		unsigned fanout = 0;
-		std::vector<nano::account> exclude;
-		by_timestamp.modify (it, [this, now, want_more, &fanout, &exclude] (head & h) {
-			// The single place a repair band is set: arm any unarmed head (its first sweep, or after it wrapped)
-			if (!h.is_spearhead () && !h.armed ())
-			{
-				h.start_sweep (repair_band (h.id - 1));
-			}
-			// A wake that is purely the cooldown (round already full or exhausted) is a re-poll/retry: start fresh,
-			// so the fan-out below is always consideration - requests with requests < consideration, i.e. >= 1.
-			if (!want_more)
-			{
-				h.restart ();
-			}
-			h.timestamp = now;
-			// Top up to the consideration count, excluding peers already sampled for this cursor (cross-round distinctness)
-			fanout = h.consideration - h.requests;
-			exclude.assign (h.sampled.begin (), h.sampled.end ());
-		});
-
-		return request{ it->id, it->cursor, config.request_count, fanout, std::move (exclude) };
 	}
 
 	stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::next_none);
