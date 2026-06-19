@@ -122,13 +122,13 @@ bool topo_scan::dispatch (head_index head, nano::topo_key start, id_t id, nano::
 	return true;
 }
 
-topo_scan::page topo_scan::exhausted (head_index head, nano::topo_key start)
+void topo_scan::exhausted (head_index head, nano::topo_key start)
 {
 	auto & by_id = heads.get<tag_id> ();
 	auto it = by_id.find (head);
 	if (it == by_id.end () || it->cursor != start)
 	{
-		return {}; // gone, or advanced under us
+		return; // gone, or advanced under us
 	}
 
 	std::deque<nano::topo_key> retire;
@@ -137,16 +137,16 @@ topo_scan::page topo_scan::exhausted (head_index head, nano::topo_key start)
 		// Lowering the bar to the peers we actually reached may complete the round right away
 		retire = maybe_advance (h);
 	});
-	return { head, std::move (retire) };
+	sink ({ head, std::move (retire) });
 }
 
-topo_scan::page topo_scan::process (id_t id, std::deque<nano::topo_key> const & entries)
+void topo_scan::process (id_t id, std::deque<nano::topo_key> const & entries)
 {
 	// Resolve which head this response belongs to; a missing id means it was cancelled or already handled
 	auto inflight_it = inflight.find (id);
 	if (inflight_it == inflight.end ())
 	{
-		return {};
+		return;
 	}
 	auto const res = inflight_it->second;
 	inflight.erase (inflight_it);
@@ -155,7 +155,7 @@ topo_scan::page topo_scan::process (id_t id, std::deque<nano::topo_key> const & 
 	auto it = by_id.find (res.head);
 	if (it == by_id.end ())
 	{
-		return {};
+		return;
 	}
 
 	std::deque<nano::topo_key> retire;
@@ -184,7 +184,7 @@ topo_scan::page topo_scan::process (id_t id, std::deque<nano::topo_key> const & 
 
 		retire = maybe_advance (h);
 	});
-	return { res.head, std::move (retire) };
+	sink ({ res.head, std::move (retire) });
 }
 
 std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
@@ -231,12 +231,12 @@ std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
 	return {};
 }
 
-topo_scan::page topo_scan::cancel (id_t id)
+void topo_scan::cancel (id_t id)
 {
 	auto inflight_it = inflight.find (id);
 	if (inflight_it == inflight.end ())
 	{
-		return {};
+		return;
 	}
 	auto const res = inflight_it->second;
 	inflight.erase (inflight_it);
@@ -245,7 +245,7 @@ topo_scan::page topo_scan::cancel (id_t id)
 	auto it = by_id.find (res.head);
 	if (it == by_id.end ())
 	{
-		return {};
+		return;
 	}
 
 	std::deque<nano::topo_key> retire;
@@ -263,7 +263,7 @@ topo_scan::page topo_scan::cancel (id_t id)
 		}
 		retire = maybe_advance (h);
 	});
-	return { res.head, std::move (retire) };
+	sink ({ res.head, std::move (retire) });
 }
 
 nano::container_info topo_scan::container_info () const

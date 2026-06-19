@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/assert.hpp>
 #include <nano/lib/fwd.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
@@ -15,6 +16,7 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <optional>
 #include <set>
 #include <unordered_map>
@@ -79,18 +81,22 @@ public:
 	bool dispatch (head_index head, nano::topo_key start, id_t id, nano::account node_id);
 
 	// Record that the round could not reach consideration_count distinct peers (the pool is exhausted),
-	// lowering the head's advance bar. May complete the round; returns the page to retire if so.
-	page exhausted (head_index head, nano::topo_key start);
+	// lowering the head's advance bar. May complete the round, emitting a page to the sink.
+	void exhausted (head_index head, nano::topo_key start);
 
-	// Apply a response page to the head that issued `id`. Returns the page to retire for pre-check.
-	page process (id_t id, std::deque<nano::topo_key> const & entries);
+	// Apply a response page to the head that issued `id`. May complete the round, emitting a page to the sink.
+	void process (id_t id, std::deque<nano::topo_key> const & entries);
 
-	// Drop a reservation whose request failed or timed out. May complete an exhausted round; returns its page.
-	page cancel (id_t id);
+	// Drop a reservation whose request failed or timed out. May complete an exhausted round, emitting its page.
+	void cancel (id_t id);
 
 	void reset ();
 
 	nano::container_info container_info () const;
+
+public:
+	// Retirement sink: invoked with each completed page
+	std::function<void (page)> sink = [] (page) { debug_assert (false, "topo_scan sink not wired"); };
 
 private: // Dependencies
 	topo_scan_config const & config;

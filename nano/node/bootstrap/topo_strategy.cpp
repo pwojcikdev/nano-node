@@ -36,6 +36,10 @@ topo_strategy::topo_strategy (bootstrap_context & ctx_a) :
 	gaps{ ctx.config.topo_scan, ctx.stats },
 	workers{ 1, nano::thread_role::name::bootstrap_topo_processing }
 {
+	// Retire completed pages straight into the pre-check pipeline
+	scan.sink = [this] (topo_scan::page page) {
+		post_precheck (std::move (page));
+	};
 }
 
 void topo_strategy::start ()
@@ -148,7 +152,6 @@ void topo_strategy::scan_one ()
 	auto acquired = ctx.wait_channels (strategy::topology, nano::node_capabilities::topo_index, req->exclude, req->fanout);
 
 	std::vector<std::pair<std::shared_ptr<nano::transport::channel>, id_t>> sends;
-	topo_scan::page page;
 	{
 		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
 		bool stale = false;
@@ -170,14 +173,12 @@ void topo_strategy::scan_one ()
 			}
 			return;
 		}
+		// An exhausted round may complete the spearhead immediately; the sink retires whatever it produces
 		if (acquired.exhausted)
 		{
-			page = scan.exhausted (req->head, req->start);
+			scan.exhausted (req->head, req->start);
 		}
 	}
-
-	// An exhausted round may complete the spearhead immediately; retire whatever it produced
-	post_precheck (std::move (page));
 
 	for (auto const & [channel, id] : sends)
 	{
@@ -284,14 +285,14 @@ bool topo_strategy::process (nano::messages::asc_pull_ack::topo_index_payload co
 	if (result == verify_result::invalid)
 	{
 		ctx.stats.inc (nano::stat::type::bootstrap_verify_topo, nano::stat::detail::invalid);
-		post_precheck (scan.cancel (tag.id));
+		scan.cancel (tag.id); // the sink retires any page this completes
 		return false;
 	}
 
 	ctx.stats.inc (nano::stat::type::bootstrap_verify_topo, result == verify_result::ok ? nano::stat::detail::ok : nano::stat::detail::nothing_new);
 	ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::topo_indexes, response.entries.size ());
 
-	post_precheck (scan.process (tag.id, response.entries));
+	scan.process (tag.id, response.entries); // the sink retires any page this completes
 
 	return true;
 }
@@ -337,7 +338,7 @@ void topo_strategy::timeout (async_tag const & tag)
 	{
 		case query_type::topo_index:
 		{
-			post_precheck (scan.cancel (tag.id));
+			scan.cancel (tag.id); // the sink retires any page this completes
 		}
 		break;
 		case query_type::blocks_random:
