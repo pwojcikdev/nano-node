@@ -32,11 +32,11 @@ using head_index = unsigned;
 /*
  * Topo scan engine: walks the peers' topology index across multiple heads.
  *
- * One spearhead head advances the discovery frontier forward into unseen topo-height space. To avoid
- * over-advancing on a single (possibly lagging) peer it samples each position across consideration_count
- * distinct peers, aggregates their replies, keeps the smallest `candidates`, and advances past them. The
- * repair heads each own a band of the discovered range [1, frontier] and advance on a single reply,
- * continuously re-scanning for gaps.
+ * Every head samples each cursor across `consideration` distinct peers, aggregates their replies, keeps the
+ * smallest `candidates`, and advances past them (sampling more than one peer guards against over-advancing on
+ * a single lagging peer). The heads differ only in how they advance: the spearhead pushes the discovery
+ * frontier forward into unseen topo-height space, while the repair heads each own a frozen band of the
+ * discovered range [1, frontier] and re-scan it for gaps, disarming when a sweep reaches the band's end.
  *
  * A round is issued in two steps: next () reserves the oldest due head and returns how many distinct peers
  * to fan out to, then dispatch () registers each request as the strategy acquires a peer for it. Heads are
@@ -114,13 +114,13 @@ private:
 	{
 		head_type type{ head_type::repair };
 		head_index id{ 0 }; // Stable identity: 0 is the spearhead, 1..N are the repair heads
+		unsigned consideration{ 1 }; // Distinct peers to sample for a cursor before advancing
 		nano::topo_key cursor{}; // Start position for this head's next request
 		band range{}; // Repair only: the band frozen for the current sweep; hi is zero until first frozen
-		std::set<nano::topo_key> candidates; // Spearhead only: entries aggregated across replies
-		std::unordered_set<nano::account> sampled; // Spearhead only: distinct peers sampled for the current cursor
-		unsigned requests{ 0 }; // Repair only: outstanding request count (0 or 1)
-		unsigned completed{ 0 }; // Spearhead only: replies received for the current cursor
-		bool exhausted{ false }; // Spearhead only: no more distinct peers available for the current cursor
+		std::set<nano::topo_key> candidates; // Entries aggregated across this cursor's replies
+		std::unordered_set<nano::account> sampled; // Distinct peers sampled for the current cursor
+		unsigned completed{ 0 }; // Replies received for the current cursor
+		bool exhausted{ false }; // No more distinct peers available for the current cursor
 		std::chrono::steady_clock::time_point timestamp{}; // Last time this head was queried
 		std::size_t processed{ 0 };
 
@@ -169,11 +169,8 @@ private:
 	>>;
 	// clang-format on
 
-	// Aggregate a reply into the spearhead and, once enough distinct peers have replied, advance
-	std::deque<nano::topo_key> process_spearhead (head &, nano::account node_id, std::deque<nano::topo_key> const & entries);
-	// Advance a repair head on a single reply, wrapping at the end of its band
-	std::deque<nano::topo_key> process_repair (head &, std::deque<nano::topo_key> const & entries);
-	// Advance (or tip-reset) a spearhead once its round has met its target; returns the retired entries
+	// Advance the head once its round has gathered enough distinct replies; returns the retired entries. The
+	// spearhead moves the frontier forward; a repair head moves within its band and disarms at the band's end.
 	std::deque<nano::topo_key> maybe_advance (head &);
 
 	// The band owned by repair head `index`, computed from the current frontier

@@ -20,10 +20,10 @@ void topo_scan::reset ()
 	frontier = {};
 
 	// Head 0 is the spearhead (anchored to our local tip by orient); heads 1..N are repair heads
-	heads.insert (head{ .type = head_type::spearhead, .id = 0 });
+	heads.insert (head{ .type = head_type::spearhead, .id = 0, .consideration = config.consideration_count });
 	for (unsigned i = 0; i < config.repair_heads; ++i)
 	{
-		heads.insert (head{ .type = head_type::repair, .id = i + 1 });
+		heads.insert (head{ .type = head_type::repair, .id = i + 1, .consideration = config.repair_consideration });
 	}
 }
 
@@ -56,17 +56,10 @@ std::optional<topo_scan::request> topo_scan::next (bool include_spearhead, std::
 	auto & by_timestamp = heads.get<tag_timestamp> ();
 	for (auto it = by_timestamp.begin (); it != by_timestamp.end (); ++it)
 	{
-		bool due;
-		if (it->is_spearhead ())
-		{
-			// Keep sampling distinct peers until consideration_count is reached or the pool is exhausted, paced by cooldown
-			due = include_spearhead && !it->exhausted && it->sampled.size () < config.consideration_count && it->timestamp < cutoff;
-		}
-		else
-		{
-			// A repair head holds at most one in-flight request; re-fire once it concludes and the cooldown elapses
-			due = it->requests == 0 && it->timestamp < cutoff;
-		}
+		// Keep sampling distinct peers until the consideration count is reached or the pool is exhausted, paced
+		// by cooldown. Only the spearhead is additionally gated by back-pressure.
+		bool const gate = it->is_spearhead () ? include_spearhead : true;
+		bool const due = gate && !it->exhausted && it->sampled.size () < it->consideration && it->timestamp < cutoff;
 		if (!due)
 		{
 			continue;
@@ -74,7 +67,7 @@ std::optional<topo_scan::request> topo_scan::next (bool include_spearhead, std::
 
 		stats.inc (nano::stat::type::bootstrap_topo_scan, it->is_spearhead () ? nano::stat::detail::next_spearhead : nano::stat::detail::next_repair);
 
-		unsigned fanout = 1;
+		unsigned fanout = 0;
 		std::vector<nano::account> exclude;
 		by_timestamp.modify (it, [this, now, &fanout, &exclude] (head & h) {
 			// The single place a repair band is set: arm any unarmed head (its first sweep, or after it wrapped)
@@ -83,12 +76,9 @@ std::optional<topo_scan::request> topo_scan::next (bool include_spearhead, std::
 				h.start_sweep (repair_band (h.id - 1));
 			}
 			h.timestamp = now;
-			if (h.is_spearhead ())
-			{
-				// Top up to consideration_count, excluding peers already sampled for this cursor (cross-round distinctness)
-				fanout = config.consideration_count - static_cast<unsigned> (h.sampled.size ());
-				exclude.assign (h.sampled.begin (), h.sampled.end ());
-			}
+			// Top up to the consideration count, excluding peers already sampled for this cursor (cross-round distinctness)
+			fanout = h.consideration - static_cast<unsigned> (h.sampled.size ());
+			exclude.assign (h.sampled.begin (), h.sampled.end ());
 		});
 
 		return request{ it->id, it->cursor, config.request_count, fanout, std::move (exclude) };
@@ -109,14 +99,7 @@ bool topo_scan::dispatch (head_index head, nano::topo_key start, id_t id, nano::
 
 	inflight[id] = reservation{ head, node_id };
 	by_id.modify (it, [node_id] (auto & h) {
-		if (h.is_spearhead ())
-		{
-			h.sampled.insert (node_id);
-		}
-		else
-		{
-			h.requests += 1;
-		}
+		h.sampled.insert (node_id);
 	});
 	return true;
 }
@@ -125,9 +108,9 @@ topo_scan::page topo_scan::exhausted (head_index head, nano::topo_key start)
 {
 	auto & by_id = heads.get<tag_id> ();
 	auto it = by_id.find (head);
-	if (it == by_id.end () || !it->is_spearhead () || it->cursor != start)
+	if (it == by_id.end () || it->cursor != start)
 	{
-		return {}; // gone, repair head, or advanced under us
+		return {}; // gone, or advanced under us
 	}
 
 	std::deque<nano::topo_key> retire;
@@ -159,36 +142,31 @@ topo_scan::page topo_scan::process (id_t id, std::deque<nano::topo_key> const & 
 
 	std::deque<nano::topo_key> retire;
 	by_id.modify (it, [this, &res, &entries, &retire] (head & h) {
+		// Ignore a straggler from a previous cursor whose round was already reset
+		if (h.sampled.find (res.node_id) == h.sampled.end ())
+		{
+			return;
+		}
 		h.processed += entries.size ();
-		retire = h.is_spearhead () ? process_spearhead (h, res.node_id, entries) : process_repair (h, entries);
+		h.completed += 1; // A distinct peer replied for this cursor
+
+		// Aggregate this reply's new entries, capping the set to the smallest `candidates` so one aggressive peer
+		// cannot make us advance past entries that lagging peers have not reported yet
+		for (auto const & entry : entries)
+		{
+			if (h.cursor < entry)
+			{
+				h.candidates.insert (entry);
+			}
+		}
+		while (h.candidates.size () > config.candidates)
+		{
+			h.candidates.erase (std::prev (h.candidates.end ())); // Drop the largest, keep the smallest
+		}
+
+		retire = maybe_advance (h);
 	});
 	return { res.head, std::move (retire) };
-}
-
-std::deque<nano::topo_key> topo_scan::process_spearhead (head & h, nano::account node_id, std::deque<nano::topo_key> const & entries)
-{
-	// Ignore a straggler from a previous cursor whose round was already reset
-	if (h.sampled.find (node_id) == h.sampled.end ())
-	{
-		return {};
-	}
-	h.completed += 1; // A distinct peer replied for this cursor
-
-	// Aggregate this reply's new entries, capping the set to the smallest `candidates` so one aggressive peer
-	// cannot make us advance past entries that lagging peers have not reported yet
-	for (auto const & entry : entries)
-	{
-		if (h.cursor < entry)
-		{
-			h.candidates.insert (entry);
-		}
-	}
-	while (h.candidates.size () > config.candidates)
-	{
-		h.candidates.erase (std::prev (h.candidates.end ())); // Drop the largest, keep the smallest
-	}
-
-	return maybe_advance (h);
 }
 
 std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
@@ -200,8 +178,8 @@ std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
 		hd.exhausted = false;
 	};
 
-	// Target distinct replies: the full consideration_count, or fewer once the peer pool is exhausted
-	std::size_t const target = h.exhausted ? h.sampled.size () : config.consideration_count;
+	// Target distinct replies: the full consideration count, or fewer once the peer pool is exhausted
+	std::size_t const target = h.exhausted ? h.sampled.size () : h.consideration;
 
 	if (!h.sampled.empty () && h.completed >= target)
 	{
@@ -211,12 +189,23 @@ std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
 			// Advance to the largest of the kept (smallest) candidates and retire them for fetching. The next
 			// request re-returns this entry as its first (a cheap health marker); the `cursor < entry` filter ignores it.
 			auto const furthest = *h.candidates.rbegin ();
-			frontier = std::max (frontier, furthest);
-			h.cursor = furthest;
+			if (h.is_spearhead ())
+			{
+				frontier = std::max (frontier, furthest); // Push the discovery frontier forward
+				h.cursor = furthest;
+			}
+			else if (furthest < h.range.hi)
+			{
+				h.cursor = furthest; // Advance within the band
+			}
+			else
+			{
+				h.disarm (); // Reached the band end; next () re-arms a fresh band
+			}
 			retire = { h.candidates.begin (), h.candidates.end () };
-			h.timestamp = {}; // Chase the frontier: due immediately for the new cursor
+			h.timestamp = {}; // Made progress: re-fire promptly (chase the frontier / sweep the band)
 		}
-		// else: nothing new at the tip — keep the cursor and let the cooldown pace the next poll
+		// else: nothing new — tip idle (spearhead) or no gaps in the band right now (repair); keep the cursor, cooldown re-polls
 		reset (h);
 		return retire;
 	}
@@ -227,30 +216,6 @@ std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
 		reset (h);
 	}
 	return {};
-}
-
-std::deque<nano::topo_key> topo_scan::process_repair (head & h, std::deque<nano::topo_key> const & entries)
-{
-	h.requests -= h.requests > 0 ? 1 : 0; // The request concluded
-
-	// Nothing new (empty, or nothing past the cursor): keep the cursor and let the cooldown back off
-	if (entries.empty () || !(h.cursor < entries.back ()))
-	{
-		return {};
-	}
-
-	// Advance within the band; reaching its end disarms the head so next () re-arms a fresh band
-	if (entries.back () < h.range.hi)
-	{
-		h.cursor = entries.back ();
-	}
-	else
-	{
-		h.disarm ();
-	}
-
-	h.timestamp = {}; // Made progress: re-fire promptly for the next slice of the band
-	return { entries.begin (), entries.end () };
 }
 
 topo_scan::page topo_scan::cancel (id_t id)
@@ -272,17 +237,10 @@ topo_scan::page topo_scan::cancel (id_t id)
 
 	std::deque<nano::topo_key> retire;
 	by_id.modify (it, [this, &res, &retire] (head & h) {
-		if (h.is_spearhead ())
-		{
-			// The timed-out peer never contributed; drop it so a retry can sample a fresh one, then
-			// re-check whether the (possibly lowered) round target is now met
-			h.sampled.erase (res.node_id);
-			retire = maybe_advance (h);
-		}
-		else
-		{
-			h.requests -= h.requests > 0 ? 1 : 0;
-		}
+		// The timed-out peer never contributed; drop it so a retry can sample a fresh one, then
+		// re-check whether the (possibly lowered) round target is now met
+		h.sampled.erase (res.node_id);
+		retire = maybe_advance (h);
 	});
 	return { res.head, std::move (retire) };
 }
