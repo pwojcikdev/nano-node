@@ -46,7 +46,7 @@ public:
 
 public:
 	unsigned repair_heads{ 16 }; // Number of repair heads dividing [1, frontier]
-	unsigned consideration_count{ 4 }; // Spearhead: distinct peers sampled before the frontier advances
+	unsigned consideration_count{ 3 }; // Spearhead: distinct peers sampled before the frontier advances
 	unsigned repair_consideration{ 1 }; // Repair: distinct peers sampled before a band cursor advances
 	std::size_t candidates{ 1000 }; // Spearhead: cap on aggregated entries kept (the smallest) per advance
 	std::size_t request_count{ 1000 }; // Topo entries requested per topo_index page (<= 1000)

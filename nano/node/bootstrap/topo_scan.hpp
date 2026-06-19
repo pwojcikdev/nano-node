@@ -119,6 +119,7 @@ private:
 		band range{}; // Repair only: the band frozen for the current sweep; hi is zero until first frozen
 		std::set<nano::topo_key> candidates; // Entries aggregated across this cursor's replies
 		std::unordered_set<nano::account> sampled; // Distinct peers sampled for the current cursor
+		unsigned requests{ 0 }; // Distinct samples issued for the current cursor (mirrors sampled.size ())
 		unsigned completed{ 0 }; // Replies received for the current cursor
 		bool exhausted{ false }; // No more distinct peers available for the current cursor
 		std::chrono::steady_clock::time_point timestamp{}; // Last time this head was queried
@@ -127,6 +128,16 @@ private:
 		bool is_spearhead () const
 		{
 			return type == head_type::spearhead;
+		}
+
+		// Begin a fresh round for the current cursor: forget all samples and aggregation
+		void restart ()
+		{
+			candidates.clear ();
+			sampled.clear ();
+			requests = 0;
+			completed = 0;
+			exhausted = false;
 		}
 
 		// Begin a fresh sweep over `b`: adopt it as the frozen band and rewind the cursor to its start
@@ -149,11 +160,13 @@ private:
 		}
 	};
 
-	// Tracks which head and peer an in-flight request belongs to, so its reply or timeout can be attributed
+	// Tracks the head, peer, and cursor an in-flight request was issued for, so its reply or timeout can be
+	// attributed and discarded if the head has since advanced past `start`
 	struct reservation
 	{
 		head_index head{ 0 };
 		nano::account node_id{ 0 };
+		nano::topo_key start{};
 	};
 
 	// clang-format off

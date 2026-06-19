@@ -56,10 +56,19 @@ std::optional<topo_scan::request> topo_scan::next (bool include_spearhead, std::
 	auto & by_timestamp = heads.get<tag_timestamp> ();
 	for (auto it = by_timestamp.begin (); it != by_timestamp.end (); ++it)
 	{
-		// Keep sampling distinct peers until the consideration count is reached or the pool is exhausted, paced
-		// by cooldown. Only the spearhead is additionally gated by back-pressure.
+		// Back-pressure hard-pauses the spearhead (too many submitted blocks stuck as gaps); repair heads are exempt
 		bool const gate = it->is_spearhead () ? include_spearhead : true;
-		bool const due = gate && !it->exhausted && it->sampled.size () < it->consideration && it->timestamp < cutoff;
+		if (!gate)
+		{
+			continue;
+		}
+
+		// A head wants more samples while below its consideration count and not exhausted. It is also due once its
+		// cooldown elapses, which both paces re-polling a finished cursor (tip idle / no new gaps) and retries a
+		// round whose replies are not arriving.
+		bool const want_more = !it->exhausted && it->requests < it->consideration;
+		bool const cooldown_expired = it->timestamp < cutoff;
+		bool const due = want_more || cooldown_expired;
 		if (!due)
 		{
 			continue;
@@ -69,15 +78,21 @@ std::optional<topo_scan::request> topo_scan::next (bool include_spearhead, std::
 
 		unsigned fanout = 0;
 		std::vector<nano::account> exclude;
-		by_timestamp.modify (it, [this, now, &fanout, &exclude] (head & h) {
+		by_timestamp.modify (it, [this, now, want_more, &fanout, &exclude] (head & h) {
 			// The single place a repair band is set: arm any unarmed head (its first sweep, or after it wrapped)
 			if (!h.is_spearhead () && !h.armed ())
 			{
 				h.start_sweep (repair_band (h.id - 1));
 			}
+			// A wake that is purely the cooldown (round already full or exhausted) is a re-poll/retry: start fresh,
+			// so the fan-out below is always consideration - requests with requests < consideration, i.e. >= 1.
+			if (!want_more)
+			{
+				h.restart ();
+			}
 			h.timestamp = now;
 			// Top up to the consideration count, excluding peers already sampled for this cursor (cross-round distinctness)
-			fanout = h.consideration - static_cast<unsigned> (h.sampled.size ());
+			fanout = h.consideration - h.requests;
 			exclude.assign (h.sampled.begin (), h.sampled.end ());
 		});
 
@@ -97,9 +112,12 @@ bool topo_scan::dispatch (head_index head, nano::topo_key start, id_t id, nano::
 		return false; // gone, or advanced under us since next () → stale round
 	}
 
-	inflight[id] = reservation{ head, node_id };
+	inflight[id] = reservation{ head, node_id, start };
 	by_id.modify (it, [node_id] (auto & h) {
-		h.sampled.insert (node_id);
+		if (h.sampled.insert (node_id).second)
+		{
+			h.requests += 1;
+		}
 	});
 	return true;
 }
@@ -142,13 +160,13 @@ topo_scan::page topo_scan::process (id_t id, std::deque<nano::topo_key> const & 
 
 	std::deque<nano::topo_key> retire;
 	by_id.modify (it, [this, &res, &entries, &retire] (head & h) {
-		// Ignore a straggler from a previous cursor whose round was already reset
-		if (h.sampled.find (res.node_id) == h.sampled.end ())
+		// Stale reply: the head advanced past where this request started, so it sampled a different position
+		if (res.start != h.cursor)
 		{
 			return;
 		}
 		h.processed += entries.size ();
-		h.completed += 1; // A distinct peer replied for this cursor
+		h.completed += 1; // A distinct peer replied for the current cursor
 
 		// Aggregate this reply's new entries, capping the set to the smallest `candidates` so one aggressive peer
 		// cannot make us advance past entries that lagging peers have not reported yet
@@ -171,49 +189,44 @@ topo_scan::page topo_scan::process (id_t id, std::deque<nano::topo_key> const & 
 
 std::deque<nano::topo_key> topo_scan::maybe_advance (head & h)
 {
-	auto const reset = [] (head & hd) {
-		hd.candidates.clear ();
-		hd.sampled.clear ();
-		hd.completed = 0;
-		hd.exhausted = false;
-	};
-
 	// Target distinct replies: the full consideration count, or fewer once the peer pool is exhausted
-	std::size_t const target = h.exhausted ? h.sampled.size () : h.consideration;
+	unsigned const target = h.exhausted ? h.requests : h.consideration;
 
-	if (!h.sampled.empty () && h.completed >= target)
+	if (h.requests > 0 && h.completed >= target)
 	{
-		std::deque<nano::topo_key> retire;
-		if (!h.candidates.empty ())
+		if (h.candidates.empty ())
 		{
-			// Advance to the largest of the kept (smallest) candidates and retire them for fetching. The next
-			// request re-returns this entry as its first (a cheap health marker); the `cursor < entry` filter ignores it.
-			auto const furthest = *h.candidates.rbegin ();
-			if (h.is_spearhead ())
-			{
-				frontier = std::max (frontier, furthest); // Push the discovery frontier forward
-				h.cursor = furthest;
-			}
-			else if (furthest < h.range.hi)
-			{
-				h.cursor = furthest; // Advance within the band
-			}
-			else
-			{
-				h.disarm (); // Reached the band end; next () re-arms a fresh band
-			}
-			retire = { h.candidates.begin (), h.candidates.end () };
-			h.timestamp = {}; // Made progress: re-fire promptly (chase the frontier / sweep the band)
+			// Nothing new — tip idle (spearhead) or no gaps in the band right now (repair). Park the finished
+			// round (keep `requests`, so the head stops being want_more) and let the cooldown pace the re-poll.
+			return {};
 		}
-		// else: nothing new — tip idle (spearhead) or no gaps in the band right now (repair); keep the cursor, cooldown re-polls
-		reset (h);
+
+		// Advance to the largest of the kept (smallest) candidates and retire them for fetching. The next request
+		// re-returns this entry as its first (a cheap health marker); the `cursor < entry` filter ignores it.
+		auto const furthest = *h.candidates.rbegin ();
+		if (h.is_spearhead ())
+		{
+			frontier = std::max (frontier, furthest); // Push the discovery frontier forward
+			h.cursor = furthest;
+		}
+		else if (furthest < h.range.hi)
+		{
+			h.cursor = furthest; // Advance within the band
+		}
+		else
+		{
+			h.disarm (); // Reached the band end; next () re-arms a fresh band
+		}
+		std::deque<nano::topo_key> retire{ h.candidates.begin (), h.candidates.end () };
+		h.restart (); // Begin a fresh round at the new cursor
+		h.timestamp = {}; // Made progress: re-fire promptly (chase the frontier / sweep the band)
 		return retire;
 	}
 
 	// Every sampled peer timed out without replying: clear the round so the head can retry from scratch
-	if (h.sampled.empty ())
+	if (h.requests == 0)
 	{
-		reset (h);
+		h.restart ();
 	}
 	return {};
 }
@@ -237,9 +250,17 @@ topo_scan::page topo_scan::cancel (id_t id)
 
 	std::deque<nano::topo_key> retire;
 	by_id.modify (it, [this, &res, &retire] (head & h) {
-		// The timed-out peer never contributed; drop it so a retry can sample a fresh one, then
-		// re-check whether the (possibly lowered) round target is now met
-		h.sampled.erase (res.node_id);
+		// Stale timeout: the head advanced past where this request started; it belongs to a finished round
+		if (res.start != h.cursor)
+		{
+			return;
+		}
+		// The timed-out peer never contributed; drop it so a retry can sample a fresh one, then re-check
+		// whether the (possibly lowered) round target is now met
+		if (h.sampled.erase (res.node_id) > 0)
+		{
+			h.requests -= 1;
+		}
 		retire = maybe_advance (h);
 	});
 	return { res.head, std::move (retire) };

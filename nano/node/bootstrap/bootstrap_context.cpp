@@ -485,15 +485,13 @@ bootstrap_context::fanout_result bootstrap_context::wait_channels (nano::bootstr
 	// Working exclusion: the caller's set plus every peer we pick, so each lease is a distinct peer
 	std::vector<nano::account> used (exclude.begin (), exclude.end ());
 
-	// Block for the first lease only on a fresh round (nothing excluded yet): an idle scan then waits
-	// efficiently for a peer, while a top-up never blocks and so can't pin the scan thread on a slow peer.
-	bool const block_first = exclude.empty ();
-
 	for (unsigned i = 0; i < max; ++i)
 	{
-		if (block_first && i == 0)
+		if (i == 0)
 		{
-			// Limit the number of in-flight requests
+			// Block for the first lease so every round (fresh or top-up) makes progress: wait out transient
+			// busyness and a momentarily empty peer set, but bail the instant the distinct-peer pool is
+			// exhausted so the caller can advance with however many it has.
 			wait ([this] () {
 				return tags.size () < config.max_requests;
 			});
@@ -501,19 +499,20 @@ bootstrap_context::fanout_result bootstrap_context::wait_channels (nano::bootstr
 			wait ([&strategy_limiter] () {
 				return strategy_limiter.try_consume (1);
 			});
-			// Wait until a channel is available
+			// Wait until a non-excluded channel is available, or the capable pool is exhausted
 			peer_pool::acquire_result acq;
 			wait ([this, &acq, strat, required, &used] () {
 				acq = peers.acquire (required, used);
-				if (!acq.channel)
+				if (!acq.channel && acq.status != peer_acquire_status::exhausted)
 				{
 					stats.inc (nano::stat::type::bootstrap_wait_channel, to_stat_detail (strat));
 				}
-				return acq.channel != nullptr;
+				return acq.channel != nullptr || acq.status == peer_acquire_status::exhausted;
 			});
 			if (!acq.channel)
 			{
-				break; // stopped
+				result.exhausted = (acq.status == peer_acquire_status::exhausted);
+				break; // exhausted (advance with fewer) or stopped
 			}
 			result.leases.push_back ({ acq.channel, acq.node_id });
 			used.push_back (acq.node_id);
