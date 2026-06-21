@@ -4,6 +4,8 @@
 #include <nano/lib/stats.hpp>
 #include <nano/node/bootstrap/topo_scan.hpp>
 
+#include <algorithm>
+
 namespace nano::bootstrap
 {
 topo_scan::topo_scan (topo_scan_config const & config_a, nano::stats & stats_a) :
@@ -276,6 +278,16 @@ void topo_scan::cancel (id_t id)
 			h.requests -= 1;
 		}
 		maybe_advance (h); // emits the retired page to the sink if the round completed
+	});
+}
+
+bool topo_scan::starved () const
+{
+	// A head is starved when it has exhausted the peer pool yet sampled fewer than its redundancy floor of
+	// distinct peers — too few to ever complete a page scan, whether because they don't exist or timed out.
+	return std::any_of (heads.begin (), heads.end (), [] (head const & h) {
+		unsigned const floor = (h.consideration + 1) / 2;
+		return h.exhausted && h.requests < floor;
 	});
 }
 

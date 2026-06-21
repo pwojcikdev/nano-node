@@ -19,6 +19,8 @@
 #include <utility>
 #include <vector>
 
+using namespace std::chrono_literals;
+
 namespace
 {
 // Cap on retire pages queued for pre-check; excess pages are dropped and re-discovered by repair heads
@@ -100,6 +102,15 @@ void topo_strategy::maintenance ()
 {
 	debug_assert (!ctx.mutex.try_lock ());
 	gaps.evict (); // Drop stale gaps so a permanently-missing dependency can't wedge the spearhead
+
+	// Periodically warn while discovery is stalled because the peer pool can't supply a scan's redundancy floor
+	if (scan.starved ())
+	{
+		if (starvation_warning_interval.elapse (5min))
+		{
+			ctx.logger.warn (nano::log::type::bootstrap, "Topology bootstrap: not enough topo-capable peers to reach the scan redundancy floor; discovery is stalled");
+		}
+	}
 }
 
 nano::container_info topo_strategy::container_info () const

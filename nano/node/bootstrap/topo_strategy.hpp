@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/interval.hpp>
 #include <nano/lib/thread_pool.hpp>
 #include <nano/messages/fwd.hpp>
 #include <nano/node/bootstrap/bootstrap_context.hpp>
@@ -77,5 +78,8 @@ private:
 
 	// Pre-check ledger reads run here, off the message thread
 	nano::thread_pool workers;
+
+	// Rate-limits the "not enough peers" warning while discovery is starved
+	nano::interval starvation_warning_interval;
 };
 }

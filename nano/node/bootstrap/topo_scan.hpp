@@ -93,6 +93,9 @@ public:
 
 	void reset ();
 
+	// True while any head is exhausted yet cannot reach its redundancy floor (too few peers to complete a page scan)
+	bool starved () const;
+
 	nano::container_info container_info () const;
 
 public:
