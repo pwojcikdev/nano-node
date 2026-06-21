@@ -375,6 +375,12 @@ void topo_strategy::post_precheck (topo_scan::page page)
 		return;
 	}
 
+	// Record the redundancy the spearhead advanced on (distinct peers that agreed), for observability
+	if (page.head == 0)
+	{
+		ctx.stats.sample (nano::stat::sample::bootstrap_topo_redundancy, page.redundancy, { 0, ctx.config.topo_scan.consideration_count });
+	}
+
 	// Never drop: the scan loop back-pressures on this same queue, so it can't run away.
 	// Dropping a page here would strand its blocks out of the buffer and release later topo blocks ahead of them (a false gap).
 	workers.post ([this, head = page.head, entries = std::move (page.entries)] () mutable {

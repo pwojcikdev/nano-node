@@ -51,7 +51,7 @@ class topo_scan
 public:
 	topo_scan (topo_scan_config const &, nano::stats &);
 
-	// A fanout round to issue: walk the peer's topo index from `start`, up to `count` entries, across up to
+	// A page scan round to issue: walk the peer's topo index from `start`, up to `count` entries, across up to
 	// `fanout` distinct peers, none of which appear in `exclude` (peers already sampled for this cursor)
 	struct request
 	{
@@ -65,7 +65,8 @@ public:
 	// A retired page handed back for pre-check, tagged with the head that produced it (0 is the spearhead)
 	struct page
 	{
-		head_index head{ 0 };
+		head_index head{ 0 }; // Stable head identity: 0 is the spearhead, 1..N are the repair heads
+		unsigned redundancy{ 0 }; // Number of distinct peers that agreed on the page
 		std::deque<nano::topo_key> entries;
 	};
 
