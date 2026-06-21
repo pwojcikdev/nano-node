@@ -59,7 +59,9 @@ nano::error nano::frontier_scan_config::serialize (nano::tomlconfig & toml) cons
 
 nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 {
-	toml.get ("repair_heads", repair_heads);
+	toml.get ("repair_band_height", repair_band_height);
+	toml.get ("min_repair_heads", min_repair_heads);
+	toml.get ("max_repair_heads", max_repair_heads);
 	toml.get ("consideration_count", consideration_count);
 	toml.get ("repair_consideration", repair_consideration);
 	toml.get ("candidates", candidates);
@@ -77,7 +79,9 @@ nano::error nano::topo_scan_config::deserialize (nano::tomlconfig & toml)
 
 nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 {
-	toml.put ("repair_heads", repair_heads, "Number of repair heads that continuously re-scan the discovered topo range to fill gaps.\ntype:uint64");
+	toml.put ("repair_band_height", repair_band_height, "Topo-height span each repair head sweeps; the repair head count scales as discovered frontier height divided by this value, clamped to [min_repair_heads, max_repair_heads].\ntype:uint64");
+	toml.put ("min_repair_heads", min_repair_heads, "Minimum number of repair heads, a floor so a small ledger still has some repair parallelism.\ntype:uint64");
+	toml.put ("max_repair_heads", max_repair_heads, "Maximum number of repair heads; beyond this the per-head band grows instead of the head count.\ntype:uint64");
 	toml.put ("consideration_count", consideration_count, "Number of distinct peers the spearhead samples before advancing the discovery frontier.\ntype:uint64");
 	toml.put ("repair_consideration", repair_consideration, "Number of distinct peers a repair head samples before advancing its band cursor.\ntype:uint64");
 	toml.put ("candidates", candidates, "Maximum number of aggregated entries (the smallest) committed per advance.\ntype:uint64");

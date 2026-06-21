@@ -102,6 +102,7 @@ void topo_strategy::maintenance ()
 {
 	debug_assert (!ctx.mutex.try_lock ());
 	gaps.evict (); // Drop stale gaps so a permanently-missing dependency can't wedge the spearhead
+	scan.reconcile_heads (); // Grow the repair head count as the spearhead pushes the frontier higher
 
 	// Periodically warn while discovery is stalled because the peer pool can't supply a scan's redundancy floor
 	if (scan.starved ())

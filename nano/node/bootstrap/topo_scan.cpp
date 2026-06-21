@@ -21,12 +21,11 @@ void topo_scan::reset ()
 	inflight.clear ();
 	frontier = {};
 
-	// Head 0 is the spearhead (anchored to our local tip by orient); heads 1..N are repair heads
+	// Head 0 is the spearhead (anchored to our local tip by orient)
 	heads.insert (head{ .type = head_type::spearhead, .id = 0, .consideration = config.consideration_count });
-	for (unsigned i = 0; i < config.repair_heads; ++i)
-	{
-		heads.insert (head{ .type = head_type::repair, .id = i + 1, .consideration = config.repair_consideration });
-	}
+
+	// Seed the floor of repair heads; the count grows with the frontier height from here
+	reconcile_heads ();
 }
 
 void topo_scan::orient (nano::topo_key latest)
@@ -39,12 +38,37 @@ void topo_scan::orient (nano::topo_key latest)
 	{
 		by_id.modify (it, [latest] (head & h) { h.cursor = latest; });
 	}
+
+	reconcile_heads (); // a node starting from a large local ledger should come up at the right head count
+}
+
+unsigned topo_scan::desired_repair_heads () const
+{
+	uint64_t const band = config.repair_band_height > 0 ? config.repair_band_height : 1;
+	uint64_t const want = (frontier.topo_height + band - 1) / band; // ceil: one repair head per band of height
+	return static_cast<unsigned> (std::clamp<uint64_t> (want, config.min_repair_heads, config.max_repair_heads));
+}
+
+void topo_scan::reconcile_heads ()
+{
+	auto & by_id = heads.get<tag_id> ();
+	debug_assert (by_id.size () > 0);
+	unsigned const current = static_cast<unsigned> (by_id.size ()) - 1; // minus the spearhead
+	unsigned const desired = desired_repair_heads ();
+
+	// The frontier never shrinks within a session, so the count only ever grows: append the missing repair heads.
+	// A new head carries a zero timestamp, so next () picks it up immediately and arms it onto a fresh band.
+	for (unsigned i = current; i < desired; ++i)
+	{
+		heads.insert (head{ .type = head_type::repair, .id = i + 1, .consideration = config.repair_consideration });
+	}
 }
 
 topo_scan::band topo_scan::repair_band (head_index index) const
 {
-	// Divide [1, frontier] into config.repair_heads equal bands
-	auto const n = config.repair_heads > 0 ? config.repair_heads : 1;
+	// Divide [1, frontier] into one equal band per live repair head (the head count, sans the spearhead)
+	debug_assert (heads.size () > 0);
+	uint64_t const n = std::max<uint64_t> (1, heads.size () - 1);
 	uint64_t lo_height = 1 + (static_cast<uint64_t> (index) * frontier.topo_height) / n;
 	uint64_t hi_height = 1 + (static_cast<uint64_t> (index + 1) * frontier.topo_height) / n;
 	return { nano::topo_key{ lo_height, 0 }, nano::topo_key{ hi_height, 0 } };

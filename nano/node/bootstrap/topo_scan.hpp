@@ -73,6 +73,9 @@ public:
 	// Anchor the spearhead and frontier to our local topology tip
 	void orient (nano::topo_key latest);
 
+	// Grow the repair head count to match the current frontier (frontier is monotonic, so heads are only added)
+	void reconcile_heads ();
+
 	// Reserve the oldest due head and return the round to issue, or nullopt if none is due.
 	// `include_spearhead` gates only the spearhead (back-pressure); repair heads are always eligible.
 	std::optional<request> next (bool include_spearhead, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
@@ -196,8 +199,11 @@ private:
 	// The spearhead moves the frontier forward; a repair head moves within its band and disarms at the band's end.
 	void maybe_advance (head &);
 
-	// The band owned by repair head `index`, computed from the current frontier
+	// The band owned by repair head `index`, computed from the current frontier and live repair head count
 	band repair_band (head_index index) const;
+
+	// Number of repair heads the current frontier calls for: ceil (frontier / repair_band_height), clamped
+	unsigned desired_repair_heads () const;
 
 	ordered_heads heads;
 	nano::topo_key frontier{}; // Highest discovered topo position
