@@ -38,6 +38,7 @@ topo_strategy::topo_strategy (bootstrap_context & ctx_a) :
 {
 	// Retire completed pages straight into the pre-check pipeline
 	scan.sink = [this] (topo_scan::page page) {
+		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::retire);
 		post_precheck (std::move (page));
 	};
 }
@@ -133,6 +134,12 @@ void topo_strategy::scan_one ()
 	// Back-pressure: pause discovery while the fetch buffer is full
 	ctx.wait ([this] () {
 		return blocks.total_count () < ctx.config.topo_scan.max_buffered;
+	});
+
+	// Back-pressure: pause discovery while the pre-check queue is full, so pages are never dropped. A dropped
+	// page would strand its blocks out of the buffer and let later topo blocks be released ahead of them.
+	ctx.wait ([this] () {
+		return workers.queued_tasks () < max_precheck_tasks;
 	});
 
 	// Reserve the oldest due head and learn how many distinct peers its round wants
@@ -368,19 +375,11 @@ void topo_strategy::post_precheck (topo_scan::page page)
 		return;
 	}
 
-	// Drop the page under overload; repair heads will rediscover it
-	if (workers.queued_tasks () < max_precheck_tasks)
-	{
-		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::retire);
-
-		workers.post ([this, head = page.head, entries = std::move (page.entries)] () mutable {
-			precheck (head, std::move (entries));
-		});
-	}
-	else
-	{
-		ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::dropped);
-	}
+	// Never drop: the scan loop back-pressures on this same queue, so it can't run away.
+	// Dropping a page here would strand its blocks out of the buffer and release later topo blocks ahead of them (a false gap).
+	workers.post ([this, head = page.head, entries = std::move (page.entries)] () mutable {
+		precheck (head, std::move (entries));
+	});
 }
 
 void topo_strategy::precheck (head_index head, std::deque<nano::topo_key> entries)
