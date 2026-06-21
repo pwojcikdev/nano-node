@@ -194,10 +194,13 @@ void topo_scan::process (id_t id, std::deque<nano::topo_key> const & entries)
 
 void topo_scan::maybe_advance (head & h)
 {
-	// Target distinct replies: the full consideration count, or fewer once the peer pool is exhausted
+	// Distinct replies required to advance: the full consideration count, or — once the pool is exhausted —
+	// whatever it could supply, but never below ceil (consideration / 2). Below that floor the agreement is too
+	// thin to commit, so the head keeps re-polling (which re-issues to a timed-out peer) instead of advancing.
+	unsigned const floor = (h.consideration + 1) / 2;
 	unsigned const target = h.exhausted ? h.requests : h.consideration;
 
-	if (h.requests > 0 && h.completed >= target)
+	if (h.requests > 0 && h.completed >= target && h.completed >= floor)
 	{
 		if (h.candidates.empty ())
 		{
@@ -222,11 +225,10 @@ void topo_scan::maybe_advance (head & h)
 		{
 			h.disarm (); // Reached the band end; next () re-arms a fresh band
 		}
-		unsigned const samples = h.completed; // distinct peers aggregated into this page (captured before restart)
 		std::deque<nano::topo_key> retire{ h.candidates.begin (), h.candidates.end () };
 		h.restart (); // Begin a fresh round at the new cursor
 		h.timestamp = {}; // Made progress: re-fire promptly (chase the frontier / sweep the band)
-		sink ({ h.id, samples, std::move (retire) });
+		sink ({ h.id, std::move (retire) });
 		return;
 	}
 
