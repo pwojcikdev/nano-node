@@ -143,6 +143,18 @@ private:
 			return type == head_type::spearhead;
 		}
 
+		// Minimum distinct peer replies required to advance: ceil (consideration / 2)
+		unsigned floor () const
+		{
+			return (consideration + 1) / 2;
+		}
+
+		// Replies that complete the round: the full consideration, or all the exhausted pool could supply
+		unsigned target () const
+		{
+			return exhausted ? requests : consideration;
+		}
+
 		// Begin a fresh round for the current cursor: forget all samples and aggregation
 		void restart ()
 		{

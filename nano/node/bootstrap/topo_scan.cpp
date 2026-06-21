@@ -220,13 +220,9 @@ void topo_scan::process (id_t id, std::deque<nano::topo_key> const & entries)
 
 void topo_scan::maybe_advance (head & h)
 {
-	// Distinct replies required to advance: the full consideration count, or — once the pool is exhausted —
-	// whatever it could supply, but never below ceil (consideration / 2).
-	// Below that floor the agreement is too thin to commit, so the head keeps re-polling
-	unsigned const floor = (h.consideration + 1) / 2;
-	unsigned const target = h.exhausted ? h.requests : h.consideration;
-
-	if (h.requests > 0 && h.completed >= target && h.completed >= floor)
+	// Advance once the round is complete (every expected reply gathered) and at least the floor of distinct
+	// peers agreed; below the floor the agreement is too thin to commit, so the head keeps re-polling.
+	if (h.requests > 0 && h.completed >= h.target () && h.completed >= h.floor ())
 	{
 		if (h.candidates.empty ())
 		{
@@ -310,8 +306,7 @@ bool topo_scan::starved () const
 	// A head is starved when it has exhausted the peer pool yet sampled fewer than its redundancy floor of
 	// distinct peers — too few to ever complete a page scan, whether because they don't exist or timed out.
 	return std::any_of (heads.begin (), heads.end (), [] (head const & h) {
-		unsigned const floor = (h.consideration + 1) / 2;
-		return h.exhausted && h.requests < floor;
+		return h.exhausted && h.requests < h.floor ();
 	});
 }
 
