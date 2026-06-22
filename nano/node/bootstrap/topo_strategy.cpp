@@ -23,7 +23,7 @@ using namespace std::chrono_literals;
 
 namespace
 {
-// Cap on retire pages queued for pre-check; excess pages are dropped and re-discovered by repair heads
+// Per-pool cap on pre-check pages in flight; the scan loop back-pressures each head class on this so pages are never dropped
 constexpr std::size_t max_precheck_tasks = 64;
 // Maximum blocks released to the block processor per submit iteration
 constexpr std::size_t max_submit_batch = 256;
@@ -36,7 +36,8 @@ topo_strategy::topo_strategy (bootstrap_context & ctx_a) :
 	scan{ ctx.config.topo_scan, ctx.stats },
 	blocks{ ctx.config.topo_scan, ctx.stats },
 	gaps{ ctx.config.topo_scan, ctx.stats },
-	workers{ 1, nano::thread_role::name::bootstrap_topo_processing }
+	spearhead_workers{ 1, nano::thread_role::name::bootstrap_topo_processing },
+	repair_workers{ 1, nano::thread_role::name::bootstrap_topo_processing }
 {
 	// Retire completed pages straight into the pre-check pipeline
 	scan.sink = [this] (topo_scan::page page) {
@@ -49,7 +50,8 @@ void topo_strategy::start ()
 {
 	debug_assert (!scan_thread.joinable ());
 
-	workers.start ();
+	spearhead_workers.start ();
+	repair_workers.start ();
 
 	scan_thread = std::thread ([this] () {
 		nano::thread_role::set (nano::thread_role::name::bootstrap_topo_scan);
@@ -70,7 +72,8 @@ void topo_strategy::stop ()
 	join_or_pass (scan_thread);
 	join_or_pass (fetch_thread);
 	join_or_pass (submit_thread);
-	workers.stop ();
+	spearhead_workers.stop ();
+	repair_workers.stop ();
 }
 
 void topo_strategy::orient ()
@@ -120,7 +123,8 @@ nano::container_info topo_strategy::container_info () const
 	info.add ("scan", scan.container_info ());
 	info.add ("blocks", blocks.container_info ());
 	info.add ("gaps", gaps.container_info ());
-	info.add ("workers", workers.container_info ());
+	info.add ("spearhead_workers", spearhead_workers.container_info ());
+	info.add ("repair_workers", repair_workers.container_info ());
 	return info;
 }
 
@@ -149,17 +153,15 @@ void topo_strategy::scan_one ()
 		return blocks.total_count () < ctx.config.topo_scan.max_buffered;
 	});
 
-	// Back-pressure: pause discovery while the pre-check queue is full, so pages are never dropped. A dropped
-	// page would strand its blocks out of the buffer and let later topo blocks be released ahead of them.
-	ctx.wait ([this] () {
-		return workers.queued_tasks () < max_precheck_tasks;
-	});
-
-	// Reserve the oldest due head and learn how many distinct peers its round wants
+	// Back-pressure each head class on its own pre-check pool (spearhead also on the gap backlog) so a saturated
+	// pool gates only its class; next () never drops a page, which would strand its blocks out of the buffer.
 	std::optional<topo_scan::request> req;
 	ctx.wait ([this, &req] () {
-		bool const include_spearhead = gaps.count () < ctx.config.topo_scan.max_gaps;
-		req = scan.next (include_spearhead);
+		topo_scan::head_gates gates{
+			.include_spearhead = gaps.count () < ctx.config.topo_scan.max_gaps && spearhead_workers.queued_tasks () < max_precheck_tasks,
+			.include_repair = repair_workers.queued_tasks () < max_precheck_tasks,
+		};
+		req = scan.next (gates);
 		return req.has_value ();
 	});
 	if (!req)
@@ -396,7 +398,8 @@ void topo_strategy::post_precheck (topo_scan::page page)
 
 	// Never drop: the scan loop back-pressures on this same queue, so it can't run away.
 	// Dropping a page here would strand its blocks out of the buffer and release later topo blocks ahead of them (a false gap).
-	workers.post ([this, head = page.head, entries = std::move (page.entries)] () mutable {
+	auto & pool = (page.head == 0) ? spearhead_workers : repair_workers;
+	pool.post ([this, head = page.head, entries = std::move (page.entries)] () mutable {
 		precheck (head, std::move (entries));
 	});
 }

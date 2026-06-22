@@ -70,6 +70,13 @@ public:
 		std::deque<nano::topo_key> entries;
 	};
 
+	// Per-head-class admission gates (back-pressure): a class issues a round only while its gate is open
+	struct head_gates
+	{
+		bool include_spearhead{ false };
+		bool include_repair{ false };
+	};
+
 	// Anchor the spearhead and frontier to our local topology tip
 	void orient (nano::topo_key latest);
 
@@ -77,8 +84,8 @@ public:
 	void reconcile_heads ();
 
 	// Reserve the oldest due head and return the round to issue, or nullopt if none is due.
-	// `include_spearhead` gates only the spearhead (back-pressure); repair heads are always eligible.
-	std::optional<request> next (bool include_spearhead, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
+	// `gates` back-pressures each head class independently (an open gate lets that class run).
+	std::optional<request> next (head_gates gates, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	// Register one issued request of a round (called once per acquired peer). Returns false if the head
 	// advanced under us since next () (a stale round; the caller drops it).

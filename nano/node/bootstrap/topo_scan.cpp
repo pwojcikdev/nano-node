@@ -74,18 +74,18 @@ topo_scan::band topo_scan::repair_band (head_index index) const
 	return { nano::topo_key{ lo_height, 0 }, nano::topo_key{ hi_height, 0 } };
 }
 
-std::optional<topo_scan::request> topo_scan::next (bool include_spearhead, std::chrono::steady_clock::time_point now)
+std::optional<topo_scan::request> topo_scan::next (head_gates gates, std::chrono::steady_clock::time_point now)
 {
 	auto const cutoff = now - config.cooldown;
 
 	// A head is due while it still wants distinct samples, or once its cooldown elapses (which both paces
-	// re-polling a finished cursor and retries a round whose replies are not arriving). The spearhead is
-	// additionally hard-gated by back-pressure.
+	// re-polling a finished cursor and retries a round whose replies are not arriving).
+	// Each head class is additionally hard-gated by its own back-pressure flag.
 	auto is_due = [&] (head const & h) {
-		bool const gate = h.is_spearhead () ? include_spearhead : true;
+		bool const open = h.is_spearhead () ? gates.include_spearhead : gates.include_repair;
 		bool const want_more = !h.exhausted && h.requests < h.consideration;
 		bool const cooldown_expired = h.timestamp < cutoff;
-		return gate && (want_more || cooldown_expired);
+		return open && (want_more || cooldown_expired);
 	};
 
 	// Arm/restart and stamp a due head, returning the round to issue. A wake that is purely the cooldown (round

@@ -60,7 +60,7 @@ private:
 	// Re-anchor the spearhead to our local topology tip
 	void orient ();
 
-	// Queue a retired page for pre-check, dropping it under worker overload
+	// Route a retired page to its head class's pre-check pool (spearhead vs repair)
 	void post_precheck (topo_scan::page page);
 
 	// Worker-pool task: drop already-present blocks, hand the rest to the fetch engine
@@ -77,7 +77,8 @@ private:
 	std::thread submit_thread;
 
 	// Pre-check ledger reads run here, off the message thread
-	nano::thread_pool workers;
+	nano::thread_pool spearhead_workers;
+	nano::thread_pool repair_workers;
 
 	// Rate-limits the "not enough peers" warning while discovery is starved
 	nano::interval starvation_warning_interval;
