@@ -120,6 +120,7 @@ nano::container_info topo_strategy::container_info () const
 	info.add ("scan", scan.container_info ());
 	info.add ("blocks", blocks.container_info ());
 	info.add ("gaps", gaps.container_info ());
+	info.add ("workers", workers.container_info ());
 	return info;
 }
 
