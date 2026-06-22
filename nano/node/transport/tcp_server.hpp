@@ -70,7 +70,7 @@ private:
 	nano::async::task task;
 
 	nano::shared_buffer buffer;
-	static size_t constexpr max_buffer_size = 64 * 1024; // 64 KB
+	static size_t constexpr max_buffer_size = 128 * 1024; // 128 KB
 
 	std::atomic<bool> handshake_received{ false };
 
