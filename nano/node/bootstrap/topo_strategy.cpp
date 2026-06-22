@@ -409,11 +409,29 @@ void topo_strategy::precheck (head_index head, std::deque<nano::topo_key> entrie
 	std::deque<nano::topo_key> missing;
 	{
 		auto transaction = ctx.ledger.tx_begin_read ();
-		for (auto const & key : entries)
+
+		if (ctx.ledger.flags.topo_index)
 		{
-			if (!ctx.ledger.any.block_exists_or_pruned (transaction, key.hash))
+			// With the topo index the table holds a key per block (and pruning is disabled), so a present key implies the block is present.
+			// Entries arrive in topo order, matching the table, so crawl it in lockstep rather than a random block lookup per entry.
+			auto crawler = ctx.ledger.store.topology.crawl (transaction, entries.front ());
+			for (auto const & key : entries)
 			{
-				missing.push_back (key);
+				if (!crawler.skip_to (key) || crawler.full_key () != key)
+				{
+					missing.push_back (key);
+				}
+			}
+		}
+		else
+		{
+			// No topo index: fall back to probing each block by hash
+			for (auto const & key : entries)
+			{
+				if (!ctx.ledger.any.block_exists_or_pruned (transaction, key.hash))
+				{
+					missing.push_back (key);
+				}
 			}
 		}
 	}
