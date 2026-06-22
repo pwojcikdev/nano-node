@@ -85,7 +85,7 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 	toml.put ("consideration_count", consideration_count, "Number of distinct peers the spearhead samples before advancing the discovery frontier.\ntype:uint64");
 	toml.put ("repair_consideration", repair_consideration, "Number of distinct peers a repair head samples before advancing its band cursor.\ntype:uint64");
 	toml.put ("candidates", candidates, "Maximum number of aggregated entries (the smallest) committed per advance.\ntype:uint64");
-	toml.put ("request_count", request_count, "Number of topo index entries requested per page (max 1000).\ntype:uint64");
+	toml.put ("request_count", request_count, "Number of topo index entries requested per page (max 1637).\ntype:uint64");
 	toml.put ("cooldown", cooldown.count (), "Cooldown period between requests for a single scan head.\ntype:milliseconds");
 	toml.put ("max_buffered", max_buffered, "Scan back-pressure: pause all discovery while the fetch/submit buffer holds this many entries.\ntype:uint64");
 	toml.put ("fetch_batch", fetch_batch, "Number of block hashes requested per random blocks fetch (max 128).\ntype:uint64");

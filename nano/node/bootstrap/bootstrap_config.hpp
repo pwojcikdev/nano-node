@@ -50,8 +50,8 @@ public:
 	unsigned max_repair_heads{ 6 }; // Cap on repair heads; beyond it bands grow rather than the head count
 	unsigned consideration_count{ 3 }; // Spearhead: distinct peers sampled before the frontier advances
 	unsigned repair_consideration{ 1 }; // Repair: distinct peers sampled before a band cursor advances
-	std::size_t candidates{ 1000 }; // Spearhead: cap on aggregated entries kept (the smallest) per advance
-	std::size_t request_count{ 1000 }; // Topo entries requested per topo_index page (<= 1000)
+	std::size_t candidates{ 1637 }; // Spearhead: cap on aggregated entries kept (the smallest) per advance
+	std::size_t request_count{ 1637 }; // Topo entries requested per topo_index page (<= max_entries = 1637)
 	std::chrono::milliseconds cooldown{ 1000 * 5 }; // Per-head cooldown between requests
 	std::size_t max_buffered{ 1000 * 40 }; // Scan back-pressure: pause all discovery while the buffer holds this many entries
 	std::size_t fetch_batch{ 128 }; // Hashes per blocks_random request (<= 128)
