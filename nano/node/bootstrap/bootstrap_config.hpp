@@ -45,9 +45,9 @@ public:
 	nano::error serialize (nano::tomlconfig & toml) const;
 
 public:
-	std::size_t repair_band_height{ 15'625'000 }; // Topo-height each repair head sweeps; the repair head count scales as frontier_height / this (= 250M / 16 target)
+	std::size_t repair_band_height{ 7'000'000 }; // Topo-height each repair head sweeps; the repair head count scales as frontier_height / this
 	unsigned min_repair_heads{ 2 }; // Floor on repair heads, so a small ledger still has some repair parallelism
-	unsigned max_repair_heads{ 16 }; // Cap on repair heads; beyond it bands grow rather than the head count
+	unsigned max_repair_heads{ 6 }; // Cap on repair heads; beyond it bands grow rather than the head count
 	unsigned consideration_count{ 3 }; // Spearhead: distinct peers sampled before the frontier advances
 	unsigned repair_consideration{ 1 }; // Repair: distinct peers sampled before a band cursor advances
 	std::size_t candidates{ 1000 }; // Spearhead: cap on aggregated entries kept (the smallest) per advance
