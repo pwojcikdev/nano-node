@@ -459,28 +459,37 @@ void topo_strategy::precheck (head_index head, std::deque<nano::topo_key> entrie
 void topo_strategy::inspect (nano::block_status result, nano::block const & block, strategy tag)
 {
 	debug_assert (!ctx.mutex.try_lock ());
+
+	// Any source: the block is in the ledger now, so the gap we tracked for it (if any) is resolved
+	if (result == nano::block_status::progress)
+	{
+		gaps.resolve (block.hash ());
+		return;
+	}
+
+	// Only our own submissions count toward the spearhead back-pressure
+	if (tag != strategy::topology)
+	{
+		return;
+	}
+
+	auto const account = block.account_field ().value_or (0);
 	switch (result)
 	{
-		case nano::block_status::progress:
-		{
-			// Any source: the block is in the ledger now, so the gap we tracked for it (if any) is resolved
-			gaps.resolve (block.hash ());
-		}
-		break;
 		case nano::block_status::gap_previous:
-		case nano::block_status::gap_source:
-		case nano::block_status::gap_epoch_open_pending:
-		{
-			// Only our own submissions count toward the spearhead back-pressure
-			if (tag == strategy::topology)
-			{
-				gaps.track (block.hash (), block.account_field ().value_or (0));
-			}
-		}
-		break;
-		default:
+			ctx.logger.warn (nano::log::type::bootstrap, "Topo gap (previous): block {} account {} missing previous {}", block.hash (), account, block.previous ());
 			break;
+		case nano::block_status::gap_source:
+			ctx.logger.warn (nano::log::type::bootstrap, "Topo gap (source): block {} account {} missing source {}", block.hash (), account, block.source_field ().value_or (block.link_field ().value_or (0).as_block_hash ()));
+			break;
+		case nano::block_status::gap_epoch_open_pending:
+			ctx.logger.warn (nano::log::type::bootstrap, "Topo gap (epoch open pending): block {} account {}", block.hash (), account);
+			break;
+		default:
+			return; // Not a gap we track
 	}
+
+	gaps.track (block.hash (), account);
 }
 
 void topo_strategy::rollback (nano::account const & account)
