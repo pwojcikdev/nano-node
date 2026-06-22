@@ -601,6 +601,7 @@ enum class detail
 	tracked,
 	resolved,
 	rolled_back,
+	grow,
 
 	prioritize,
 	prioritize_failed,

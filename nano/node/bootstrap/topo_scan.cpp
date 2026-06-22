@@ -61,6 +61,7 @@ void topo_scan::reconcile_heads ()
 	for (unsigned i = current; i < desired; ++i)
 	{
 		heads.insert (head{ .type = head_type::repair, .id = i + 1, .consideration = config.repair_consideration });
+		stats.inc (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::grow);
 	}
 }
 
