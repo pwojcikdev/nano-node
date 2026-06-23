@@ -292,11 +292,11 @@ void topo_scan::cancel (id_t id)
 		{
 			return;
 		}
-		// The timed-out peer never contributed; drop it so a retry can sample a fresh one, then re-check
-		// whether the (possibly lowered) round target is now met
+		// Drop the failed peer and clear exhaustion so the freed slot is re-sampled at once (scan_one re-flags it if still dry), keeping replies already gathered
 		if (h.sampled.erase (res.node_id) > 0)
 		{
 			h.requests -= 1;
+			h.exhausted = false;
 		}
 		maybe_advance (h); // emits the retired page to the sink if the round completed
 	});
