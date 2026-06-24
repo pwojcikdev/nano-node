@@ -394,6 +394,7 @@ void topo_strategy::post_precheck (topo_scan::page page)
 	if (page.head == 0)
 	{
 		ctx.stats.sample (nano::stat::sample::bootstrap_topo_redundancy, page.redundancy, { 0, ctx.config.topo_scan.consideration_count });
+		ctx.logger.debug (nano::log::type::bootstrap, "Topology bootstrap spearhead retired page: {}", nano::streamed (page, nano::streamed_format::json));
 	}
 
 	// Never drop: the scan loop back-pressures on this same queue, so it can't run away.
