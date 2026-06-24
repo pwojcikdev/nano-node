@@ -65,9 +65,22 @@ public:
 	// A retired page handed back for pre-check, tagged with the head that produced it (0 is the spearhead)
 	struct page
 	{
+		struct peer_response
+		{
+			nano::account node_id{ 0 };
+			std::deque<nano::topo_key> entries;
+
+			void operator() (nano::object_stream &) const;
+		};
+
 		head_index head{ 0 }; // Stable head identity: 0 is the spearhead, 1..N are the repair heads
+		nano::topo_key start{}; // Cursor this retired page was sampled from
+		nano::topo_key frontier{}; // Furthest retained candidate, used as the next cursor
 		unsigned redundancy{ 0 }; // Number of distinct peers that agreed on the page
 		std::deque<nano::topo_key> entries;
+		std::vector<peer_response> responses; // Raw response pages, grouped by peer
+
+		void operator() (nano::object_stream &) const;
 	};
 
 	// Per-head-class admission gates (back-pressure): a class issues a round only while its gate is open
@@ -138,6 +151,7 @@ private:
 		nano::topo_key cursor{}; // Start position for this head's next request
 		band range{}; // Repair only: the band frozen for the current sweep; hi is zero until first frozen
 		std::set<nano::topo_key> candidates; // Entries aggregated across this cursor's replies
+		std::vector<page::peer_response> responses; // Raw response pages grouped by peer for the current cursor
 		std::unordered_set<nano::account> sampled; // Distinct peers sampled for the current cursor
 		unsigned requests{ 0 }; // Distinct samples issued for the current cursor (mirrors sampled.size ())
 		unsigned completed{ 0 }; // Replies received for the current cursor
@@ -166,6 +180,7 @@ private:
 		void restart ()
 		{
 			candidates.clear ();
+			responses.clear ();
 			sampled.clear ();
 			requests = 0;
 			completed = 0;

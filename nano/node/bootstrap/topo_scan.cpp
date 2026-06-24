@@ -1,6 +1,7 @@
 #include <nano/lib/container_info.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
+#include <nano/lib/object_stream.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/node/bootstrap/topo_scan.hpp>
 
@@ -8,6 +9,15 @@
 
 namespace nano::bootstrap
 {
+namespace
+{
+	void write_topo_key (nano::topo_key const & key, nano::object_stream & obs)
+	{
+		obs.write ("topo_height", key.topo_height);
+		obs.write ("hash", key.hash);
+	}
+}
+
 topo_scan::topo_scan (topo_scan_config const & config_a, nano::stats & stats_a) :
 	config{ config_a },
 	stats{ stats_a }
@@ -200,6 +210,10 @@ void topo_scan::process (id_t id, std::deque<nano::topo_key> const & entries)
 		}
 		h.processed += entries.size ();
 		h.completed += 1; // A distinct peer replied for the current cursor
+		if (h.is_spearhead ())
+		{
+			h.responses.push_back (page::peer_response{ .node_id = res.node_id, .entries = entries });
+		}
 
 		// Aggregate this reply's new entries, capping the set to the smallest `candidates` so one aggressive peer
 		// cannot make us advance past entries that lagging peers have not reported yet
@@ -234,7 +248,11 @@ void topo_scan::maybe_advance (head & h)
 
 		// Advance to the largest of the kept (smallest) candidates and retire them for fetching. The next request
 		// re-returns this entry as its first (a cheap health marker); the `cursor < entry` filter ignores it.
+		auto const start = h.cursor;
 		auto const furthest = *h.candidates.rbegin ();
+		auto const redundancy = h.completed;
+		std::deque<nano::topo_key> retire{ h.candidates.begin (), h.candidates.end () };
+		auto responses = std::move (h.responses);
 		if (h.is_spearhead ())
 		{
 			frontier = std::max (frontier, furthest); // Push the discovery frontier forward
@@ -249,15 +267,17 @@ void topo_scan::maybe_advance (head & h)
 			h.disarm (); // Reached the band end; next () re-arms a fresh band
 		}
 
-		std::deque<nano::topo_key> retire{ h.candidates.begin (), h.candidates.end () };
 		h.restart (); // Begin a fresh round at the new cursor
 		h.timestamp = {}; // Made progress: re-fire promptly (chase the frontier / sweep the band)
 
 		// Emit the completed page to the sink
 		sink (page{
 		.head = h.id,
-		.redundancy = h.completed,
-		.entries = std::move (retire) });
+		.start = start,
+		.frontier = furthest,
+		.redundancy = redundancy,
+		.entries = std::move (retire),
+		.responses = std::move (responses) });
 
 		return;
 	}
@@ -337,5 +357,25 @@ nano::container_info topo_scan::container_info () const
 	info.add ("heads", collect_heads ());
 	info.add ("processed", collect_processed ());
 	return info;
+}
+
+void topo_scan::page::peer_response::operator() (nano::object_stream & obs) const
+{
+	obs.write ("peer", node_id);
+	obs.write_range ("entries", entries, write_topo_key);
+}
+
+void topo_scan::page::operator() (nano::object_stream & obs) const
+{
+	obs.write ("head", head);
+	obs.write ("start", [this] (nano::object_stream & obs) {
+		write_topo_key (start, obs);
+	});
+	obs.write ("frontier", [this] (nano::object_stream & obs) {
+		write_topo_key (frontier, obs);
+	});
+	obs.write ("redundancy", redundancy);
+	obs.write_range ("entries", entries, write_topo_key);
+	obs.write_range ("responses", responses);
 }
 }
