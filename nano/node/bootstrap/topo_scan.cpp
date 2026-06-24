@@ -2,6 +2,7 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/stats.hpp>
+#include <nano/messages/asc_pull.hpp>
 #include <nano/node/bootstrap/topo_scan.hpp>
 
 #include <algorithm>
@@ -104,7 +105,7 @@ std::optional<topo_scan::request> topo_scan::next (head_gates gates, std::chrono
 		}
 		h.timestamp = now;
 		std::vector<nano::account> exclude (h.sampled.begin (), h.sampled.end ()); // peers already sampled this cursor
-		return request{ h.id, h.cursor, config.request_count, h.consideration - h.requests, std::move (exclude) };
+		return request{ h.id, h.cursor, nano::messages::asc_pull_ack::topo_index_payload::max_entries, h.consideration - h.requests, std::move (exclude) };
 	};
 
 	// Issue the round for a due head: count it, reserve it under its own index, and return the request
@@ -198,16 +199,17 @@ void topo_scan::process (id_t id, std::deque<nano::topo_key> const & entries)
 		{
 			return;
 		}
+
 		h.processed += entries.size ();
 		h.completed += 1; // A distinct peer replied for the current cursor
 
-		// Aggregate this reply's new entries, capping the set to the smallest `candidates` so one aggressive peer
-		// cannot make us advance past entries that lagging peers have not reported yet
+		// Aggregate this reply's new entries, capping the map to the smallest `candidates`. Responses include the
+		// cursor, so `candidates` is a trim limit for usable new entries, not the requested page size.
 		for (auto const & entry : entries)
 		{
 			if (h.cursor < entry)
 			{
-				h.candidates.insert (entry);
+				++h.candidates[entry];
 			}
 		}
 		while (h.candidates.size () > config.candidates)
@@ -232,9 +234,18 @@ void topo_scan::maybe_advance (head & h)
 			return;
 		}
 
-		// Advance to the largest of the kept (smallest) candidates and retire them for fetching. The next request
-		// re-returns this entry as its first (a cheap health marker); the `cursor < entry` filter ignores it.
-		auto const furthest = *h.candidates.rbegin ();
+		// Advance to the largest kept candidate with enough per-key support. Retire all discovered entries up to
+		// that supported boundary, but never let a minority-only tail move the cursor past unseen keys.
+		auto const floor = h.floor ();
+		auto const furthest_it = std::find_if (h.candidates.rbegin (), h.candidates.rend (), [floor] (auto const & candidate) {
+			return candidate.second >= floor;
+		});
+		if (furthest_it == h.candidates.rend ())
+		{
+			return;
+		}
+
+		auto const furthest = furthest_it->first;
 		if (h.is_spearhead ())
 		{
 			frontier = std::max (frontier, furthest); // Push the discovery frontier forward
@@ -249,7 +260,12 @@ void topo_scan::maybe_advance (head & h)
 			h.disarm (); // Reached the band end; next () re-arms a fresh band
 		}
 
-		std::deque<nano::topo_key> retire{ h.candidates.begin (), h.candidates.end () };
+		std::deque<nano::topo_key> retire;
+		for (auto it = h.candidates.begin (); it != h.candidates.end () && !(furthest < it->first); ++it)
+		{
+			retire.push_back (it->first);
+		}
+		
 		h.restart (); // Begin a fresh round at the new cursor
 		h.timestamp = {}; // Made progress: re-fire promptly (chase the frontier / sweep the band)
 

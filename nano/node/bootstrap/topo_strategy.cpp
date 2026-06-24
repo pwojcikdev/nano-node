@@ -390,7 +390,7 @@ void topo_strategy::post_precheck (topo_scan::page page)
 		return;
 	}
 
-	// Record the redundancy the spearhead advanced on (distinct peers that agreed), for observability
+	// Record the number of distinct replies the spearhead advanced on, for observability
 	if (page.head == 0)
 	{
 		ctx.stats.sample (nano::stat::sample::bootstrap_topo_redundancy, page.redundancy, { 0, ctx.config.topo_scan.consideration_count });

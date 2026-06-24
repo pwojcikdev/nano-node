@@ -2,12 +2,15 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/stats.hpp>
+#include <nano/messages/asc_pull.hpp>
 #include <nano/node/bootstrap/topo_scan.hpp>
 #include <nano/secure/common.hpp>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <deque>
+#include <utility>
 
 using namespace std::chrono_literals;
 
@@ -63,6 +66,11 @@ std::size_t heads_at (nano::bootstrap::topo_scan & scan, uint64_t height)
 {
 	scan.orient (nano::topo_key{ height, nano::block_hash{ 1 } });
 	return repair_head_count (scan);
+}
+
+nano::topo_key make_topo_key (uint64_t height, uint64_t hash)
+{
+	return nano::topo_key{ height, nano::block_hash{ hash } };
 }
 }
 
@@ -187,4 +195,84 @@ TEST (bootstrap_topo_scan, grow_stat_tracks_head_count)
 	// Heads are never removed, so the cumulative grow count equals the live repair head count
 	ASSERT_EQ (ctx.stats.count (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::grow), repair_head_count (scan));
 	ASSERT_EQ (repair_head_count (scan), config.max_repair_heads);
+}
+
+TEST (bootstrap_topo_scan, requests_protocol_max_and_trims_new_candidates)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 1;
+	config.candidates = 2;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	std::deque<nano::bootstrap::topo_scan::page> pages;
+	scan.sink = [&pages] (nano::bootstrap::topo_scan::page page) {
+		pages.push_back (std::move (page));
+	};
+
+	auto const cursor = make_topo_key (10, 10);
+	auto const a = make_topo_key (10, 20);
+	auto const b = make_topo_key (10, 30);
+	auto const c = make_topo_key (10, 40);
+	scan.orient (cursor);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false });
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, cursor);
+	ASSERT_EQ (req->count, nano::messages::asc_pull_ack::topo_index_payload::max_entries);
+	ASSERT_EQ (req->fanout, 1);
+
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+	scan.process (1, { cursor, a, b, c });
+
+	ASSERT_EQ (pages.size (), 1);
+	ASSERT_EQ (pages.front ().entries.size (), 2);
+	ASSERT_EQ (pages.front ().entries[0], a);
+	ASSERT_EQ (pages.front ().entries[1], b);
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false });
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, b);
+}
+
+TEST (bootstrap_topo_scan, spearhead_advances_only_to_supported_boundary)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 3;
+	config.candidates = 4;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	std::deque<nano::bootstrap::topo_scan::page> pages;
+	scan.sink = [&pages] (nano::bootstrap::topo_scan::page page) {
+		pages.push_back (std::move (page));
+	};
+
+	auto const cursor = make_topo_key (10, 10);
+	auto const a = make_topo_key (10, 20);
+	auto const b = make_topo_key (10, 30);
+	auto const c = make_topo_key (10, 40);
+	auto const d = make_topo_key (10, 50);
+	scan.orient (cursor);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false });
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->fanout, 3);
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 2, nano::account{ 2 }));
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 3, nano::account{ 3 }));
+
+	scan.process (1, { cursor, a, b, c });
+	scan.process (2, { cursor, a, b, c });
+	scan.process (3, { cursor, a, b, d });
+
+	ASSERT_EQ (pages.size (), 1);
+	ASSERT_EQ (pages.front ().entries.size (), 3);
+	ASSERT_EQ (pages.front ().entries[0], a);
+	ASSERT_EQ (pages.front ().entries[1], b);
+	ASSERT_EQ (pages.front ().entries[2], c);
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false });
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, c);
 }

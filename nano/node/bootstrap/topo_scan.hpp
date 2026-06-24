@@ -17,8 +17,8 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <map>
 #include <optional>
-#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -66,7 +66,7 @@ public:
 	struct page
 	{
 		head_index head{ 0 }; // Stable head identity: 0 is the spearhead, 1..N are the repair heads
-		unsigned redundancy{ 0 }; // Number of distinct peers that agreed on the page
+		unsigned redundancy{ 0 }; // Number of distinct peer replies that completed the page
 		std::deque<nano::topo_key> entries;
 	};
 
@@ -137,7 +137,7 @@ private:
 		unsigned consideration{ 1 }; // Distinct peers to sample for a cursor before advancing
 		nano::topo_key cursor{}; // Start position for this head's next request
 		band range{}; // Repair only: the band frozen for the current sweep; hi is zero until first frozen
-		std::set<nano::topo_key> candidates; // Entries aggregated across this cursor's replies
+		std::map<nano::topo_key, unsigned> candidates; // Entries aggregated across this cursor's replies, with per-key support count
 		std::unordered_set<nano::account> sampled; // Distinct peers sampled for the current cursor
 		unsigned requests{ 0 }; // Distinct samples issued for the current cursor (mirrors sampled.size ())
 		unsigned completed{ 0 }; // Replies received for the current cursor
