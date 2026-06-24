@@ -74,15 +74,19 @@ nano::topo_key make_topo_key (uint64_t height, uint64_t hash)
 }
 }
 
-// A fresh engine seeds exactly the floor of repair heads (frontier is zero, so the count clamps to min)
+/*
+ * A fresh engine seeds exactly the floor of repair heads (frontier is zero, so the count clamps to min)
+ */
 TEST (bootstrap_topo_scan, construction_seeds_floor)
 {
 	test_context ctx{};
 	ASSERT_EQ (repair_head_count (ctx.scan), ctx.config.min_repair_heads);
 }
 
-// The core contract: as the frontier grows, the repair head count tracks ceil (frontier / band) clamped to
-// [min, max]. Asserted against an explicit config so the test is independent of the shipped defaults.
+/*
+ * The core contract: as the frontier grows, the repair head count tracks ceil (frontier / band) clamped to
+ * [min, max]. Asserted against an explicit config so the test is independent of the shipped defaults.
+ */
 TEST (bootstrap_topo_scan, count_follows_contract)
 {
 	nano::topo_scan_config config;
@@ -109,7 +113,9 @@ TEST (bootstrap_topo_scan, count_follows_contract)
 	}
 }
 
-// The ceil + clamp behaviour, isolated with small hand-checked numbers and a custom floor/cap
+/*
+ * The ceil + clamp behaviour, isolated with small hand-checked numbers and a custom floor/cap
+ */
 TEST (bootstrap_topo_scan, heads_scale_custom_config)
 {
 	nano::topo_scan_config config;
@@ -127,8 +133,10 @@ TEST (bootstrap_topo_scan, heads_scale_custom_config)
 	ASSERT_EQ (heads_at (scan, 100'000), 8); // far past the cap -> still 8
 }
 
-// Documents the design intent ("~16 repair heads at the 250M target height") with an explicit config, so it
-// keeps documenting the intent even as the shipped defaults are tuned.
+/*
+ * Documents the design intent ("~16 repair heads at the 250M target height") with an explicit config, so it
+ * keeps documenting the intent even as the shipped defaults are tuned.
+ */
 TEST (bootstrap_topo_scan, design_target_16_heads_at_250M)
 {
 	nano::topo_scan_config config;
@@ -146,7 +154,9 @@ TEST (bootstrap_topo_scan, design_target_16_heads_at_250M)
 	ASSERT_EQ (heads_at (scan, 500'000'000), 16); // capped beyond the target, bands grow instead
 }
 
-// The frontier never shrinks within a session, so the repair head count must never shrink either
+/*
+ * The frontier never shrinks within a session, so the repair head count must never shrink either
+ */
 TEST (bootstrap_topo_scan, heads_never_shrink)
 {
 	nano::topo_scan_config config;
@@ -163,7 +173,9 @@ TEST (bootstrap_topo_scan, heads_never_shrink)
 	ASSERT_EQ (heads_at (scan, 0), 10);
 }
 
-// reset () tears the heads back down to the floor
+/*
+ * reset () tears the heads back down to the floor
+ */
 TEST (bootstrap_topo_scan, reset_returns_to_floor)
 {
 	nano::topo_scan_config config;
@@ -178,7 +190,9 @@ TEST (bootstrap_topo_scan, reset_returns_to_floor)
 	ASSERT_EQ (repair_head_count (scan), config.min_repair_heads);
 }
 
-// The grow stat increments once per repair head added; since heads are never removed it equals the live count
+/*
+ * The grow stat increments once per repair head added; since heads are never removed it equals the live count
+ */
 TEST (bootstrap_topo_scan, grow_stat_tracks_head_count)
 {
 	nano::topo_scan_config config;
@@ -197,6 +211,10 @@ TEST (bootstrap_topo_scan, grow_stat_tracks_head_count)
 	ASSERT_EQ (repair_head_count (scan), config.max_repair_heads);
 }
 
+/*
+ * A scan request always asks for the protocol page limit, but only retires the smallest configured number of
+ * usable new entries. The next cursor is the last retired entry, not the largest entry returned by the peer.
+ */
 TEST (bootstrap_topo_scan, requests_protocol_max_and_trims_new_candidates)
 {
 	nano::topo_scan_config config;
@@ -235,6 +253,10 @@ TEST (bootstrap_topo_scan, requests_protocol_max_and_trims_new_candidates)
 	ASSERT_EQ (req->start, b);
 }
 
+/*
+ * With redundant replies, the spearhead advances only to the furthest candidate that has enough peer support.
+ * A minority-only tail is left for a later round so one peer cannot move the cursor past unseen keys.
+ */
 TEST (bootstrap_topo_scan, spearhead_advances_only_to_supported_boundary)
 {
 	nano::topo_scan_config config;
@@ -277,6 +299,76 @@ TEST (bootstrap_topo_scan, spearhead_advances_only_to_supported_boundary)
 	ASSERT_EQ (req->start, c);
 }
 
+/*
+ * After a round makes real progress, the scan clears the pacing timestamp and immediately issues the next
+ * cursor. This lets the spearhead chase a discovered frontier without waiting for the per-head cooldown.
+ */
+TEST (bootstrap_topo_scan, progress_refires_without_cooldown)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 1;
+	config.cooldown = 10ms;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	std::deque<nano::bootstrap::topo_scan::page> pages;
+	scan.sink = [&pages] (nano::bootstrap::topo_scan::page page) {
+		pages.push_back (std::move (page));
+	};
+
+	auto const now = std::chrono::steady_clock::now ();
+	auto const cursor = make_topo_key (10, 10);
+	auto const a = make_topo_key (10, 20);
+	scan.orient (cursor);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false }, now);
+	ASSERT_TRUE (req);
+
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+	scan.process (1, { cursor, a });
+	ASSERT_EQ (pages.size (), 1);
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false }, now + (config.cooldown / 2));
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, a);
+	ASSERT_EQ (req->fanout, 1);
+	ASSERT_TRUE (req->exclude.empty ());
+}
+
+/*
+ * A partially sampled active round does not wait for cooldown before topping up. The next request asks only
+ * for the remaining fanout and excludes peers already sampled for the same cursor.
+ */
+TEST (bootstrap_topo_scan, partial_round_topup_ignores_cooldown)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 3;
+	config.cooldown = 10ms;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	auto const now = std::chrono::steady_clock::now ();
+	auto const cursor = make_topo_key (10, 10);
+	scan.orient (cursor);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false }, now);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->fanout, 3);
+
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false }, now + (config.cooldown / 2));
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, cursor);
+	ASSERT_EQ (req->fanout, 2);
+	ASSERT_EQ (req->exclude.size (), 1);
+	ASSERT_EQ (req->exclude.front (), nano::account{ 1 });
+}
+
+/*
+ * A full round with useful partial replies waits for cooldown before re-polling. The cooldown retry keeps
+ * the previous candidates and exclusions, then advances once the extra peer supplies enough support.
+ */
 TEST (bootstrap_topo_scan, cooldown_topup_keeps_round_progress)
 {
 	nano::topo_scan_config config;
@@ -324,6 +416,79 @@ TEST (bootstrap_topo_scan, cooldown_topup_keeps_round_progress)
 	ASSERT_EQ (pages.front ().redundancy, 2);
 }
 
+/*
+ * An empty completed round means the cursor has nothing new right now. The round state is cleared, but the
+ * timestamp is preserved so the same cursor is not sampled again until cooldown expires.
+ */
+TEST (bootstrap_topo_scan, empty_response_resets_round_and_keeps_cooldown)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 1;
+	config.cooldown = 10ms;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	std::deque<nano::bootstrap::topo_scan::page> pages;
+	scan.sink = [&pages] (nano::bootstrap::topo_scan::page page) {
+		pages.push_back (std::move (page));
+	};
+
+	auto const now = std::chrono::steady_clock::now ();
+	auto const cursor = make_topo_key (10, 10);
+	scan.orient (cursor);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false }, now);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->fanout, 1);
+
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+	scan.process (1, { cursor });
+	ASSERT_TRUE (pages.empty ());
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false }, now + (config.cooldown / 2));
+	ASSERT_FALSE (req);
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false }, now + config.cooldown + 1ms);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, cursor);
+	ASSERT_EQ (req->fanout, 1);
+	ASSERT_TRUE (req->exclude.empty ());
+}
+
+/*
+ * If the only sampled peer is cancelled, the head has no active round left. Clearing the timestamp lets the
+ * next call retry immediately from the same cursor, with no stale exclusion carried over.
+ */
+TEST (bootstrap_topo_scan, cancel_last_sample_retries_without_cooldown)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 2;
+	config.cooldown = 10ms;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	auto const now = std::chrono::steady_clock::now ();
+	auto const cursor = make_topo_key (10, 10);
+	scan.orient (cursor);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false }, now);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->fanout, 2);
+
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+	scan.cancel (1);
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false }, now + (config.cooldown / 2));
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, cursor);
+	ASSERT_EQ (req->fanout, 2);
+	ASSERT_TRUE (req->exclude.empty ());
+}
+
+/*
+ * Exhausting the peer pool before any peer is sampled should mark the scan as starved and wait for cooldown.
+ * On retry, the exhausted flag is cleared and the cursor can complete normally without restarting in maybe_advance().
+ */
 TEST (bootstrap_topo_scan, zero_peer_exhaustion_retries_without_restart)
 {
 	nano::topo_scan_config config;

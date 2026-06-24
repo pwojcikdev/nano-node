@@ -162,7 +162,7 @@ private:
 			return exhausted ? requests : consideration;
 		}
 
-		// Begin a fresh round at `next`: forget all samples and aggregation
+		// Begin a fresh round at `next`: forget all samples and aggregation, preserving pacing timestamp
 		void restart (nano::topo_key next)
 		{
 			cursor = next;
@@ -171,7 +171,6 @@ private:
 			requests = 0;
 			completed = 0;
 			exhausted = false;
-			timestamp = {};
 		}
 
 		// Begin a fresh sweep over `b`: adopt it as the frozen band and rewind the cursor to its start

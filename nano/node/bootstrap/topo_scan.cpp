@@ -80,12 +80,12 @@ std::optional<topo_scan::request> topo_scan::next (head_gates gates, std::chrono
 {
 	auto const cutoff = now - config.cooldown;
 
-	// A head is due while it still wants distinct samples, or once its cooldown elapses (which both paces
-	// re-polling a finished cursor and retries a round whose replies are not arriving).
+	// A head is due while an active round still wants distinct samples, or once its cooldown elapses. The default
+	// zero timestamp is older than any cutoff, so fresh heads and progress-cleared heads fire immediately.
 	// Each head class is additionally hard-gated by its own back-pressure flag.
 	auto is_due = [&] (head const & h) {
 		bool const open = h.is_spearhead () ? gates.include_spearhead : gates.include_repair;
-		bool const want_more = !h.exhausted && h.requests < h.consideration;
+		bool const want_more = !h.exhausted && h.requests > 0 && h.requests < h.consideration;
 		bool const cooldown_expired = h.timestamp < cutoff;
 		return open && (want_more || cooldown_expired);
 	};
@@ -226,8 +226,9 @@ void topo_scan::maybe_advance (head & h)
 	{
 		if (h.candidates.empty ())
 		{
-			// Nothing new — tip idle (spearhead) or no gaps in the band right now (repair). Park the finished
-			// round (keep `requests`, so the head stops being want_more) and let the cooldown pace the re-poll.
+			// Nothing new — tip idle (spearhead) or no gaps in the band right now (repair). Clear the round
+			// while preserving timestamp, so the cooldown paces the next poll from this cursor.
+			h.restart (h.cursor);
 			return;
 		}
 
@@ -261,6 +262,7 @@ void topo_scan::maybe_advance (head & h)
 		auto const redundancy = h.completed;
 
 		h.restart (furthest);
+		h.timestamp = {}; // Made progress: re-fire promptly (chase the frontier / sweep the band)
 
 		// Emit the completed page to the sink
 		sink (page{
@@ -298,6 +300,7 @@ void topo_scan::cancel (id_t id)
 		{
 			h.requests -= 1;
 			h.exhausted = false;
+			h.timestamp = {};
 		}
 		maybe_advance (h); // emits the retired page to the sink if the round completed
 	});
