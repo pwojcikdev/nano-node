@@ -254,7 +254,7 @@ void topo_scan::maybe_advance (head & h)
 		}
 
 		std::deque<nano::topo_key> retire;
-		for (auto it = h.candidates.begin (); it != h.candidates.end () && !(furthest < it->first); ++it)
+		for (auto it = h.candidates.begin (); it != h.candidates.end () && it->first <= furthest; ++it)
 		{
 			retire.push_back (it->first);
 		}
