@@ -99,6 +99,7 @@ std::optional<topo_scan::request> topo_scan::next (head_gates gates, std::chrono
 			h.start_sweep (repair_band (h.id - 1));
 		}
 		unsigned const fanout = h.requests < h.consideration ? h.consideration - h.requests : 1;
+		h.exhausted = false;
 		h.timestamp = now;
 		std::vector<nano::account> exclude (h.sampled.begin (), h.sampled.end ()); // peers already sampled this cursor
 		return request{ h.id, h.cursor, nano::messages::asc_pull_ack::topo_index_payload::max_entries, fanout, std::move (exclude) };
@@ -240,18 +241,13 @@ void topo_scan::maybe_advance (head & h)
 		{
 			return;
 		}
-
 		auto const furthest = furthest_it->first;
+
 		if (h.is_spearhead ())
 		{
 			frontier = std::max (frontier, furthest); // Push the discovery frontier forward
-			h.cursor = furthest;
 		}
-		else if (furthest < h.range.hi)
-		{
-			h.cursor = furthest; // Advance within the band
-		}
-		else
+		else if (furthest >= h.range.hi)
 		{
 			h.disarm (); // Reached the band end; next () re-arms a fresh band
 		}
@@ -261,24 +257,16 @@ void topo_scan::maybe_advance (head & h)
 		{
 			retire.push_back (it->first);
 		}
-		
+
 		auto const redundancy = h.completed;
-		h.restart (); // Begin a fresh round at the new cursor
-		h.timestamp = {}; // Made progress: re-fire promptly (chase the frontier / sweep the band)
+
+		h.restart (furthest);
 
 		// Emit the completed page to the sink
 		sink (page{
 		.head = h.id,
 		.redundancy = redundancy,
 		.entries = std::move (retire) });
-
-		return;
-	}
-
-	// Every sampled peer timed out without replying: clear the round so the head can retry from scratch
-	if (h.requests == 0)
-	{
-		h.restart ();
 	}
 }
 
