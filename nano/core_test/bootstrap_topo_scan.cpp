@@ -276,3 +276,50 @@ TEST (bootstrap_topo_scan, spearhead_advances_only_to_supported_boundary)
 	ASSERT_TRUE (req);
 	ASSERT_EQ (req->start, c);
 }
+
+TEST (bootstrap_topo_scan, cooldown_topup_keeps_round_progress)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 2;
+	config.cooldown = 10ms;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	std::deque<nano::bootstrap::topo_scan::page> pages;
+	scan.sink = [&pages] (nano::bootstrap::topo_scan::page page) {
+		pages.push_back (std::move (page));
+	};
+
+	auto const now = std::chrono::steady_clock::now ();
+	auto const cursor = make_topo_key (10, 10);
+	auto const a = make_topo_key (10, 20);
+	scan.orient (cursor);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false }, now);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->fanout, 2);
+
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 2, nano::account{ 2 }));
+	scan.process (1, { cursor, a });
+	ASSERT_TRUE (pages.empty ());
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false }, now + (config.cooldown / 2));
+	ASSERT_FALSE (req);
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false }, now + config.cooldown + 1ms);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, cursor);
+	ASSERT_EQ (req->fanout, 1);
+	ASSERT_EQ (req->exclude.size (), 2);
+	ASSERT_NE (std::find (req->exclude.begin (), req->exclude.end (), nano::account{ 1 }), req->exclude.end ());
+	ASSERT_NE (std::find (req->exclude.begin (), req->exclude.end (), nano::account{ 2 }), req->exclude.end ());
+
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 3, nano::account{ 3 }));
+	scan.process (3, { cursor, a });
+
+	ASSERT_EQ (pages.size (), 1);
+	ASSERT_EQ (pages.front ().entries.size (), 1);
+	ASSERT_EQ (pages.front ().entries.front (), a);
+	ASSERT_EQ (pages.front ().redundancy, 2);
+}

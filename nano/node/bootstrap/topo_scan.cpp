@@ -90,22 +90,18 @@ std::optional<topo_scan::request> topo_scan::next (head_gates gates, std::chrono
 		return open && (want_more || cooldown_expired);
 	};
 
-	// Arm/restart and stamp a due head, returning the round to issue. A wake that is purely the cooldown (round
-	// already full or exhausted) restarts, so fanout = consideration - requests is always >= 1.
+	// Arm and stamp a due head, returning the round to issue. Cooldown can re-poll a full or exhausted round
+	// without discarding replies already gathered, so fanout saturates to at least one.
 	auto reserve = [&] (head & h) {
 		// The single place a repair band is set: arm any unarmed head (its first sweep, or after it wrapped)
 		if (!h.is_spearhead () && !h.armed ())
 		{
 			h.start_sweep (repair_band (h.id - 1));
 		}
-		bool const want_more = !h.exhausted && h.requests < h.consideration;
-		if (!want_more)
-		{
-			h.restart ();
-		}
+		unsigned const fanout = h.requests < h.consideration ? h.consideration - h.requests : 1;
 		h.timestamp = now;
 		std::vector<nano::account> exclude (h.sampled.begin (), h.sampled.end ()); // peers already sampled this cursor
-		return request{ h.id, h.cursor, nano::messages::asc_pull_ack::topo_index_payload::max_entries, h.consideration - h.requests, std::move (exclude) };
+		return request{ h.id, h.cursor, nano::messages::asc_pull_ack::topo_index_payload::max_entries, fanout, std::move (exclude) };
 	};
 
 	// Issue the round for a due head: count it, reserve it under its own index, and return the request
@@ -266,13 +262,14 @@ void topo_scan::maybe_advance (head & h)
 			retire.push_back (it->first);
 		}
 		
+		auto const redundancy = h.completed;
 		h.restart (); // Begin a fresh round at the new cursor
 		h.timestamp = {}; // Made progress: re-fire promptly (chase the frontier / sweep the band)
 
 		// Emit the completed page to the sink
 		sink (page{
 		.head = h.id,
-		.redundancy = h.completed,
+		.redundancy = redundancy,
 		.entries = std::move (retire) });
 
 		return;
