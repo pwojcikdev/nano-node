@@ -48,19 +48,19 @@ public:
 	// Record discovered topo entries that are missing from our ledger (insert-if-absent; re-arms tolerated gaps)
 	void add (std::deque<nano::topo_key> const & entries);
 
-	// Reserve a batch description to fetch next, with peers already sampled by those entries excluded.
+	// Reserve a batch description to fetch next, with peers already sampled by those entries excluded
 	std::optional<request> next (std::size_t max, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// Register an issued fetch request. Returns false if all requested entries became stale before dispatch.
+	// Register an issued fetch request. Returns false if all requested entries became stale before dispatch
 	bool dispatch (request const &, id_t id, nano::account node_id, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// The peer pool is exhausted for this request; clear sampled peers so the entries can begin a fresh sweep.
+	// The peer pool is exhausted for this request; clear sampled peers so the entries can begin a fresh sweep
 	void exhausted (request const &);
 
 	// Match fetched blocks to their entries and mark them ready for submission
 	void process (id_t id, std::deque<std::shared_ptr<nano::block>> const & blocks);
 
-	// Drop a reservation whose request failed or timed out.
+	// Drop a reservation whose request failed or timed out
 	void cancel (id_t id);
 
 	// True if the lowest entry is ready to release (fetched or a tolerated gap)

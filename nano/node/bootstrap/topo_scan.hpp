@@ -84,21 +84,21 @@ public:
 	void reconcile_heads ();
 
 	// Reserve the oldest due head and return the round to issue, or nullopt if none is due.
-	// `gates` back-pressures each head class independently (an open gate lets that class run).
+	// `gates` back-pressures each head class independently (an open gate lets that class run)
 	std::optional<request> next (head_gates gates, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
 	// Register one issued request of a round (called once per acquired peer). Returns false if the head
-	// advanced under us since next () (a stale round; the caller drops it).
+	// advanced under us since next () (a stale round; the caller drops it)
 	bool dispatch (head_index head, nano::topo_key start, id_t id, nano::account node_id);
 
 	// Record that the round could not reach consideration_count distinct peers (the pool is exhausted),
-	// lowering the head's advance bar. May complete the round, emitting a page to the sink.
+	// lowering the head's advance bar. May complete the round, emitting a page to the sink
 	void exhausted (head_index head, nano::topo_key start);
 
-	// Apply a response page to the head that issued `id`. May complete the round, emitting a page to the sink.
+	// Apply a response page to the head that issued `id`. May complete the round, emitting a page to the sink
 	void process (id_t id, std::deque<nano::topo_key> const & entries);
 
-	// Drop a reservation whose request failed or timed out. May complete an exhausted round, emitting its page.
+	// Drop a reservation whose request failed or timed out. May complete an exhausted round, emitting a page to the sink
 	void cancel (id_t id);
 
 	void reset ();
