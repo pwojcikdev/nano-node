@@ -4,6 +4,7 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/node/bootstrap/bootstrap_config.hpp>
+#include <nano/node/bootstrap/common.hpp>
 #include <nano/secure/common.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
@@ -15,6 +16,10 @@
 #include <chrono>
 #include <deque>
 #include <memory>
+#include <optional>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace mi = boost::multi_index;
 
@@ -32,28 +37,37 @@ namespace nano::bootstrap
 class topo_blocks
 {
 public:
-	topo_blocks (topo_scan_config const &, nano::stats &);
+	topo_blocks (topo_scan_config const &, nano::stats &, nano::logger &);
+
+	struct request
+	{
+		std::deque<nano::block_hash> hashes;
+		std::vector<nano::account> exclude;
+	};
 
 	// Record discovered topo entries that are missing from our ledger (insert-if-absent; re-arms tolerated gaps)
 	void add (std::deque<nano::topo_key> const & entries);
 
-	// True if any entry is ready to (re)fetch or needs demotion (used to block the fetch loop)
-	bool has_fetchable (std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ()) const;
+	// Reserve a batch description to fetch next, with peers already sampled by those entries excluded.
+	std::optional<request> next (std::size_t max, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
 
-	// Up to `max` block hashes to fetch next (lowest topo_key first); marks them requested
-	std::deque<nano::block_hash> next_fetch_batch (std::size_t max, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
+	// Register an issued fetch request. Returns false if all requested entries became stale before dispatch.
+	bool dispatch (request const &, id_t id, nano::account node_id, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
+
+	// The peer pool is exhausted for this request; clear sampled peers so the entries can begin a fresh sweep.
+	void exhausted (request const &);
 
 	// Match fetched blocks to their entries and mark them ready for submission
-	void process_fetched (std::deque<std::shared_ptr<nano::block>> const & blocks);
+	void process (id_t id, std::deque<std::shared_ptr<nano::block>> const & blocks);
 
-	// Re-arm requested entries for immediate retry after a request timed out or failed
-	void rearm (std::deque<nano::block_hash> const & hashes);
+	// Drop a reservation whose request failed or timed out.
+	void cancel (id_t id);
 
 	// True if the lowest entry is ready to release (fetched or a tolerated gap)
 	bool has_submittable () const;
 
 	// The next contiguous topologically-ordered batch of fetched blocks; removes released entries
-	std::deque<std::shared_ptr<nano::block>> next_submit_batch (std::size_t max);
+	std::deque<std::shared_ptr<nano::block>> next_submit (std::size_t max);
 
 	// Number of entries still awaiting fetch
 	std::size_t pending_count () const;
@@ -68,6 +82,7 @@ public:
 private: // Dependencies
 	topo_scan_config const & config;
 	nano::stats & stats;
+	nano::logger & logger;
 
 private:
 	enum class entry_state
@@ -84,6 +99,7 @@ private:
 		entry_state state{ entry_state::pending };
 		unsigned attempts{ 0 };
 		std::chrono::steady_clock::time_point last_requested{};
+		std::unordered_set<nano::account> sampled;
 
 		nano::block_hash hash () const
 		{
@@ -105,6 +121,15 @@ private:
 	// clang-format on
 
 	ordered_entries entries;
+
 	std::size_t pending{ 0 }; // Count of entries awaiting fetch
+
+	struct reservation
+	{
+		nano::account node_id{ 0 };
+		std::deque<nano::block_hash> hashes;
+	};
+
+	std::unordered_map<id_t, reservation> inflight;
 };
 }
