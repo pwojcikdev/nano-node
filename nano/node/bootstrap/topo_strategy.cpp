@@ -34,7 +34,7 @@ namespace nano::bootstrap
 topo_strategy::topo_strategy (bootstrap_context & ctx_a) :
 	ctx{ ctx_a },
 	scan{ ctx.config.topo_scan, ctx.stats },
-	blocks{ ctx.config.topo_scan, ctx.stats },
+	blocks{ ctx.config.topo_scan, ctx.stats, ctx.logger },
 	gaps{ ctx.config.topo_scan, ctx.stats },
 	spearhead_workers{ 1, nano::thread_role::name::bootstrap_topo_processing },
 	repair_workers{ 1, nano::thread_role::name::bootstrap_topo_processing }
@@ -228,29 +228,50 @@ void topo_strategy::run_fetch ()
 
 void topo_strategy::fetch_one ()
 {
-	// Claim a batch before taking a channel, so we never reserve a peer for a batch that raced empty
-	std::deque<nano::block_hash> batch;
-	ctx.wait ([this, &batch] () {
-		batch = blocks.next_fetch_batch (ctx.config.topo_scan.fetch_batch);
-		return !batch.empty ();
+	std::optional<topo_blocks::request> req;
+	ctx.wait ([this, &req] () {
+		req = blocks.next (ctx.config.topo_scan.fetch_batch);
+		return req.has_value ();
 	});
-	if (batch.empty ())
+	if (!req)
 	{
 		return;
 	}
 
 	// TODO: Temporarily filter by topo index, replace with filtering by protocol version
-	auto channel = ctx.wait_channel (strategy::topology, nano::node_capabilities::topo_index);
-	if (!channel)
+	auto acquired = ctx.wait_channels (strategy::topology, nano::node_capabilities::topo_index, req->exclude, 1);
+
+	std::vector<std::pair<std::shared_ptr<nano::transport::channel>, id_t>> sends;
 	{
-		return;
+		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+
+		for (auto const & lease : acquired.leases)
+		{
+			auto const id = nano::bootstrap::generate_id ();
+			if (blocks.dispatch (*req, id, lease.node_id))
+			{
+				sends.emplace_back (lease.channel, id);
+			}
+			else
+			{
+				ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::stale);
+			}
+		}
+
+		if (acquired.exhausted)
+		{
+			blocks.exhausted (*req);
+			ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::exhausted);
+		}
 	}
 
-	auto const id = nano::bootstrap::generate_id ();
 	blocks_random_query query{};
-	query.hashes = std::move (batch);
+	query.hashes = std::move (req->hashes);
 
-	ctx.send (channel, query, strategy::topology, id);
+	for (auto const & [channel, id] : sends)
+	{
+		ctx.send (channel, query, strategy::topology, id);
+	}
 }
 
 /*
@@ -273,7 +294,7 @@ void topo_strategy::submit_one ()
 {
 	std::deque<std::shared_ptr<nano::block>> batch;
 	ctx.wait ([this, &batch] () {
-		batch = blocks.next_submit_batch (max_submit_batch);
+		batch = blocks.next_submit (max_submit_batch);
 		return !batch.empty ();
 	});
 	if (batch.empty ())
@@ -333,18 +354,20 @@ bool topo_strategy::process (nano::messages::asc_pull_ack::blocks_payload const 
 		{
 			ctx.stats.inc (nano::stat::type::bootstrap_verify_topo, nano::stat::detail::ok);
 			ctx.stats.add (nano::stat::type::bootstrap_topo, nano::stat::detail::fetched, response.blocks.size ());
-			blocks.process_fetched (response.blocks);
+			blocks.process (tag.id, response.blocks);
 		}
 		break;
 		case verify_result::nothing_new:
 		{
 			ctx.stats.inc (nano::stat::type::bootstrap_verify_topo, nano::stat::detail::nothing_new);
 			// No blocks returned; the requested entries stay pending and will be retried after cooldown
+			blocks.process (tag.id, {});
 		}
 		break;
 		case verify_result::invalid:
 		{
 			ctx.stats.inc (nano::stat::type::bootstrap_verify_topo, nano::stat::detail::invalid);
+			blocks.process (tag.id, {});
 		}
 		break;
 	}
@@ -364,9 +387,7 @@ void topo_strategy::timeout (async_tag const & tag)
 		break;
 		case query_type::blocks_random:
 		{
-			release_assert (std::holds_alternative<blocks_random_query> (tag.query));
-			auto const & query = std::get<blocks_random_query> (tag.query);
-			blocks.rearm (query.hashes);
+			blocks.cancel (tag.id);
 		}
 		break;
 		default:
