@@ -427,6 +427,8 @@ void topo_strategy::post_precheck (topo_scan::page page)
 
 void topo_strategy::precheck (head_index head, std::deque<nano::topo_key> entries)
 {
+	debug_assert (!entries.empty ());
+
 	std::deque<nano::topo_key> missing;
 	{
 		auto transaction = ctx.ledger.tx_begin_read ();
