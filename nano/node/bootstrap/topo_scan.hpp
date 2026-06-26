@@ -177,7 +177,7 @@ private:
 		void start_sweep (band const & b)
 		{
 			range = b;
-			cursor = b.lo;
+			restart (b.lo);
 		}
 
 		// A repair head is armed once it holds a band to sweep, and disarmed when that band is exhausted

@@ -32,14 +32,25 @@ void topo_scan::reset ()
 void topo_scan::orient (nano::topo_key latest)
 {
 	auto const target = std::max (frontier, latest);
+	if (target == frontier)
+	{
+		return;
+	}
 	frontier = target;
 
 	auto & by_id = heads.get<tag_id> ();
-	auto it = by_id.find (0); // The spearhead
-	if (it != by_id.end ())
+	for (auto it = by_id.begin (); it != by_id.end (); ++it)
 	{
 		by_id.modify (it, [target] (head & h) {
-			h.restart (target);
+			if (h.is_spearhead ())
+			{
+				h.restart (target);
+			}
+			else
+			{
+				h.disarm ();
+				h.restart ({});
+			}
 			h.timestamp = {};
 		});
 	}
