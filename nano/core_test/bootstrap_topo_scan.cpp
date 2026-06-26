@@ -274,6 +274,7 @@ TEST (bootstrap_topo_scan, orient_reinitializes_repair_head_ranges)
 	config.min_repair_heads = 2;
 	config.max_repair_heads = 2;
 	config.repair_consideration = 1;
+	config.redundant_skip_stride = 25;
 	config.cooldown = 10ms;
 	test_context ctx{ config };
 	auto & scan = ctx.scan;
@@ -281,35 +282,35 @@ TEST (bootstrap_topo_scan, orient_reinitializes_repair_head_ranges)
 	auto const now = std::chrono::steady_clock::now ();
 	scan.orient (make_topo_key (100, 1));
 
-	std::optional<nano::bootstrap::topo_scan::request> old_head2;
+	std::optional<nano::bootstrap::topo_scan::request> old_trailing_head;
 	for (auto i = 0; i < 2; ++i)
 	{
 		auto req = scan.next ({ .include_spearhead = false, .include_repair = true }, now);
 		ASSERT_TRUE (req);
-		if (req->head == 2)
+		if (req->head == 1)
 		{
-			old_head2 = req;
+			old_trailing_head = req;
 		}
 	}
-	ASSERT_TRUE (old_head2);
-	ASSERT_EQ (old_head2->start, make_topo_key (51, 0));
-	ASSERT_TRUE (scan.dispatch (old_head2->head, old_head2->start, 1, nano::account{ 1 }));
+	ASSERT_TRUE (old_trailing_head);
+	ASSERT_EQ (old_trailing_head->start, make_topo_key (75, 0));
+	ASSERT_TRUE (scan.dispatch (old_trailing_head->head, old_trailing_head->start, 1, nano::account{ 1 }));
 
 	scan.orient (make_topo_key (200, 1));
 
-	std::optional<nano::bootstrap::topo_scan::request> new_head2;
+	std::optional<nano::bootstrap::topo_scan::request> new_trailing_head;
 	for (auto i = 0; i < 2; ++i)
 	{
 		auto req = scan.next ({ .include_spearhead = false, .include_repair = true }, now + 1ms);
 		ASSERT_TRUE (req);
-		if (req->head == 2)
+		if (req->head == 1)
 		{
-			new_head2 = req;
+			new_trailing_head = req;
 		}
 	}
-	ASSERT_TRUE (new_head2);
-	ASSERT_EQ (new_head2->start, make_topo_key (101, 0));
-	ASSERT_TRUE (new_head2->exclude.empty ());
+	ASSERT_TRUE (new_trailing_head);
+	ASSERT_EQ (new_trailing_head->start, make_topo_key (175, 0));
+	ASSERT_TRUE (new_trailing_head->exclude.empty ());
 }
 
 /*

@@ -219,8 +219,11 @@ private:
 	// The spearhead moves the frontier forward; a repair head moves within its band and disarms at the band's end.
 	void maybe_advance (head &);
 
-	// The band owned by repair head `index`, computed from the current frontier and live repair head count
-	band repair_band (head_index index) const;
+	// The band owned by zero-based repair head `repair_index`, computed from the current frontier and live repair head count
+	band repair_band (head_index repair_index) const;
+
+	// Recent lookback band swept by repair head 1 so fast-forwards can be healed promptly
+	band trailing_repair_band () const;
 
 	// Number of repair heads the current frontier calls for: ceil (frontier / repair_band_height), clamped
 	unsigned desired_repair_heads () const;

@@ -88,11 +88,11 @@ void topo_strategy::orient ()
 	// Genesis sits at topo_height 1, so only anchor the spearhead to our tip when the ledger holds more than genesis.
 	// On a fresh (genesis-only) ledger there is nothing to skip, but epoch open blocks can also sit at
 	// topo_height 1 and sort before genesis by hash, so we leave the spearhead at true zero to discover them.
-	if (latest && latest->topo_height > 1)
-	{
-		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-		scan.orient (latest.value_or (nano::topo_key{}));
-	}
+	// if (latest && latest->topo_height > 1)
+	// {
+	// 	nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+	// 	scan.orient (latest.value_or (nano::topo_key{}));
+	// }
 }
 
 void topo_strategy::reset ()
