@@ -6,6 +6,7 @@
 #include <nano/node/bootstrap/topo_scan.hpp>
 
 #include <algorithm>
+#include <limits>
 
 namespace nano::bootstrap
 {
@@ -31,13 +32,24 @@ void topo_scan::reset ()
 
 void topo_scan::orient (nano::topo_key latest)
 {
-	frontier = std::max (frontier, latest);
+	auto const target = std::max (frontier, latest);
+	frontier = target;
 
 	auto & by_id = heads.get<tag_id> ();
-	auto it = by_id.find (0); // The spearhead
-	if (it != by_id.end ())
+	for (auto it = by_id.begin (); it != by_id.end (); ++it)
 	{
-		by_id.modify (it, [latest] (head & h) { h.cursor = latest; });
+		by_id.modify (it, [target] (head & h) {
+			if (h.is_spearhead ())
+			{
+				h.restart (target);
+			}
+			else
+			{
+				h.disarm ();
+				h.restart ({});
+			}
+			h.timestamp = {};
+		});
 	}
 
 	reconcile_heads (); // a node starting from a large local ledger should come up at the right head count
@@ -66,13 +78,27 @@ void topo_scan::reconcile_heads ()
 	}
 }
 
-topo_scan::band topo_scan::repair_band (head_index index) const
+topo_scan::band topo_scan::trailing_repair_band () const
 {
-	// Divide [1, frontier] into one equal band per live repair head (the head count, sans the spearhead)
+	auto const stride = config.redundant_skip_stride;
+	uint64_t const lo_height = frontier.topo_height > stride ? frontier.topo_height - stride : 1;
+	uint64_t const hi_height = frontier.topo_height < std::numeric_limits<uint64_t>::max () ? frontier.topo_height + 1 : frontier.topo_height;
+	return { nano::topo_key{ lo_height, 0 }, nano::topo_key{ hi_height, 0 } };
+}
+
+topo_scan::band topo_scan::repair_band (head_index repair_index) const
+{
+	if (repair_index == 0)
+	{
+		return trailing_repair_band ();
+	}
+
+	// The remaining repair heads divide the full discovered range; head 1 is reserved for the recent lookback band.
 	debug_assert (heads.size () > 0);
-	uint64_t const n = std::max<uint64_t> (1, heads.size () - 1);
-	uint64_t lo_height = 1 + (static_cast<uint64_t> (index) * frontier.topo_height) / n;
-	uint64_t hi_height = 1 + (static_cast<uint64_t> (index + 1) * frontier.topo_height) / n;
+	uint64_t const n = std::max<uint64_t> (1, heads.size () > 2 ? heads.size () - 2 : 1);
+	uint64_t const broad_index = repair_index - 1;
+	uint64_t lo_height = 1 + (static_cast<uint64_t> (broad_index) * frontier.topo_height) / n;
+	uint64_t hi_height = 1 + (static_cast<uint64_t> (broad_index + 1) * frontier.topo_height) / n;
 	return { nano::topo_key{ lo_height, 0 }, nano::topo_key{ hi_height, 0 } };
 }
 
@@ -96,7 +122,8 @@ std::optional<topo_scan::request> topo_scan::next (head_gates gates, std::chrono
 		// The single place a repair band is set: arm any unarmed head (its first sweep, or after it wrapped)
 		if (!h.is_spearhead () && !h.armed ())
 		{
-			h.start_sweep (repair_band (h.id - 1));
+			auto const repair_index = h.id - 1;
+			h.start_sweep (repair_band (repair_index));
 		}
 		unsigned const fanout = h.requests < h.consideration ? h.consideration - h.requests : 1;
 		h.exhausted = false;

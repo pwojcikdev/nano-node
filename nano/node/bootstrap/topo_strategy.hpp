@@ -9,6 +9,7 @@
 #include <nano/node/bootstrap/topo_scan.hpp>
 #include <nano/secure/fwd.hpp>
 
+#include <cstddef>
 #include <deque>
 #include <memory>
 #include <thread>
@@ -71,6 +72,8 @@ private:
 	topo_scan scan;
 	topo_blocks blocks;
 	topo_gaps gaps;
+
+	std::size_t consecutive_redundant_spearhead_pages{ 0 };
 
 	std::thread scan_thread;
 	std::thread fetch_thread;

@@ -77,7 +77,7 @@ public:
 		bool include_repair{ false };
 	};
 
-	// Anchor the spearhead and frontier to our local topology tip
+	// Re-anchor the spearhead and frontier to at least this topology position
 	void orient (nano::topo_key latest);
 
 	// Grow the repair head count to match the current frontier (frontier is monotonic, so heads are only added)
@@ -177,7 +177,7 @@ private:
 		void start_sweep (band const & b)
 		{
 			range = b;
-			cursor = b.lo;
+			restart (b.lo);
 		}
 
 		// A repair head is armed once it holds a band to sweep, and disarmed when that band is exhausted
@@ -219,8 +219,11 @@ private:
 	// The spearhead moves the frontier forward; a repair head moves within its band and disarms at the band's end.
 	void maybe_advance (head &);
 
-	// The band owned by repair head `index`, computed from the current frontier and live repair head count
-	band repair_band (head_index index) const;
+	// The band owned by zero-based repair head `repair_index`, computed from the current frontier and live repair head count
+	band repair_band (head_index repair_index) const;
+
+	// Recent lookback band swept by repair head 1 so fast-forwards can be healed promptly
+	band trailing_repair_band () const;
 
 	// Number of repair heads the current frontier calls for: ceil (frontier / repair_band_height), clamped
 	unsigned desired_repair_heads () const;

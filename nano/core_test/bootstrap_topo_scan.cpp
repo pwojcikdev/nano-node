@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <deque>
+#include <optional>
 #include <utility>
 
 using namespace std::chrono_literals;
@@ -209,6 +210,107 @@ TEST (bootstrap_topo_scan, grow_stat_tracks_head_count)
 	// Heads are never removed, so the cumulative grow count equals the live repair head count
 	ASSERT_EQ (ctx.stats.count (nano::stat::type::bootstrap_topo_scan, nano::stat::detail::grow), repair_head_count (scan));
 	ASSERT_EQ (repair_head_count (scan), config.max_repair_heads);
+}
+
+TEST (bootstrap_topo_scan, orient_restarts_spearhead_round_at_monotonic_target)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 2;
+	config.cooldown = 10ms;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	std::deque<nano::bootstrap::topo_scan::page> pages;
+	scan.sink = [&pages] (nano::bootstrap::topo_scan::page page) {
+		pages.push_back (std::move (page));
+	};
+
+	auto const now = std::chrono::steady_clock::now ();
+	auto const cursor = make_topo_key (10, 10);
+	auto const target = make_topo_key (20, 0);
+	auto const stale_candidate = make_topo_key (10, 20);
+
+	scan.orient (cursor);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false }, now);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, cursor);
+	ASSERT_EQ (req->fanout, 2);
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+
+	scan.orient (target);
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false }, now + (config.cooldown / 2));
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, target);
+	ASSERT_EQ (req->fanout, 2);
+	ASSERT_TRUE (req->exclude.empty ());
+
+	scan.process (1, { cursor, stale_candidate });
+	ASSERT_TRUE (pages.empty ());
+}
+
+TEST (bootstrap_topo_scan, orient_does_not_move_spearhead_backwards)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 1;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	auto const high = make_topo_key (100, 10);
+	auto const low = make_topo_key (10, 10);
+
+	scan.orient (high);
+	scan.orient (low);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false });
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, high);
+}
+
+TEST (bootstrap_topo_scan, orient_reinitializes_repair_head_ranges)
+{
+	nano::topo_scan_config config;
+	config.min_repair_heads = 2;
+	config.max_repair_heads = 2;
+	config.repair_consideration = 1;
+	config.redundant_skip_stride = 25;
+	config.cooldown = 10ms;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	auto const now = std::chrono::steady_clock::now ();
+	scan.orient (make_topo_key (100, 1));
+
+	std::optional<nano::bootstrap::topo_scan::request> old_trailing_head;
+	for (auto i = 0; i < 2; ++i)
+	{
+		auto req = scan.next ({ .include_spearhead = false, .include_repair = true }, now);
+		ASSERT_TRUE (req);
+		if (req->head == 1)
+		{
+			old_trailing_head = req;
+		}
+	}
+	ASSERT_TRUE (old_trailing_head);
+	ASSERT_EQ (old_trailing_head->start, make_topo_key (75, 0));
+	ASSERT_TRUE (scan.dispatch (old_trailing_head->head, old_trailing_head->start, 1, nano::account{ 1 }));
+
+	scan.orient (make_topo_key (200, 1));
+
+	std::optional<nano::bootstrap::topo_scan::request> new_trailing_head;
+	for (auto i = 0; i < 2; ++i)
+	{
+		auto req = scan.next ({ .include_spearhead = false, .include_repair = true }, now + 1ms);
+		ASSERT_TRUE (req);
+		if (req->head == 1)
+		{
+			new_trailing_head = req;
+		}
+	}
+	ASSERT_TRUE (new_trailing_head);
+	ASSERT_EQ (new_trailing_head->start, make_topo_key (175, 0));
+	ASSERT_TRUE (new_trailing_head->exclude.empty ());
 }
 
 /*

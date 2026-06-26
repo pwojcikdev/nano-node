@@ -2,6 +2,7 @@
 #include <nano/lib/container_info.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/node_capabilities.hpp>
+#include <nano/lib/saturate.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/thread_roles.hpp>
 #include <nano/lib/threading.hpp>
@@ -87,11 +88,11 @@ void topo_strategy::orient ()
 	// Genesis sits at topo_height 1, so only anchor the spearhead to our tip when the ledger holds more than genesis.
 	// On a fresh (genesis-only) ledger there is nothing to skip, but epoch open blocks can also sit at
 	// topo_height 1 and sort before genesis by hash, so we leave the spearhead at true zero to discover them.
-	if (latest && latest->topo_height > 1)
-	{
-		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
-		scan.orient (latest.value_or (nano::topo_key{}));
-	}
+	// if (latest && latest->topo_height > 1)
+	// {
+	// 	nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+	// 	scan.orient (latest.value_or (nano::topo_key{}));
+	// }
 }
 
 void topo_strategy::reset ()
@@ -99,6 +100,7 @@ void topo_strategy::reset ()
 	scan.reset ();
 	blocks.reset ();
 	gaps.reset ();
+	consecutive_redundant_spearhead_pages = 0;
 }
 
 void topo_strategy::maintenance ()
@@ -115,17 +117,6 @@ void topo_strategy::maintenance ()
 			ctx.logger.warn (nano::log::type::bootstrap, "Topology bootstrap: not enough topo-capable peers to reach the scan redundancy floor; discovery is stalled");
 		}
 	}
-}
-
-nano::container_info topo_strategy::container_info () const
-{
-	nano::container_info info;
-	info.add ("scan", scan.container_info ());
-	info.add ("blocks", blocks.container_info ());
-	info.add ("gaps", gaps.container_info ());
-	info.add ("spearhead_workers", spearhead_workers.container_info ());
-	info.add ("repair_workers", repair_workers.container_info ());
-	return info;
 }
 
 /*
@@ -469,9 +460,40 @@ void topo_strategy::precheck (head_index head, std::deque<nano::topo_key> entrie
 	{
 		{
 			nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+			if (head == 0)
+			{
+				// A missing spearhead page breaks the redundant-page streak
+				consecutive_redundant_spearhead_pages = 0;
+			}
 			blocks.add (missing);
 		}
 		ctx.condition.notify_all (); // Wake the fetch loop
+	}
+	else if (head == 0) // Only the spearhead is eligible for fast-forwarding
+	{
+		bool skipped = false;
+		{
+			nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+
+			// Consecutive fully redundant spearhead pages indicate a resumed scan can fast-forward
+			++consecutive_redundant_spearhead_pages;
+
+			if (ctx.config.topo_scan.redundant_skip_threshold > 0 && ctx.config.topo_scan.redundant_skip_stride > 0 && consecutive_redundant_spearhead_pages >= ctx.config.topo_scan.redundant_skip_threshold)
+			{
+				auto const target_height = nano::add_sat (entries.back ().topo_height, ctx.config.topo_scan.redundant_skip_stride);
+				scan.orient (nano::topo_key{ target_height, nano::block_hash{} });
+
+				consecutive_redundant_spearhead_pages = 0;
+
+				ctx.stats.inc (nano::stat::type::bootstrap_topo, nano::stat::detail::skip);
+
+				skipped = true;
+			}
+		}
+		if (skipped)
+		{
+			ctx.condition.notify_all (); // Wake the scan loop
+		}
 	}
 }
 
@@ -519,5 +541,21 @@ void topo_strategy::rollback (nano::account const & account)
 {
 	debug_assert (!ctx.mutex.try_lock ());
 	gaps.rollback (account);
+}
+
+/*
+ *
+ */
+
+nano::container_info topo_strategy::container_info () const
+{
+	nano::container_info info;
+	info.add ("scan", scan.container_info ());
+	info.add ("blocks", blocks.container_info ());
+	info.add ("gaps", gaps.container_info ());
+	info.put ("spearhead_redundant_pages", consecutive_redundant_spearhead_pages);
+	info.add ("spearhead_workers", spearhead_workers.container_info ());
+	info.add ("repair_workers", repair_workers.container_info ());
+	return info;
 }
 }
