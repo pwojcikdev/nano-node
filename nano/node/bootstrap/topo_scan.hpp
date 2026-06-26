@@ -77,7 +77,7 @@ public:
 		bool include_repair{ false };
 	};
 
-	// Anchor the spearhead and frontier to our local topology tip
+	// Re-anchor the spearhead and frontier to at least this topology position
 	void orient (nano::topo_key latest);
 
 	// Grow the repair head count to match the current frontier (frontier is monotonic, so heads are only added)

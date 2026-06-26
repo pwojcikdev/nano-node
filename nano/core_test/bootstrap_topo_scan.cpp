@@ -211,6 +211,62 @@ TEST (bootstrap_topo_scan, grow_stat_tracks_head_count)
 	ASSERT_EQ (repair_head_count (scan), config.max_repair_heads);
 }
 
+TEST (bootstrap_topo_scan, orient_restarts_spearhead_round_at_monotonic_target)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 2;
+	config.cooldown = 10ms;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	std::deque<nano::bootstrap::topo_scan::page> pages;
+	scan.sink = [&pages] (nano::bootstrap::topo_scan::page page) {
+		pages.push_back (std::move (page));
+	};
+
+	auto const now = std::chrono::steady_clock::now ();
+	auto const cursor = make_topo_key (10, 10);
+	auto const target = make_topo_key (20, 0);
+	auto const stale_candidate = make_topo_key (10, 20);
+
+	scan.orient (cursor);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false }, now);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, cursor);
+	ASSERT_EQ (req->fanout, 2);
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+
+	scan.orient (target);
+
+	req = scan.next ({ .include_spearhead = true, .include_repair = false }, now + (config.cooldown / 2));
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, target);
+	ASSERT_EQ (req->fanout, 2);
+	ASSERT_TRUE (req->exclude.empty ());
+
+	scan.process (1, { cursor, stale_candidate });
+	ASSERT_TRUE (pages.empty ());
+}
+
+TEST (bootstrap_topo_scan, orient_does_not_move_spearhead_backwards)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 1;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+
+	auto const high = make_topo_key (100, 10);
+	auto const low = make_topo_key (10, 10);
+
+	scan.orient (high);
+	scan.orient (low);
+
+	auto req = scan.next ({ .include_spearhead = true, .include_repair = false });
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, high);
+}
+
 /*
  * A scan request always asks for the protocol page limit, but only retires the smallest configured number of
  * usable new entries. The next cursor is the last retired entry, not the largest entry returned by the peer.

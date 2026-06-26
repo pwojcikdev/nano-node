@@ -4,6 +4,8 @@
 #include <nano/lib/timer.hpp>
 #include <nano/node/bootstrap/bootstrap_server.hpp>
 
+#include <cstdint>
+
 using namespace std::chrono_literals;
 
 namespace nano
@@ -51,6 +53,8 @@ public:
 	unsigned consideration_count{ 3 }; // Spearhead: distinct peers sampled before the frontier advances
 	unsigned repair_consideration{ 1 }; // Repair: distinct peers sampled before a band cursor advances
 	std::size_t candidates{ nano::bootstrap_server::max_topo_entries - 1 }; // Cap on new aggregated entries kept (the smallest) per advance; topo_index responses include the cursor
+	std::size_t redundant_skip_threshold{ 4 }; // Consecutive fully-redundant spearhead pages before fast-forwarding
+	uint64_t redundant_skip_stride{ 100'000 }; // Topo-height stride to fast-forward after redundant_skip_threshold pages
 	std::chrono::milliseconds cooldown{ 1000 * 5 }; // Per-head cooldown between requests
 	std::size_t max_buffered{ 1000 * 40 }; // Scan back-pressure: pause all discovery while the buffer holds this many entries
 	std::size_t fetch_batch{ 128 }; // Hashes per blocks_random request (<= 128)

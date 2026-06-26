@@ -31,13 +31,17 @@ void topo_scan::reset ()
 
 void topo_scan::orient (nano::topo_key latest)
 {
-	frontier = std::max (frontier, latest);
+	auto const target = std::max (frontier, latest);
+	frontier = target;
 
 	auto & by_id = heads.get<tag_id> ();
 	auto it = by_id.find (0); // The spearhead
 	if (it != by_id.end ())
 	{
-		by_id.modify (it, [latest] (head & h) { h.cursor = latest; });
+		by_id.modify (it, [target] (head & h) {
+			h.restart (target);
+			h.timestamp = {};
+		});
 	}
 
 	reconcile_heads (); // a node starting from a large local ledger should come up at the right head count
