@@ -31,14 +31,14 @@ public:
 	token_bucket (std::size_t max_token_count, std::size_t refill_rate);
 
 	/** Returns true when the requested cost is currently available without deducting it. */
-	bool can_consume (unsigned tokens_required = 1);
+	[[nodiscard]] bool can_consume (std::size_t tokens_required = 1);
 	/**
 	 * Deducts the requested cost if currently available.
 	 * The default cost is 1 token, but resource intensive operations may request more tokens.
 	 */
-	bool try_consume (unsigned tokens_required = 1);
+	[[nodiscard]] bool try_consume (std::size_t tokens_required = 1);
 	/** Deducts the requested cost and asserts if the caller has not already ensured availability. */
-	void consume_checked (unsigned tokens_required = 1);
+	void consume_checked (std::size_t tokens_required = 1);
 
 	/** Update the max_token_count and/or refill_rate_a parameters */
 	void reset (std::size_t max_token_count, std::size_t refill_rate);
@@ -58,8 +58,7 @@ private:
 	/** The minimum observed bucket size, from which the largest burst can be derived */
 	std::size_t smallest_size{ 0 };
 	std::chrono::steady_clock::time_point last_refill;
-
-	static std::size_t constexpr unlimited_rate_sentinel{ static_cast<std::size_t> (1e9) };
+	bool unlimited{ false };
 };
 }
 
@@ -72,9 +71,9 @@ public:
 	rate_limiter (std::size_t limit, double burst_ratio = 1.0);
 
 	// Returns true when the requested cost is currently available without deducting it
-	bool can_consume (std::size_t token_count);
+	[[nodiscard]] bool can_consume (std::size_t token_count);
 	// Deducts the requested cost if currently available
-	bool try_consume (std::size_t token_count);
+	[[nodiscard]] bool try_consume (std::size_t token_count);
 	// Deducts the requested cost and asserts if it is not available
 	void consume_checked (std::size_t token_count);
 	void reset (std::size_t limit, double burst_ratio = 1.0);

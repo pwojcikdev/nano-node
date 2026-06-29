@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <future>
+#include <limits>
 
 using namespace std::chrono_literals;
 
@@ -109,11 +110,27 @@ TEST (rate, unlimited)
 	ASSERT_TRUE (bucket.try_consume (5));
 	ASSERT_EQ (bucket.largest_burst (), 5);
 	ASSERT_TRUE (bucket.try_consume (static_cast<size_t> (1e9)));
-	ASSERT_EQ (bucket.largest_burst (), static_cast<size_t> (1e9));
+	ASSERT_EQ (bucket.largest_burst (), static_cast<size_t> (1e9) + 5);
 
 	// With unlimited tokens, consuming always succeed
 	ASSERT_TRUE (bucket.try_consume (static_cast<size_t> (1e9)));
-	ASSERT_EQ (bucket.largest_burst (), static_cast<size_t> (1e9));
+	ASSERT_EQ (bucket.largest_burst (), static_cast<size_t> (2e9) + 5);
+}
+
+TEST (rate, billion_token_rate_is_limited)
+{
+	nano::rate::token_bucket bucket (static_cast<size_t> (1e9), static_cast<size_t> (1e9));
+
+	ASSERT_FALSE (bucket.can_consume (static_cast<size_t> (1e9) + 1));
+}
+
+TEST (rate_limiter, large_token_count)
+{
+	auto const large_count = static_cast<size_t> (std::numeric_limits<unsigned int>::max ()) + 1;
+	nano::rate_limiter limiter (large_count);
+
+	ASSERT_FALSE (limiter.try_consume (large_count + 1));
+	ASSERT_TRUE (limiter.try_consume (large_count));
 }
 
 TEST (rate, busy_spin)
