@@ -121,7 +121,7 @@ private:
 	ordered_locals local_blocks;
 
 private:
-	nano::rate_limiter limiter;
+	nano::rate_limiter_mt limiter;
 	nano::interval cleanup_interval;
 
 	std::atomic<bool> stopped{ false };

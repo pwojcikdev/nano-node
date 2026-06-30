@@ -147,7 +147,7 @@ private:
 private:
 	nano::backlog_index index;
 
-	nano::rate_limiter scan_limiter;
+	nano::rate_limiter_mt scan_limiter;
 
 	std::atomic<bool> stopped{ false };
 	nano::condition_variable condition;

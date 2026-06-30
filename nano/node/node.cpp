@@ -358,10 +358,10 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 	}
 
 	{
-		auto [limit, burst_ratio] = outbound_limiter.get_limit ();
+		auto const limit = outbound_limiter.get_limit ();
 		logger.info (nano::log::type::node, "Outbound bandwidth limit: {}, burst ratio: {}",
-		limit == 0 ? "unlimited" : std::to_string (limit) + " bytes/s",
-		burst_ratio);
+		limit.rate == 0 ? "unlimited" : std::to_string (limit.rate) + " bytes/s",
+		limit.burst_ratio);
 	}
 
 	if (!block_or_pruned_exists (config.network_params.ledger.genesis->hash ()))

@@ -13,7 +13,7 @@ nano::backlog_scan::backlog_scan (backlog_scan_config const & config_a, nano::le
 	config{ config_a },
 	ledger{ ledger_a },
 	stats{ stats_a },
-	limiter{ config.rate_limit }
+	limiter{ { config.rate_limit } }
 {
 }
 
@@ -156,7 +156,7 @@ nano::container_info nano::backlog_scan::container_info () const
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
 	nano::container_info info;
-	info.put ("limiter", limiter.size ());
+	info.put ("limiter", limiter.available ());
 	return info;
 }
 

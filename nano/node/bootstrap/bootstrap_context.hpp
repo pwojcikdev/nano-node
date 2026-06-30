@@ -154,12 +154,12 @@ public: // Shared state
 	ordered_tags tags;
 
 	// Rate limiter for all types of requests
-	nano::rate_limiter limiter;
+	nano::rate_limiter_mt limiter;
 	// Requests for accounts from database have much lower hitrate and could introduce strain on the network
 	// A separate (lower) limiter ensures that we always reserve resources for querying accounts from priority queue
-	nano::rate_limiter database_limiter;
+	nano::rate_limiter_mt database_limiter;
 	// Rate limiter for frontier requests
-	nano::rate_limiter frontiers_limiter;
+	nano::rate_limiter_mt frontiers_limiter;
 
 	bool stopped{ false };
 	mutable nano::mutex mutex;

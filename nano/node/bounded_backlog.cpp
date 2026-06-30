@@ -30,7 +30,7 @@ nano::bounded_backlog::bounded_backlog (nano::node_config const & config_a, nano
 	cementing_set{ cementing_set_a },
 	stats{ stats_a },
 	logger{ logger_a },
-	scan_limiter{ config.bounded_backlog->scan_rate }
+	scan_limiter{ { config.bounded_backlog->scan_rate } }
 {
 	if (!config.bounded_backlog->enable || ledger.max_backlog () == 0)
 	{

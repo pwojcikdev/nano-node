@@ -19,7 +19,7 @@ nano::bootstrap_server::bootstrap_server (bootstrap_server_config const & config
 	ledger{ ledger_a },
 	network_constants{ network_constants_a },
 	stats{ stats_a },
-	limiter{ config.limiter, /* allow bursts */ 3.0 } // TODO: Limiter bucket capacity should be at least equal to the batch size, currently it's not configurable
+	limiter{ { config.limiter, /* allow bursts */ 3.0 } } // TODO: Limiter bucket capacity should be at least equal to the batch size, currently it's not configurable
 {
 	queue.max_size_query = [this] (auto const & origin) {
 		return config.channel_limit;

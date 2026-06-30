@@ -20,7 +20,7 @@ nano::local_block_broadcaster::local_block_broadcaster (local_block_broadcaster_
 	cementing_set{ cementing_set_a },
 	stats{ stats_a },
 	logger{ logger_a },
-	limiter{ config.broadcast_rate_limit, config.broadcast_rate_burst_ratio }
+	limiter{ { config.broadcast_rate_limit, config.broadcast_rate_burst_ratio } }
 {
 	if (!config.enable)
 	{

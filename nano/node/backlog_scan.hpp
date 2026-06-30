@@ -69,7 +69,7 @@ private:
 	void populate_backlog (nano::unique_lock<nano::mutex> & lock);
 
 private:
-	nano::rate_limiter limiter;
+	nano::rate_limiter_mt limiter;
 
 	/** This is a manual trigger, the ongoing backlog population does not use this.
 	 *  It can be triggered even when backlog population (frontiers confirmation) is disabled. */

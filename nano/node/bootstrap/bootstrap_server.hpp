@@ -94,7 +94,7 @@ private: // Dependencies
 
 private:
 	nano::fair_queue<request_t, nano::no_value, std::shared_ptr<nano::transport::channel>> queue;
-	nano::rate_limiter limiter;
+	nano::rate_limiter_mt limiter;
 
 	std::atomic<bool> stopped{ false };
 	nano::condition_variable condition;

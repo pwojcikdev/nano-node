@@ -50,9 +50,9 @@ nano::ledger_notifications & ledger_notifications_a, nano::block_processor & blo
 	frontiers{ config.frontier_scan, stats },
 	throttle{ compute_throttle_size () },
 	scoring{ config, node_config_a.network_params.network },
-	limiter{ config.rate_limit },
-	database_limiter{ config.database_rate_limit },
-	frontiers_limiter{ config.frontier_rate_limit },
+	limiter{ { config.rate_limit } },
+	database_limiter{ { config.database_rate_limit } },
+	frontiers_limiter{ { config.frontier_rate_limit } },
 	workers{ 1, nano::thread_role::name::bootstrap_worker }
 {
 	// Inspect all processed blocks
@@ -622,9 +622,9 @@ nano::container_info bootstrap_context::container_info () const
 
 	auto collect_limiters = [this] () {
 		nano::container_info info;
-		info.put ("total", limiter.size ());
-		info.put ("database", database_limiter.size ());
-		info.put ("frontiers", frontiers_limiter.size ());
+		info.put ("total", limiter.available ());
+		info.put ("database", database_limiter.available ());
+		info.put ("frontiers", frontiers_limiter.available ());
 		return info;
 	};
 
