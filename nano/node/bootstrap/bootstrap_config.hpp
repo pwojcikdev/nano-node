@@ -54,6 +54,7 @@ public:
 	unsigned repair_consideration{ 1 }; // Repair: distinct peers sampled before a band cursor advances
 	std::size_t candidates{ nano::bootstrap_server::max_topo_entries - 1 }; // Cap on new aggregated entries kept (the smallest) per advance; topo_index responses include the cursor
 	std::size_t redundant_skip_threshold{ 3 }; // Consecutive fully-redundant spearhead pages before fast-forwarding
+	std::size_t redundant_skip_history_size{ 16 }; // Recent spearhead pages remembered; each page that needed fetching raises the next skip threshold by one
 	uint64_t redundant_skip_stride{ 10'000 }; // Topo-height stride to fast-forward after redundant_skip_threshold pages
 	std::chrono::milliseconds cooldown{ 1000 * 5 }; // Per-head cooldown between requests
 	std::size_t max_buffered{ 1000 * 40 }; // Scan back-pressure: pause all discovery while the buffer holds this many entries
