@@ -2,6 +2,7 @@
 #include <nano/lib/container_info.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/node_capabilities.hpp>
+#include <nano/lib/object_stream_adapters.hpp>
 #include <nano/lib/saturate.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/thread_roles.hpp>
@@ -296,6 +297,8 @@ bool topo_strategy::process (nano::messages::asc_pull_ack::topo_index_payload co
 
 	release_assert (std::holds_alternative<topo_index_query> (tag.query));
 	auto const & query = std::get<topo_index_query> (tag.query);
+
+	ctx.logger.debug (nano::log::type::bootstrap, "Received topo index page from peer {} for height {} hash {}: {}", tag.node_id, query.start.topo_height, query.start.hash, nano::streamed (response, nano::streamed_format::json));
 
 	auto const result = verify (response, query);
 
