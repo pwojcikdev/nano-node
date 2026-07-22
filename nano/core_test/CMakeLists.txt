@@ -22,7 +22,7 @@ add_executable(
   bounded_dfs.cpp
   bucketing.cpp
   cli.cpp
-  confirmation_solicitor.cpp
+  vote_solicitor.cpp
   crawler.cpp
   cementing_set.cpp
   conflicts.cpp

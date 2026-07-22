@@ -66,7 +66,7 @@ private: // Dependencies
 private:
 	void run ();
 	void run_batch (nano::unique_lock<nano::mutex> &);
-	
+
 	// Serve a request from the vote cache and query reps for anything missing
 	void process (nano::messages::vote_relay_req const &, std::shared_ptr<nano::transport::channel> const &);
 	// Offer a processed vote to pending requests, flushing any completed ones

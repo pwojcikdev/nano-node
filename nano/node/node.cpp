@@ -65,6 +65,7 @@
 #include <nano/node/vote_rebroadcaster.hpp>
 #include <nano/node/vote_relay.hpp>
 #include <nano/node/vote_replier.hpp>
+#include <nano/node/vote_solicitor.hpp>
 #include <nano/node/vote_router.hpp>
 #include <nano/node/wallet.hpp>
 #include <nano/node/websocket.hpp>
@@ -239,6 +240,8 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 	vote_rebroadcaster{ *vote_rebroadcaster_impl },
 	block_rebroadcaster_impl{ std::make_unique<nano::block_rebroadcaster> (config.block_rebroadcaster, flags, active, network, stats, logger) },
 	block_rebroadcaster{ *block_rebroadcaster_impl },
+	vote_solicitor_impl{ std::make_unique<nano::vote_solicitor> (network, rep_crawler, block_rebroadcaster, network_params.network, stats, logger) },
+	vote_solicitor{ *vote_solicitor_impl },
 	startup_time{ std::chrono::steady_clock::now () },
 	node_seq{ seq }
 {

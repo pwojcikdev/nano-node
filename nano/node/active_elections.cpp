@@ -6,10 +6,10 @@
 #include <nano/lib/threading.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/cementing_set.hpp>
-#include <nano/node/confirmation_solicitor.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/fork_cache.hpp>
 #include <nano/node/ledger_notifications.hpp>
+#include <nano/node/network.hpp>
 #include <nano/node/node.hpp>
 #include <nano/node/node_observers.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -20,6 +20,7 @@
 #include <nano/node/vote_cache.hpp>
 #include <nano/node/vote_processor.hpp>
 #include <nano/node/vote_router.hpp>
+#include <nano/node/vote_solicitor.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_cemented.hpp>
@@ -521,19 +522,31 @@ void nano::active_elections::tick_elections (nano::unique_lock<nano::mutex> & lo
 
 	lock.unlock ();
 
-	nano::confirmation_solicitor solicitor (node.network, node.config);
-	solicitor.prepare (node.rep_crawler.principal_representatives (std::numeric_limits<std::size_t>::max ()));
-
+	// Tick election state machines, collecting solicitation work due this round
+	std::vector<std::shared_ptr<nano::election>> elections;
+	std::vector<nano::solicitation> solicitations;
 	for (auto const & election : election_list)
 	{
-		bool tick_result = election->tick (solicitor);
-		if (tick_result)
+		auto result = election->tick ();
+		if (result.finished)
 		{
 			erase (election->qualified_root);
 		}
+		if (result.solicitation)
+		{
+			elections.push_back (election);
+			solicitations.push_back (std::move (*result.solicitation));
+		}
 	}
 
-	solicitor.flush ();
+	// Plan and send requests and broadcasts, then feed the results back for pacing
+	auto const results = node.vote_solicitor.solicit (solicitations);
+	release_assert (results.size () == solicitations.size ());
+	for (std::size_t i = 0; i < results.size (); ++i)
+	{
+		auto broadcasted = results[i].broadcasted ? std::optional<nano::block_hash>{ solicitations[i].winner->hash () } : std::nullopt;
+		elections[i]->solicited (results[i].requested, broadcasted);
+	}
 }
 
 bool nano::active_elections::predicate () const

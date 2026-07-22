@@ -79,8 +79,10 @@ class vote_processor_config;
 class vote_rebroadcaster;
 class vote_rebroadcaster_config;
 class vote_router;
+class vote_solicitor;
 class vote_spacing;
 class voting_policy;
+struct solicitation;
 class websocket_server;
 
 enum class block_source;

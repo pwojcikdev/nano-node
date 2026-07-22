@@ -210,6 +210,8 @@ public:
 	nano::vote_rebroadcaster & vote_rebroadcaster;
 	std::unique_ptr<nano::block_rebroadcaster> block_rebroadcaster_impl;
 	nano::block_rebroadcaster & block_rebroadcaster;
+	std::unique_ptr<nano::vote_solicitor> vote_solicitor_impl;
+	nano::vote_solicitor & vote_solicitor;
 
 public:
 	std::chrono::steady_clock::time_point const startup_time;

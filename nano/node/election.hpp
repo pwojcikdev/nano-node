@@ -13,6 +13,7 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -20,7 +21,6 @@ namespace nano
 {
 class block;
 class channel;
-class confirmation_solicitor;
 enum class election_behavior;
 class inactive_cache_information;
 class node;
@@ -33,6 +33,19 @@ public:
 	std::chrono::steady_clock::time_point time;
 	uint64_t timestamp;
 	nano::block_hash hash;
+};
+
+/**
+ * Snapshot of an election's voting state for one solicitation round, taken under a single election lock.
+ * Consumed by the vote_solicitor which decides per representative what to request or broadcast.
+ */
+struct solicitation final
+{
+	std::shared_ptr<nano::block> winner;
+	std::unordered_map<nano::account, nano::vote_info> votes;
+	bool quorum{ false }; // Once quorum is reached only final votes are conclusive
+	bool request{ false }; // Confirmation requests are due
+	bool broadcast{ false }; // Winner block broadcast is due
 };
 
 // map of vote weight per block, ordered greater first
@@ -92,8 +105,17 @@ private: // State management
 	bool state_change (nano::election_state, nano::election_state);
 
 public: // State transitions
-	// Returns true if the election should be cleaned up
-	bool tick (nano::confirmation_solicitor &);
+	struct tick_result
+	{
+		bool finished{ false }; // Election should be cleaned up
+		std::optional<nano::solicitation> solicitation; // Solicitation work wanted this round
+	};
+
+	// Advance the election state machine and snapshot any solicitation work due this round
+	tick_result tick ();
+
+	// Report solicitation results back, advances request and broadcast pacing for the next round
+	void solicited (bool requested, std::optional<nano::block_hash> const & broadcasted);
 
 	bool transition_active ();
 	bool transition_priority ();
@@ -184,8 +206,8 @@ private:
 	// lock_a does not own the mutex on return
 	void confirm_once (nano::unique_lock<nano::mutex> & lock_a);
 	bool broadcast_block_predicate () const;
-	void broadcast_block (nano::confirmation_solicitor &);
-	void send_confirm_req (nano::confirmation_solicitor &);
+	// Builds the solicitation snapshot if requests or broadcasts are due
+	std::optional<nano::solicitation> solicit_locked (bool allow_requests);
 	/**
 	 * Broadcast vote for current election winner. Generates final vote if reached quorum or already confirmed
 	 * Requires mutex lock
@@ -223,13 +245,10 @@ private: // Constants
 	static std::size_t constexpr max_blocks{ 10 };
 
 	friend class active_elections;
-	friend class confirmation_solicitor;
 
 public: // Only used in tests
 	void force_confirm ();
 
-	friend class confirmation_solicitor_different_hash_Test;
-	friend class confirmation_solicitor_bypass_max_requests_cap_Test;
 	friend class votes_add_existing_Test;
 	friend class votes_add_old_Test;
 };

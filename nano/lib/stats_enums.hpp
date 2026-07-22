@@ -71,6 +71,7 @@ enum class type
 	vote_replier,
 	vote_replier_ec,
 	vote_relay,
+	vote_solicitor,
 	filter,
 	telemetry,
 	vote_generator,

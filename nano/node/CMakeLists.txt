@@ -69,8 +69,8 @@ add_library(
   cli.cpp
   cementing_set.hpp
   cementing_set.cpp
-  confirmation_solicitor.hpp
-  confirmation_solicitor.cpp
+  vote_solicitor.hpp
+  vote_solicitor.cpp
   daemonconfig.hpp
   daemonconfig.cpp
   distributed_work.hpp

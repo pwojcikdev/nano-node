@@ -4,9 +4,7 @@
 #include <nano/lib/vote.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/block_processor.hpp>
-#include <nano/node/block_rebroadcaster.hpp>
 #include <nano/node/cementing_set.hpp>
-#include <nano/node/confirmation_solicitor.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/local_vote_history.hpp>
 #include <nano/node/network.hpp>
@@ -191,27 +189,53 @@ std::chrono::milliseconds nano::election::confirm_req_time () const
 	return {};
 }
 
-void nano::election::send_confirm_req (nano::confirmation_solicitor & solicitor_a)
+std::optional<nano::solicitation> nano::election::solicit_locked (bool allow_requests)
 {
 	debug_assert (!mutex.try_lock ());
 
-	if (confirm_req_time () < (std::chrono::steady_clock::now () - last_req))
+	bool const broadcast = broadcast_block_predicate ();
+	bool const request = allow_requests && confirm_req_time () < (std::chrono::steady_clock::now () - last_req);
+	if (!broadcast && !request)
 	{
-		if (!solicitor_a.add (*this))
-		{
-			last_req = std::chrono::steady_clock::now ();
-			++confirmation_request_count;
+		return std::nullopt;
+	}
+	return nano::solicitation{ status.winner, last_votes, is_quorum.load (), request, broadcast };
+}
 
-			node.stats.inc (nano::stat::type::election, nano::stat::detail::confirmation_request);
-			node.logger.debug (nano::log::type::election, "Sent confirmation request for root: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms, confirmation requests: {})",
-			qualified_root,
-			to_string (behavior_m),
-			to_string (state_m),
-			status.voter_count,
-			status.block_count,
-			duration ().count (),
-			confirmation_request_count.load ());
-		}
+void nano::election::solicited (bool requested, std::optional<nano::block_hash> const & broadcasted)
+{
+	nano::lock_guard<nano::mutex> guard{ mutex };
+
+	if (requested)
+	{
+		last_req = std::chrono::steady_clock::now ();
+		++confirmation_request_count;
+
+		node.stats.inc (nano::stat::type::election, nano::stat::detail::confirmation_request);
+		node.logger.debug (nano::log::type::election, "Sent confirmation request for root: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms, confirmation requests: {})",
+		qualified_root,
+		to_string (behavior_m),
+		to_string (state_m),
+		status.voter_count,
+		status.block_count,
+		duration ().count (),
+		confirmation_request_count.load ());
+	}
+	if (broadcasted)
+	{
+		bool const initial = last_block_hash.is_zero ();
+		last_block = std::chrono::steady_clock::now ();
+		last_block_hash = *broadcasted;
+
+		node.stats.inc (nano::stat::type::election, initial ? nano::stat::detail::broadcast_block_initial : nano::stat::detail::broadcast_block_repeat);
+		node.logger.debug (nano::log::type::election, "Broadcasted current winner: {} for root: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
+		*broadcasted,
+		qualified_root,
+		to_string (behavior_m),
+		to_string (state_m),
+		status.voter_count,
+		status.block_count,
+		duration ().count ());
 	}
 }
 
@@ -289,34 +313,6 @@ bool nano::election::broadcast_block_predicate () const
 	return false;
 }
 
-void nano::election::broadcast_block (nano::confirmation_solicitor & solicitor_a)
-{
-	debug_assert (!mutex.try_lock ());
-
-	if (broadcast_block_predicate ())
-	{
-		if (!solicitor_a.broadcast (*this))
-		{
-			last_block = std::chrono::steady_clock::now ();
-			last_block_hash = status.winner->hash ();
-
-			node.stats.inc (nano::stat::type::election, last_block_hash.is_zero () ? nano::stat::detail::broadcast_block_initial : nano::stat::detail::broadcast_block_repeat);
-
-			node.logger.debug (nano::log::type::election, "Broadcasted current winner: {} for root: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
-			status.winner->hash (),
-			qualified_root,
-			to_string (behavior_m),
-			to_string (state_m),
-			status.voter_count,
-			status.block_count,
-			duration ().count ());
-
-			// Random flood for block propagation
-			node.block_rebroadcaster.push (status.winner);
-		}
-	}
-}
-
 void nano::election::broadcast_vote ()
 {
 	nano::unique_lock<nano::mutex> lock{ mutex };
@@ -341,10 +337,10 @@ nano::election_status nano::election::get_status () const
 	return status;
 }
 
-bool nano::election::tick (nano::confirmation_solicitor & solicitor)
+auto nano::election::tick () -> tick_result
 {
 	nano::unique_lock<nano::mutex> lock{ mutex };
-	bool result = false;
+	tick_result result;
 	switch (state_m)
 	{
 		case nano::election_state::passive:
@@ -355,12 +351,11 @@ bool nano::election::tick (nano::confirmation_solicitor & solicitor)
 			break;
 		case nano::election_state::active:
 			broadcast_vote_locked (lock);
-			broadcast_block (solicitor);
-			send_confirm_req (solicitor);
+			result.solicitation = solicit_locked (/* allow_requests */ true);
 			break;
 		case nano::election_state::confirmed:
-			result = true; // Return true to indicate this election should be cleaned up
-			broadcast_block (solicitor); // Ensure election winner is broadcasted
+			result.finished = true; // Election should be cleaned up
+			result.solicitation = solicit_locked (/* allow_requests */ false); // Ensure election winner is broadcasted
 			state_change (nano::election_state::confirmed, nano::election_state::expired_confirmed);
 			break;
 		case nano::election_state::expired_unconfirmed:
@@ -368,7 +363,8 @@ bool nano::election::tick (nano::confirmation_solicitor & solicitor)
 			debug_assert (false);
 			break;
 		case nano::election_state::cancelled:
-			return true; // Clean up cancelled elections immediately
+			result.finished = true; // Clean up cancelled elections immediately
+			return result;
 	}
 
 	if (!confirmed_locked () && time_to_live () < std::chrono::steady_clock::now () - election_start)
@@ -382,7 +378,7 @@ bool nano::election::tick (nano::confirmation_solicitor & solicitor)
 			nano::log::arg{ "qualified_root", qualified_root },
 			nano::log::arg{ "status", current_status_locked () });
 
-			result = true; // Return true to indicate this election should be cleaned up
+			result.finished = true; // Election should be cleaned up
 			status.type = nano::election_status_type::stopped;
 		}
 	}
