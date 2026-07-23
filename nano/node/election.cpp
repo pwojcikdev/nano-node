@@ -189,16 +189,33 @@ std::chrono::milliseconds nano::election::confirm_req_time () const
 	return {};
 }
 
-std::optional<nano::solicitation> nano::election::solicit_locked (bool allow_requests)
+std::optional<nano::solicitation> nano::election::try_solicit ()
 {
-	debug_assert (!mutex.try_lock ());
+	nano::lock_guard<nano::mutex> guard{ mutex };
 
-	bool const broadcast = broadcast_block_predicate ();
+	bool allow_requests = false;
+	bool allow_broadcasts = false;
+	switch (state_m)
+	{
+		case nano::election_state::active:
+			allow_requests = true;
+			allow_broadcasts = true;
+			break;
+		case nano::election_state::confirmed:
+		case nano::election_state::expired_confirmed:
+			allow_broadcasts = true; // Ensure the winner is broadcasted after confirmation
+			break;
+		default:
+			return std::nullopt;
+	}
+
+	bool const broadcast = allow_broadcasts && broadcast_block_predicate ();
 	bool const request = allow_requests && confirm_req_time () < (std::chrono::steady_clock::now () - last_req);
 	if (!broadcast && !request)
 	{
 		return std::nullopt;
 	}
+
 	return nano::solicitation{ status.winner, last_votes, is_quorum.load (), request, broadcast };
 }
 
@@ -351,11 +368,11 @@ auto nano::election::tick () -> tick_result
 			break;
 		case nano::election_state::active:
 			broadcast_vote_locked (lock);
-			result.solicitation = solicit_locked (/* allow_requests */ true);
+			result.solicit = true;
 			break;
 		case nano::election_state::confirmed:
 			result.finished = true; // Election should be cleaned up
-			result.solicitation = solicit_locked (/* allow_requests */ false); // Ensure election winner is broadcasted
+			result.solicit = true; // Ensure the winner is broadcasted, gated by try_solicit in the expired_confirmed state
 			state_change (nano::election_state::confirmed, nano::election_state::expired_confirmed);
 			break;
 		case nano::election_state::expired_unconfirmed:

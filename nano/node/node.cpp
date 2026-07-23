@@ -65,8 +65,8 @@
 #include <nano/node/vote_rebroadcaster.hpp>
 #include <nano/node/vote_relay.hpp>
 #include <nano/node/vote_replier.hpp>
-#include <nano/node/vote_solicitor.hpp>
 #include <nano/node/vote_router.hpp>
+#include <nano/node/vote_solicitor.hpp>
 #include <nano/node/wallet.hpp>
 #include <nano/node/websocket.hpp>
 #include <nano/secure/ledger.hpp>
@@ -587,6 +587,7 @@ void nano::node::start ()
 	scheduler.start ();
 	vote_replier.start ();
 	vote_relay.start ();
+	vote_solicitor.start ();
 	backlog_scan.start ();
 	backlog.start ();
 	bootstrap_server.start ();
@@ -637,6 +638,7 @@ void nano::node::stop ()
 	rep_tiers.stop ();
 	scheduler.stop ();
 	active.stop ();
+	vote_solicitor.stop ();
 	vote_generator.stop ();
 	cementing_set.stop ();
 	ledger_notifications.stop ();
@@ -1032,6 +1034,7 @@ nano::container_info nano::node::container_info () const
 	info.add ("distributed_work", distributed_work.container_info ());
 	info.add ("vote_replier", vote_replier.container_info ());
 	info.add ("vote_relay", vote_relay.container_info ());
+	info.add ("vote_solicitor", vote_solicitor.container_info ());
 	info.add ("scheduler", scheduler.container_info ());
 	info.add ("vote_cache", vote_cache.container_info ());
 	info.add ("vote_router", vote_router.container_info ());

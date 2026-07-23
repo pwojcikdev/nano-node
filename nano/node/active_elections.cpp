@@ -522,9 +522,7 @@ void nano::active_elections::tick_elections (nano::unique_lock<nano::mutex> & lo
 
 	lock.unlock ();
 
-	// Tick election state machines, collecting solicitation work due this round
-	std::vector<std::shared_ptr<nano::election>> elections;
-	std::vector<nano::solicitation> solicitations;
+	// Tick election state machines, handing elections that want solicitation over to the vote solicitor
 	for (auto const & election : election_list)
 	{
 		auto result = election->tick ();
@@ -532,20 +530,10 @@ void nano::active_elections::tick_elections (nano::unique_lock<nano::mutex> & lo
 		{
 			erase (election->qualified_root);
 		}
-		if (result.solicitation)
+		if (result.solicit)
 		{
-			elections.push_back (election);
-			solicitations.push_back (std::move (*result.solicitation));
+			node.vote_solicitor.trigger (election);
 		}
-	}
-
-	// Plan and send requests and broadcasts, then feed the results back for pacing
-	auto const results = node.vote_solicitor.solicit (solicitations);
-	release_assert (results.size () == solicitations.size ());
-	for (std::size_t i = 0; i < results.size (); ++i)
-	{
-		auto broadcasted = results[i].broadcasted ? std::optional<nano::block_hash>{ solicitations[i].winner->hash () } : std::nullopt;
-		elections[i]->solicited (results[i].requested, broadcasted);
 	}
 }
 

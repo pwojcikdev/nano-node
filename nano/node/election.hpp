@@ -108,13 +108,18 @@ public: // State transitions
 	struct tick_result
 	{
 		bool finished{ false }; // Election should be cleaned up
-		std::optional<nano::solicitation> solicitation; // Solicitation work wanted this round
+		bool solicit{ false }; // Election is in a state that wants solicitation work
 	};
 
-	// Advance the election state machine and snapshot any solicitation work due this round
+	// Advance the election state machine
 	tick_result tick ();
 
-	// Report solicitation results back, advances request and broadcast pacing for the next round
+	// Checks the solicitation gates and snapshots the voting state under a single lock
+	// @return nullopt when no solicitation work is due
+	std::optional<nano::solicitation> try_solicit ();
+
+	// Report solicitation results back, advances request and broadcast pacing
+	// Only called from the solicitor round thread, round serialization keeps this race free with try_solicit
 	void solicited (bool requested, std::optional<nano::block_hash> const & broadcasted);
 
 	bool transition_active ();
@@ -206,8 +211,6 @@ private:
 	// lock_a does not own the mutex on return
 	void confirm_once (nano::unique_lock<nano::mutex> & lock_a);
 	bool broadcast_block_predicate () const;
-	// Builds the solicitation snapshot if requests or broadcasts are due
-	std::optional<nano::solicitation> solicit_locked (bool allow_requests);
 	/**
 	 * Broadcast vote for current election winner. Generates final vote if reached quorum or already confirmed
 	 * Requires mutex lock

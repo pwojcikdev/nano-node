@@ -1,11 +1,16 @@
 #pragma once
 
+#include <nano/lib/locks.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/repcrawler.hpp>
 
+#include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -81,24 +86,42 @@ private:
 
 /**
  * Solicits votes for active elections: batches confirmation requests to representatives and directs winner block broadcasts to those that have not voted.
- * Called synchronously from the election container round, owns no thread.
+ * Elections are registered with trigger () and evaluated in fixed cadence rounds on a dedicated thread.
+ * Snapshots are pulled via election::try_solicit () at round time, so planning always sees fresh voting state.
  */
 class vote_solicitor final
 {
 public:
 	vote_solicitor (nano::network &, nano::rep_crawler &, nano::block_rebroadcaster &, nano::network_constants const &, nano::stats &, nano::logger &);
+	~vote_solicitor ();
+
+	void start ();
+	void stop ();
+
+	// Register an election for solicitation, evaluated on the next round
+	// Repeated triggers for the same root are coalesced
+	void trigger (std::shared_ptr<nano::election> const &);
 
 	using result = vote_solicitor_round::result;
 
-	// Plan and send solicitations for one election round
+	// Plan and send solicitations for one round, synchronous building block used by the round thread
 	// @return results parallel to the input order
 	std::vector<result> solicit (std::vector<nano::solicitation> const &) const;
+
+	std::size_t size () const;
+	bool empty () const;
+
+	nano::container_info container_info () const;
 
 public:
 	// Limits for each planning round, the per election broadcast cap is derived from network fanout
 	vote_solicitor_round::limits const limits;
+	// Interval between solicitation rounds, keeps the per round caps meaningful
+	std::chrono::milliseconds const round_interval;
 
 private:
+	void run ();
+	void run_round (std::deque<std::shared_ptr<nano::election>> const &);
 	void flush (vote_solicitor_round const &) const;
 
 private: // Dependencies
@@ -108,5 +131,16 @@ private: // Dependencies
 	nano::network_constants const & network_constants;
 	nano::stats & stats;
 	nano::logger & logger;
+
+private:
+	// Elections awaiting the next round, keyed by root to coalesce repeated triggers
+	std::unordered_map<nano::qualified_root, std::shared_ptr<nano::election>> triggered;
+
+	std::chrono::steady_clock::time_point last_round{};
+
+	bool stopped{ false };
+	nano::condition_variable condition;
+	mutable nano::mutex mutex{ mutex_identifier (mutexes::vote_solicitor) };
+	std::thread thread;
 };
 }

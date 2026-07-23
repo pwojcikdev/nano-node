@@ -255,7 +255,7 @@ TEST (vote_solicitor, solicit)
 }
 
 /*
- * Election tick should produce a solicitation when active and pacing should advance on feedback
+ * Election tick should request solicitation when active, try_solicit should snapshot and advance pacing
  */
 TEST (vote_solicitor, election_tick)
 {
@@ -281,13 +281,89 @@ TEST (vote_solicitor, election_tick)
 
 	auto result = election->tick ();
 	ASSERT_FALSE (result.finished);
-	ASSERT_TRUE (result.solicitation.has_value ());
-	ASSERT_TRUE (result.solicitation->request);
-	ASSERT_TRUE (result.solicitation->broadcast);
-	ASSERT_EQ (send->hash (), result.solicitation->winner->hash ());
+	ASSERT_TRUE (result.solicit);
+
+	auto solicitation = election->try_solicit ();
+	ASSERT_TRUE (solicitation.has_value ());
+	ASSERT_TRUE (solicitation->request);
+	ASSERT_TRUE (solicitation->broadcast);
+	ASSERT_EQ (send->hash (), solicitation->winner->hash ());
+
+	// The snapshot alone does not advance pacing, only performed work reported back does
+	ASSERT_EQ (0, election->confirmation_request_count);
 
 	election->solicited (/* requested */ true, send->hash ());
 	ASSERT_EQ (1, election->confirmation_request_count);
 	ASSERT_EQ (1, node.stats.count (nano::stat::type::election, nano::stat::detail::confirmation_request));
 	ASSERT_EQ (1, node.stats.count (nano::stat::type::election, nano::stat::detail::broadcast_block_initial));
+}
+
+/*
+ * Passive elections should not produce solicitations
+ */
+TEST (vote_solicitor, election_passive)
+{
+	nano::test::system system;
+	nano::node_flags flags;
+	flags.disable_request_loop = true;
+	auto & node = *system.add_node (flags);
+
+	nano::block_builder builder;
+	auto send = builder
+				.send ()
+				.previous (nano::dev::genesis->hash ())
+				.destination (nano::keypair ().pub)
+				.balance (nano::dev::constants.genesis_amount - 100)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+	send->sideband_set ({});
+
+	auto election = std::make_shared<nano::election> (node, send, nano::election_behavior::priority);
+	ASSERT_EQ (nano::election_state::passive, election->state ());
+
+	ASSERT_FALSE (election->try_solicit ().has_value ());
+	ASSERT_EQ (0, election->confirmation_request_count);
+}
+
+/*
+ * Full asynchronous path: the request loop ticks the election, triggers the solicitor and messages reach the representative
+ */
+TEST (vote_solicitor, async_round)
+{
+	nano::test::system system;
+	nano::node_flags flags;
+	flags.disable_rep_crawler = true;
+	auto & node = *system.add_node (flags);
+
+	auto channel = nano::test::test_channel (node);
+	node.rep_crawler.force_add_rep (nano::dev::genesis_key.pub, channel);
+
+	std::atomic<size_t> confirm_reqs{ 0 };
+	std::atomic<size_t> publishes{ 0 };
+	channel->observe<nano::messages::confirm_req> ([&] (nano::messages::confirm_req const & message) {
+		confirm_reqs += 1;
+	});
+	channel->observe<nano::messages::publish> ([&] (nano::messages::publish const & message) {
+		publishes += 1;
+	});
+
+	nano::block_builder builder;
+	auto send = builder
+				.send ()
+				.previous (nano::dev::genesis->hash ())
+				.destination (nano::keypair ().pub)
+				.balance (nano::dev::constants.genesis_amount - 100)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, node.process (send));
+
+	auto election = nano::test::start_election (system, node, send->hash ());
+	ASSERT_NE (nullptr, election);
+
+	// The request loop activates the election, triggers the solicitor and the round queries the representative
+	ASSERT_TIMELY (5s, confirm_reqs >= 1);
+	ASSERT_TIMELY (5s, publishes >= 1);
+	ASSERT_TIMELY (5s, election->confirmation_request_count >= 1);
 }
