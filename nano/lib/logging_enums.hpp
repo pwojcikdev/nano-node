@@ -94,6 +94,7 @@ enum class type
 	bounded_backlog,
 	vote_replier,
 	vote_relay,
+	vote_solicitor,
 	vote_rebroadcaster,
 	block_rebroadcaster,
 	migration,

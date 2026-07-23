@@ -35,19 +35,6 @@ public:
 	nano::block_hash hash;
 };
 
-/**
- * Snapshot of an election's voting state for one solicitation round, taken under a single election lock.
- * Consumed by the vote_solicitor which decides per representative what to request or broadcast.
- */
-struct solicitation final
-{
-	std::shared_ptr<nano::block> winner;
-	std::unordered_map<nano::account, nano::vote_info> votes;
-	bool quorum{ false }; // Once quorum is reached only final votes are conclusive
-	bool request{ false }; // Confirmation requests are due
-	bool broadcast{ false }; // Winner block broadcast is due
-};
-
 // map of vote weight per block, ordered greater first
 using tally_t = std::map<nano::uint128_t, std::shared_ptr<nano::block>, std::greater<nano::uint128_t>>;
 
@@ -74,12 +61,26 @@ enum class election_state
 std::string_view to_string (election_state);
 nano::stat::detail to_stat_detail (election_state);
 
+/**
+ * Snapshot of an election's voting state, taken under a single election lock.
+ * Consumed by the vote_solicitor which owns all solicitation pacing and per representative decisions.
+ */
+struct election_snapshot final
+{
+	std::shared_ptr<nano::block> winner;
+	std::unordered_map<nano::account, nano::vote_info> votes;
+	bool quorum{ false }; // Once quorum is reached only final votes are conclusive
+	nano::election_state state{};
+	nano::election_behavior behavior{};
+	std::chrono::steady_clock::time_point election_start{};
+};
+
 class election final : public std::enable_shared_from_this<election>
 {
 	nano::id_t const id{ nano::next_id () }; // Track individual objects when tracing
 
 private:
-	// Minimum time between broadcasts of the current winner of an election, as a backup to requesting confirmations
+	// Base network latency estimate, used to scale state machine timing
 	std::chrono::milliseconds base_latency () const;
 
 	// Callbacks
@@ -89,15 +90,10 @@ private:
 
 private: // State management
 	static unsigned constexpr passive_duration_factor = 5;
-	static unsigned constexpr active_request_count_min = 2;
 	nano::election_state state_m{ election_state::passive };
 
 	std::chrono::steady_clock::time_point state_start{ std::chrono::steady_clock::now () };
 
-	// These are modified while not holding the mutex from transition_time only
-	std::chrono::steady_clock::time_point last_block{};
-	nano::block_hash last_block_hash{ 0 };
-	std::chrono::steady_clock::time_point last_req{};
 	/** The last time vote for this election was generated */
 	std::chrono::steady_clock::time_point last_vote{};
 
@@ -114,13 +110,8 @@ public: // State transitions
 	// Advance the election state machine
 	tick_result tick ();
 
-	// Checks the solicitation gates and snapshots the voting state under a single lock
-	// @return nullopt when no solicitation work is due
-	std::optional<nano::solicitation> try_solicit ();
-
-	// Report solicitation results back, advances request and broadcast pacing
-	// Only called from the solicitor round thread, round serialization keeps this race free with try_solicit
-	void solicited (bool requested, std::optional<nano::block_hash> const & broadcasted);
+	// Snapshot the voting state under a single lock
+	nano::election_snapshot snapshot () const;
 
 	bool transition_active ();
 	bool transition_priority ();
@@ -210,7 +201,6 @@ private:
 	nano::election_extended_status current_status_locked () const;
 	// lock_a does not own the mutex on return
 	void confirm_once (nano::unique_lock<nano::mutex> & lock_a);
-	bool broadcast_block_predicate () const;
 	/**
 	 * Broadcast vote for current election winner. Generates final vote if reached quorum or already confirmed
 	 * Requires mutex lock
@@ -224,10 +214,6 @@ private:
 	 * Calculates minimum time delay between subsequent votes when processing non-final votes
 	 */
 	std::chrono::seconds cooldown_time (nano::uint128_t weight) const;
-	/**
-	 * Calculates time delay between broadcasting confirmation requests
-	 */
-	std::chrono::milliseconds confirm_req_time () const;
 
 private:
 	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> last_blocks;
@@ -246,8 +232,6 @@ public: // Logging
 
 private: // Constants
 	static std::size_t constexpr max_blocks{ 10 };
-
-	friend class active_elections;
 
 public: // Only used in tests
 	void force_confirm ();

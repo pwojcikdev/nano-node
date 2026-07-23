@@ -255,53 +255,104 @@ TEST (vote_solicitor, solicit)
 }
 
 /*
- * Election tick should request solicitation when active, try_solicit should snapshot and advance pacing
+ * Fresh pacing on an active election should make both requests and broadcasts due
  */
-TEST (vote_solicitor, election_tick)
+TEST (vote_solicitor, decide_active)
 {
-	nano::test::system system;
-	nano::node_flags flags;
-	flags.disable_request_loop = true;
-	auto & node = *system.add_node (flags);
+	auto winner = make_winner ();
+	nano::election_snapshot snapshot{ winner, {}, false, nano::election_state::active, nano::election_behavior::priority, std::chrono::steady_clock::now () };
 
-	nano::block_builder builder;
-	auto send = builder
-				.send ()
-				.previous (nano::dev::genesis->hash ())
-				.destination (nano::keypair ().pub)
-				.balance (nano::dev::constants.genesis_amount - 100)
-				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
-				.work (*system.work.generate (nano::dev::genesis->hash ()))
-				.build ();
-	ASSERT_EQ (nano::block_status::progress, node.process (send));
-
-	auto election = nano::test::start_election (system, node, send->hash ());
-	ASSERT_NE (nullptr, election);
-	election->transition_active ();
-
-	auto result = election->tick ();
-	ASSERT_FALSE (result.finished);
-	ASSERT_TRUE (result.solicit);
-
-	auto solicitation = election->try_solicit ();
-	ASSERT_TRUE (solicitation.has_value ());
-	ASSERT_TRUE (solicitation->request);
-	ASSERT_TRUE (solicitation->broadcast);
-	ASSERT_EQ (send->hash (), solicitation->winner->hash ());
-
-	// The snapshot alone does not advance pacing, only performed work reported back does
-	ASSERT_EQ (0, election->confirmation_request_count);
-
-	election->solicited (/* requested */ true, send->hash ());
-	ASSERT_EQ (1, election->confirmation_request_count);
-	ASSERT_EQ (1, node.stats.count (nano::stat::type::election, nano::stat::detail::confirmation_request));
-	ASSERT_EQ (1, node.stats.count (nano::stat::type::election, nano::stat::detail::broadcast_block_initial));
+	auto const now = std::chrono::steady_clock::now ();
+	auto due = nano::vote_solicitor::decide (snapshot, {}, 100ms, 500ms, now);
+	ASSERT_TRUE (due.request);
+	ASSERT_TRUE (due.broadcast);
 }
 
 /*
- * Passive elections should not produce solicitations
+ * Recently performed work should keep the gates closed until the intervals elapse
  */
-TEST (vote_solicitor, election_passive)
+TEST (vote_solicitor, decide_paced)
+{
+	auto winner = make_winner ();
+	nano::election_snapshot snapshot{ winner, {}, false, nano::election_state::active, nano::election_behavior::priority, std::chrono::steady_clock::now () };
+
+	auto const now = std::chrono::steady_clock::now ();
+	nano::vote_solicitor::pacing pacing{ .last_request = now, .last_broadcast = now, .last_broadcast_hash = winner->hash () };
+
+	auto due = nano::vote_solicitor::decide (snapshot, pacing, 100ms, 500ms, now);
+	ASSERT_FALSE (due.request);
+	ASSERT_FALSE (due.broadcast);
+
+	// Once the intervals elapse both gates open again
+	auto later = nano::vote_solicitor::decide (snapshot, pacing, 100ms, 500ms, now + 1s);
+	ASSERT_TRUE (later.request);
+	ASSERT_TRUE (later.broadcast);
+}
+
+/*
+ * A changed winner should make the broadcast due regardless of the broadcast interval
+ */
+TEST (vote_solicitor, decide_winner_changed)
+{
+	auto winner = make_winner ();
+	nano::election_snapshot snapshot{ winner, {}, false, nano::election_state::active, nano::election_behavior::priority, std::chrono::steady_clock::now () };
+
+	auto const now = std::chrono::steady_clock::now ();
+	nano::vote_solicitor::pacing pacing{ .last_request = now, .last_broadcast = now, .last_broadcast_hash = nano::block_hash{ 999 } };
+
+	auto due = nano::vote_solicitor::decide (snapshot, pacing, 100ms, 500ms, now);
+	ASSERT_TRUE (due.broadcast);
+}
+
+/*
+ * Election state controls what work is allowed: nothing while passive or expired, broadcasts only once confirmed
+ */
+TEST (vote_solicitor, decide_states)
+{
+	auto winner = make_winner ();
+	auto const now = std::chrono::steady_clock::now ();
+
+	auto decide_for = [&] (nano::election_state state) {
+		nano::election_snapshot snapshot{ winner, {}, false, state, nano::election_behavior::priority, now };
+		return nano::vote_solicitor::decide (snapshot, {}, 100ms, 500ms, now);
+	};
+
+	for (auto state : { nano::election_state::passive, nano::election_state::expired_unconfirmed, nano::election_state::cancelled })
+	{
+		auto due = decide_for (state);
+		ASSERT_FALSE (due.request);
+		ASSERT_FALSE (due.broadcast);
+	}
+	for (auto state : { nano::election_state::confirmed, nano::election_state::expired_confirmed })
+	{
+		auto due = decide_for (state);
+		ASSERT_FALSE (due.request);
+		ASSERT_TRUE (due.broadcast);
+	}
+}
+
+/*
+ * The request interval scales with election behavior, optimistic elections are solicited less aggressively
+ */
+TEST (vote_solicitor, decide_behavior)
+{
+	auto winner = make_winner ();
+	auto const now = std::chrono::steady_clock::now ();
+
+	// Elapsed time between the optimistic (2x) and priority (5x) intervals
+	nano::vote_solicitor::pacing pacing{ .last_request = now - 300ms, .last_broadcast = now, .last_broadcast_hash = winner->hash () };
+
+	nano::election_snapshot priority{ winner, {}, false, nano::election_state::active, nano::election_behavior::priority, now };
+	ASSERT_FALSE (nano::vote_solicitor::decide (priority, pacing, 100ms, 500ms, now).request);
+
+	nano::election_snapshot optimistic{ winner, {}, false, nano::election_state::active, nano::election_behavior::optimistic, now };
+	ASSERT_TRUE (nano::vote_solicitor::decide (optimistic, pacing, 100ms, 500ms, now).request);
+}
+
+/*
+ * Election snapshot should capture the voting state under a single lock
+ */
+TEST (vote_solicitor, election_snapshot)
 {
 	nano::test::system system;
 	nano::node_flags flags;
@@ -320,10 +371,22 @@ TEST (vote_solicitor, election_passive)
 	send->sideband_set ({});
 
 	auto election = std::make_shared<nano::election> (node, send, nano::election_behavior::priority);
-	ASSERT_EQ (nano::election_state::passive, election->state ());
 
-	ASSERT_FALSE (election->try_solicit ().has_value ());
-	ASSERT_EQ (0, election->confirmation_request_count);
+	auto snapshot = election->snapshot ();
+	ASSERT_EQ (send->hash (), snapshot.winner->hash ());
+	ASSERT_EQ (nano::election_state::passive, snapshot.state);
+	ASSERT_EQ (nano::election_behavior::priority, snapshot.behavior);
+	// A fresh election only contains the null account tally placeholder
+	ASSERT_EQ (1, snapshot.votes.size ());
+	ASSERT_TRUE (snapshot.votes.contains (nano::account::null ()));
+
+	election->set_last_vote (nano::dev::genesis_key.pub, { std::chrono::steady_clock::now (), 1, send->hash () });
+	election->transition_active ();
+
+	auto snapshot2 = election->snapshot ();
+	ASSERT_EQ (nano::election_state::active, snapshot2.state);
+	ASSERT_EQ (2, snapshot2.votes.size ());
+	ASSERT_TRUE (snapshot2.votes.contains (nano::dev::genesis_key.pub));
 }
 
 /*

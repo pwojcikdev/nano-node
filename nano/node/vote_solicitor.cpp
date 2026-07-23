@@ -1,10 +1,12 @@
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/logging.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/lib/thread_roles.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/messages/confirm.hpp>
 #include <nano/messages/publish.hpp>
 #include <nano/node/block_rebroadcaster.hpp>
+#include <nano/node/election_behavior.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/vote_solicitor.hpp>
 
@@ -138,9 +140,51 @@ auto nano::vote_solicitor_round::broadcasts () const -> std::vector<std::pair<st
  * vote_solicitor
  */
 
+std::chrono::milliseconds nano::vote_solicitor::request_interval (nano::election_behavior behavior, std::chrono::milliseconds base_latency)
+{
+	switch (behavior)
+	{
+		case nano::election_behavior::manual:
+		case nano::election_behavior::priority:
+		case nano::election_behavior::hinted:
+			return base_latency * 5;
+		case nano::election_behavior::optimistic:
+			return base_latency * 2;
+	}
+	debug_assert (false);
+	return {};
+}
+
+auto nano::vote_solicitor::decide (nano::election_snapshot const & snapshot, pacing const & pacing_a, std::chrono::milliseconds base_latency, std::chrono::milliseconds broadcast_interval, std::chrono::steady_clock::time_point now) -> due
+{
+	bool allow_requests = false;
+	bool allow_broadcasts = false;
+	switch (snapshot.state)
+	{
+		case nano::election_state::active:
+			allow_requests = true;
+			allow_broadcasts = true;
+			break;
+		case nano::election_state::confirmed:
+		case nano::election_state::expired_confirmed:
+			allow_broadcasts = true; // Ensure the winner is broadcasted after confirmation
+			break;
+		default:
+			return {};
+	}
+
+	due result;
+	result.request = allow_requests && request_interval (snapshot.behavior, base_latency) < now - pacing_a.last_request;
+	// Broadcast when enough time has passed since the last broadcast or the winner has changed
+	result.broadcast = allow_broadcasts && (pacing_a.last_broadcast + broadcast_interval < now || snapshot.winner->hash () != pacing_a.last_broadcast_hash);
+	return result;
+}
+
 nano::vote_solicitor::vote_solicitor (nano::network & network_a, nano::rep_crawler & rep_crawler_a, nano::block_rebroadcaster & block_rebroadcaster_a, nano::network_constants const & network_constants_a, nano::stats & stats_a, nano::logger & logger_a) :
 	limits{ .max_block_broadcasts = network_constants_a.is_dev_network () ? 4u : 30u },
 	round_interval{ network_constants_a.aec_loop_interval },
+	base_latency{ network_constants_a.is_dev_network () ? std::chrono::milliseconds{ 25 } : std::chrono::milliseconds{ 1000 } },
+	broadcast_interval{ network_constants_a.block_broadcast_interval },
 	network{ network_a },
 	rep_crawler{ rep_crawler_a },
 	block_rebroadcaster{ block_rebroadcaster_a },
@@ -171,7 +215,8 @@ void nano::vote_solicitor::stop ()
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
 		stopped = true;
-		triggered.clear ();
+		elections.clear ();
+		pending_count = 0;
 	}
 	condition.notify_all ();
 	if (thread.joinable ())
@@ -190,7 +235,10 @@ void nano::vote_solicitor::trigger (std::shared_ptr<nano::election> const & elec
 		{
 			return;
 		}
-		triggered[election->qualified_root] = election;
+		auto & entry = elections[election->qualified_root];
+		entry.election = election;
+		pending_count += entry.pending == nullptr ? 1 : 0;
+		entry.pending = election;
 	}
 	condition.notify_all ();
 
@@ -202,7 +250,7 @@ void nano::vote_solicitor::run ()
 	nano::unique_lock<nano::mutex> lock{ mutex };
 	while (!stopped)
 	{
-		condition.wait (lock, [this] { return stopped || !triggered.empty (); });
+		condition.wait (lock, [this] { return stopped || pending_count > 0; });
 		if (stopped)
 		{
 			break;
@@ -222,42 +270,92 @@ void nano::vote_solicitor::run ()
 
 		stats.inc (nano::stat::type::vote_solicitor, nano::stat::detail::loop);
 
-		std::deque<std::shared_ptr<nano::election>> elections;
-		for (auto & [root, election] : triggered)
+		// Drain pending elections together with their current pacing
+		std::deque<round_item> items;
+		for (auto & [root, entry] : elections)
 		{
-			elections.push_back (std::move (election));
+			if (entry.pending != nullptr)
+			{
+				items.push_back ({ root, std::move (entry.pending), entry.pacing });
+				entry.pending = nullptr;
+			}
 		}
-		triggered.clear ();
+		pending_count = 0;
+
+		// Sweep entries for dead elections, drained items keep theirs alive until the round completes
+		std::erase_if (elections, [] (auto const & pair) {
+			return pair.second.pending == nullptr && pair.second.election.expired ();
+		});
 
 		lock.unlock ();
-		run_round (elections);
+		run_round (items);
 		lock.lock ();
 	}
 }
 
-void nano::vote_solicitor::run_round (std::deque<std::shared_ptr<nano::election>> const & elections)
+void nano::vote_solicitor::run_round (std::deque<round_item> & items)
 {
-	// Pull fresh snapshots, elections with no work due are skipped
-	std::vector<std::shared_ptr<nano::election>> solicited;
+	auto const now = std::chrono::steady_clock::now ();
+
+	// Pull fresh snapshots and decide the work due, elections with nothing due are skipped
+	std::vector<round_item *> solicited;
 	std::vector<nano::solicitation> solicitations;
-	solicitations.reserve (elections.size ());
-	for (auto const & election : elections)
+	for (auto & item : items)
 	{
-		if (auto solicitation = election->try_solicit ())
+		auto snapshot = item.election->snapshot ();
+		auto const due = decide (snapshot, item.pacing, base_latency, broadcast_interval, now);
+		if (!due.request && !due.broadcast)
 		{
-			solicited.push_back (election);
-			solicitations.push_back (std::move (*solicitation));
+			continue;
 		}
+		solicited.push_back (&item);
+		solicitations.push_back ({ snapshot.winner, std::move (snapshot.votes), snapshot.quorum, due.request, due.broadcast });
 	}
 
 	auto const results = solicit (solicitations);
 	release_assert (results.size () == solicitations.size ());
 
-	// Feed the results back for pacing, only actually performed work advances the gates
+	// Advance pacing only for work actually performed
 	for (std::size_t i = 0; i < results.size (); ++i)
 	{
-		auto broadcasted = results[i].broadcasted ? std::optional<nano::block_hash>{ solicitations[i].winner->hash () } : std::nullopt;
-		solicited[i]->solicited (results[i].requested, broadcasted);
+		auto & item = *solicited[i];
+		auto const & result = results[i];
+		auto const & solicitation = solicitations[i];
+
+		if (result.requested)
+		{
+			item.pacing.last_request = now;
+			++item.election->confirmation_request_count;
+
+			stats.inc (nano::stat::type::election, nano::stat::detail::confirmation_request);
+			logger.debug (nano::log::type::vote_solicitor, "Requested confirmations for root: {} (voters: {}, confirmation requests: {})",
+			item.root,
+			solicitation.votes.size (),
+			item.election->confirmation_request_count.load ());
+		}
+		if (result.broadcasted)
+		{
+			bool const initial = item.pacing.last_broadcast_hash.is_zero ();
+			item.pacing.last_broadcast = now;
+			item.pacing.last_broadcast_hash = solicitation.winner->hash ();
+
+			stats.inc (nano::stat::type::election, initial ? nano::stat::detail::broadcast_block_initial : nano::stat::detail::broadcast_block_repeat);
+			logger.debug (nano::log::type::vote_solicitor, "Broadcasted winner: {} for root: {}",
+			item.pacing.last_broadcast_hash,
+			item.root);
+		}
+	}
+
+	// Store the advanced pacing back into the table
+	{
+		nano::lock_guard<nano::mutex> guard{ mutex };
+		for (auto const & item : items)
+		{
+			if (auto existing = elections.find (item.root); existing != elections.end ())
+			{
+				existing->second.pacing = item.pacing;
+			}
+		}
 	}
 }
 
@@ -328,13 +426,13 @@ void nano::vote_solicitor::flush (nano::vote_solicitor_round const & round) cons
 std::size_t nano::vote_solicitor::size () const
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
-	return triggered.size ();
+	return elections.size ();
 }
 
 bool nano::vote_solicitor::empty () const
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
-	return triggered.empty ();
+	return elections.empty ();
 }
 
 nano::container_info nano::vote_solicitor::container_info () const
@@ -342,6 +440,7 @@ nano::container_info nano::vote_solicitor::container_info () const
 	nano::lock_guard<nano::mutex> guard{ mutex };
 
 	nano::container_info info;
-	info.put ("triggered", triggered);
+	info.put ("elections", elections);
+	info.put ("pending", pending_count);
 	return info;
 }

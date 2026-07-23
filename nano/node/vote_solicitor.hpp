@@ -18,6 +18,18 @@
 namespace nano
 {
 /**
+ * Voting state and work flags for a single election within a solicitation round.
+ */
+struct solicitation final
+{
+	std::shared_ptr<nano::block> winner;
+	std::unordered_map<nano::account, nano::vote_info> votes;
+	bool quorum{ false }; // Once quorum is reached only final votes are conclusive
+	bool request{ false }; // Confirmation requests are due
+	bool broadcast{ false }; // Winner block broadcast is due
+};
+
+/**
  * Plans one round of election solicitation: which representatives to request votes from and which to send the winner block to.
  * Pure bookkeeping without I/O or locking, the vote_solicitor component sends what a round accumulates.
  */
@@ -87,10 +99,30 @@ private:
 /**
  * Solicits votes for active elections: batches confirmation requests to representatives and directs winner block broadcasts to those that have not voted.
  * Elections are registered with trigger () and evaluated in fixed cadence rounds on a dedicated thread.
- * Snapshots are pulled via election::try_solicit () at round time, so planning always sees fresh voting state.
+ * Owns all solicitation pacing per election root, elections only provide voting state snapshots.
  */
 class vote_solicitor final
 {
+public:
+	// Per election solicitation pacing, advanced only for work actually performed
+	struct pacing
+	{
+		std::chrono::steady_clock::time_point last_request{};
+		std::chrono::steady_clock::time_point last_broadcast{};
+		nano::block_hash last_broadcast_hash{ 0 };
+	};
+
+	struct due
+	{
+		bool request{ false };
+		bool broadcast{ false };
+	};
+
+	// Interval between confirmation requests, scales with election behavior
+	static std::chrono::milliseconds request_interval (nano::election_behavior, std::chrono::milliseconds base_latency);
+	// Decide what solicitation work is due for an election
+	static due decide (nano::election_snapshot const &, pacing const &, std::chrono::milliseconds base_latency, std::chrono::milliseconds broadcast_interval, std::chrono::steady_clock::time_point now);
+
 public:
 	vote_solicitor (nano::network &, nano::rep_crawler &, nano::block_rebroadcaster &, nano::network_constants const &, nano::stats &, nano::logger &);
 	~vote_solicitor ();
@@ -118,10 +150,28 @@ public:
 	vote_solicitor_round::limits const limits;
 	// Interval between solicitation rounds, keeps the per round caps meaningful
 	std::chrono::milliseconds const round_interval;
+	// Matches election::base_latency, used to scale request intervals
+	std::chrono::milliseconds const base_latency;
+	// Minimum interval between winner broadcasts for the same election
+	std::chrono::milliseconds const broadcast_interval;
 
 private:
+	struct entry
+	{
+		std::weak_ptr<nano::election> election;
+		std::shared_ptr<nano::election> pending; // Set by trigger, cleared once processed; keeps the election alive for its final broadcast round
+		nano::vote_solicitor::pacing pacing;
+	};
+
+	struct round_item
+	{
+		nano::qualified_root root;
+		std::shared_ptr<nano::election> election;
+		nano::vote_solicitor::pacing pacing;
+	};
+
 	void run ();
-	void run_round (std::deque<std::shared_ptr<nano::election>> const &);
+	void run_round (std::deque<round_item> &);
 	void flush (vote_solicitor_round const &) const;
 
 private: // Dependencies
@@ -133,8 +183,9 @@ private: // Dependencies
 	nano::logger & logger;
 
 private:
-	// Elections awaiting the next round, keyed by root to coalesce repeated triggers
-	std::unordered_map<nano::qualified_root, std::shared_ptr<nano::election>> triggered;
+	// Solicitation state per election root, entries for dead elections are swept each round
+	std::unordered_map<nano::qualified_root, entry> elections;
+	std::size_t pending_count{ 0 };
 
 	std::chrono::steady_clock::time_point last_round{};
 
