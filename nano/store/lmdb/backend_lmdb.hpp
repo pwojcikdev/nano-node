@@ -27,8 +27,9 @@ public:
 	uint64_t count (nano::store::transaction const &, nano::store::table) const override;
 	bool count_is_exact (nano::store::table) const override;
 	int clear (nano::store::table) override;
-	bool drop_table (std::string const & name) override;
+	bool drop_table_by_name (std::string const & name) override;
 	bool table_exists (std::string const & name) const override;
+	bool table_open (nano::store::table) const override;
 
 	nano::store::iterator begin (nano::store::transaction const &, nano::store::table) const override;
 	nano::store::iterator begin (nano::store::transaction const &, nano::store::table, nano::store::db_val const & key) const override;
@@ -52,6 +53,7 @@ public:
 protected:
 	void open_impl (column_schema schema, nano::store::open_mode mode) override;
 	void close_impl () override;
+	void create_table_impl (nano::store::table, std::string const & name) override;
 
 private:
 	std::filesystem::path const database_path;
@@ -61,6 +63,6 @@ private:
 	std::unordered_map<nano::store::table, nano::store::lmdb::env::table_handle> table_handles;
 
 	nano::store::lmdb::env::table_handle table_to_dbi (nano::store::table) const;
-	void open_table (MDB_txn *, nano::store::table, std::string const & name, unsigned flags);
+	void open_table (MDB_txn *, nano::store::table, std::string const & name, unsigned flags, bool tolerate_missing = false);
 };
 }

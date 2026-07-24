@@ -202,9 +202,9 @@ TEST (migrations, lmdb_to_rocksdb)
 
 		// Record source counts
 		auto txn = store->tx_begin_read ();
-		for (auto const & [table, name] : store->backend.get_schema ())
+		for (auto const & definition : store->backend.get_schema ())
 		{
-			src_counts[table] = store->backend.count_exact (txn, table);
+			src_counts[definition.table] = store->backend.count_exact (txn, definition.table);
 		}
 	}
 
@@ -219,10 +219,10 @@ TEST (migrations, lmdb_to_rocksdb)
 	auto txn = rocksdb_store.tx_begin_read ();
 
 	// Verify exact counts match for all tables
-	for (auto const & [table, name] : rocksdb_store.backend.get_schema ())
+	for (auto const & definition : rocksdb_store.backend.get_schema ())
 	{
-		auto dst_count = rocksdb_store.backend.count_exact (txn, table);
-		ASSERT_EQ (dst_count, src_counts[table]) << "Count mismatch for table: " << name;
+		auto dst_count = rocksdb_store.backend.count_exact (txn, definition.table);
+		ASSERT_EQ (dst_count, src_counts[definition.table]) << "Count mismatch for table: " << definition.name;
 	}
 
 	// Verify blocks data

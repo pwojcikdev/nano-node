@@ -34,8 +34,9 @@ public:
 	uint64_t count (nano::store::transaction const &, nano::store::table) const override;
 	bool count_is_exact (nano::store::table) const override;
 	int clear (nano::store::table) override;
-	bool drop_table (std::string const & name) override;
+	bool drop_table_by_name (std::string const & name) override;
 	bool table_exists (std::string const & name) const override;
+	bool table_open (nano::store::table) const override;
 
 	nano::store::iterator begin (nano::store::transaction const &, nano::store::table) const override;
 	nano::store::iterator begin (nano::store::transaction const &, nano::store::table, nano::store::db_val const & key) const override;
@@ -59,6 +60,7 @@ public:
 protected:
 	void open_impl (column_schema schema, nano::store::open_mode mode) override;
 	void close_impl () override;
+	void create_table_impl (nano::store::table, std::string const & name) override;
 
 private:
 	void open_db (std::filesystem::path const & path, nano::store::open_mode mode, ::rocksdb::Options const & options, std::vector<::rocksdb::ColumnFamilyDescriptor> column_families);
