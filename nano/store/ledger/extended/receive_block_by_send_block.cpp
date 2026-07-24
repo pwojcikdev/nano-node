@@ -46,4 +46,14 @@ void receive_block_by_send_block_view::clear ()
 	auto status = backend.clear (nano::store::table::receive_block_by_send_block);
 	backend.release_assert_success (status);
 }
+
+void receive_block_by_send_block_view::create ()
+{
+	backend.create_table (nano::store::table::receive_block_by_send_block);
+}
+
+void receive_block_by_send_block_view::drop ()
+{
+	backend.drop_table (nano::store::table::receive_block_by_send_block);
+}
 }

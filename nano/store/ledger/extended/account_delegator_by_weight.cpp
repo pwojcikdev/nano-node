@@ -38,6 +38,16 @@ void account_delegator_by_weight_view::clear ()
 	backend.release_assert_success (status);
 }
 
+void account_delegator_by_weight_view::create ()
+{
+	backend.create_table (nano::store::table::account_delegator_by_weight);
+}
+
+void account_delegator_by_weight_view::drop ()
+{
+	backend.drop_table (nano::store::table::account_delegator_by_weight);
+}
+
 auto account_delegator_by_weight_view::begin (nano::store::transaction const & txn, nano::account_delegator_by_weight_key const & key) const -> iterator
 {
 	return iterator{ backend.begin (txn, nano::store::table::account_delegator_by_weight, key) };

@@ -46,4 +46,14 @@ void account_block_by_height_view::clear ()
 	auto status = backend.clear (nano::store::table::account_block_by_height);
 	backend.release_assert_success (status);
 }
+
+void account_block_by_height_view::create ()
+{
+	backend.create_table (nano::store::table::account_block_by_height);
+}
+
+void account_block_by_height_view::drop ()
+{
+	backend.drop_table (nano::store::table::account_block_by_height);
+}
 }

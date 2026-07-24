@@ -103,6 +103,7 @@ void assert_extended_indices_consistent (nano::ledger & ledger, nano::secure::tr
 TEST (ledger_extended_index, account_block_by_height_roundtrip)
 {
 	auto store = nano::test::make_store ();
+	store->extended.account_block_by_height.create ();
 	nano::account account{ 9 };
 	nano::block_hash hash1{ 101 };
 	nano::block_hash hash2{ 102 };
@@ -131,6 +132,7 @@ TEST (ledger_extended_index, account_block_by_height_roundtrip)
 TEST (ledger_extended_index, receive_block_by_send_block_roundtrip)
 {
 	auto store = nano::test::make_store ();
+	store->extended.receive_block_by_send_block.create ();
 	nano::block_hash send1{ 1 };
 	nano::block_hash send2{ 2 };
 	nano::block_hash receive1{ 11 };
@@ -161,6 +163,7 @@ TEST (ledger_extended_index, delegator_by_weight_ordering)
 {
 	auto store = nano::test::make_store ();
 	auto & view = store->extended.account_delegator_by_weight;
+	view.create ();
 
 	std::vector<nano::account_delegator_by_weight_key> expected{
 		{ nano::account{ 5 }, nano::amount{ 1 }, nano::account{ 10 } },
@@ -213,6 +216,7 @@ TEST (ledger_extended_index, delegator_by_weight_ordering)
 TEST (ledger_extended_index, delegator_by_weight_upper_bound)
 {
 	auto store = nano::test::make_store ();
+	store->extended.account_delegator_by_weight.create ();
 	auto txn = store->tx_begin_write ();
 	auto & view = store->extended.account_delegator_by_weight;
 
@@ -260,6 +264,7 @@ TEST (ledger_extended_index, delegator_by_weight_upper_bound)
 TEST (ledger_extended_index, delegator_by_weight_rlower_bound)
 {
 	auto store = nano::test::make_store ();
+	store->extended.account_delegator_by_weight.create ();
 	auto txn = store->tx_begin_write ();
 	auto & view = store->extended.account_delegator_by_weight;
 
@@ -302,6 +307,7 @@ TEST (ledger_extended_index, delegator_by_weight_rlower_bound)
 TEST (ledger_extended_index, receivable_by_amount_roundtrip_and_bounds)
 {
 	auto store = nano::test::make_store ();
+	store->extended.account_receivable_by_amount.create ();
 	auto txn = store->tx_begin_write ();
 	auto & view = store->extended.account_receivable_by_amount;
 
@@ -401,10 +407,10 @@ TEST (ledger_extended_index, disabled_by_default)
 	ASSERT_FALSE (store->version.get_flag (txn, nano::store::meta_key::account_receivable_by_amount_index_enabled));
 	ASSERT_FALSE (store->version.get_flag (txn, nano::store::meta_key::receive_block_by_send_block_index_enabled));
 	ASSERT_FALSE (store->version.get_flag (txn, nano::store::meta_key::account_block_by_height_index_enabled));
-	ASSERT_TRUE (store->extended.account_delegator_by_weight.empty (txn));
-	ASSERT_TRUE (store->extended.account_receivable_by_amount.empty (txn));
-	ASSERT_TRUE (store->extended.receive_block_by_send_block.empty (txn));
-	ASSERT_TRUE (store->extended.account_block_by_height.empty (txn));
+	ASSERT_FALSE (store->backend.table_open (nano::store::table::account_delegator_by_weight));
+	ASSERT_FALSE (store->backend.table_open (nano::store::table::account_receivable_by_amount));
+	ASSERT_FALSE (store->backend.table_open (nano::store::table::receive_block_by_send_block));
+	ASSERT_FALSE (store->backend.table_open (nano::store::table::account_block_by_height));
 }
 
 /*
@@ -573,10 +579,10 @@ TEST (ledger_extended_index, populate_existing_ledger)
 		ASSERT_EQ (nano::block_status::progress, ledger.process (txn, ssend2));
 		ASSERT_EQ (nano::block_status::progress, ledger.process (txn, ssend3));
 		ASSERT_EQ (nano::block_status::progress, ledger.process (txn, ssend4));
-		ASSERT_TRUE (store->extended.account_delegator_by_weight.empty (txn));
-		ASSERT_TRUE (store->extended.account_receivable_by_amount.empty (txn));
-		ASSERT_TRUE (store->extended.receive_block_by_send_block.empty (txn));
-		ASSERT_TRUE (store->extended.account_block_by_height.empty (txn));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_delegator_by_weight));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_receivable_by_amount));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::receive_block_by_send_block));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_block_by_height));
 	}
 	// Reopen with the option; missing indices must be populated in full
 	{
@@ -668,9 +674,9 @@ TEST (ledger_extended_index, single_index_populate_and_mixed_flags)
 		ASSERT_FALSE (store->version.get_flag (txn, nano::store::meta_key::account_receivable_by_amount_index_enabled));
 		ASSERT_EQ (2, store->extended.receive_block_by_send_block.count (txn));
 		ASSERT_EQ (open1->hash (), store->extended.receive_block_by_send_block.get (txn, send1->hash ()).value ());
-		ASSERT_TRUE (store->extended.account_block_by_height.empty (txn));
-		ASSERT_TRUE (store->extended.account_delegator_by_weight.empty (txn));
-		ASSERT_TRUE (store->extended.account_receivable_by_amount.empty (txn));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_block_by_height));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_delegator_by_weight));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_receivable_by_amount));
 	}
 
 	// With mixed flags only the enabled index is maintained for new blocks
@@ -707,9 +713,9 @@ TEST (ledger_extended_index, single_index_populate_and_mixed_flags)
 		ASSERT_EQ (nano::block_status::progress, ledger.process (txn, open2));
 		ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send3));
 		ASSERT_EQ (open2->hash (), store->extended.receive_block_by_send_block.get (txn, send2->hash ()).value ());
-		ASSERT_TRUE (store->extended.account_block_by_height.empty (txn));
-		ASSERT_TRUE (store->extended.account_delegator_by_weight.empty (txn));
-		ASSERT_TRUE (store->extended.account_receivable_by_amount.empty (txn));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_block_by_height));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_delegator_by_weight));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_receivable_by_amount));
 	}
 
 	// The aggregate populate skips the already-enabled index and fills the rest
@@ -1291,18 +1297,17 @@ TEST (ledger_extended_index, drop_and_repopulate)
 		ASSERT_FALSE (store->version.get_flag (txn, nano::store::meta_key::account_receivable_by_amount_index_enabled));
 		ASSERT_FALSE (store->version.get_flag (txn, nano::store::meta_key::receive_block_by_send_block_index_enabled));
 		ASSERT_FALSE (store->version.get_flag (txn, nano::store::meta_key::account_block_by_height_index_enabled));
-		ASSERT_TRUE (store->extended.account_delegator_by_weight.empty (txn));
-		ASSERT_TRUE (store->extended.account_receivable_by_amount.empty (txn));
-		ASSERT_TRUE (store->extended.receive_block_by_send_block.empty (txn));
-		ASSERT_TRUE (store->extended.account_block_by_height.empty (txn));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_delegator_by_weight));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_receivable_by_amount));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::receive_block_by_send_block));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_block_by_height));
 	}
 	// Reopening without the option must keep the indices dropped
 	{
 		auto store = nano::test::make_store (logger, stats, path);
 		nano::ledger ledger (*store, nano::dev::network_params, stats, logger);
 		ASSERT_FALSE (ledger.flags.any_extended_ledger_index_enabled ());
-		auto txn = ledger.tx_begin_read ();
-		ASSERT_TRUE (store->extended.account_block_by_height.empty (txn));
+		ASSERT_FALSE (store->backend.table_open (nano::store::table::account_block_by_height));
 	}
 	// Reopening with the option must repopulate from the ledger contents
 	{
@@ -1334,7 +1339,11 @@ TEST (ledger_extended_index, populate_clears_stale_rows)
 		auto store = nano::test::make_store (logger, stats, path);
 		nano::ledger ledger (*store, nano::dev::network_params, stats, logger);
 		ASSERT_FALSE (ledger.flags.any_extended_ledger_index_enabled ());
-		// Simulate partially populated leftovers while the index flags are still disabled
+		// Simulate partially populated leftovers: tables created but flags still disabled
+		store->extended.account_delegator_by_weight.create ();
+		store->extended.account_receivable_by_amount.create ();
+		store->extended.account_block_by_height.create ();
+		store->extended.receive_block_by_send_block.create ();
 		auto txn = store->tx_begin_write ();
 		store->extended.account_delegator_by_weight.put (txn, stale_delegator);
 		store->extended.account_receivable_by_amount.put (txn, stale_receivable, { nano::account{ 7 }, nano::epoch::epoch_0 });

@@ -41,11 +41,11 @@ nano::store::column_schema const ledger_store::schema_current{
 	{ nano::store::table::final_votes, "final_votes" },
 	{ nano::store::table::topology, "topology" },
 	{ nano::store::table::meta, "meta" },
-	// Extended ledger tables
-	{ nano::store::table::account_block_by_height, "account_block_by_height" },
-	{ nano::store::table::account_delegator_by_weight, "account_delegator_by_weight" },
-	{ nano::store::table::account_receivable_by_amount, "account_receivable_by_amount" },
-	{ nano::store::table::receive_block_by_send_block, "receive_block_by_send_block" }
+	// Extended ledger tables are optional: created when the corresponding index is enabled, dropped with it
+	{ nano::store::table::account_block_by_height, "account_block_by_height", /* optional */ true },
+	{ nano::store::table::account_delegator_by_weight, "account_delegator_by_weight", /* optional */ true },
+	{ nano::store::table::account_receivable_by_amount, "account_receivable_by_amount", /* optional */ true },
+	{ nano::store::table::receive_block_by_send_block, "receive_block_by_send_block", /* optional */ true }
 };
 }
 
@@ -224,6 +224,9 @@ void ledger_store::perform_upgrades (nano::store::backend_meta meta)
 			upgrade_v25_to_v26 ();
 			[[fallthrough]];
 		case 26:
+			upgrade_v26_to_v27 ();
+			[[fallthrough]];
+		case 27:
 			break;
 		default:
 			release_assert (false, "invalid ledger database version for upgrade", std::to_string (meta.version));

@@ -204,6 +204,10 @@ TEST (migrations, lmdb_to_rocksdb)
 		auto txn = store->tx_begin_read ();
 		for (auto const & definition : store->backend.get_schema ())
 		{
+			if (!store->backend.table_open (definition.table))
+			{
+				continue; // Absent optional tables have no entries to count
+			}
 			src_counts[definition.table] = store->backend.count_exact (txn, definition.table);
 		}
 	}
@@ -221,6 +225,11 @@ TEST (migrations, lmdb_to_rocksdb)
 	// Verify exact counts match for all tables
 	for (auto const & definition : rocksdb_store.backend.get_schema ())
 	{
+		if (!rocksdb_store.backend.table_open (definition.table))
+		{
+			ASSERT_EQ (0, src_counts[definition.table]) << "Table absent after migration despite source entries: " << definition.name;
+			continue;
+		}
 		auto dst_count = rocksdb_store.backend.count_exact (txn, definition.table);
 		ASSERT_EQ (dst_count, src_counts[definition.table]) << "Count mismatch for table: " << definition.name;
 	}

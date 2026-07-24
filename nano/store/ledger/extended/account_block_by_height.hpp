@@ -18,7 +18,9 @@ public:
 	void del (nano::store::write_transaction const &, nano::account_block_by_height_key const &);
 	bool empty (nano::store::transaction const &) const;
 	uint64_t count (nano::store::transaction const &) const;
-	void clear ();
+	void create (); // Creates the backing table when absent, making the view writable
+	void clear (); // Empties the backing table but keeps it
+	void drop (); // Deletes the backing table entirely
 
 private:
 	nano::store::backend & backend;

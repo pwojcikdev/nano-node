@@ -14,11 +14,13 @@
 #include <nano/store/db_val_templ.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
+#include <nano/store/ledger/extended/account_delegator_by_weight.hpp>
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
 #include <nano/store/ledger/successor.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/ledger_store.hpp>
+#include <nano/store/meta.hpp>
 #include <nano/store/tables.hpp>
 #include <nano/store/typed_iterator.hpp>
 #include <nano/test_common/common.hpp>
@@ -883,7 +885,7 @@ TEST (ledger_upgrades, upgrade_v25_to_v26)
 
 	// Verify version is now 26
 	ASSERT_EQ (store.version.get_version (tx), nano::store::ledger_store::version_current);
-	ASSERT_EQ (store.version.get_version (tx), 26);
+	ASSERT_EQ (store.version.get_version (tx), nano::store::ledger_store::version_current);
 
 	// Verify blocks are readable with new format
 	auto stored_block1 = store.block.get (tx, block1->hash ());
@@ -970,7 +972,7 @@ TEST (ledger_upgrades, upgrade_v25_to_v26_interrupted)
 
 	auto tx = store.tx_begin_read ();
 
-	ASSERT_EQ (store.version.get_version (tx), 26);
+	ASSERT_EQ (store.version.get_version (tx), nano::store::ledger_store::version_current);
 
 	// Both blocks should be readable
 	auto stored_block1 = store.block.get (tx, block1->hash ());
@@ -1083,4 +1085,52 @@ TEST (ledger_upgrades, upgrade_backup)
 
 	// Verify backup was created
 	ASSERT_TRUE (backup_exists ());
+}
+
+/*
+ * v27 is a marker upgrade: it stamps the version without creating the optional extended tables,
+ * the upgraded ledger opens read-only with the tables absent,
+ * and enabling the extended indices afterwards creates them on demand
+ */
+TEST (ledger_upgrades, upgrade_v26_to_v27)
+{
+	auto const path = nano::unique_path ();
+	nano::logger logger;
+	nano::stats stats{ logger };
+
+	// Create a develop-layout v26 database without the optional extended tables
+	{
+		auto backend = nano::test::make_backend (path);
+		backend->create (nano::store::ledger_store::schema_v26, 26);
+	}
+	// Opening performs the marker upgrade; the extended tables stay absent
+	{
+		nano::store::ledger_store store{ nano::test::make_backend (path), nano::store::open_mode::read_write, stats, logger };
+		ASSERT_EQ (27, store.get_version ());
+		ASSERT_FALSE (store.backend.table_open (nano::store::table::account_block_by_height));
+		ASSERT_FALSE (store.backend.table_open (nano::store::table::account_delegator_by_weight));
+		ASSERT_FALSE (store.backend.table_open (nano::store::table::account_receivable_by_amount));
+		ASSERT_FALSE (store.backend.table_open (nano::store::table::receive_block_by_send_block));
+		auto txn = store.tx_begin_read ();
+		ASSERT_FALSE (store.version.get_flag (txn, nano::store::meta_key::account_block_by_height_index_enabled));
+	}
+	// The upgraded database opens read-only with the optional tables still absent
+	{
+		nano::store::ledger_store store{ nano::test::make_backend (path), nano::store::open_mode::read_only, stats, logger };
+		ASSERT_EQ (27, store.get_version ());
+		ASSERT_FALSE (store.backend.table_open (nano::store::table::account_delegator_by_weight));
+		ASSERT_FALSE (store.backend.table_open (nano::store::table::account_receivable_by_amount));
+	}
+	// Enabling the extended indices creates the optional tables on demand
+	{
+		auto store = nano::test::make_store (logger, stats, path);
+		nano::ledger ledger{ *store, nano::dev::network_params, stats, logger, nano::ledger_options{ .enable_extended_ledger_index = true } };
+		ASSERT_TRUE (ledger.flags.all_extended_ledger_indices_enabled ());
+		ASSERT_TRUE (store->backend.table_open (nano::store::table::account_block_by_height));
+		ASSERT_TRUE (store->backend.table_open (nano::store::table::account_delegator_by_weight));
+		ASSERT_TRUE (store->backend.table_open (nano::store::table::account_receivable_by_amount));
+		ASSERT_TRUE (store->backend.table_open (nano::store::table::receive_block_by_send_block));
+		auto txn = ledger.tx_begin_read ();
+		ASSERT_EQ (1, store->extended.account_delegator_by_weight.count (txn));
+	}
 }

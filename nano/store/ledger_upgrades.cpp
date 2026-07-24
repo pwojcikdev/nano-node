@@ -84,6 +84,21 @@ nano::store::column_schema const ledger_store::schema_v25{
 	{ nano::store::table::meta, "meta" }
 };
 
+nano::store::column_schema const ledger_store::schema_v26{
+	{ nano::store::table::blocks, "blocks" },
+	{ nano::store::table::accounts, "accounts" },
+	{ nano::store::table::pending, "pending" },
+	{ nano::store::table::rep_weights, "rep_weights" },
+	{ nano::store::table::online_weight, "online_weight" },
+	{ nano::store::table::pruned, "pruned" },
+	{ nano::store::table::successor, "successor" },
+	{ nano::store::table::peers, "peers" },
+	{ nano::store::table::confirmation_height, "confirmation_height" },
+	{ nano::store::table::final_votes, "final_votes" },
+	{ nano::store::table::topology, "topology" },
+	{ nano::store::table::meta, "meta" }
+};
+
 // Drop unchecked table
 void ledger_store::upgrade_v21_to_v22 ()
 {
@@ -364,5 +379,23 @@ void ledger_store::upgrade_v25_to_v26 ()
 	backend.close ();
 
 	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v25 to v26 completed");
+}
+
+// Marker upgrade: v27 introduces the optional extended ledger tables, which are created on demand when an index is enabled rather than during the upgrade
+// The version bump prevents older binaries, which do not maintain the extended indices, from silently modifying a ledger whose index flags promise maintenance
+void ledger_store::upgrade_v26_to_v27 ()
+{
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v26 to v27...");
+
+	backend.open (schema_v26, nano::store::open_mode::read_write);
+	{
+		release_assert (backend.get_version (backend.tx_begin_read ()) == 26, "unexpected version during upgrade", std::to_string (backend.get_version (backend.tx_begin_read ())));
+
+		auto transaction = backend.tx_begin_write ();
+		backend.set_version (transaction, 27);
+	}
+	backend.close ();
+
+	logger.info (nano::log::type::ledger_upgrade, "Upgrading database from v26 to v27 completed");
 }
 }
