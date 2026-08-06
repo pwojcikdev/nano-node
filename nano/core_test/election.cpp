@@ -12,6 +12,7 @@
 #include <nano/node/vote_router.hpp>
 #include <nano/node/wallet.hpp>
 #include <nano/secure/ledger.hpp>
+#include <nano/secure/voting_policy.hpp>
 #include <nano/test_common/chains.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
@@ -26,6 +27,39 @@ TEST (election, construction)
 	auto & node = *system.nodes[0];
 	auto election = std::make_shared<nano::election> (
 	node, nano::dev::genesis, nano::election_behavior::priority, 0, [] (auto const &) {}, [] (auto const &) {}, [] (auto const &) {});
+}
+
+// The vote action returned by tick is a complete instruction for the vote generator
+TEST (election, vote_action)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv); // Local representative that can vote
+	auto election = std::make_shared<nano::election> (node, nano::dev::genesis, nano::election_behavior::priority, 42);
+	ASSERT_TRUE (election->transition_active ());
+	auto const actions = election->tick (std::chrono::steady_clock::now ());
+	ASSERT_TRUE (actions.vote);
+	ASSERT_EQ (nano::dev::genesis->qualified_root (), actions.vote->qualified_root);
+	ASSERT_EQ (nano::dev::genesis->hash (), actions.vote->hash);
+	ASSERT_EQ (42, actions.vote->bucket);
+	ASSERT_EQ (nano::vote_type::normal, actions.vote->type);
+}
+
+// A confirmed election decides a final vote
+TEST (election, vote_action_final)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv); // Local representative that can vote
+	auto election = std::make_shared<nano::election> (node, nano::dev::genesis, nano::election_behavior::priority, 42);
+	ASSERT_TRUE (election->transition_active ());
+	election->force_confirm ();
+	auto const vote = election->decide_vote ();
+	ASSERT_TRUE (vote);
+	ASSERT_EQ (nano::dev::genesis->qualified_root (), vote->qualified_root);
+	ASSERT_EQ (nano::dev::genesis->hash (), vote->hash);
+	ASSERT_EQ (42, vote->bucket);
+	ASSERT_EQ (nano::vote_type::final, vote->type);
 }
 
 TEST (election, behavior)
