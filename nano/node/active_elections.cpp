@@ -5,6 +5,7 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/node/active_elections.hpp>
+#include <nano/node/block_rebroadcaster.hpp>
 #include <nano/node/cementing_set.hpp>
 #include <nano/node/confirmation_solicitor.hpp>
 #include <nano/node/election.hpp>
@@ -18,6 +19,7 @@
 #include <nano/node/scheduler/component.hpp>
 #include <nano/node/scheduler/priority.hpp>
 #include <nano/node/vote_cache.hpp>
+#include <nano/node/vote_generator.hpp>
 #include <nano/node/vote_processor.hpp>
 #include <nano/node/vote_router.hpp>
 #include <nano/secure/ledger.hpp>
@@ -279,7 +281,10 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 	// Votes are generated for inserted or ongoing elections
 	if (result.election)
 	{
-		result.election->broadcast_vote ();
+		if (auto const vote = result.election->decide_vote ())
+		{
+			node.vote_generator.vote (result.election->qualified_root, vote->hash, result.election->bucket, vote->type);
+		}
 	}
 
 	return result;
@@ -526,8 +531,30 @@ void nano::active_elections::tick_elections (nano::unique_lock<nano::mutex> & lo
 
 	for (auto const & election : election_list)
 	{
-		bool tick_result = election->tick (solicitor);
-		if (tick_result)
+		auto const actions = election->tick (now);
+
+		if (actions.vote)
+		{
+			node.vote_generator.vote (election->qualified_root, actions.vote->hash, election->bucket, actions.vote->type);
+		}
+		if (actions.broadcast)
+		{
+			if (solicitor.broadcast (*actions.broadcast))
+			{
+				election->broadcast_sent (actions.broadcast->winner->hash ());
+
+				// Random flood for block propagation
+				node.block_rebroadcaster.push (actions.broadcast->winner);
+			}
+		}
+		if (actions.request)
+		{
+			if (solicitor.add (*actions.request))
+			{
+				election->request_sent ();
+			}
+		}
+		if (actions.cleanup)
 		{
 			erase (election->qualified_root);
 		}
