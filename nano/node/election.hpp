@@ -5,6 +5,7 @@
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/stats_enums.hpp>
+#include <nano/node/election_ballot.hpp>
 #include <nano/node/election_pacing.hpp>
 #include <nano/node/election_status.hpp>
 #include <nano/node/fwd.hpp>
@@ -21,17 +22,6 @@
 
 namespace nano
 {
-class vote_info final
-{
-public:
-	std::chrono::steady_clock::time_point time;
-	uint64_t timestamp;
-	nano::block_hash hash;
-};
-
-// map of vote weight per block, ordered greater first
-using tally_t = std::map<nano::uint128_t, std::shared_ptr<nano::block>, std::greater<nano::uint128_t>>;
-
 /** Point-in-time view of election state needed to solicit votes and broadcast the winner */
 struct election_snapshot final
 {
@@ -126,7 +116,6 @@ public: // Status
 	std::atomic<unsigned> vote_broadcast_count{ 0 };
 
 	nano::tally_t tally () const;
-	bool have_quorum (nano::tally_t const &) const;
 
 	// Guarded by mutex
 	nano::election_status status;
@@ -172,6 +161,8 @@ private: // Dependencies
 private:
 	// Paces outbound votes, winner block broadcasts and confirmation requests
 	nano::election_pacing pacing;
+	// Tracks votes and competing blocks, computes the tally and quorum
+	nano::election_ballot ballot;
 
 public: // Information
 	uint64_t const height;
@@ -193,7 +184,6 @@ public: // Information
 	size_t block_count () const;
 
 private:
-	nano::tally_t tally_impl () const;
 	nano::election_snapshot snapshot_locked () const;
 	bool confirmed_locked () const;
 	nano::election_extended_status current_status_locked () const;
@@ -202,20 +192,13 @@ private:
 	// Broadcast a vote for the current winner if due, final if reached quorum or already confirmed
 	void broadcast_vote_locked (std::chrono::steady_clock::time_point now);
 	void remove_votes (nano::block_hash const &);
-	void remove_block (nano::block_hash const &);
 	bool replace_by_weight (nano::unique_lock<nano::mutex> & lock_a, nano::block_hash const &);
 	std::chrono::milliseconds time_to_live () const;
-	/**
-	 * Calculates minimum time delay between subsequent votes when processing non-final votes
-	 */
-	std::chrono::seconds cooldown_time (nano::uint128_t weight) const;
+	// Online weight required for an election to reach quorum
+	nano::uint128_t quorum_delta () const;
 
 private:
-	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> last_blocks;
-	std::unordered_map<nano::account, nano::vote_info> last_votes;
 	std::atomic<bool> is_quorum{ false };
-	mutable nano::uint128_t final_weight{ 0 };
-	mutable std::unordered_map<nano::block_hash, nano::uint128_t> last_tally;
 
 	nano::election_behavior behavior_m;
 	std::chrono::steady_clock::time_point const election_start{ std::chrono::steady_clock::now () };
@@ -225,13 +208,7 @@ private:
 public: // Logging
 	void operator() (nano::object_stream &) const;
 
-private: // Constants
-	static std::size_t constexpr max_blocks{ 10 };
-
 public: // Only used in tests
 	void force_confirm ();
-
-	friend class votes_add_existing_Test;
-	friend class votes_add_old_Test;
 };
 }

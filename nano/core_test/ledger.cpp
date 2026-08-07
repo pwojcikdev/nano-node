@@ -1055,7 +1055,7 @@ TEST (votes, add_existing)
 	ASSERT_EQ (nano::vote_code::vote, node1.vote_router.vote (vote1).at (send1->hash ()));
 	// Block is already processed from vote
 	ASSERT_TRUE (node1.active.publish (send1));
-	ASSERT_EQ (nano::vote::timestamp_min * 1, election1->last_votes[nano::dev::genesis_key.pub].timestamp);
+	ASSERT_EQ (nano::vote::timestamp_min * 1, election1->get_last_vote (nano::dev::genesis_key.pub).timestamp);
 	nano::keypair key2;
 	std::shared_ptr<nano::block> send2 = builder.state ()
 										 .account (nano::dev::genesis_key.pub)
@@ -1075,7 +1075,7 @@ TEST (votes, add_existing)
 	vote_info1.time = std::chrono::steady_clock::now () - std::chrono::seconds (20);
 	election1->set_last_vote (nano::dev::genesis_key.pub, vote_info1);
 	ASSERT_EQ (nano::vote_code::vote, node1.vote_router.vote (vote2).at (send2->hash ()));
-	ASSERT_EQ (nano::vote::timestamp_min * 2, election1->last_votes[nano::dev::genesis_key.pub].timestamp);
+	ASSERT_EQ (nano::vote::timestamp_min * 2, election1->get_last_vote (nano::dev::genesis_key.pub).timestamp);
 	// Also resend the old vote, and see if we respect the timestamp
 	auto vote_info2 = election1->get_last_vote (nano::dev::genesis_key.pub);
 	vote_info2.time = std::chrono::steady_clock::now () - std::chrono::seconds (20);
