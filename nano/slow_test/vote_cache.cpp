@@ -11,9 +11,6 @@
 
 #include <gtest/gtest.h>
 
-#include <functional>
-#include <thread>
-
 using namespace std::chrono_literals;
 
 namespace
@@ -117,20 +114,6 @@ std::vector<std::shared_ptr<nano::block>> setup_blocks (nano::test::system & sys
 	return receives;
 }
 
-void run_parallel (int thread_count, std::function<void (int)> func)
-{
-	std::vector<std::thread> threads;
-	for (int n = 0; n < thread_count; ++n)
-	{
-		threads.emplace_back ([func, n] () {
-			func (n);
-		});
-	}
-	for (auto & thread : threads)
-	{
-		thread.join ();
-	}
-}
 }
 
 TEST (vote_cache, perf_singlethreaded)
@@ -220,7 +203,7 @@ TEST (vote_cache, perf_multithreaded)
 	// Ensure our generated votes go to inactive vote cache instead of active elections
 	node.active.clear ();
 
-	run_parallel (thread_count, [&node, &reps, &blocks, &vote_count, &single_vote_size, &single_vote_reps] (int index) {
+	nano::test::parallel_for (thread_count, [&node, &reps, &blocks, &vote_count, &single_vote_size, &single_vote_reps] (size_t index) {
 		int block_idx = index;
 		int rep_idx = index;
 		std::vector<nano::block_hash> hashes;

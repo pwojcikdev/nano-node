@@ -1,4 +1,5 @@
 #include <nano/lib/rate_limiting.hpp>
+#include <nano/test_common/parallel.hpp>
 
 #include <gtest/gtest.h>
 
@@ -380,23 +381,15 @@ TEST (rate_limiter, concurrent_consume_respects_limit)
 	std::atomic<std::size_t> granted{ 0 };
 	auto const started = std::chrono::steady_clock::now ();
 
-	std::vector<std::thread> threads;
-	for (int t = 0; t < 4; ++t)
-	{
-		threads.emplace_back ([&] () {
-			for (int i = 0; i < 10000; ++i)
+	nano::test::parallel_for (4, [&] (size_t) {
+		for (int i = 0; i < 10000; ++i)
+		{
+			if (limiter.try_consume (1))
 			{
-				if (limiter.try_consume (1))
-				{
-					++granted;
-				}
+				++granted;
 			}
-		});
-	}
-	for (auto & thread : threads)
-	{
-		thread.join ();
-	}
+		}
+	});
 
 	auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds> (std::chrono::steady_clock::now () - started);
 
@@ -411,24 +404,16 @@ TEST (rate_limiter, concurrent_mixed_operations)
 	nano::rate_limiter limiter{ 10000, 3.0 };
 
 	// Exercise all operations concurrently; correctness here is the absence of crashes and data races
-	std::vector<std::thread> threads;
-	for (int t = 0; t < 4; ++t)
-	{
-		threads.emplace_back ([&, t] () {
-			for (int i = 0; i < 1000; ++i)
+	nano::test::parallel_for (4, [&] (size_t t) {
+		for (int i = 0; i < 1000; ++i)
+		{
+			limiter.consume (10);
+			limiter.can_consume (10);
+			limiter.available ();
+			if (t == 0 && i % 100 == 0)
 			{
-				limiter.consume (10);
-				limiter.can_consume (10);
-				limiter.available ();
-				if (t == 0 && i % 100 == 0)
-				{
-					limiter.reset (10000, 3.0);
-				}
+				limiter.reset (10000, 3.0);
 			}
-		});
-	}
-	for (auto & thread : threads)
-	{
-		thread.join ();
-	}
+		}
+	});
 }

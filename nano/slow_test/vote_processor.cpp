@@ -48,21 +48,15 @@ TEST (vote_processor, producer_consumer)
 		}
 	};
 
-	// Run multiple producers in parallel
-	std::vector<std::thread> producers;
-	for (size_t n = 0; n < number_of_producers; ++n)
-	{
-		producers.emplace_back (producer);
-	}
+	// Run multiple producers in parallel; joined at scope exit
+	auto producers = nano::test::parallel_spawn (number_of_producers, [&producer] (size_t) {
+		producer ();
+	});
 
 	std::thread monitor_thread{ monitor };
 
 	ASSERT_TIMELY (30s, node.vote_processor.total_processed.load () >= number_of_votes);
 
-	for (auto & producer : producers)
-	{
-		producer.join ();
-	}
 	monitor_thread.join ();
 
 	ASSERT_GT (producer_wins, consumer_wins);

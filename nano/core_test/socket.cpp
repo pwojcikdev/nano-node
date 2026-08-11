@@ -273,25 +273,16 @@ TEST (socket, DISABLED_concurrent_writes)
 
 	// Execute overlapping writes from multiple threads
 	auto client (clients[0]);
-	std::vector<std::thread> client_threads;
-	for (int i = 0; i < client_count; i++)
-	{
-		client_threads.emplace_back ([&client, &message_count] () {
-			for (int i = 0; i < message_count; i++)
-			{
-				std::vector<uint8_t> buff;
-				buff.push_back ('A' + i);
-				client->async_write (nano::shared_const_buffer (std::move (buff)));
-			}
-		});
-	}
+	auto writers = nano::test::parallel_spawn (client_count, [&client, &message_count] (size_t) {
+		for (int i = 0; i < message_count; i++)
+		{
+			std::vector<uint8_t> buff;
+			buff.push_back ('A' + i);
+			client->async_write (nano::shared_const_buffer (std::move (buff)));
+		}
+	});
 
 	ASSERT_TIMELY_EQ (10s, completed_reads, total_message_count);
-
-	for (auto & t : client_threads)
-	{
-		t.join ();
-	}
 }
 
 /**

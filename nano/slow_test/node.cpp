@@ -247,26 +247,18 @@ TEST (wallet, multithreaded_send_async)
 TEST (store, load)
 {
 	nano::test::system system (1);
-	std::vector<boost::thread> threads;
-	for (auto i (0); i < 100; ++i)
-	{
-		threads.push_back (boost::thread ([&system] () {
-			for (auto i (0); i != 1000; ++i)
+	nano::test::parallel_for (100, [&system] (size_t) {
+		for (auto i (0); i != 1000; ++i)
+		{
+			auto transaction (system.nodes[0]->store.tx_begin_write ());
+			for (auto j (0); j != 10; ++j)
 			{
-				auto transaction (system.nodes[0]->store.tx_begin_write ());
-				for (auto j (0); j != 10; ++j)
-				{
-					nano::account account;
-					nano::random_pool::generate_block (account.bytes.data (), account.bytes.size ());
-					system.nodes[0]->store.account.put (transaction, account, nano::account_info ());
-				}
+				nano::account account;
+				nano::random_pool::generate_block (account.bytes.data (), account.bytes.size ());
+				system.nodes[0]->store.account.put (transaction, account, nano::account_info ());
 			}
-		}));
-	}
-	for (auto & i : threads)
-	{
-		i.join ();
-	}
+		}
+	});
 }
 
 namespace nano
@@ -1358,7 +1350,6 @@ namespace transport
 			system.add_node (node_flags);
 		}
 
-		std::vector<std::thread> threads;
 		auto const num_threads = 4;
 
 		std::array<data, num_nodes> node_data{};
@@ -1371,44 +1362,36 @@ namespace transport
 
 		// Create a few threads where each node sends out telemetry request messages to all other nodes continuously, until the cache it reached and subsequently expired.
 		// The test waits until all telemetry_ack messages have been received.
-		for (int i = 0; i < num_threads; ++i)
-		{
-			threads.emplace_back ([&node_data, &shared_data] () {
-				while (std::any_of (node_data.cbegin (), node_data.cend (), [] (auto const & data) { return data.keep_requesting_metrics.load (); }))
+		auto requesters = nano::test::parallel_spawn (num_threads, [&node_data, &shared_data] (size_t) {
+			while (std::any_of (node_data.cbegin (), node_data.cend (), [] (auto const & data) { return data.keep_requesting_metrics.load (); }))
+			{
+				for (auto & data : node_data)
 				{
-					for (auto & data : node_data)
+					// Keep calling get_metrics_async until the cache has been saved and then become outdated (after a certain period of time) for each node
+					if (data.keep_requesting_metrics)
 					{
-						// Keep calling get_metrics_async until the cache has been saved and then become outdated (after a certain period of time) for each node
-						if (data.keep_requesting_metrics)
+						shared_data.write_completion.increment_required_count ();
+
+						// Pick first peer to be consistent
+						auto peer = data.node->network.tcp_channels.channels[0].channel;
+
+						auto maybe_telemetry = data.node->telemetry.get_telemetry (peer->get_remote_endpoint ());
+						if (maybe_telemetry)
 						{
-							shared_data.write_completion.increment_required_count ();
-
-							// Pick first peer to be consistent
-							auto peer = data.node->network.tcp_channels.channels[0].channel;
-
-							auto maybe_telemetry = data.node->telemetry.get_telemetry (peer->get_remote_endpoint ());
-							if (maybe_telemetry)
-							{
-								callback_process (shared_data, data, node_data, maybe_telemetry->timestamp);
-							}
+							callback_process (shared_data, data, node_data, maybe_telemetry->timestamp);
 						}
-						std::this_thread::sleep_for (1ms);
 					}
+					std::this_thread::sleep_for (1ms);
 				}
+			}
 
-				shared_data.write_completion.await_count_for (20s);
-				shared_data.done = true;
-			});
-		}
+			shared_data.write_completion.await_count_for (20s);
+			shared_data.done = true;
+		});
 
 		ASSERT_TIMELY (30s, shared_data.done);
 
 		ASSERT_TRUE (std::all_of (node_data.begin (), node_data.end (), [] (auto const & data) { return !data.keep_requesting_metrics; }));
-
-		for (auto & thread : threads)
-		{
-			thread.join ();
-		}
 	}
 }
 }

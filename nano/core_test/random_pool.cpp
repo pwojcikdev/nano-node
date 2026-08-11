@@ -1,24 +1,15 @@
 #include <nano/crypto_lib/random_pool.hpp>
 #include <nano/lib/numbers.hpp>
+#include <nano/test_common/parallel.hpp>
 
 #include <gtest/gtest.h>
 
-#include <thread>
-
 TEST (random_pool, multithreading)
 {
-	std::vector<std::thread> threads;
-	for (auto i = 0; i < 100; ++i)
-	{
-		threads.emplace_back ([] () {
-			nano::uint256_union number;
-			nano::random_pool::generate_block (number.bytes.data (), number.bytes.size ());
-		});
-	}
-	for (auto & i : threads)
-	{
-		i.join ();
-	}
+	nano::test::parallel_for (100, [] (size_t) {
+		nano::uint256_union number;
+		nano::random_pool::generate_block (number.bytes.data (), number.bytes.size ());
+	});
 }
 
 // Test that random 64bit numbers are within the given range

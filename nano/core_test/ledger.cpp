@@ -6383,29 +6383,20 @@ TEST (ledger_transaction, multithreaded_interleaving)
 	int constexpr num_iterations = 10;
 	int constexpr num_blocks = 10;
 
-	std::deque<std::thread> threads;
-	for (int i = 0; i < num_threads; ++i)
-	{
-		threads.emplace_back ([&] {
-			for (int n = 0; n < num_iterations; ++n)
+	nano::test::parallel_for (num_threads, [&] (size_t) {
+		for (int n = 0; n < num_iterations; ++n)
+		{
+			auto tx = ctx.ledger ().tx_begin_write (nano::store::writer::testing);
+			for (unsigned k = 0; k < num_blocks; ++k)
 			{
-				auto tx = ctx.ledger ().tx_begin_write (nano::store::writer::testing);
-				for (unsigned k = 0; k < num_blocks; ++k)
-				{
-					ctx.store ().account.put (tx, nano::account{ k }, nano::account_info{});
-				}
-				for (unsigned k = 0; k < num_blocks; ++k)
-				{
-					ctx.store ().account.del (tx, nano::account{ k });
-				}
+				ctx.store ().account.put (tx, nano::account{ k }, nano::account_info{});
 			}
-		});
-	}
-
-	for (auto & thread : threads)
-	{
-		thread.join ();
-	}
+			for (unsigned k = 0; k < num_blocks; ++k)
+			{
+				ctx.store ().account.del (tx, nano::account{ k });
+			}
+		}
+	});
 }
 
 TEST (bootstrap_weights, bootstrap_weights)

@@ -951,31 +951,25 @@ TEST (wallet, password_race_corrupt_seed)
 		seed = seed_result.value ();
 		ASSERT_FALSE (wallet->enter_password ("4567"));
 	}
-	std::vector<std::thread> threads;
-	for (int i = 0; i < 100; i++)
 	{
-		threads.emplace_back ([&wallet] () {
+		auto rekey_first = nano::test::parallel_spawn (100, [&wallet] (size_t) {
 			for (int i = 0; i < 10; i++)
 			{
 				wallet->rekey ("0000");
 			}
 		});
-		threads.emplace_back ([&wallet] () {
+		auto rekey_second = nano::test::parallel_spawn (100, [&wallet] (size_t) {
 			for (int i = 0; i < 10; i++)
 			{
 				wallet->rekey ("1234");
 			}
 		});
-		threads.emplace_back ([&wallet] () {
+		auto enter_password = nano::test::parallel_spawn (100, [&wallet] (size_t) {
 			for (int i = 0; i < 10; i++)
 			{
 				wallet->enter_password ("1234");
 			}
 		});
-	}
-	for (auto & thread : threads)
-	{
-		thread.join ();
 	}
 	system.stop ();
 	runner.join ();
