@@ -7,6 +7,7 @@
 #include <nano/node/transport/test_channel.hpp>
 #include <nano/secure/account_info.hpp>
 #include <nano/store/fwd.hpp>
+#include <nano/test_common/parallel.hpp>
 
 #include <gtest/gtest.h>
 

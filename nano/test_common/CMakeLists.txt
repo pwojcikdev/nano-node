@@ -10,6 +10,7 @@ add_library(
   make_store.cpp
   network.hpp
   network.cpp
+  parallel.hpp
   random.hpp
   random.cpp
   rate_observer.cpp

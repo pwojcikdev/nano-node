@@ -6645,30 +6645,16 @@ TEST (rpc, simultaneous_calls)
 	request.put ("account", nano::dev::genesis_key.pub.to_account ());
 
 	constexpr auto num = 100;
-	std::array<std::optional<rpc_response>, num> responses;
+	auto responses = nano::test::parallel_map (num, [&, port = rpc->listening_port ()] (size_t i) {
+		return nano::test::rpc_post (request, port, *system.io_ctx);
+	});
 
-	std::promise<void> promise;
-	std::atomic<int> count{ num };
-	for (int i = 0; i < num; ++i)
-	{
-		std::thread ([&responses, &request, &system, &promise, &count, i, port = rpc->listening_port ()] () {
-			responses[i] = nano::test::rpc_post (request, port, *system.io_ctx);
-			if (--count == 0)
-			{
-				promise.set_value ();
-			}
-		})
-		.detach ();
-	}
-
-	auto future = promise.get_future ();
-	ASSERT_TIMELY (5s, future.wait_for (0s) == std::future_status::ready);
-	ASSERT_TIMELY (60s, std::all_of (responses.begin (), responses.end (), [] (auto const & response) { return response->finished (); }));
+	ASSERT_TIMELY (60s, std::all_of (responses.begin (), responses.end (), [] (auto const & response) { return response.finished (); }));
 
 	for (auto const & response : responses)
 	{
-		ASSERT_TRUE (response->ok ());
-		std::string block_count_text (response->json ().get<std::string> ("block_count"));
+		ASSERT_TRUE (response.ok ());
+		std::string block_count_text (response.json ().get<std::string> ("block_count"));
 		ASSERT_EQ ("1", block_count_text);
 	}
 }
