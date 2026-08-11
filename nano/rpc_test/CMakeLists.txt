@@ -2,9 +2,9 @@ add_executable(
   rpc_test
   common.hpp
   rpc_context.hpp
-  test_response.hpp
+  rpc_response.hpp
   rpc_context.cpp
-  test_response.cpp
+  rpc_response.cpp
   common.cpp
   enable_control.cpp
   entry.cpp

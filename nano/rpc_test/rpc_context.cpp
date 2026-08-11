@@ -3,7 +3,7 @@
 #include <nano/rpc/rpc_request_processor.hpp>
 #include <nano/rpc_test/common.hpp>
 #include <nano/rpc_test/rpc_context.hpp>
-#include <nano/rpc_test/test_response.hpp>
+#include <nano/rpc_test/rpc_response.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -21,10 +21,10 @@ nano::test::rpc_context::rpc_context (std::shared_ptr<nano::rpc> & rpc_a, std::s
 
 void nano::test::wait_response_impl (nano::test::system & system, rpc_context const & rpc_ctx, boost::property_tree::ptree & request, std::chrono::duration<double, std::nano> const & time, boost::property_tree::ptree & response_json)
 {
-	test_response response (request, rpc_ctx.rpc->listening_port (), *system.io_ctx);
-	ASSERT_TIMELY (time, response.status != 0);
-	ASSERT_EQ (200, response.status);
-	response_json = response.json;
+	auto response = rpc_post (request, rpc_ctx.rpc->listening_port (), *system.io_ctx);
+	ASSERT_TIMELY (time, response.finished ());
+	ASSERT_TRUE (response.ok ());
+	response_json = response.json ();
 }
 
 boost::property_tree::ptree nano::test::wait_response (nano::test::system & system, rpc_context const & rpc_ctx, boost::property_tree::ptree & request, std::chrono::duration<double, std::nano> const & time)
@@ -37,17 +37,17 @@ boost::property_tree::ptree nano::test::wait_response (nano::test::system & syst
 void nano::test::wait_responses_impl (nano::test::system & system, rpc_context const & rpc_ctx, std::vector<boost::property_tree::ptree> & requests, std::chrono::duration<double, std::nano> const & time, std::vector<boost::property_tree::ptree> & responses)
 {
 	// Start every request before waiting so they are in flight simultaneously
-	std::vector<std::unique_ptr<test_response>> in_flight;
+	std::vector<rpc_response> in_flight;
 	in_flight.reserve (requests.size ());
 	for (auto & request : requests)
 	{
-		in_flight.push_back (std::make_unique<test_response> (request, rpc_ctx.rpc->listening_port (), *system.io_ctx));
+		in_flight.push_back (rpc_post (request, rpc_ctx.rpc->listening_port (), *system.io_ctx));
 	}
-	ASSERT_TIMELY (time, std::all_of (in_flight.begin (), in_flight.end (), [] (auto const & response) { return response->status != 0; }));
+	ASSERT_TIMELY (time, std::all_of (in_flight.begin (), in_flight.end (), [] (auto const & response) { return response.finished (); }));
 	for (auto const & response : in_flight)
 	{
-		ASSERT_EQ (200, response->status);
-		responses.push_back (response->json);
+		ASSERT_TRUE (response.ok ());
+		responses.push_back (response.json ());
 	}
 }
 

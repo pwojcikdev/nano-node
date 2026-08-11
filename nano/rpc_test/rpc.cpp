@@ -37,7 +37,7 @@
 #include <nano/rpc/rpc_request_processor.hpp>
 #include <nano/rpc_test/common.hpp>
 #include <nano/rpc_test/rpc_context.hpp>
-#include <nano/rpc_test/test_response.hpp>
+#include <nano/rpc_test/rpc_response.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_cemented.hpp>
@@ -57,7 +57,9 @@
 #include <boost/property_tree/json_parser.hpp>
 
 #include <algorithm>
+#include <array>
 #include <map>
+#include <optional>
 #include <ranges>
 #include <tuple>
 #include <utility>
@@ -1900,23 +1902,23 @@ TEST (rpc, version)
 	auto const rpc_ctx = add_rpc (system, node1);
 	boost::property_tree::ptree request1;
 	request1.put ("action", "version");
-	test_response response1 (request1, rpc_ctx.rpc->listening_port (), *system.io_ctx);
-	ASSERT_TIMELY (5s, response1.status != 0);
-	ASSERT_EQ (200, response1.status);
-	ASSERT_EQ ("1", response1.json.get<std::string> ("rpc_version"));
+	auto response1 = nano::test::rpc_post (request1, rpc_ctx.rpc->listening_port (), *system.io_ctx);
+	ASSERT_TIMELY (5s, response1.finished ());
+	ASSERT_TRUE (response1.ok ());
+	ASSERT_EQ ("1", response1.json ().get<std::string> ("rpc_version"));
 	{
 		auto transaction (node1->store.tx_begin_read ());
-		ASSERT_EQ (std::to_string (node1->store.meta.get_version (transaction)), response1.json.get<std::string> ("store_version"));
+		ASSERT_EQ (std::to_string (node1->store.meta.get_version (transaction)), response1.json ().get<std::string> ("store_version"));
 	}
-	ASSERT_EQ (std::to_string (node1->network_params.network.protocol_version), response1.json.get<std::string> ("protocol_version"));
-	ASSERT_EQ (boost::str (boost::format ("Nano %1%") % NANO_VERSION_STRING), response1.json.get<std::string> ("node_vendor"));
-	ASSERT_EQ (node1->store.get_vendor (), response1.json.get<std::string> ("store_vendor"));
+	ASSERT_EQ (std::to_string (node1->network_params.network.protocol_version), response1.json ().get<std::string> ("protocol_version"));
+	ASSERT_EQ (boost::str (boost::format ("Nano %1%") % NANO_VERSION_STRING), response1.json ().get<std::string> ("node_vendor"));
+	ASSERT_EQ (node1->store.get_vendor (), response1.json ().get<std::string> ("store_vendor"));
 	auto network_label (node1->network_params.network.get_current_network_as_string ());
-	ASSERT_EQ (network_label, response1.json.get<std::string> ("network"));
+	ASSERT_EQ (network_label, response1.json ().get<std::string> ("network"));
 	auto genesis_open (node1->latest (nano::dev::genesis_key.pub));
-	ASSERT_EQ (genesis_open.to_string (), response1.json.get<std::string> ("network_identifier"));
-	ASSERT_EQ (BUILD_INFO, response1.json.get<std::string> ("build_info"));
-	auto headers (response1.resp.base ());
+	ASSERT_EQ (genesis_open.to_string (), response1.json ().get<std::string> ("network_identifier"));
+	ASSERT_EQ (BUILD_INFO, response1.json ().get<std::string> ("build_info"));
+	auto headers (response1.raw ().base ());
 	auto allow (headers.at ("Allow"));
 	auto content_type (headers.at ("Content-Type"));
 	auto access_control_allow_origin (headers.at ("Access-Control-Allow-Origin"));
@@ -6643,18 +6645,14 @@ TEST (rpc, simultaneous_calls)
 	request.put ("account", nano::dev::genesis_key.pub.to_account ());
 
 	constexpr auto num = 100;
-	std::array<std::unique_ptr<test_response>, num> test_responses;
-	for (int i = 0; i < num; ++i)
-	{
-		test_responses[i] = std::make_unique<test_response> (request, *system.io_ctx);
-	}
+	std::array<std::optional<rpc_response>, num> responses;
 
 	std::promise<void> promise;
 	std::atomic<int> count{ num };
 	for (int i = 0; i < num; ++i)
 	{
-		std::thread ([&test_responses, &promise, &count, i, port = rpc->listening_port ()] () {
-			test_responses[i]->run (port);
+		std::thread ([&responses, &request, &system, &promise, &count, i, port = rpc->listening_port ()] () {
+			responses[i] = nano::test::rpc_post (request, port, *system.io_ctx);
 			if (--count == 0)
 			{
 				promise.set_value ();
@@ -6665,12 +6663,12 @@ TEST (rpc, simultaneous_calls)
 
 	auto future = promise.get_future ();
 	ASSERT_TIMELY (5s, future.wait_for (0s) == std::future_status::ready);
-	ASSERT_TIMELY (60s, std::all_of (test_responses.begin (), test_responses.end (), [] (auto const & test_response) { return test_response->status != 0; }));
+	ASSERT_TIMELY (60s, std::all_of (responses.begin (), responses.end (), [] (auto const & response) { return response->finished (); }));
 
-	for (int i = 0; i < num; ++i)
+	for (auto const & response : responses)
 	{
-		ASSERT_EQ (200, test_responses[i]->status);
-		std::string block_count_text (test_responses[i]->json.get<std::string> ("block_count"));
+		ASSERT_TRUE (response->ok ());
+		std::string block_count_text (response->json ().get<std::string> ("block_count"));
 		ASSERT_EQ ("1", block_count_text);
 	}
 }
