@@ -167,6 +167,39 @@ TEST (election_ballot, vote_final_bypasses_cooldown)
 	ASSERT_EQ (nano::election_ballot::vote_result::replay, ctx.ballot.insert_vote (rep, final_timestamp, hash, now, 15s));
 }
 
+TEST (election_ballot, vote_final_flip_by_hash)
+{
+	test_context ctx;
+	auto rep = make_account (1);
+
+	ASSERT_EQ (nano::election_ballot::vote_result::accepted, ctx.ballot.insert_vote (rep, final_timestamp, nano::block_hash{ 10 }, start_time (), 0s));
+	// A final vote can still move to a higher hash, the equal-timestamp tie-break applies to final votes too
+	ASSERT_EQ (nano::election_ballot::vote_result::accepted, ctx.ballot.insert_vote (rep, final_timestamp, nano::block_hash{ 11 }, start_time (), 0s));
+	ASSERT_EQ (nano::block_hash{ 11 }, ctx.ballot.get_vote (rep).hash);
+	ASSERT_EQ (nano::election_ballot::vote_result::replay, ctx.ballot.insert_vote (rep, final_timestamp, nano::block_hash{ 10 }, start_time (), 0s));
+}
+
+TEST (election_ballot, set_vote_bypasses_checks)
+{
+	test_context ctx;
+	auto rep = make_account (1);
+	auto hash = ctx.initial->hash ();
+	auto now = start_time ();
+
+	ASSERT_EQ (nano::election_ballot::vote_result::accepted, ctx.ballot.insert_vote (rep, 5, hash, now, 15s));
+	ASSERT_EQ (nano::election_ballot::vote_result::ignored, ctx.ballot.insert_vote (rep, 6, hash, now, 15s));
+
+	// Backdating the stored vote lifts the cooldown for the next insert
+	auto stored = ctx.ballot.get_vote (rep);
+	stored.time = now - 20s;
+	ctx.ballot.set_vote (rep, stored);
+	ASSERT_EQ (nano::election_ballot::vote_result::accepted, ctx.ballot.insert_vote (rep, 6, hash, now, 15s));
+
+	// Even an overwrite with an older timestamp is stored verbatim
+	ctx.ballot.set_vote (rep, { now, 2, hash });
+	ASSERT_EQ (2, ctx.ballot.get_vote (rep).timestamp);
+}
+
 TEST (election_ballot, vote_cooldown_by_weight)
 {
 	nano::uint128_t const online_stake = 1000;
@@ -224,6 +257,23 @@ TEST (election_ballot, tally_excludes_unknown_blocks)
 	// Weight behind unknown blocks is excluded from the total as well
 	auto result = ctx.ballot.evaluate (1);
 	ASSERT_EQ (100, result.total_weight);
+}
+
+TEST (election_ballot, vote_before_block)
+{
+	test_context ctx;
+	auto fork = make_block (2);
+
+	// The vote arrives before its block is known to the election
+	ctx.vote (1, 400, fork->hash ());
+	ASSERT_TRUE (ctx.ballot.tally ().empty ());
+
+	// Once the block arrives the recorded weight materializes in the tally
+	ASSERT_TRUE (ctx.ballot.insert_block (fork));
+	auto result = ctx.ballot.evaluate (1);
+	ASSERT_EQ (fork->hash (), result.winner->hash ());
+	ASSERT_EQ (400, result.winner_weight);
+	ASSERT_EQ (400, result.total_weight);
 }
 
 TEST (election_ballot, evaluate_equal_forks)
@@ -388,6 +438,80 @@ TEST (election_ballot, erase_block_refuses_winner_and_unknown)
 	ASSERT_EQ (1, ctx.ballot.block_count ());
 	ASSERT_EQ (nullptr, ctx.ballot.erase_block (nano::block_hash{ 999 }, ctx.initial->hash ()));
 	ASSERT_EQ (1, ctx.ballot.block_count ());
+}
+
+TEST (election_ballot, erase_initial_block)
+{
+	test_context ctx;
+	auto fork = make_block (2);
+	ASSERT_TRUE (ctx.ballot.insert_block (fork));
+
+	ctx.vote (1, 100, ctx.initial->hash ());
+	ctx.vote (2, 300, fork->hash ());
+
+	// Once the winner moves to the fork, even the initial block can be erased along with its votes
+	auto erased = ctx.ballot.erase_block (ctx.initial->hash (), fork->hash ());
+	ASSERT_EQ (ctx.initial, erased);
+	ASSERT_EQ (1, ctx.ballot.block_count ());
+	ASSERT_EQ (1, ctx.ballot.voter_count ());
+
+	auto result = ctx.ballot.evaluate (1);
+	ASSERT_EQ (fork->hash (), result.winner->hash ());
+	ASSERT_EQ (300, result.winner_weight);
+	ASSERT_TRUE (result.quorum);
+}
+
+TEST (election_ballot, insert_block_beyond_limit)
+{
+	test_context ctx;
+	for (uint64_t i = 2; i <= 11; ++i)
+	{
+		ASSERT_TRUE (ctx.ballot.insert_block (make_block (i)));
+	}
+	// The limit is enforced by callers via full (), not by insert_block itself
+	ASSERT_EQ (11, ctx.ballot.block_count ());
+	ASSERT_TRUE (ctx.ballot.full ());
+}
+
+/*
+ * Queries
+ */
+
+TEST (election_ballot, block_queries)
+{
+	test_context ctx;
+	auto fork = make_block (2);
+	ASSERT_TRUE (ctx.ballot.insert_block (fork));
+
+	auto blocks = ctx.ballot.blocks ();
+	ASSERT_EQ (2, blocks.size ());
+	ASSERT_EQ (ctx.initial, blocks[ctx.initial->hash ()]);
+	ASSERT_EQ (fork, blocks[fork->hash ()]);
+
+	auto hashes = ctx.ballot.blocks_hashes ();
+	ASSERT_EQ (2, hashes.size ());
+	ASSERT_TRUE (hashes.contains (ctx.initial->hash ()));
+	ASSERT_TRUE (hashes.contains (fork->hash ()));
+}
+
+TEST (election_ballot, votes_with_weight_ordering)
+{
+	test_context ctx;
+	auto hash = ctx.initial->hash ();
+	ctx.vote (1, 100, hash);
+	ctx.vote (2, 300, hash);
+	ctx.vote (3, 200, hash);
+
+	// Votes are reported heaviest first
+	auto votes = ctx.ballot.votes_with_weight ();
+	ASSERT_EQ (3, votes.size ());
+	ASSERT_EQ (make_account (2), votes[0].representative);
+	ASSERT_EQ (300, votes[0].weight);
+	ASSERT_EQ (make_account (3), votes[1].representative);
+	ASSERT_EQ (200, votes[1].weight);
+	ASSERT_EQ (make_account (1), votes[2].representative);
+	ASSERT_EQ (100, votes[2].weight);
+	ASSERT_EQ (hash, votes[0].hash);
 }
 
 /*
