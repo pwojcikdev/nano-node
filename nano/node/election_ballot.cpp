@@ -174,13 +174,24 @@ auto nano::election_ballot::compute_weights () const -> weights
 
 nano::tally_t nano::election_ballot::make_tally (std::unordered_map<nano::block_hash, nano::uint128_t> const & block_weights) const
 {
-	nano::tally_t result;
+	std::vector<std::pair<nano::uint128_t, std::shared_ptr<nano::block>>> sorted;
 	for (auto const & [hash, amount] : block_weights)
 	{
 		if (auto block = last_blocks.find (hash); block != last_blocks.end ())
 		{
-			result.emplace (amount, block->second);
+			sorted.emplace_back (amount, block->second);
 		}
+	}
+	// Order by weight, ties broken by higher hash so the tally is deterministic
+	std::sort (sorted.begin (), sorted.end (), [] (auto const & left, auto const & right) {
+		return std::make_pair (left.first, left.second->hash ()) > std::make_pair (right.first, right.second->hash ());
+	});
+
+	// Equal keys keep their insertion order in the multimap
+	nano::tally_t result;
+	for (auto const & entry : sorted)
+	{
+		result.emplace_hint (result.end (), entry);
 	}
 	return result;
 }

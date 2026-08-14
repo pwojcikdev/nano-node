@@ -226,6 +226,32 @@ TEST (election_ballot, tally_excludes_unknown_blocks)
 	ASSERT_EQ (100, result.total_weight);
 }
 
+TEST (election_ballot, evaluate_equal_forks)
+{
+	test_context ctx;
+	auto fork = make_block (2);
+	ASSERT_TRUE (ctx.ballot.insert_block (fork));
+
+	ctx.vote (1, 300, ctx.initial->hash ());
+	ctx.vote (2, 300, fork->hash ());
+
+	// A perfect tie keeps both blocks in the tally and cannot reach quorum
+	auto result = ctx.ballot.evaluate (1);
+	ASSERT_EQ (2, result.tally.size ());
+	ASSERT_EQ (600, result.total_weight);
+	ASSERT_FALSE (result.quorum);
+	// The winner of a tie is the higher hash, mirroring the vote tie-break rule
+	ASSERT_EQ (std::max (ctx.initial->hash (), fork->hash ()), result.winner->hash ());
+	ASSERT_EQ (300, result.winner_weight);
+
+	// Any extra weight breaks the tie and quorum follows the winner's margin
+	ctx.vote (3, 100, ctx.initial->hash ());
+	auto broken = ctx.ballot.evaluate (100);
+	ASSERT_EQ (ctx.initial->hash (), broken.winner->hash ());
+	ASSERT_TRUE (broken.quorum);
+	ASSERT_FALSE (ctx.ballot.evaluate (101).quorum);
+}
+
 TEST (election_ballot, evaluate_quorum_threshold)
 {
 	test_context ctx;
