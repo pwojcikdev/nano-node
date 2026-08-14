@@ -430,3 +430,55 @@ TEST (election_ballot, replacement_avoids_winner)
 	// Outweighs the winner but not the second lowest, nothing is replaced
 	ASSERT_FALSE (ctx.ballot.replacement_candidate (150, winner).has_value ());
 }
+
+TEST (election_ballot, replacement_handles_untallied_winner)
+{
+	test_context ctx;
+	auto fork = make_block (2);
+	ASSERT_TRUE (ctx.ballot.insert_block (fork));
+
+	ctx.vote (1, 100, ctx.initial->hash ());
+	ctx.ballot.evaluate (1);
+
+	// The winner has no votes behind it, yet it is protected and the tallied block is nominated instead
+	auto candidate = ctx.ballot.replacement_candidate (500, fork->hash ());
+	ASSERT_TRUE (candidate.has_value ());
+	ASSERT_EQ (ctx.initial->hash (), *candidate);
+}
+
+TEST (election_ballot, replacement_ignores_erased_blocks)
+{
+	test_context ctx;
+	auto fork1 = make_block (2);
+	auto fork2 = make_block (3);
+	ASSERT_TRUE (ctx.ballot.insert_block (fork1));
+	ASSERT_TRUE (ctx.ballot.insert_block (fork2));
+
+	ctx.vote (1, 100, ctx.initial->hash ());
+	ctx.vote (2, 200, fork1->hash ());
+	ctx.vote (3, 300, fork2->hash ());
+	ctx.ballot.evaluate (1);
+
+	// Erase the weakest fork, its stale tally entry must not be nominated again
+	ASSERT_NE (nullptr, ctx.ballot.erase_block (fork1->hash (), fork2->hash ()));
+	auto candidate = ctx.ballot.replacement_candidate (250, fork2->hash ());
+	ASSERT_TRUE (candidate.has_value ());
+	ASSERT_EQ (ctx.initial->hash (), *candidate);
+}
+
+TEST (election_ballot, replacement_tie_broken_by_hash)
+{
+	test_context ctx;
+	auto fork1 = make_block (2);
+	auto fork2 = make_block (3);
+	ASSERT_TRUE (ctx.ballot.insert_block (fork1));
+	ASSERT_TRUE (ctx.ballot.insert_block (fork2));
+
+	ctx.vote (1, 100, ctx.initial->hash ());
+	ctx.ballot.evaluate (1);
+
+	// Both forks are equally weightless, the lower hash is evicted first
+	auto candidate = ctx.ballot.replacement_candidate (1, ctx.initial->hash ());
+	ASSERT_TRUE (candidate.has_value ());
+	ASSERT_EQ (std::min (fork1->hash (), fork2->hash ()), *candidate);
+}
