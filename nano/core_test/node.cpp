@@ -265,7 +265,7 @@ TEST (node, node_receive_quorum)
 	auto election (node1.active.election (nano::qualified_root (previous, previous)));
 	ASSERT_NE (nullptr, election);
 	ASSERT_FALSE (election->confirmed ());
-	ASSERT_EQ (1, election->votes ().size ());
+	ASSERT_EQ (0, election->votes ().size ());
 
 	nano::test::system system2;
 	system2.add_node ();
@@ -568,7 +568,7 @@ TEST (node, fork_publish)
 	// Insert the genesis key so voting only begins once both forks are in the election
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	// Wait until the genesis rep activated & makes vote
-	ASSERT_TIMELY_EQ (1s, election->votes ().size (), 2);
+	ASSERT_TIMELY_EQ (1s, election->votes ().size (), 1);
 	auto votes1 (election->votes ());
 	auto existing1 (votes1.find (nano::dev::genesis_key.pub));
 	ASSERT_NE (votes1.end (), existing1);
@@ -692,11 +692,11 @@ TEST (node, fork_keep)
 	ASSERT_TIMELY (5s, node2.active.active (*send2));
 	auto election1 (node2.active.election (nano::qualified_root (nano::dev::genesis->hash (), nano::dev::genesis->hash ())));
 	ASSERT_NE (nullptr, election1);
-	ASSERT_EQ (1, election1->votes ().size ());
+	ASSERT_EQ (0, election1->votes ().size ());
 	ASSERT_TRUE (node1.block_or_pruned_exists (send1->hash ()));
 	ASSERT_TRUE (node2.block_or_pruned_exists (send1->hash ()));
 	// Wait until the genesis rep makes a vote
-	ASSERT_TIMELY (1.5min, election1->votes ().size () != 1);
+	ASSERT_TIMELY (1.5min, election1->votes ().size () >= 1);
 	auto transaction0 (node1.ledger.tx_begin_read ());
 	auto transaction1 (node2.ledger.tx_begin_read ());
 	// The vote should be in agreement with what we already have.
@@ -756,7 +756,7 @@ TEST (node, fork_flip)
 	ASSERT_TIMELY (5s, node2.active.active (*send1));
 	auto election1 (node2.active.election (nano::qualified_root (nano::dev::genesis->hash (), nano::dev::genesis->hash ())));
 	ASSERT_NE (nullptr, election1);
-	ASSERT_EQ (1, election1->votes ().size ());
+	ASSERT_EQ (0, election1->votes ().size ());
 	ASSERT_NE (nullptr, node1.block (publish1.block->hash ()));
 	ASSERT_NE (nullptr, node2.block (publish2.block->hash ()));
 	ASSERT_TIMELY (10s, node2.block_or_pruned_exists (publish1.block->hash ()));
@@ -1053,7 +1053,7 @@ TEST (node, fork_open_flip)
 	node1.process_active (open2);
 	node2.process_active (open1);
 
-	ASSERT_TIMELY_EQ (5s, 2, election->votes ().size ()); // one more than expected due to elections having dummy votes
+	ASSERT_TIMELY_EQ (5s, 1, election->votes ().size ());
 
 	// Node2 should eventually settle on open1
 	ASSERT_TIMELY (10s, node2.block (open1->hash ()));
@@ -1484,7 +1484,7 @@ TEST (node, rep_self_vote)
 	ASSERT_NE (nullptr, election1);
 
 	// Wait until representatives are activated & make vote
-	ASSERT_TIMELY_EQ (1s, election1->votes ().size (), 3);
+	ASSERT_TIMELY_EQ (1s, election1->votes ().size (), 2);
 
 	// Election should receive votes from representatives hosted on the same node
 	auto rep_votes (election1->votes ());
@@ -1799,7 +1799,7 @@ TEST (node, confirm_quorum)
 	std::shared_ptr<nano::election> election;
 	ASSERT_TIMELY (5s, election = node1.active.election (send1->qualified_root ()));
 	ASSERT_FALSE (election->confirmed ());
-	ASSERT_EQ (1, election->votes ().size ());
+	ASSERT_EQ (0, election->votes ().size ());
 	ASSERT_EQ (0, node1.balance (nano::dev::genesis_key.pub));
 }
 

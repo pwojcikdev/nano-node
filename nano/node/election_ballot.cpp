@@ -20,12 +20,11 @@ std::chrono::seconds nano::vote_cooldown (nano::uint128_t weight, nano::uint128_
 	return std::chrono::seconds{ 15 };
 }
 
-nano::election_ballot::election_ballot (std::shared_ptr<nano::block> const & initial, weight_fn weight_a, std::chrono::steady_clock::time_point now) :
+nano::election_ballot::election_ballot (std::shared_ptr<nano::block> const & initial, weight_fn weight_a) :
 	weight{ std::move (weight_a) }
 {
 	debug_assert (initial != nullptr);
 	last_blocks.emplace (initial->hash (), initial);
-	last_votes.emplace (nano::account::null (), nano::vote_info{ now, 0, initial->hash () });
 }
 
 /*
@@ -270,12 +269,9 @@ std::vector<nano::vote_with_weight_info> nano::election_ballot::votes_with_weigh
 	std::multimap<nano::uint128_t, nano::vote_with_weight_info, std::greater<nano::uint128_t>> sorted_votes;
 	for (auto const & [account, info] : last_votes)
 	{
-		if (account != nullptr)
-		{
-			auto amount = weight (account);
-			nano::vote_with_weight_info vote_info{ account, info.time, info.timestamp, info.hash, amount };
-			sorted_votes.emplace (std::move (amount), vote_info);
-		}
+		auto amount = weight (account);
+		nano::vote_with_weight_info vote_info{ account, info.time, info.timestamp, info.hash, amount };
+		sorted_votes.emplace (std::move (amount), vote_info);
 	}
 	std::vector<nano::vote_with_weight_info> result;
 	result.reserve (sorted_votes.size ());

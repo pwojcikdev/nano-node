@@ -2211,9 +2211,17 @@ void nano::json_handler::confirmation_info ()
 			response_l.put ("voters", std::to_string (info.votes.size ()));
 			response_l.put ("last_winner", info.status.winner->hash ().to_string ());
 			nano::uint128_t total (0);
-			boost::property_tree::ptree blocks;
+			// Tally weight per hash, blocks without any votes tally zero
+			std::unordered_map<nano::block_hash, nano::uint128_t> tally_per_block;
 			for (auto const & [tally, block] : info.tally)
 			{
+				tally_per_block[block->hash ()] = tally;
+			}
+			boost::property_tree::ptree blocks;
+			for (auto const & [hash, block] : info.blocks)
+			{
+				auto const it = tally_per_block.find (hash);
+				nano::uint128_t const tally = it != tally_per_block.end () ? it->second : 0;
 				boost::property_tree::ptree entry;
 				entry.put ("tally", tally.convert_to<std::string> ());
 				total += tally;

@@ -40,7 +40,7 @@ class election_ballot final
 public:
 	using weight_fn = std::function<nano::uint128_t (nano::account const &)>;
 
-	election_ballot (std::shared_ptr<nano::block> const & initial, weight_fn, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now ());
+	election_ballot (std::shared_ptr<nano::block> const & initial, weight_fn);
 
 public: // Votes
 	enum class vote_result
@@ -75,7 +75,7 @@ public: // Tally
 	struct tally_result final
 	{
 		nano::tally_t tally; // Weight per block, greatest first
-		std::shared_ptr<nano::block> winner; // Highest-tally block, null only if nothing is tallied
+		std::shared_ptr<nano::block> winner; // Highest-tally block, null when no vote for a known block has been recorded yet
 		nano::uint128_t winner_weight{ 0 };
 		nano::uint128_t final_weight{ 0 }; // Final-vote weight behind the winner
 		nano::uint128_t total_weight{ 0 }; // Sum of all tallied weight
