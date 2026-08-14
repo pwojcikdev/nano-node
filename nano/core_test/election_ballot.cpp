@@ -221,7 +221,7 @@ TEST (election_ballot, tally_excludes_unknown_blocks)
 	ASSERT_EQ (1, tally.size ());
 	ASSERT_EQ (100, tally.begin ()->first);
 
-	// The unknown block's weight is still part of the total
+	// Weight behind unknown blocks is excluded from the total as well
 	auto result = ctx.ballot.evaluate (1);
 	ASSERT_EQ (100, result.total_weight);
 }
