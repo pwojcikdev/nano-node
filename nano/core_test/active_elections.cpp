@@ -473,7 +473,7 @@ TEST (active_elections, cached_vote_existing)
 	// Insert vote
 	auto vote1 = nano::test::make_vote (key, { send }, nano::vote::timestamp_min * 1, 0);
 	node.vote_processor.vote (vote1, std::make_shared<nano::transport::inproc::channel> (node, node));
-	ASSERT_TIMELY_EQ (5s, election->votes ().size (), 2);
+	ASSERT_TIMELY_EQ (5s, election->votes ().size (), 1);
 	ASSERT_EQ (1, node.stats.count (nano::stat::type::election, nano::stat::detail::vote));
 	auto last_vote1 (election->votes ()[key.pub]);
 	ASSERT_EQ (send->hash (), last_vote1.hash);
@@ -487,7 +487,7 @@ TEST (active_elections, cached_vote_existing)
 		node.vote_router.vote (cached_vote);
 	}
 	// Check that election data is not changed
-	ASSERT_EQ (2, election->votes ().size ());
+	ASSERT_EQ (1, election->votes ().size ());
 	auto last_vote2 (election->votes ()[key.pub]);
 	ASSERT_EQ (last_vote1.hash, last_vote2.hash);
 	ASSERT_EQ (last_vote1.timestamp, last_vote2.timestamp);
@@ -544,7 +544,7 @@ TEST (active_elections, cached_vote_multiple)
 	ASSERT_TIMELY_EQ (5s, node.vote_cache.find (send1->hash ()).size (), 2);
 	ASSERT_EQ (1, node.vote_cache.size ());
 	auto election = nano::test::start_election (system, node, send1->hash ());
-	ASSERT_TIMELY_EQ (5s, 3, election->votes ().size ()); // 2 votes and 1 default not_an_acount
+	ASSERT_TIMELY_EQ (5s, 2, election->votes ().size ());
 	ASSERT_EQ (2, node.stats.count (nano::stat::type::election_vote, nano::stat::detail::cache));
 }
 

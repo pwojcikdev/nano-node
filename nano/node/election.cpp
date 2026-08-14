@@ -381,7 +381,10 @@ void nano::election::confirm_if_quorum (nano::unique_lock<nano::mutex> & lock_a)
 
 	auto const delta = quorum_delta ();
 	auto const result = ballot.evaluate (delta);
-	release_assert (result.winner != nullptr);
+	if (result.winner == nullptr)
+	{
+		return; // No vote for a known block has been recorded yet
+	}
 
 	status.tally = result.winner_weight;
 	status.final_tally = result.final_weight;

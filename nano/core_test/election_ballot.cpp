@@ -53,7 +53,7 @@ struct test_context
 
 	explicit test_context (std::shared_ptr<nano::block> initial_a) :
 		initial{ std::move (initial_a) },
-		ballot{ initial, [this] (nano::account const & account) { return weights.contains (account) ? weights[account] : 0; }, start_time () }
+		ballot{ initial, [this] (nano::account const & account) { return weights.contains (account) ? weights[account] : 0; } }
 	{
 	}
 
@@ -76,12 +76,27 @@ TEST (election_ballot, construction)
 {
 	test_context ctx;
 	ASSERT_EQ (1, ctx.ballot.block_count ());
-	ASSERT_EQ (1, ctx.ballot.voter_count ()); // The sentinel entry for the initial block
+	ASSERT_EQ (0, ctx.ballot.voter_count ());
 	ASSERT_TRUE (ctx.ballot.contains (ctx.initial->hash ()));
 	ASSERT_EQ (ctx.initial, ctx.ballot.find (ctx.initial->hash ()));
 	ASSERT_EQ (nullptr, ctx.ballot.find (nano::block_hash{ 42 }));
 	ASSERT_FALSE (ctx.ballot.full ());
-	ASSERT_TRUE (ctx.ballot.votes_with_weight ().empty ()); // Sentinel entry is not reported
+	ASSERT_TRUE (ctx.ballot.votes_with_weight ().empty ());
+	ASSERT_TRUE (ctx.ballot.tally ().empty ());
+}
+
+TEST (election_ballot, evaluate_no_votes)
+{
+	test_context ctx;
+
+	// Without any votes there is no winner and no quorum, even with a zero delta
+	auto result = ctx.ballot.evaluate (0);
+	ASSERT_TRUE (result.tally.empty ());
+	ASSERT_EQ (nullptr, result.winner);
+	ASSERT_EQ (0, result.winner_weight);
+	ASSERT_EQ (0, result.total_weight);
+	ASSERT_FALSE (result.quorum);
+	ASSERT_FALSE (result.final_quorum);
 }
 
 /*
@@ -169,10 +184,10 @@ TEST (election_ballot, erase_votes)
 	ctx.vote (1, 100, hash);
 	ctx.vote (2, 100, hash);
 	ctx.vote (3, 100, hash);
-	ASSERT_EQ (4, ctx.ballot.voter_count ());
+	ASSERT_EQ (3, ctx.ballot.voter_count ());
 
 	ctx.ballot.erase_votes ({ make_account (1), make_account (3), make_account (99) });
-	ASSERT_EQ (2, ctx.ballot.voter_count ());
+	ASSERT_EQ (1, ctx.ballot.voter_count ());
 	ASSERT_EQ (0, ctx.ballot.get_vote (make_account (1)).timestamp);
 	ASSERT_EQ (1, ctx.ballot.get_vote (make_account (2)).timestamp);
 }
@@ -331,13 +346,13 @@ TEST (election_ballot, erase_block)
 
 	ctx.vote (1, 100, ctx.initial->hash ());
 	ctx.vote (2, 300, fork->hash ());
-	ASSERT_EQ (3, ctx.ballot.voter_count ());
+	ASSERT_EQ (2, ctx.ballot.voter_count ());
 
 	auto erased = ctx.ballot.erase_block (fork->hash (), ctx.initial->hash ());
 	ASSERT_EQ (fork, erased);
 	ASSERT_EQ (1, ctx.ballot.block_count ());
 	ASSERT_FALSE (ctx.ballot.contains (fork->hash ()));
-	ASSERT_EQ (2, ctx.ballot.voter_count ()); // The vote for the erased block is gone
+	ASSERT_EQ (1, ctx.ballot.voter_count ()); // The vote for the erased block is gone
 }
 
 TEST (election_ballot, erase_block_refuses_winner_and_unknown)
