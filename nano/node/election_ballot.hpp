@@ -24,8 +24,8 @@ public:
 	nano::block_hash hash;
 };
 
-// map of vote weight per block, ordered greater first
-using tally_t = std::map<nano::uint128_t, std::shared_ptr<nano::block>, std::greater<nano::uint128_t>>;
+// Vote weight per block, ordered greatest weight first; equal weights keep the higher hash first, mirroring the vote tie-break rule
+using tally_t = std::multimap<nano::uint128_t, std::shared_ptr<nano::block>, std::greater<nano::uint128_t>>;
 
 // Minimum time between subsequent non-final votes from a rep of the given weight
 std::chrono::seconds vote_cooldown (nano::uint128_t weight, nano::uint128_t online_stake);
