@@ -105,34 +105,27 @@ std::optional<nano::block_hash> nano::election_ballot::replacement_candidate (na
 		return std::nullopt;
 	}
 
-	// Existing blocks sorted by tally, ascending
-	std::vector<std::pair<nano::block_hash, nano::uint128_t>> sorted{ last_tally.begin (), last_tally.end () };
-	std::sort (sorted.begin (), sorted.end (), [] (auto const & left, auto const & right) { return left.second < right.second; });
-
-	if (sorted.size () < max_blocks)
+	// Weakest current block other than the winner, weighing blocks by the last evaluated tally; ties broken by lower hash
+	std::optional<std::pair<nano::uint128_t, nano::block_hash>> weakest;
+	for (auto const & [hash, block] : last_blocks)
 	{
-		// If count of tally items is less than the limit, remove any block without tally
-		for (auto const & [hash, block] : last_blocks)
+		if (hash == winner)
 		{
-			auto tallied = std::any_of (sorted.begin (), sorted.end (), [&hash = hash] (auto const & item) { return item.first == hash; });
-			if (!tallied && hash != winner)
-			{
-				return hash;
-			}
+			continue;
+		}
+		auto const tallied = last_tally.find (hash);
+		nano::uint128_t const tally = tallied != last_tally.end () ? tallied->second : 0;
+		std::pair<nano::uint128_t, nano::block_hash> const entry{ tally, hash };
+		if (!weakest || entry < *weakest)
+		{
+			weakest = entry;
 		}
 	}
-	else if (inactive_tally > sorted.front ().second)
+
+	// Evict the weakest block only if the new block outweighs it
+	if (weakest && inactive_tally > weakest->first)
 	{
-		// Replace if lowest tally is below the new block's weight
-		if (sorted.front ().first != winner)
-		{
-			return sorted.front ().first;
-		}
-		// Avoid removing winner
-		if (sorted.size () > 1 && inactive_tally > sorted[1].second)
-		{
-			return sorted[1].first;
-		}
+		return weakest->second;
 	}
 	return std::nullopt;
 }

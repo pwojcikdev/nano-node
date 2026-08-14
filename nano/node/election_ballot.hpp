@@ -62,7 +62,7 @@ public: // Blocks
 	// Insert a competing block, or refresh the stored pointer if the hash is already present. Returns true if the block was newly added
 	bool insert_block (std::shared_ptr<nano::block> const &);
 
-	// Block to evict to make room for a new one with the given inactive (vote cache) tally, never the current winner
+	// Weakest block to evict for a new one with the given inactive (vote cache) tally, never the current winner. Only nominated when the new tally outweighs it
 	std::optional<nano::block_hash> replacement_candidate (nano::uint128_t inactive_tally, nano::block_hash const & winner) const;
 
 	// Erase a block and every vote pointing at it, returning the erased block so the caller can clear network filters. Refuses to erase the winner
