@@ -53,13 +53,16 @@ public: // Votes
 	// Record a rep's vote. Pass a `cooldown` of 0 to skip throttling (e.g. for cached votes)
 	vote_result insert_vote (nano::account const & rep, uint64_t timestamp, nano::block_hash const &, std::chrono::steady_clock::time_point now, std::chrono::seconds cooldown);
 
+	// Latest vote recorded for the rep, or a default-constructed vote_info when there is none
 	nano::vote_info get_vote (nano::account const &) const;
+	// Overwrite a rep's vote directly, bypassing admission and cooldown checks
 	void set_vote (nano::account const &, nano::vote_info);
 	// Drop the given reps' votes, used when the winning fork changes
 	void erase_votes (std::vector<nano::account> const &);
 
 public: // Blocks
-	// Insert a competing block, or refresh the stored pointer if the hash is already present. Returns true if the block was newly added
+	// Insert a competing block, or refresh the stored pointer if the hash is already present. Returns true if the block was newly added.
+	// Does not enforce the block limit, callers are expected to check `full ()` and evict via `replacement_candidate` first
 	bool insert_block (std::shared_ptr<nano::block> const &);
 
 	// Weakest block to evict for a new one with the given inactive (vote cache) tally, never the current winner. Only nominated when the new tally outweighs it
@@ -78,12 +81,12 @@ public: // Tally
 		std::shared_ptr<nano::block> winner; // Highest-tally block, null when no vote for a known block has been recorded yet
 		nano::uint128_t winner_weight{ 0 };
 		nano::uint128_t final_weight{ 0 }; // Final-vote weight behind the winner
-		nano::uint128_t total_weight{ 0 }; // Sum of all tallied weight
+		nano::uint128_t total_weight{ 0 }; // Sum of all tallied weight, excluding votes for blocks unknown to this election
 		bool quorum{ false }; // Winner leads the runner-up by at least `delta`
 		bool final_quorum{ false }; // Final-vote weight alone reaches `delta`
 	};
 
-	// Recompute the tally and evaluate quorum against the given online weight delta
+	// Recompute the tally and evaluate quorum against the given online weight delta, refreshing the cached tally used for block replacement
 	tally_result evaluate (nano::uint128_t delta);
 
 	// Tally only, without refreshing the cached tally used for block replacement
