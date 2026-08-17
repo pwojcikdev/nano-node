@@ -469,7 +469,7 @@ void nano::election::confirm_if_quorum (nano::unique_lock<nano::mutex> & lock_a)
 	}
 	if (have_quorum (tally_l))
 	{
-		if (!is_quorum.exchange (true) && node.config.enable_voting && node.wallets.reps ().voting > 0)
+		if (!is_quorum.exchange (true) && node.is_voting ())
 		{
 			++vote_broadcast_count;
 			node.vote_generator.vote_final (qualified_root, status.winner->hash (), bucket);
@@ -672,16 +672,15 @@ std::optional<nano::election_actions::vote_broadcast> nano::election::decide_vot
 {
 	debug_assert (!mutex.try_lock ());
 
+	if (!node.is_voting ())
+	{
+		return std::nullopt;
+	}
 	if (!pacing.due_vote (now))
 	{
 		return std::nullopt;
 	}
 	pacing.vote_sent (now);
-
-	if (!node.config.enable_voting || node.wallets.reps ().voting == 0)
-	{
-		return std::nullopt;
-	}
 
 	node.stats.inc (nano::stat::type::election, nano::stat::detail::broadcast_vote);
 	++vote_broadcast_count;
@@ -724,7 +723,7 @@ std::optional<nano::election_actions::vote_broadcast> nano::election::decide_vot
 void nano::election::remove_votes (nano::block_hash const & hash_a)
 {
 	debug_assert (!mutex.try_lock ());
-	if (node.config.enable_voting && node.wallets.reps ().voting > 0)
+	if (node.is_voting ())
 	{
 		// Remove votes from election
 		auto list_generated_votes (node.history.votes (root, hash_a));
