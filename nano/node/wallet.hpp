@@ -10,6 +10,7 @@
 #include <nano/lib/work.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/openclwork.hpp>
+#include <nano/node/wallet/wallets_reps.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/store/typed_iterator.hpp>
 #include <nano/wallet/wallet_value.hpp>
@@ -169,8 +170,6 @@ public:
 	nano::wallet::wallet_store store;
 	// Canonical long-lived handle returned by open ()/create ()/all_wallets (); handles are stateless, so it may safely outlive destroy ()
 	std::shared_ptr<wallet> handle;
-	// Local representatives detected among this wallet's accounts
-	std::unordered_set<nano::account> representatives;
 	// Notified on password attempts with (invalid, password_empty)
 	std::function<void (bool, bool)> lock_observer{ [] (bool, bool) {} };
 };
@@ -255,28 +254,6 @@ public:
 public:
 	nano::wallet::wallets & wallets;
 	nano::wallet_id const id;
-};
-
-class wallet_representatives
-{
-public:
-	uint64_t voting{ 0 }; // Number of representatives with at least the configured minimum voting weight
-	bool half_principal{ false }; // has representatives with at least 50% of principal representative requirements
-	std::unordered_set<nano::account> accounts; // Representatives with at least the configured minimum voting weight
-	bool have_half_rep () const
-	{
-		return half_principal;
-	}
-	bool exists (nano::account const & rep) const
-	{
-		return accounts.count (rep) > 0;
-	}
-	void clear ()
-	{
-		voting = 0;
-		half_principal = false;
-		accounts.clear ();
-	}
 };
 
 /**
@@ -394,14 +371,12 @@ public: // Id-keyed wallet operations; each reports `wallet_not_found` (or its r
 	void do_wallet_actions ();
 	void queue_wallet_action (nano::uint128_t const & priority, std::shared_ptr<wallet> const &, std::function<void (wallet &)> action);
 
-	// Representatives
+	// Representatives, delegated to the reps component
 	void foreach_representative (std::function<void (nano::public_key const &, nano::raw_key const &)> const & action);
-	bool check_rep (nano::account const &);
 	void refresh_reps ();
 	wallet_representatives reps () const;
 
-	/// Returns a signer that iterates over all representatives in the wallet
-	using signer_t = std::function<void (std::function<void (nano::public_key const &, nano::raw_key const &)> const &)>;
+	using signer_t = wallets_reps::signer_t;
 	signer_t signer ();
 
 	nano::container_info container_info () const;
@@ -432,14 +407,15 @@ public:
 	mutable nano::mutex mutex;
 	mutable nano::mutex action_mutex;
 	nano::condition_variable condition;
-	nano::condition_variable reps_condition;
 	nano::condition_variable receivable_condition;
 	std::atomic<bool> stopped{ false };
 	std::thread thread;
-	std::thread reps_thread;
 	std::thread receivable_thread;
 
 	nano::thread_pool workers;
+
+	// Local representative tracking and voting key cache
+	wallets_reps rep_tracker;
 
 	static nano::uint128_t const generate_priority;
 	static nano::uint128_t const high_priority;
@@ -448,13 +424,7 @@ public:
 	static uint32_t constexpr deterministic_check_gap{ 64 };
 
 private:
-	void run_reps_scan ();
 	void run_receivable_scan ();
-	bool check_rep_impl (wallet_representatives &, nano::account const &, nano::uint128_t const & half_principal_weight);
-	void refresh_rep_index ();
-	void refresh_rep_keys_cache ();
-	// Requires the mutex to be held
-	void refresh_rep_keys_cache_impl ();
 	// Queues an action against the wallet id; stale ids simply no-op when the action runs
 	void queue_wallet_action (nano::uint128_t const & priority, nano::wallet_id const &, std::function<void (wallet &)> action);
 	// Regenerates and processes the block (work + ledger), must be called without the mutex held
@@ -480,8 +450,5 @@ private: // Per-wallet operations, each requires the mutex to be held
 private:
 	// All open wallets, protected by mutex
 	std::unordered_map<nano::wallet_id, std::unique_ptr<wallet_data>> items;
-
-	mutable nano::locked<wallet_representatives> representatives;
-	nano::locked<std::vector<std::pair<nano::public_key, std::unique_ptr<nano::fan>>>> rep_keys_cache;
 };
 }
