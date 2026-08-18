@@ -10,6 +10,7 @@
 #include <nano/lib/work.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/openclwork.hpp>
+#include <nano/node/wallet/wallets_actions.hpp>
 #include <nano/node/wallet/wallets_receivable.hpp>
 #include <nano/node/wallet/wallets_reps.hpp>
 #include <nano/secure/common.hpp>
@@ -257,6 +258,24 @@ public:
 	nano::wallet_id const id;
 };
 
+// A block prepared and signed against the wallet store, ready for work generation and processing
+class prepared_block final
+{
+public:
+	std::shared_ptr<nano::block> block; // nullptr when preparation failed
+	nano::block_details details{};
+};
+
+// Result of preparing a send, which may resolve to a block already recorded for the send id
+class prepared_send final
+{
+public:
+	std::shared_ptr<nano::block> block; // nullptr when preparation failed
+	nano::block_details details{};
+	bool error{ false };
+	bool cached{ false }; // block was recorded for the send id earlier and has already been processed
+};
+
 // Spendable accounts and representative of a wallet, captured so scanning can run outside the wallets mutex
 class wallet_scan_info final
 {
@@ -381,9 +400,15 @@ public: // Id-keyed wallet operations; each reports `wallet_not_found` (or its r
 	// The wallet's internally synchronized password fan, for tests and diagnostics; the wallet must exist
 	nano::fan & password_fan (nano::wallet_id const &);
 
-	// Wallet actions queue
-	void do_wallet_actions ();
-	void queue_wallet_action (nano::uint128_t const & priority, std::shared_ptr<wallet> const &, std::function<void (wallet &)> action);
+	// Store phase of the block actions: resolves state, fetches keys and signs under the mutex; work and processing happen in the actions component
+	prepared_block prepare_receive (nano::wallet_id const &, nano::block_hash const & send_hash, nano::account const & representative, nano::uint128_union const & amount, nano::account const & account, uint64_t work);
+	prepared_block prepare_change (nano::wallet_id const &, nano::account const & source, nano::account const & representative, uint64_t work);
+	prepared_send prepare_send (nano::wallet_id const &, nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, uint64_t work, std::optional<std::string> send_id);
+	// Stores generated work for the account if its frontier still matches root
+	void update_work (nano::wallet_id const &, nano::account const &, nano::root const &, uint64_t work);
+
+	// Notified with (true) before and (false) after each wallet action runs
+	void set_observer (std::function<void (bool)> observer);
 
 	// Representatives, delegated to the reps component
 	void foreach_representative (std::function<void (nano::public_key const &, nano::raw_key const &)> const & action);
@@ -411,37 +436,19 @@ public: // Dependencies
 	nano::logger & logger;
 
 public:
-	std::function<void (bool)> observer;
-
-	std::multimap<nano::uint128_t, std::pair<std::shared_ptr<wallet>, std::function<void (wallet &)>>, std::greater<nano::uint128_t>> actions;
-	nano::locked<std::unordered_map<nano::account, nano::root>> delayed_work;
-
 	nano::kdf kdf;
 
 	mutable nano::mutex mutex;
-	mutable nano::mutex action_mutex;
-	nano::condition_variable condition;
-	std::atomic<bool> stopped{ false };
-	std::thread thread;
-
-	nano::thread_pool workers;
 
 	// Local representative tracking and voting key cache
 	wallets_reps rep_tracker;
 	// Periodic receivable scanning and confirmed receives
 	wallets_receivable receivable_tracker;
-
-	static nano::uint128_t const generate_priority;
-	static nano::uint128_t const high_priority;
+	// Action queue and block operations
+	wallets_actions action_runner;
 
 	// Consecutive unused accounts scanned past the last used one before a seed scan gives up
 	static uint32_t constexpr deterministic_check_gap{ 64 };
-
-private:
-	// Queues an action against the wallet id; stale ids simply no-op when the action runs
-	void queue_wallet_action (nano::uint128_t const & priority, nano::wallet_id const &, std::function<void (wallet &)> action);
-	// Regenerates and processes the block (work + ledger), must be called without the mutex held
-	bool action_complete (nano::wallet_id const &, std::shared_ptr<nano::block> const & block, nano::account const & account, bool generate_work, nano::block_details const & details);
 
 private: // Per-wallet operations, each requires the mutex to be held
 	wallet_data * find_wallet (nano::wallet_id const &) const;

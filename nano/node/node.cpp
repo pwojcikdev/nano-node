@@ -321,9 +321,9 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 		}
 	});
 
-	wallets.observer = [this] (bool active) {
+	wallets.set_observer ([this] (bool active) {
 		observers.wallet.notify (active);
-	};
+	});
 
 	network.disconnect_observer = [this] () {
 		observers.disconnect.notify ();
