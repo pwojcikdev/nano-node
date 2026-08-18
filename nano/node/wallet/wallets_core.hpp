@@ -37,17 +37,15 @@ public:
 };
 
 // A block prepared and signed against the wallet store, ready for work generation and processing
-class prepared_block final
+struct prepared_block
 {
-public:
 	std::shared_ptr<nano::block> block; // nullptr when preparation failed
 	nano::block_details details{};
 };
 
 // Result of preparing a send, which may resolve to a block already recorded for the send id
-class prepared_send final
+struct prepared_send
 {
-public:
 	std::shared_ptr<nano::block> block; // nullptr when preparation failed
 	nano::block_details details{};
 	bool error{ false };
@@ -55,9 +53,8 @@ public:
 };
 
 // Spendable accounts and representative of a wallet, captured so scanning can run outside the wallets mutex
-class wallet_scan_info final
+struct wallet_scan_info
 {
-public:
 	nano::account representative;
 	std::vector<nano::account> accounts;
 };

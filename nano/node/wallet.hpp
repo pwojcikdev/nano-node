@@ -10,8 +10,8 @@
 #include <nano/lib/work.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/openclwork.hpp>
-#include <nano/node/wallet/wallet_store.hpp>
 #include <nano/node/wallet/wallets_actions.hpp>
+#include <nano/node/wallet/wallets_core.hpp>
 #include <nano/node/wallet/wallets_receivable.hpp>
 #include <nano/node/wallet/wallets_reps.hpp>
 #include <nano/secure/common.hpp>
@@ -26,24 +26,6 @@
 
 namespace nano::wallet
 {
-/**
- * Internal per-wallet state. All access is serialized by the owning `wallets` mutex;
- * the password fans inside `store` are additionally internally synchronized.
- */
-class wallet_data final
-{
-public:
-	wallet_data (nano::store::write_transaction &, wallets &, nano::wallet_id const &);
-	wallet_data (nano::store::write_transaction &, wallets &, nano::wallet_id const &, std::string const & json);
-
-	nano::wallet_id const id;
-	nano::wallet::wallet_store store;
-	// Canonical long-lived handle returned by open ()/create ()/all_wallets (); handles are stateless, so it may safely outlive destroy ()
-	std::shared_ptr<wallet> handle;
-	// Notified on password attempts with (invalid, password_empty)
-	std::function<void (bool, bool)> lock_observer{ [] (bool, bool) {} };
-};
-
 /**
  * A wallet is a set of account keys encrypted by a common encryption key.
  * This handle holds no wallet state, only the id; every operation forwards to the
@@ -124,32 +106,6 @@ public:
 public:
 	nano::wallet::wallets & wallets;
 	nano::wallet_id const id;
-};
-
-// A block prepared and signed against the wallet store, ready for work generation and processing
-class prepared_block final
-{
-public:
-	std::shared_ptr<nano::block> block; // nullptr when preparation failed
-	nano::block_details details{};
-};
-
-// Result of preparing a send, which may resolve to a block already recorded for the send id
-class prepared_send final
-{
-public:
-	std::shared_ptr<nano::block> block; // nullptr when preparation failed
-	nano::block_details details{};
-	bool error{ false };
-	bool cached{ false }; // block was recorded for the send id earlier and has already been processed
-};
-
-// Spendable accounts and representative of a wallet, captured so scanning can run outside the wallets mutex
-class wallet_scan_info final
-{
-public:
-	nano::account representative;
-	std::vector<nano::account> accounts;
 };
 
 /**
@@ -288,10 +244,6 @@ public: // Id-keyed wallet operations; each reports `wallet_not_found` (or its r
 
 	nano::container_info container_info () const;
 
-private: // Transactions
-	nano::store::write_transaction tx_begin_write ();
-	nano::store::read_transaction tx_begin_read () const;
-
 public: // Dependencies
 	nano::node & node;
 	nano::wallet::wallets_backend & backend;
@@ -303,40 +255,14 @@ public: // Dependencies
 	nano::stats & stats;
 	nano::logger & logger;
 
-public:
-	nano::kdf kdf;
-
-	mutable nano::mutex mutex;
-
+public: // Components
+	// Wallet set and all wallet store access
+	wallets_core core;
 	// Local representative tracking and voting key cache
 	wallets_reps rep_tracker;
 	// Periodic receivable scanning and confirmed receives
 	wallets_receivable receivable_tracker;
 	// Action queue and block operations
 	wallets_actions action_runner;
-
-	// Consecutive unused accounts scanned past the last used one before a seed scan gives up
-	static uint32_t constexpr deterministic_check_gap{ 64 };
-
-private: // Per-wallet operations, each requires the mutex to be held
-	wallet_data * find_wallet (nano::wallet_id const &) const;
-	// Attempts to unlock with the password and queues a receivable search on success, returns true if the password was wrong
-	bool enter_password_impl (wallet_data &, nano::store::transaction const &, std::string const & password);
-	// Inserts the account at the stored deterministic index and advances it
-	nano::public_key deterministic_insert_impl (wallet_data &, nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, bool generate_work = true);
-	// Inserts the account at an explicit index, leaving the stored index untouched
-	nano::public_key deterministic_insert_impl (wallet_data &, nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, uint32_t index, bool generate_work = true);
-	// Caches work for an account, discarding it if the root is no longer the account frontier
-	void work_update_impl (wallet_data &, nano::store::write_transaction const &, nano::account const &, nano::root const &, uint64_t work);
-	// Scans accounts from index, returns the highest index with ledger activity, if any
-	std::optional<uint32_t> deterministic_check_impl (wallet_data const &, nano::store::transaction const &, nano::wallet::wallet_cipher const &, uint32_t index) const;
-	// Inserts accounts until every index up to and including last exists, returns the last account inserted
-	std::optional<nano::public_key> deterministic_insert_up_to_impl (wallet_data &, nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, uint32_t last);
-	// Replaces the seed and inserts accounts 0..count, or up to the highest account in use when count is 0
-	nano::public_key change_seed_impl (wallet_data &, nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, nano::raw_key const & seed, uint32_t count = 0);
-
-private:
-	// All open wallets, protected by mutex
-	std::unordered_map<nano::wallet_id, std::unique_ptr<wallet_data>> items;
 };
 }
