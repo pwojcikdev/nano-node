@@ -10,6 +10,7 @@
 #include <nano/lib/work.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/openclwork.hpp>
+#include <nano/node/wallet/wallets_receivable.hpp>
 #include <nano/node/wallet/wallets_reps.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/store/typed_iterator.hpp>
@@ -256,6 +257,14 @@ public:
 	nano::wallet_id const id;
 };
 
+// Spendable accounts and representative of a wallet, captured so scanning can run outside the wallets mutex
+class wallet_scan_info final
+{
+public:
+	nano::account representative;
+	std::vector<nano::account> accounts;
+};
+
 /**
  * The wallets set is all the wallets a node controls.
  * A node may contain multiple wallets independently encrypted and operated.
@@ -297,10 +306,15 @@ public:
 	bool exists (nano::account const &);
 	bool exists_any (nano::account const &, nano::account const &);
 
-	// Receivable
+	// Receivable, delegated to the receivable component
 	bool search_receivable (nano::wallet_id const &);
 	void search_receivable_all ();
 	void receive_confirmed (nano::block_hash const & hash, nano::account const & destination);
+
+	// Spendable accounts and representative of the wallet, errors when the wallet is missing or locked
+	nano::result<wallet_scan_info> scan_info (nano::wallet_id const &) const;
+	// Wallets containing the account, together with their configured representative
+	std::vector<std::pair<nano::wallet_id, nano::account>> holders (nano::account const &) const;
 
 public: // Id-keyed wallet operations; each reports `wallet_not_found` (or its return type's natural miss) when the wallet does not exist
 	// Password and lock management
@@ -407,15 +421,15 @@ public:
 	mutable nano::mutex mutex;
 	mutable nano::mutex action_mutex;
 	nano::condition_variable condition;
-	nano::condition_variable receivable_condition;
 	std::atomic<bool> stopped{ false };
 	std::thread thread;
-	std::thread receivable_thread;
 
 	nano::thread_pool workers;
 
 	// Local representative tracking and voting key cache
 	wallets_reps rep_tracker;
+	// Periodic receivable scanning and confirmed receives
+	wallets_receivable receivable_tracker;
 
 	static nano::uint128_t const generate_priority;
 	static nano::uint128_t const high_priority;
@@ -424,7 +438,6 @@ public:
 	static uint32_t constexpr deterministic_check_gap{ 64 };
 
 private:
-	void run_receivable_scan ();
 	// Queues an action against the wallet id; stale ids simply no-op when the action runs
 	void queue_wallet_action (nano::uint128_t const & priority, nano::wallet_id const &, std::function<void (wallet &)> action);
 	// Regenerates and processes the block (work + ledger), must be called without the mutex held
