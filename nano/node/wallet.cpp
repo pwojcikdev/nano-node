@@ -973,7 +973,8 @@ nano::logger & logger_a) :
 	logger{ logger_a },
 	observer{ [] (bool) {} },
 	kdf{ network_params.kdf_work },
-	workers{ config.wallet_threads, nano::thread_role::name::wallet_worker, /* auto_start */ true }
+	workers{ config.wallet_threads, nano::thread_role::name::wallet_worker, /* auto_start */ true },
+	rep_tracker{ *this, node, ledger, config, network_params, stats, logger }
 {
 	logger.info (nano::log::type::wallet, "Loading wallets from: {}", backend.database_path ().string ());
 
@@ -1043,13 +1044,7 @@ void wallets::start ()
 		do_wallet_actions ();
 	} };
 
-	if (config.enable_voting)
-	{
-		reps_thread = std::thread{ [this] () {
-			nano::thread_role::set (nano::thread_role::name::wallet_reps);
-			run_reps_scan ();
-		} };
-	}
+	rep_tracker.start ();
 
 	if (!node.flags.disable_search_pending)
 	{
@@ -1068,21 +1063,18 @@ void wallets::stop ()
 		actions.clear ();
 	}
 	condition.notify_all ();
-	reps_condition.notify_all ();
 	receivable_condition.notify_all ();
 
 	if (thread.joinable ())
 	{
 		thread.join ();
 	}
-	if (reps_thread.joinable ())
-	{
-		reps_thread.join ();
-	}
 	if (receivable_thread.joinable ())
 	{
 		receivable_thread.join ();
 	}
+
+	rep_tracker.stop ();
 
 	workers.stop ();
 }
@@ -1255,165 +1247,22 @@ void wallets::clear_send_ids ()
 
 wallet_representatives wallets::reps () const
 {
-	return *representatives.lock ();
+	return rep_tracker.reps ();
 }
 
 auto wallets::signer () -> signer_t
 {
-	return [this] (auto const & callback) { foreach_representative (callback); };
-}
-
-bool wallets::check_rep (nano::account const & account)
-{
-	auto half_principal_weight = node.minimum_principal_weight () / 2;
-	auto representatives_locked = representatives.lock ();
-	return check_rep_impl (*representatives_locked, account, half_principal_weight);
-}
-
-bool wallets::check_rep_impl (wallet_representatives & reps, nano::account const & account, nano::uint128_t const & half_principal_weight)
-{
-	auto weight = ledger.weight (account);
-	if (weight < config.vote_minimum.number ())
-	{
-		return false; // account not a representative
-	}
-
-	if (weight >= half_principal_weight)
-	{
-		reps.half_principal = true;
-	}
-
-	auto insert_result = reps.accounts.insert (account);
-	if (!insert_result.second)
-	{
-		return false; // account already exists
-	}
-
-	++reps.voting;
-
-	return true;
+	return rep_tracker.signer ();
 }
 
 void wallets::refresh_reps ()
 {
-	refresh_rep_index ();
-	refresh_rep_keys_cache ();
-}
-
-void wallets::refresh_rep_index ()
-{
-	nano::lock_guard<nano::mutex> guard{ mutex };
-
-	auto reps_locked = representatives.lock ();
-	reps_locked->clear ();
-
-	auto const half_principal_weight = node.minimum_principal_weight () / 2;
-
-	auto wallet_txn = tx_begin_read ();
-
-	for (auto const & [id, wallet_l] : items)
-	{
-		std::unordered_set<nano::account> new_representatives;
-		for (auto i = wallet_l->store.begin (wallet_txn), n = wallet_l->store.end (wallet_txn); i != n; ++i)
-		{
-			auto account = i->first;
-			if (check_rep_impl (*reps_locked, account, half_principal_weight))
-			{
-				new_representatives.insert (account);
-			}
-		}
-		wallet_l->representatives.swap (new_representatives);
-	}
+	rep_tracker.refresh ();
 }
 
 void wallets::foreach_representative (std::function<void (nano::public_key const & pub, nano::raw_key const & prv)> const & action)
 {
-	if (config.enable_voting)
-	{
-		// Cache lock is held during callbacks, recursive calls are not allowed
-		auto locked = rep_keys_cache.lock ();
-		for (auto const & [pub, fan_ptr] : *locked)
-		{
-			nano::raw_key prv;
-			fan_ptr->value (prv);
-			action (pub, prv);
-		}
-	}
-}
-
-void wallets::refresh_rep_keys_cache ()
-{
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	refresh_rep_keys_cache_impl ();
-}
-
-void wallets::refresh_rep_keys_cache_impl ()
-{
-	if (!config.enable_voting)
-	{
-		return;
-	}
-
-	std::vector<std::pair<nano::public_key, std::unique_ptr<nano::fan>>> new_cache;
-
-	auto wallet_txn = tx_begin_read ();
-
-	for (auto const & [id, wallet_l] : items)
-	{
-		for (auto const & account : wallet_l->representatives)
-		{
-			if (wallet_l->store.exists (wallet_txn, account))
-			{
-				// A single fetch reports the locked state too, so the password check and the fetch cannot disagree under a concurrent rekey
-				// A watch-only account can hold representative weight but has no private key to fetch; it cannot vote and is left out of the cache
-				auto prv_result = wallet_l->store.fetch (wallet_txn, account);
-				if (prv_result)
-				{
-					// Store private key spread across multiple heap allocations via fan to avoid plaintext keys in memory at rest
-					new_cache.emplace_back (account, std::make_unique<nano::fan> (prv_result.value (), config.password_fanout));
-				}
-				else if (prv_result.error () == nano::error_common::wallet_locked)
-				{
-					static auto last_log = std::chrono::steady_clock::time_point ();
-					if (last_log < std::chrono::steady_clock::now () - std::chrono::seconds (60))
-					{
-						last_log = std::chrono::steady_clock::now ();
-						logger.warn (nano::log::type::wallet, "Representative locked inside wallet: {}", id);
-					}
-				}
-			}
-		}
-	}
-	rep_keys_cache.lock ()->swap (new_cache);
-}
-
-void wallets::run_reps_scan ()
-{
-	auto delay = [this] () {
-		// Representation drifts quickly on the test network but very slowly on the live network
-		return network_params.network.is_dev_network ()
-		? 100ms
-		: (network_params.network.is_test_network ()
-		? std::chrono::milliseconds (nano::test_scan_wallet_reps_delay ())
-		: std::chrono::minutes (15));
-	};
-
-	nano::unique_lock<nano::mutex> lock{ mutex };
-	while (!stopped)
-	{
-		lock.unlock ();
-
-		stats.inc (nano::stat::type::wallet, nano::stat::detail::loop_reps);
-
-		// Recompute local wallet representatives and refresh cached keys
-		refresh_reps ();
-
-		lock.lock ();
-
-		reps_condition.wait_for (lock, delay (), [this] () {
-			return stopped.load ();
-		});
-	}
+	rep_tracker.foreach_representative (action);
 }
 
 void wallets::run_receivable_scan ()
@@ -1572,8 +1421,7 @@ bool wallets::enter_password (nano::wallet_id const & id, std::string const & pa
 	lock.unlock ();
 	transaction.commit ();
 	// Refresh even on failure: a failed attempt overwrites the password and locks the wallet, so cached rep keys must not outlive it
-	lock.lock ();
-	refresh_rep_keys_cache_impl ();
+	rep_tracker.refresh ();
 	return result;
 }
 
@@ -1609,8 +1457,7 @@ bool wallets::rekey (nano::wallet_id const & id, std::string const & password)
 	transaction.commit ();
 	if (!result)
 	{
-		lock.lock ();
-		refresh_rep_keys_cache_impl ();
+		rep_tracker.refresh ();
 	}
 	return result;
 }
@@ -1629,15 +1476,17 @@ bool wallets::is_locked (nano::wallet_id const & id) const
 
 void wallets::lock (nano::wallet_id const & id)
 {
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	auto wallet_l = find_wallet (id);
-	if (!wallet_l)
 	{
-		return;
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		auto wallet_l = find_wallet (id);
+		if (!wallet_l)
+		{
+			return;
+		}
+		logger.info (nano::log::type::wallet, "Wallet locked");
+		wallet_l->store.password_clear ();
 	}
-	logger.info (nano::log::type::wallet, "Wallet locked");
-	wallet_l->store.password_clear ();
-	refresh_rep_keys_cache_impl ();
+	rep_tracker.refresh ();
 }
 
 void wallets::set_lock_observer (nano::wallet_id const & id, std::function<void (bool, bool)> observer)
@@ -1662,12 +1511,6 @@ nano::public_key wallets::deterministic_insert_impl (wallet_data & wallet_l, nan
 		work_ensure (wallet_l.id, key, key);
 	}
 
-	if (check_rep (key))
-	{
-		logger.info (nano::log::type::wallet, "New account qualified as a representative: {}", key.to_account ());
-		wallet_l.representatives.insert (key);
-	}
-
 	return key;
 }
 
@@ -1680,12 +1523,6 @@ nano::public_key wallets::deterministic_insert_impl (wallet_data & wallet_l, nan
 	if (generate_work)
 	{
 		work_ensure (wallet_l.id, key, key);
-	}
-
-	if (check_rep (key))
-	{
-		logger.info (nano::log::type::wallet, "New account qualified as a representative: {}", key.to_account ());
-		wallet_l.representatives.insert (key);
 	}
 
 	return key;
@@ -1710,8 +1547,7 @@ nano::result<nano::public_key> wallets::deterministic_insert (nano::wallet_id co
 	auto result = deterministic_insert_impl (*wallet_l, transaction, cipher.value (), index, generate_work);
 	lock.unlock ();
 	transaction.commit ();
-	lock.lock ();
-	refresh_rep_keys_cache_impl ();
+	rep_tracker.refresh ();
 	return result;
 }
 
@@ -1734,8 +1570,7 @@ nano::result<nano::public_key> wallets::deterministic_insert (nano::wallet_id co
 	auto result = deterministic_insert_impl (*wallet_l, transaction, cipher.value (), generate_work);
 	lock.unlock ();
 	transaction.commit ();
-	lock.lock ();
-	refresh_rep_keys_cache_impl ();
+	rep_tracker.refresh ();
 	return result;
 }
 
@@ -1768,18 +1603,7 @@ nano::result<nano::public_key> wallets::insert_adhoc (nano::wallet_id const & id
 	// Makes sure that the representatives container will be in sync with any added keys
 	lock.unlock ();
 	transaction.commit ();
-
-	if (check_rep (key))
-	{
-		logger.info (nano::log::type::wallet, "New account qualified as a representative: {}", key.to_account ());
-		lock.lock ();
-		// Re-resolved because the wallet may have been destroyed while unlocked for the commit
-		if (auto wallet_l2 = find_wallet (id))
-		{
-			wallet_l2->representatives.insert (key);
-			refresh_rep_keys_cache_impl ();
-		}
-	}
+	rep_tracker.refresh ();
 
 	return key;
 }
@@ -1808,8 +1632,7 @@ void wallets::remove_account (nano::wallet_id const & id, nano::account const & 
 	wallet_l->store.erase (transaction, account);
 	lock.unlock ();
 	transaction.commit ();
-	lock.lock ();
-	refresh_rep_keys_cache_impl ();
+	rep_tracker.refresh ();
 }
 
 std::vector<nano::account> wallets::accounts (nano::wallet_id const & id) const
@@ -1850,8 +1673,7 @@ nano::result<bool> wallets::move_accounts (nano::wallet_id const & target, nano:
 	result = target_l->store.move (transaction, source_l->store, accounts);
 	lock.unlock ();
 	transaction.commit ();
-	lock.lock ();
-	refresh_rep_keys_cache_impl ();
+	rep_tracker.refresh ();
 	return result;
 }
 
@@ -1902,8 +1724,7 @@ nano::result<nano::public_key> wallets::change_seed (nano::wallet_id const & id,
 	auto result = change_seed_impl (*wallet_l, transaction, cipher.value (), seed, count);
 	lock.unlock ();
 	transaction.commit ();
-	lock.lock ();
-	refresh_rep_keys_cache_impl ();
+	rep_tracker.refresh ();
 	return result;
 }
 
@@ -1928,8 +1749,7 @@ void wallets::deterministic_restore (nano::wallet_id const & id)
 	}
 	lock.unlock ();
 	transaction.commit ();
-	lock.lock ();
-	refresh_rep_keys_cache_impl ();
+	rep_tracker.refresh ();
 }
 
 std::optional<uint32_t> wallets::deterministic_check (nano::wallet_id const & id, uint32_t index) const
@@ -2070,13 +1890,7 @@ nano::account wallets::get_representative (nano::wallet_id const & id) const
 
 std::unordered_set<nano::account> wallets::reps (nano::wallet_id const & id) const
 {
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	auto wallet_l = find_wallet (id);
-	if (!wallet_l)
-	{
-		return {};
-	}
-	return wallet_l->representatives;
+	return rep_tracker.reps (id);
 }
 
 nano::result<nano::raw_key> wallets::fetch_prv (nano::wallet_id const & id, nano::account const & account) const
@@ -2695,7 +2509,7 @@ nano::container_info wallets::container_info () const
 	nano::container_info info;
 	info.put ("items", items.size ());
 	info.put ("actions", actions.size ());
-	info.put ("rep_keys_cache", rep_keys_cache.lock ()->size ());
+	info.add ("reps", rep_tracker.container_info ());
 	return info;
 }
 }
