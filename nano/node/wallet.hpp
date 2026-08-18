@@ -156,13 +156,35 @@ public:
 };
 
 /**
- * A wallet is a set of account keys encrypted by a common encryption key
+ * Internal per-wallet state. All access is serialized by the owning `wallets` mutex;
+ * the password fans inside `store` are additionally internally synchronized.
  */
-class wallet final : public std::enable_shared_from_this<wallet>
+class wallet_data final
 {
 public:
-	wallet (nano::store::write_transaction &, wallets &, std::string const & wallet_path);
-	wallet (nano::store::write_transaction &, wallets &, std::string const & wallet_path, std::string const & json);
+	wallet_data (nano::store::write_transaction &, wallets &, nano::wallet_id const &);
+	wallet_data (nano::store::write_transaction &, wallets &, nano::wallet_id const &, std::string const & json);
+
+	nano::wallet_id const id;
+	nano::wallet::wallet_store store;
+	// Canonical long-lived handle returned by open ()/create ()/all_wallets (); handles are stateless, so it may safely outlive destroy ()
+	std::shared_ptr<wallet> handle;
+	// Local representatives detected among this wallet's accounts
+	std::unordered_set<nano::account> representatives;
+	// Notified on password attempts with (invalid, password_empty)
+	std::function<void (bool, bool)> lock_observer{ [] (bool, bool) {} };
+};
+
+/**
+ * A wallet is a set of account keys encrypted by a common encryption key.
+ * This handle holds no wallet state, only the id; every operation forwards to the
+ * id-keyed `wallets` API, so a handle can never dangle: operations on a destroyed
+ * wallet simply report `wallet_not_found`.
+ */
+class wallet final
+{
+public:
+	wallet (nano::wallet::wallets &, nano::wallet_id const &);
 
 	// Password and lock management
 	void enter_initial_password ();
@@ -170,6 +192,7 @@ public:
 	bool rekey (std::string const & password);
 	bool is_locked () const;
 	void lock ();
+	void set_lock_observer (std::function<void (bool, bool)> observer);
 
 	// Account management
 	nano::result<nano::public_key> insert_adhoc (nano::raw_key const & prv, bool generate_work = true);
@@ -178,17 +201,15 @@ public:
 	bool insert_watch (nano::public_key const & pub);
 	void remove_account (nano::account const & account);
 	std::vector<nano::account> accounts () const;
-	bool exists (nano::public_key const & pub);
+	bool exists (nano::public_key const & pub) const;
 	nano::result<bool> move_accounts (wallet & source, std::vector<nano::public_key> const & accounts);
 	nano::wallet::key_type key_type (nano::account const & account) const;
 
 	// Seed management
 	nano::result<nano::raw_key> get_seed () const;
 	nano::result<nano::public_key> change_seed (nano::raw_key const & seed, uint32_t count = 0);
-	// Inserts accounts up to the highest one with ledger activity, does nothing when the wallet is locked
 	void deterministic_restore ();
-	// Scans accounts from index, returns the highest index with ledger activity, if any
-	std::optional<uint32_t> deterministic_check (uint32_t index);
+	std::optional<uint32_t> deterministic_check (uint32_t index) const;
 	uint32_t get_deterministic_index () const;
 
 	// Representative management
@@ -204,8 +225,7 @@ public:
 	// Block actions
 	std::shared_ptr<nano::block> change_action (nano::account const & source, nano::account const & representative, uint64_t work = 0, bool generate_work = true);
 	std::shared_ptr<nano::block> receive_action (nano::block_hash const & send_hash, nano::account const & representative, nano::uint128_union const & amount, nano::account const & account, uint64_t work = 0, bool generate_work = true);
-	std::shared_ptr<nano::block> send_action (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, uint64_t work = 0, bool generate_work = true, std::optional<std::string> id = {});
-	bool action_complete (std::shared_ptr<nano::block> const & block, nano::account const & account, bool generate_work, nano::block_details const & details);
+	std::shared_ptr<nano::block> send_action (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, uint64_t work = 0, bool generate_work = true, std::optional<std::string> send_id = {});
 
 	// Sync/async block operations
 	bool change_sync (nano::account const & source, nano::account const & representative);
@@ -213,7 +233,7 @@ public:
 	bool receive_sync (std::shared_ptr<nano::block> const & block, nano::account const & representative, nano::uint128_t const & amount);
 	void receive_async (nano::block_hash const & hash, nano::account const & representative, nano::uint128_t const & amount, nano::account const & account, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true);
 	nano::block_hash send_sync (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount);
-	void send_async (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true, std::optional<std::string> id = {});
+	void send_async (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true, std::optional<std::string> send_id = {});
 
 	// Work cache
 	void work_cache_blocking (nano::account const & account, nano::root const & root);
@@ -226,51 +246,15 @@ public:
 
 	// Import/export
 	bool import (std::string const & json, std::string const & password);
-	void serialize_json (std::string & json);
-	void write_backup (std::filesystem::path const & path);
+	void serialize_json (std::string & json) const;
+	void write_backup (std::filesystem::path const & path) const;
 
-	// Status
-	bool live ();
+	// The internally synchronized password fan, for tests and diagnostics; valid while the wallet exists
+	nano::fan & password_fan ();
 
 public:
-	std::unordered_set<nano::account> free_accounts;
-	std::function<void (bool, bool)> lock_observer;
-	nano::wallet::wallet_store store;
 	nano::wallet::wallets & wallets;
-	nano::logger & logger;
-
-private: // Internal implementation methods (accept transactions for batching scenarios)
-	// Attempts to unlock with the password and queues a receivable search on success, returns true if the password was wrong
-	bool enter_password_impl (nano::store::transaction const &, std::string const & password);
-	// Adds a watch-only account, returns true if the key is not a valid public key
-	bool insert_watch_impl (nano::store::write_transaction const &, nano::public_key const & pub);
-	// Inserts the account at the stored deterministic index and advances it
-	nano::public_key deterministic_insert_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, bool generate_work = true);
-	// Inserts the account at an explicit index, leaving the stored index untouched
-	nano::public_key deterministic_insert_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, uint32_t index, bool generate_work = true);
-	// Caches work for an account, discarding it if the root is no longer the account frontier
-	void work_update_impl (nano::store::write_transaction const &, nano::account const & account, nano::root const & root, uint64_t work);
-	// Receives confirmed receivables above the receive minimum and starts elections for unconfirmed ones, returns true if the wallet is locked
-	bool search_receivable_impl (nano::store::transaction const &);
-	// Rebuilds the set of accounts available for spending from the wallet store
-	void init_free_accounts_impl (nano::store::transaction const &);
-	// Scans accounts from index, returns the highest index with ledger activity, if any
-	std::optional<uint32_t> deterministic_check_impl (nano::store::transaction const &, nano::wallet::wallet_cipher const &, uint32_t index);
-	// Inserts accounts until every index up to and including last exists, returns the last account inserted
-	std::optional<nano::public_key> deterministic_insert_up_to_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, uint32_t last);
-	// Replaces the seed and inserts accounts 0..count, or up to the highest account in use when count is 0
-	nano::public_key change_seed_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, nano::raw_key const & seed, uint32_t count = 0);
-	// Inserts accounts up to the highest one with ledger activity
-	void deterministic_restore_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const &);
-
-private:
-	nano::locked<std::unordered_set<nano::account>> representatives;
-
-public:
-	// Consecutive unused accounts scanned past the last used one before a seed scan gives up
-	static uint32_t constexpr deterministic_check_gap{ 64 };
-
-	friend class wallets;
+	nano::wallet_id const id;
 };
 
 class wallet_representatives
@@ -283,9 +267,9 @@ public:
 	{
 		return half_principal;
 	}
-	bool exists (nano::account const & rep_a) const
+	bool exists (nano::account const & rep) const
 	{
-		return accounts.count (rep_a) > 0;
+		return accounts.count (rep) > 0;
 	}
 	void clear ()
 	{
@@ -328,7 +312,7 @@ public:
 	void clear_send_ids ();
 
 	// Wallet queries, each returns a consistent snapshot
-	std::unordered_map<nano::wallet_id, std::shared_ptr<wallet>> all_wallets () const;
+	std::unordered_map<nano::wallet_id, std::shared_ptr<wallet>> all_wallets ();
 	std::vector<nano::wallet_id> wallet_ids () const;
 	std::size_t wallet_count () const;
 
@@ -340,6 +324,71 @@ public:
 	bool search_receivable (nano::wallet_id const &);
 	void search_receivable_all ();
 	void receive_confirmed (nano::block_hash const & hash, nano::account const & destination);
+
+public: // Id-keyed wallet operations; each reports `wallet_not_found` (or its return type's natural miss) when the wallet does not exist
+	// Password and lock management
+	void enter_initial_password (nano::wallet_id const &);
+	bool enter_password (nano::wallet_id const &, std::string const & password);
+	bool rekey (nano::wallet_id const &, std::string const & password);
+	bool is_locked (nano::wallet_id const &) const;
+	void lock (nano::wallet_id const &);
+	void set_lock_observer (nano::wallet_id const &, std::function<void (bool, bool)> observer);
+
+	// Account management
+	nano::result<nano::public_key> insert_adhoc (nano::wallet_id const &, nano::raw_key const & prv, bool generate_work = true);
+	nano::result<nano::public_key> deterministic_insert (nano::wallet_id const &, uint32_t index, bool generate_work = true);
+	nano::result<nano::public_key> deterministic_insert (nano::wallet_id const &, bool generate_work = true);
+	bool insert_watch (nano::wallet_id const &, nano::public_key const &);
+	void remove_account (nano::wallet_id const &, nano::account const &);
+	std::vector<nano::account> accounts (nano::wallet_id const &) const;
+	bool exists (nano::wallet_id const &, nano::account const &) const;
+	nano::result<bool> move_accounts (nano::wallet_id const & target, nano::wallet_id const & source, std::vector<nano::public_key> const & accounts);
+	nano::wallet::key_type key_type (nano::wallet_id const &, nano::account const &) const;
+
+	// Seed management
+	nano::result<nano::raw_key> get_seed (nano::wallet_id const &) const;
+	nano::result<nano::public_key> change_seed (nano::wallet_id const &, nano::raw_key const & seed, uint32_t count = 0);
+	// Inserts accounts up to the highest one with ledger activity, does nothing when the wallet is locked
+	void deterministic_restore (nano::wallet_id const &);
+	// Scans accounts from index, returns the highest index with ledger activity, if any
+	std::optional<uint32_t> deterministic_check (nano::wallet_id const &, uint32_t index) const;
+	uint32_t get_deterministic_index (nano::wallet_id const &) const;
+
+	// Representative management
+	void set_representative (nano::wallet_id const &, nano::account const &);
+	nano::account get_representative (nano::wallet_id const &) const;
+	// Local representatives detected among the wallet's accounts
+	std::unordered_set<nano::account> reps (nano::wallet_id const &) const;
+
+	// Key retrieval
+	nano::result<nano::raw_key> fetch_prv (nano::wallet_id const &, nano::account const &) const;
+
+	// Block actions
+	std::shared_ptr<nano::block> change_action (nano::wallet_id const &, nano::account const & source, nano::account const & representative, uint64_t work = 0, bool generate_work = true);
+	std::shared_ptr<nano::block> receive_action (nano::wallet_id const &, nano::block_hash const & send_hash, nano::account const & representative, nano::uint128_union const & amount, nano::account const & account, uint64_t work = 0, bool generate_work = true);
+	std::shared_ptr<nano::block> send_action (nano::wallet_id const &, nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, uint64_t work = 0, bool generate_work = true, std::optional<std::string> send_id = {});
+
+	// Sync/async block operations
+	bool change_sync (nano::wallet_id const &, nano::account const & source, nano::account const & representative);
+	void change_async (nano::wallet_id const &, nano::account const & source, nano::account const & representative, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true);
+	bool receive_sync (nano::wallet_id const &, std::shared_ptr<nano::block> const & block, nano::account const & representative, nano::uint128_t const & amount);
+	void receive_async (nano::wallet_id const &, nano::block_hash const & hash, nano::account const & representative, nano::uint128_t const & amount, nano::account const & account, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true);
+	nano::block_hash send_sync (nano::wallet_id const &, nano::account const & source, nano::account const & destination, nano::uint128_t const & amount);
+	void send_async (nano::wallet_id const &, nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, std::function<void (std::shared_ptr<nano::block> const &)> const & action, uint64_t work = 0, bool generate_work = true, std::optional<std::string> send_id = {});
+
+	// Work cache
+	void work_cache_blocking (nano::wallet_id const &, nano::account const &, nano::root const &);
+	void work_ensure (nano::wallet_id const &, nano::account const &, nano::root const &);
+	nano::result<uint64_t> get_work (nano::wallet_id const &, nano::public_key const &) const;
+	void set_work (nano::wallet_id const &, nano::public_key const &, uint64_t work);
+
+	// Import/export
+	bool import (nano::wallet_id const &, std::string const & json, std::string const & password);
+	void serialize_json (nano::wallet_id const &, std::string & json) const;
+	void write_backup (nano::wallet_id const &, std::filesystem::path const & path) const;
+
+	// The wallet's internally synchronized password fan, for tests and diagnostics; the wallet must exist
+	nano::fan & password_fan (nano::wallet_id const &);
 
 	// Wallet actions queue
 	void do_wallet_actions ();
@@ -359,7 +408,7 @@ public:
 
 private: // Transactions
 	nano::store::write_transaction tx_begin_write ();
-	nano::store::read_transaction tx_begin_read ();
+	nano::store::read_transaction tx_begin_read () const;
 
 public: // Dependencies
 	nano::node & node;
@@ -395,21 +444,44 @@ public:
 	static nano::uint128_t const generate_priority;
 	static nano::uint128_t const high_priority;
 
+	// Consecutive unused accounts scanned past the last used one before a seed scan gives up
+	static uint32_t constexpr deterministic_check_gap{ 64 };
+
 private:
 	void run_reps_scan ();
 	void run_receivable_scan ();
 	bool check_rep_impl (wallet_representatives &, nano::account const &, nano::uint128_t const & half_principal_weight);
-	bool exists_impl (nano::store::transaction const &, nano::account const &);
 	void refresh_rep_index ();
 	void refresh_rep_keys_cache ();
+	// Requires the mutex to be held
+	void refresh_rep_keys_cache_impl ();
+	// Queues an action against the wallet id; stale ids simply no-op when the action runs
+	void queue_wallet_action (nano::uint128_t const & priority, nano::wallet_id const &, std::function<void (wallet &)> action);
+	// Regenerates and processes the block (work + ledger), must be called without the mutex held
+	bool action_complete (nano::wallet_id const &, std::shared_ptr<nano::block> const & block, nano::account const & account, bool generate_work, nano::block_details const & details);
+
+private: // Per-wallet operations, each requires the mutex to be held
+	wallet_data * find_wallet (nano::wallet_id const &) const;
+	// Attempts to unlock with the password and queues a receivable search on success, returns true if the password was wrong
+	bool enter_password_impl (wallet_data &, nano::store::transaction const &, std::string const & password);
+	// Inserts the account at the stored deterministic index and advances it
+	nano::public_key deterministic_insert_impl (wallet_data &, nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, bool generate_work = true);
+	// Inserts the account at an explicit index, leaving the stored index untouched
+	nano::public_key deterministic_insert_impl (wallet_data &, nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, uint32_t index, bool generate_work = true);
+	// Caches work for an account, discarding it if the root is no longer the account frontier
+	void work_update_impl (wallet_data &, nano::store::write_transaction const &, nano::account const &, nano::root const &, uint64_t work);
+	// Scans accounts from index, returns the highest index with ledger activity, if any
+	std::optional<uint32_t> deterministic_check_impl (wallet_data const &, nano::store::transaction const &, nano::wallet::wallet_cipher const &, uint32_t index) const;
+	// Inserts accounts until every index up to and including last exists, returns the last account inserted
+	std::optional<nano::public_key> deterministic_insert_up_to_impl (wallet_data &, nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, uint32_t last);
+	// Replaces the seed and inserts accounts 0..count, or up to the highest account in use when count is 0
+	nano::public_key change_seed_impl (wallet_data &, nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, nano::raw_key const & seed, uint32_t count = 0);
 
 private:
 	// All open wallets, protected by mutex
-	std::unordered_map<nano::wallet_id, std::shared_ptr<wallet>> items;
+	std::unordered_map<nano::wallet_id, std::unique_ptr<wallet_data>> items;
 
 	mutable nano::locked<wallet_representatives> representatives;
 	nano::locked<std::vector<std::pair<nano::public_key, std::unique_ptr<nano::fan>>>> rep_keys_cache;
-
-	friend class wallet;
 };
 }

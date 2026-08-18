@@ -1449,7 +1449,7 @@ void nano_qt::wallet::start ()
 			}));
 		}
 	});
-	wallet_m->lock_observer = [this_w] (bool invalid, bool vulnerable) {
+	wallet_m->set_lock_observer ([this_w] (bool invalid, bool vulnerable) {
 		if (auto this_l = this_w.lock ())
 		{
 			this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w, invalid, vulnerable] () {
@@ -1459,7 +1459,7 @@ void nano_qt::wallet::start ()
 				}
 			}));
 		}
-	};
+	});
 	settings_button->setToolTip ("Unlock wallet, set password, change representative");
 }
 
