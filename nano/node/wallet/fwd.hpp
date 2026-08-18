@@ -9,5 +9,6 @@ class wallet_representatives;
 class wallet_handle;
 class wallets_backend;
 class wallets;
+class wallets_receivable;
 class wallets_reps;
 }

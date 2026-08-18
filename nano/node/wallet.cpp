@@ -974,7 +974,8 @@ nano::logger & logger_a) :
 	observer{ [] (bool) {} },
 	kdf{ network_params.kdf_work },
 	workers{ config.wallet_threads, nano::thread_role::name::wallet_worker, /* auto_start */ true },
-	rep_tracker{ *this, node, ledger, config, network_params, stats, logger }
+	rep_tracker{ *this, node, ledger, config, network_params, stats, logger },
+	receivable_tracker{ *this, node, ledger, config, network_params, stats, logger }
 {
 	logger.info (nano::log::type::wallet, "Loading wallets from: {}", backend.database_path ().string ());
 
@@ -1045,14 +1046,7 @@ void wallets::start ()
 	} };
 
 	rep_tracker.start ();
-
-	if (!node.flags.disable_search_pending)
-	{
-		receivable_thread = std::thread{ [this] () {
-			nano::thread_role::set (nano::thread_role::name::wallet_receivable);
-			run_receivable_scan ();
-		} };
-	}
+	receivable_tracker.start ();
 }
 
 void wallets::stop ()
@@ -1063,18 +1057,14 @@ void wallets::stop ()
 		actions.clear ();
 	}
 	condition.notify_all ();
-	receivable_condition.notify_all ();
 
 	if (thread.joinable ())
 	{
 		thread.join ();
 	}
-	if (receivable_thread.joinable ())
-	{
-		receivable_thread.join ();
-	}
 
 	rep_tracker.stop ();
+	receivable_tracker.stop ();
 
 	workers.stop ();
 }
@@ -1131,10 +1121,7 @@ std::shared_ptr<wallet> wallets::create_from_json (nano::wallet_id const & id, s
 
 void wallets::search_receivable_all ()
 {
-	for (auto const & id : wallet_ids ())
-	{
-		search_receivable (id);
-	}
+	receivable_tracker.search_all ();
 }
 
 bool wallets::destroy (nano::wallet_id const & id)
@@ -1265,65 +1252,24 @@ void wallets::foreach_representative (std::function<void (nano::public_key const
 	rep_tracker.foreach_representative (action);
 }
 
-void wallets::run_receivable_scan ()
-{
-	nano::unique_lock<nano::mutex> lock{ mutex };
-	while (!stopped)
-	{
-		lock.unlock ();
-
-		stats.inc (nano::stat::type::wallet, nano::stat::detail::loop_receivable);
-
-		// Reload wallets from disk
-		reload ();
-
-		// Search pending
-		search_receivable_all ();
-
-		lock.lock ();
-
-		receivable_condition.wait_for (lock, network_params.node.search_pending_interval, [this] () {
-			return stopped.load ();
-		});
-	}
-}
-
 void wallets::receive_confirmed (nano::block_hash const & hash, nano::account const & destination)
 {
-	// Snapshot the wallets holding the destination, then receive outside the mutex
-	std::vector<std::pair<nano::wallet_id, nano::account>> targets;
+	receivable_tracker.receive_confirmed (hash, destination);
+}
+
+std::vector<std::pair<nano::wallet_id, nano::account>> wallets::holders (nano::account const & account) const
+{
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	auto transaction = tx_begin_read ();
+	std::vector<std::pair<nano::wallet_id, nano::account>> result;
+	for (auto const & [id, wallet_l] : items)
 	{
-		nano::lock_guard<nano::mutex> lock{ mutex };
-		auto wallet_transaction = tx_begin_read ();
-		for (auto const & [id, wallet_l] : items)
+		if (wallet_l->store.exists (transaction, account))
 		{
-			if (wallet_l->store.exists (wallet_transaction, destination))
-			{
-				targets.emplace_back (id, wallet_l->store.representative (wallet_transaction));
-			}
+			result.emplace_back (id, wallet_l->store.representative (transaction));
 		}
 	}
-	for (auto const & [id, representative] : targets)
-	{
-		auto pending = ledger.any.pending_get (ledger.tx_begin_read (), nano::pending_key (destination, hash));
-		if (pending)
-		{
-			auto amount (pending->amount.number ());
-			receive_async (id, hash, representative, amount, destination, [] (std::shared_ptr<nano::block> const &) {});
-		}
-		else
-		{
-			if (!ledger.cemented.block_exists_or_pruned (ledger.tx_begin_read (), hash))
-			{
-				logger.warn (nano::log::type::wallet, "Confirmed block is missing: {}", hash);
-				debug_assert (false, "confirmed block is missing");
-			}
-			else
-			{
-				logger.warn (nano::log::type::wallet, "Block has already been received: {}", hash);
-			}
-		}
-	}
+	return result;
 }
 
 std::unordered_map<nano::wallet_id, std::shared_ptr<wallet>> wallets::all_wallets ()
@@ -2371,74 +2317,33 @@ void wallets::set_work (nano::wallet_id const & id, nano::public_key const & pub
 
 bool wallets::search_receivable (nano::wallet_id const & id)
 {
-	// Snapshot the wallet accounts under the mutex; the ledger scan below then runs without touching the wallet store
-	std::vector<nano::account> accounts_l;
-	nano::account representative;
+	return receivable_tracker.search (id);
+}
+
+nano::result<wallet_scan_info> wallets::scan_info (nano::wallet_id const & id) const
+{
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	auto wallet_l = find_wallet (id);
+	if (!wallet_l)
 	{
-		nano::lock_guard<nano::mutex> lock{ mutex };
-		auto wallet_l = find_wallet (id);
-		if (!wallet_l)
+		return nano::error (nano::error_common::wallet_not_found);
+	}
+	auto transaction = tx_begin_read ();
+	if (!wallet_l->store.valid_password (transaction))
+	{
+		return nano::error (nano::error_common::wallet_locked);
+	}
+	wallet_scan_info result;
+	result.representative = wallet_l->store.representative (transaction);
+	for (auto i (wallet_l->store.begin (transaction)), n (wallet_l->store.end (transaction)); i != n; ++i)
+	{
+		// Watch-only accounts have no key to receive with
+		if (!nano::wallet::wallet_value (i->second).key.is_zero ())
 		{
-			return true;
-		}
-		auto transaction = tx_begin_read ();
-		if (!wallet_l->store.valid_password (transaction))
-		{
-			logger.warn (nano::log::type::wallet, "Unable to search receivable blocks, wallet is locked. Blocks won't be auto-received until the wallet is unlocked");
-			return true;
-		}
-		representative = wallet_l->store.representative (transaction);
-		for (auto i (wallet_l->store.begin (transaction)), n (wallet_l->store.end (transaction)); i != n; ++i)
-		{
-			// Don't search pending for watch-only accounts
-			if (!nano::wallet::wallet_value (i->second).key.is_zero ())
-			{
-				accounts_l.push_back (i->first);
-			}
+			result.accounts.push_back (i->first);
 		}
 	}
-
-	logger.debug (nano::log::type::wallet, "Beginning receivable block search");
-
-	for (auto const & account : accounts_l)
-	{
-		auto ledger_txn = ledger.tx_begin_read ();
-		for (auto j (ledger.store.pending.begin (ledger_txn, nano::pending_key (account, 0))), k (ledger.store.pending.end (ledger_txn)); j != k && nano::pending_key (j->first).account == account; ++j)
-		{
-			nano::pending_key key (j->first);
-			auto hash (key.hash);
-			nano::pending_info pending (j->second);
-			auto amount (pending.amount.number ());
-			if (config.receive_minimum.number () <= amount)
-			{
-				bool const confirmed = ledger.cemented.block_exists_or_pruned (ledger_txn, hash);
-
-				logger.info (nano::log::type::wallet, "Found a receivable block: {} ({}) for account: {} from: {}",
-				hash,
-				confirmed ? "confirmed" : "unconfirmed",
-				key.account,
-				pending.source);
-
-				if (confirmed)
-				{
-					// Receive confirmed block
-					receive_async (id, hash, representative, amount, account, [] (std::shared_ptr<nano::block> const &) {});
-				}
-				else if (!node.cementing_set.contains (hash))
-				{
-					auto block = ledger.any.block_get (ledger_txn, hash);
-					if (block)
-					{
-						// Request confirmation for block which is not being processed yet
-						node.start_election (block);
-					}
-				}
-			}
-		}
-	}
-
-	logger.debug (nano::log::type::wallet, "Receivable block search phase complete");
-	return false;
+	return result;
 }
 
 bool wallets::import (nano::wallet_id const & id, std::string const & json, std::string const & password)
