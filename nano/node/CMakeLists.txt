@@ -236,6 +236,8 @@ add_library(
   vote_with_weight_info.hpp
   wallet.hpp
   wallet.cpp
+  wallet/wallets_actions.hpp
+  wallet/wallets_actions.cpp
   wallet/wallets_receivable.hpp
   wallet/wallets_receivable.cpp
   wallet/wallets_reps.hpp
