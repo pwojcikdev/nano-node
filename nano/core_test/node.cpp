@@ -129,7 +129,7 @@ TEST (node, password_fanout)
 	config.password_fanout = 10;
 	auto & node = *system.add_node (config);
 	auto wallet (node.wallets.create (100));
-	ASSERT_EQ (10, wallet->store.password.values.size ());
+	ASSERT_EQ (10, wallet->password_fan ().values.size ());
 }
 
 TEST (node, balance)

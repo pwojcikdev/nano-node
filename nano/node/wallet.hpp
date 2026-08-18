@@ -164,11 +164,67 @@ public:
 	wallet (nano::store::write_transaction &, wallets &, std::string const & wallet_path);
 	wallet (nano::store::write_transaction &, wallets &, std::string const & wallet_path, std::string const & json);
 
+	// Scoped read access to the wallet store. Holds `wallets.mutex` so `wallets::destroy ()` cannot invalidate the store handle while held
+	class store_read_guard final
+	{
+	public:
+		nano::store::transaction const & tx () const
+		{
+			return tx_m;
+		}
+		nano::wallet::wallet_store & store () const
+		{
+			return store_m;
+		}
+
+	private:
+		friend class wallet;
+		store_read_guard (nano::unique_lock<nano::mutex> lock, nano::store::read_transaction tx, nano::wallet::wallet_store & store) :
+			lock_m{ std::move (lock) },
+			tx_m{ std::move (tx) },
+			store_m{ store }
+		{
+		}
+
+		nano::unique_lock<nano::mutex> lock_m;
+		nano::store::read_transaction tx_m;
+		nano::wallet::wallet_store & store_m;
+	};
+
+	// Scoped write access to the wallet store. The open write transaction blocks `wallets::destroy ()` from committing until it ends (single writer)
+	class store_write_guard final
+	{
+	public:
+		nano::store::write_transaction & tx ()
+		{
+			return tx_m;
+		}
+		nano::wallet::wallet_store & store () const
+		{
+			return store_m;
+		}
+
+	private:
+		friend class wallet;
+		store_write_guard (nano::store::write_transaction tx, nano::wallet::wallet_store & store) :
+			tx_m{ std::move (tx) },
+			store_m{ store }
+		{
+		}
+
+		nano::store::write_transaction tx_m;
+		nano::wallet::wallet_store & store_m;
+	};
+
+	// The only way to reach the wallet store, empty if the wallet has been destroyed
+	std::optional<store_read_guard> store_read ();
+	std::optional<store_write_guard> store_write ();
+
 	// Password and lock management
 	void enter_initial_password ();
 	bool enter_password (std::string const & password);
 	bool rekey (std::string const & password);
-	bool is_locked () const;
+	bool is_locked ();
 	void lock ();
 
 	// Account management
@@ -177,29 +233,29 @@ public:
 	nano::result<nano::public_key> deterministic_insert (bool generate_work = true);
 	bool insert_watch (nano::public_key const & pub);
 	void remove_account (nano::account const & account);
-	std::vector<nano::account> accounts () const;
+	std::vector<nano::account> accounts ();
 	bool exists (nano::public_key const & pub);
 	nano::result<bool> move_accounts (wallet & source, std::vector<nano::public_key> const & accounts);
-	nano::wallet::key_type key_type (nano::account const & account) const;
+	nano::wallet::key_type key_type (nano::account const & account);
 
 	// Seed management
-	nano::result<nano::raw_key> get_seed () const;
+	nano::result<nano::raw_key> get_seed ();
 	nano::result<nano::public_key> change_seed (nano::raw_key const & seed, uint32_t count = 0);
 	// Inserts accounts up to the highest one with ledger activity, does nothing when the wallet is locked
 	void deterministic_restore ();
 	// Scans accounts from index, returns the highest index with ledger activity, if any
 	std::optional<uint32_t> deterministic_check (uint32_t index);
-	uint32_t get_deterministic_index () const;
+	uint32_t get_deterministic_index ();
 
 	// Representative management
 	void set_representative (nano::account const & rep);
-	nano::account get_representative () const;
+	nano::account get_representative ();
 
 	// Local wallet representatives
 	std::unordered_set<nano::account> reps () const;
 
 	// Key retrieval
-	nano::result<nano::raw_key> fetch_prv (nano::account const & pub) const;
+	nano::result<nano::raw_key> fetch_prv (nano::account const & pub);
 
 	// Block actions
 	std::shared_ptr<nano::block> change_action (nano::account const & source, nano::account const & representative, uint64_t work = 0, bool generate_work = true);
@@ -218,10 +274,11 @@ public:
 	// Work cache
 	void work_cache_blocking (nano::account const & account, nano::root const & root);
 	void work_ensure (nano::account const & account, nano::root const & root);
-	nano::result<uint64_t> get_work (nano::public_key const &) const;
+	nano::result<uint64_t> get_work (nano::public_key const &);
 	void set_work (nano::public_key const & pub, uint64_t work);
 
 	// Receivable
+	// Receives confirmed receivables above the receive minimum and starts elections for unconfirmed ones, returns true if the wallet is locked or destroyed
 	bool search_receivable ();
 
 	// Import/export
@@ -232,12 +289,18 @@ public:
 	// Status
 	bool live ();
 
+	// The internally synchronized password fan, safe to inspect without store access
+	nano::fan & password_fan ();
+
 public:
 	std::unordered_set<nano::account> free_accounts;
 	std::function<void (bool, bool)> lock_observer;
-	nano::wallet::wallet_store store;
 	nano::wallet::wallets & wallets;
 	nano::logger & logger;
+
+private:
+	// Store access must go through store_read ()/store_write () guards. The `wallets` friend bypasses them only where it already holds `wallets.mutex` or a write transaction, which provides the same exclusion against destroy ()
+	nano::wallet::wallet_store store;
 
 private: // Internal implementation methods (accept transactions for batching scenarios)
 	// Attempts to unlock with the password and queues a receivable search on success, returns true if the password was wrong
@@ -250,8 +313,6 @@ private: // Internal implementation methods (accept transactions for batching sc
 	nano::public_key deterministic_insert_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, uint32_t index, bool generate_work = true);
 	// Caches work for an account, discarding it if the root is no longer the account frontier
 	void work_update_impl (nano::store::write_transaction const &, nano::account const & account, nano::root const & root, uint64_t work);
-	// Receives confirmed receivables above the receive minimum and starts elections for unconfirmed ones, returns true if the wallet is locked
-	bool search_receivable_impl (nano::store::transaction const &);
 	// Rebuilds the set of accounts available for spending from the wallet store
 	void init_free_accounts_impl (nano::store::transaction const &);
 	// Scans accounts from index, returns the highest index with ledger activity, if any
