@@ -240,6 +240,8 @@ add_library(
   wallet/wallet_store.cpp
   wallet/wallets_actions.hpp
   wallet/wallets_actions.cpp
+  wallet/wallets_core.hpp
+  wallet/wallets_core.cpp
   wallet/wallets_receivable.hpp
   wallet/wallets_receivable.cpp
   wallet/wallets_reps.hpp
