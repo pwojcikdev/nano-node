@@ -51,8 +51,7 @@ public: // Votes
 		ignored, // Vote is valid but arrived within the rep's cooldown window
 	};
 
-	// Record a rep's vote, replacing its recorded vote. The hash may refer to a block this election does not hold yet, the vote is kept and tallied once the block arrives
-	// Pass a `cooldown` of 0 to skip throttling (e.g. for cached votes)
+	// Record a rep's vote, replacing its recorded vote. A `cooldown` of 0 skips throttling (e.g. for cached votes), votes for hashes not held yet are kept and tallied once the block arrives
 	vote_result insert_vote (nano::account const & rep, uint64_t timestamp, nano::block_hash const &, std::chrono::steady_clock::time_point now, std::chrono::seconds cooldown);
 
 	// Latest vote recorded for the rep, or a default-constructed vote_info when there is none
@@ -63,15 +62,13 @@ public: // Votes
 	void erase_votes (std::vector<nano::account> const &);
 
 public: // Blocks
-	// Insert a competing block, or refresh the stored pointer if the hash is already present. Returns true if the block was newly added.
-	// Does not enforce the block limit, callers are expected to check `full ()` and evict via `replacement_candidate` first
+	// Insert a competing block or refresh the stored pointer if the hash is present, true if newly added. Callers enforce the block limit by checking `full ()` and evicting via `replacement_candidate` first
 	bool insert_block (std::shared_ptr<nano::block> const &);
 
 	// Weakest block to evict for a new one with the given inactive (vote cache) tally, never the current winner. Only nominated when the new tally outweighs it
 	std::optional<nano::block_hash> replacement_candidate (nano::uint128_t inactive_tally, nano::block_hash const & winner) const;
 
-	// Erase a block and every vote pointing at it, returning the erased block so the caller can clear network filters
-	// Returns null and erases nothing when the hash is unknown or is the current winner
+	// Erase a block and every vote pointing at it, returning the erased block so the caller can clear network filters. Null and no-op when the hash is unknown or is the current winner
 	std::shared_ptr<nano::block> erase_block (nano::block_hash const &, nano::block_hash const & winner);
 
 	// At or above the maximum number of competing blocks
@@ -119,7 +116,7 @@ private:
 	nano::tally_t make_tally (std::unordered_map<nano::block_hash, nano::uint128_t> const & block_weights) const;
 
 private: // Dependencies
-	weight_fn const weight;
+	weight_fn const weight; // Rep weight lookup, injected by the owning election
 
 private:
 	// Every competing block by hash, including the initial block
