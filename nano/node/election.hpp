@@ -130,19 +130,17 @@ public: // Interface
 	std::function<void (nano::account const &)> vote_action = nullptr,
 	std::function<void (nano::qualified_root const &)> update_action = nullptr);
 
+	// Block with the given hash if it competes in this election, null otherwise
 	std::shared_ptr<nano::block> find (nano::block_hash const &) const;
-	/*
-	 * Process vote. Internally uses cooldown to throttle non-final votes
-	 * If the election reaches consensus, it will be confirmed
-	 */
+	// Process a vote, throttled by the rep's cooldown. May switch the winning fork and confirm the election once quorum is reached
 	nano::vote_code vote (nano::account const & representative, uint64_t timestamp, nano::block_hash const & block_hash, nano::vote_source);
+	// Add a competing block, evicting the weakest existing block first when at capacity. Returns false only when the block was newly inserted
 	bool publish (std::shared_ptr<nano::block> const & block_a);
-	// Confirm this block if quorum is met
+	// Re-tally the votes, switch to a heavier fork if one emerged, and confirm once final quorum is reached. Releases the lock when the election confirms
 	void confirm_if_quorum (nano::unique_lock<nano::mutex> &);
+	// Confirm immediately when the given hash is the current winner
 	void try_confirm (nano::block_hash const & hash);
 
-	nano::vote_info get_last_vote (nano::account const & account);
-	void set_last_vote (nano::account const & account, nano::vote_info vote_info);
 	nano::election_status get_status () const;
 
 	std::chrono::steady_clock::time_point get_election_start () const
@@ -191,7 +189,9 @@ private:
 	void confirm_once (nano::unique_lock<nano::mutex> & lock_a);
 	// Broadcast a vote for the current winner if due, final if reached quorum or already confirmed
 	void broadcast_vote_locked (std::chrono::steady_clock::time_point now);
+	// Retract locally generated votes for the given hash so our reps can revote after the winning fork changes
 	void remove_votes (nano::block_hash const &);
+	// Evict the weakest competing block if the given hash outweighs it via cached votes, false when nothing was evicted
 	bool replace_by_weight (nano::unique_lock<nano::mutex> & lock_a, nano::block_hash const &);
 	std::chrono::milliseconds time_to_live () const;
 	// Online weight required for an election to reach quorum
@@ -210,5 +210,9 @@ public: // Logging
 
 public: // Only used in tests
 	void force_confirm ();
+	// Latest vote recorded for the rep, or a zeroed vote_info when there is none
+	nano::vote_info get_last_vote (nano::account const & account);
+	// Overwrite a rep's recorded vote directly, bypassing admission and cooldown checks
+	void set_last_vote (nano::account const & account, nano::vote_info vote_info);
 };
 }

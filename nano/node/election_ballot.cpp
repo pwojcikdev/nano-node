@@ -45,7 +45,7 @@ nano::election_ballot::vote_result nano::election_ballot::insert_vote (nano::acc
 		{
 			return vote_result::replay;
 		}
-		// Final votes are never throttled
+		// A rep's first final vote bypasses cooldown, a final vote replacing another final does not
 		bool const final_vote = timestamp == std::numeric_limits<uint64_t>::max () && last_vote.timestamp < timestamp;
 		bool const past_cooldown = last_vote.time <= now - cooldown;
 		if (!final_vote && !past_cooldown)
@@ -141,6 +141,7 @@ std::shared_ptr<nano::block> nano::election_ballot::erase_block (nano::block_has
 		return nullptr;
 	}
 	auto block = existing->second;
+	// Forget the votes behind the erased block as well, the reps may then vote anew on the remaining blocks
 	erase_if (last_votes, [&hash] (auto const & entry) {
 		return entry.second.hash == hash;
 	});
@@ -160,6 +161,7 @@ bool nano::election_ballot::full () const
 auto nano::election_ballot::compute_weights () const -> weights
 {
 	weights result;
+	// Weight behind hashes this election does not hold is accumulated too, `make_tally` filters it out
 	for (auto const & [account, info] : last_votes)
 	{
 		auto const rep_weight = weight (account);

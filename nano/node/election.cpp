@@ -391,6 +391,7 @@ void nano::election::confirm_if_quorum (nano::unique_lock<nano::mutex> & lock_a)
 
 	auto const & winner_hash = result.winner->hash ();
 	auto const & status_winner_hash = status.winner->hash ();
+	// Only switch the winning fork once the total participating weight reaches the quorum delta
 	if (result.total_weight >= delta && winner_hash != status_winner_hash)
 	{
 		status.winner = result.winner;
@@ -514,7 +515,7 @@ bool nano::election::publish (std::shared_ptr<nano::block> const & block_a)
 	{
 		if (!replace_by_weight (lock, block_a->hash ()))
 		{
-			result = true;
+			result = true; // The new block is too weak to evict any existing one
 			node.network.filter.clear (block_a);
 		}
 		debug_assert (lock.owns_lock ());
@@ -530,12 +531,6 @@ bool nano::election::publish (std::shared_ptr<nano::block> const & block_a)
 			}
 		}
 	}
-	/*
-	Result is true if:
-	1) election is confirmed or expired
-	2) given election contains 10 blocks & new block didn't receive enough votes to replace existing blocks
-	3) given block in already in election & election contains less than 10 blocks (replacing block content with new)
-	*/
 	return result;
 }
 
@@ -646,6 +641,7 @@ bool nano::election::replace_by_weight (nano::unique_lock<nano::mutex> & lock_a,
 		return false;
 	}
 
+	// Disconnect outside the election mutex to avoid lock inversion with the vote router
 	lock_a.unlock ();
 	node.vote_router.disconnect (*replaced_block);
 	lock_a.lock ();
