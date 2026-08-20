@@ -89,6 +89,8 @@ add_library(
   distributed_work_factory.cpp
   election.hpp
   election.cpp
+  election_ballot.hpp
+  election_ballot.cpp
   election_behavior.hpp
   election_insertion_result.hpp
   election_pacing.hpp
@@ -235,7 +237,6 @@ add_library(
   vote_router.cpp
   vote_spacing.hpp
   vote_spacing.cpp
-  vote_with_weight_info.hpp
   wallet.hpp
   wallet.cpp
   websocket.hpp
