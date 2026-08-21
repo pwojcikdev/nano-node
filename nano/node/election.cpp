@@ -520,7 +520,6 @@ bool nano::election::publish (std::shared_ptr<nano::block> const & block_a)
 		return true;
 	}
 	auto const result = ballot.insert (block_a, cached_tally);
-	lock.unlock ();
 
 	switch (result.outcome)
 	{
@@ -530,6 +529,7 @@ bool nano::election::publish (std::shared_ptr<nano::block> const & block_a)
 			return true; // Another insert of the same block won the race
 		case nano::election_ballot::insert_outcome::replaced:
 			// The evicted block no longer participates: stop routing votes to it and allow receiving it again
+			// Disconnect while still holding the mutex, so a concurrent republish of the evicted block cannot reconnect it first and have its fresh route erased here
 			node.vote_router.disconnect (result.evicted->hash ());
 			node.network.filter.clear (result.evicted);
 			return false;
