@@ -642,8 +642,8 @@ std::unordered_map<nano::account, nano::vote_info> nano::election::votes () cons
 
 std::vector<nano::vote_with_weight_info> nano::election::votes_with_weight () const
 {
-	nano::lock_guard<nano::mutex> guard{ mutex };
-	return ballot.votes_with_weight ();
+	// Copy the votes under the election mutex, the per-rep weight lookups and sorting run without it
+	return nano::election_ballot::votes_with_weight (votes (), [this] (nano::account const & account) { return node.ledger.weight (account); });
 }
 
 nano::election_behavior nano::election::behavior () const

@@ -136,6 +136,9 @@ public: // Queries
 	// All recorded votes with the reps' current weights, heaviest rep first
 	std::vector<nano::vote_with_weight_info> votes_with_weight () const;
 
+	// The same report for a detached copy of the votes, so callers can run the weight lookups without holding their locks
+	static std::vector<nano::vote_with_weight_info> votes_with_weight (std::unordered_map<nano::account, nano::vote_info> const & votes, weight_fn const & weight_query);
+
 	// Number of representatives with a recorded vote
 	size_t voter_count () const;
 

@@ -287,9 +287,14 @@ std::unordered_map<nano::account, nano::vote_info> nano::election_ballot::votes 
 
 std::vector<nano::vote_with_weight_info> nano::election_ballot::votes_with_weight () const
 {
+	return votes_with_weight (votes_m, weight_query);
+}
+
+std::vector<nano::vote_with_weight_info> nano::election_ballot::votes_with_weight (std::unordered_map<nano::account, nano::vote_info> const & votes, weight_fn const & weight_query)
+{
 	std::vector<nano::vote_with_weight_info> result;
-	result.reserve (votes_m.size ());
-	for (auto const & [rep, info] : votes_m)
+	result.reserve (votes.size ());
+	for (auto const & [rep, info] : votes)
 	{
 		result.push_back ({ rep, info.arrival, info.timestamp, info.hash, weight_query (rep) });
 	}
