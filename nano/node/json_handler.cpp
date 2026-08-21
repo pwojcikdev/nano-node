@@ -2208,7 +2208,11 @@ void nano::json_handler::confirmation_info ()
 		{
 			auto info = election->get_extended_status ();
 			response_l.put ("announcements", std::to_string (info.status.confirmation_request_count));
-			response_l.put ("voters", std::to_string (info.votes.size ()));
+			// Only votes backing a held block are listed below, so retained votes for evicted forks are excluded from the voter count as well
+			auto const voters = std::count_if (info.votes.begin (), info.votes.end (), [&info] (auto const & entry) {
+				return info.blocks.contains (entry.second.hash);
+			});
+			response_l.put ("voters", std::to_string (voters));
 			response_l.put ("last_winner", info.status.winner->hash ().to_string ());
 			std::unordered_map<nano::block_hash, nano::uint128_t> tally_by_hash;
 			for (auto const & [key, block] : info.tally)
