@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nano/lib/locks.hpp>
 #include <nano/lib/numbers.hpp>
 #include <nano/lib/numbers_templ.hpp>
 #include <nano/lib/utility.hpp>
@@ -28,6 +29,9 @@ enum class rep_tier
 };
 
 nano::stat::detail to_stat_detail (rep_tier);
+
+// Classify a representative's weight against the online stake, the single definition of the tier boundaries
+nano::rep_tier calculate_rep_tier (nano::uint128_t weight, nano::uint128_t online_stake);
 
 class rep_tiers final
 {

@@ -9,6 +9,23 @@
 
 using namespace std::chrono_literals;
 
+nano::rep_tier nano::calculate_rep_tier (nano::uint128_t weight, nano::uint128_t online_stake)
+{
+	if (weight > online_stake / 20) // 5% or above (level 3)
+	{
+		return rep_tier::tier_3;
+	}
+	if (weight > online_stake / 100) // 1% or above (level 2)
+	{
+		return rep_tier::tier_2;
+	}
+	if (weight > online_stake / 1000) // 0.1% or above (level 1)
+	{
+		return rep_tier::tier_1;
+	}
+	return rep_tier::none;
+}
+
 nano::rep_tiers::rep_tiers (nano::ledger & ledger_a, nano::network_params & network_params_a, nano::online_reps & online_reps_a, nano::stats & stats_a, nano::logger & logger_a) :
 	ledger{ ledger_a },
 	network_params{ network_params_a },
@@ -99,21 +116,20 @@ void nano::rep_tiers::calculate_tiers ()
 
 		// Using ledger weight here because it takes preconfigured bootstrap weights into account
 		auto weight = ledger.weight (representative);
-		if (weight > stake / 1000) // 0.1% or above (level 1)
+		switch (nano::calculate_rep_tier (weight, stake))
 		{
-			representatives_1_l.insert (representative);
-			if (weight > stake / 100) // 1% or above (level 2)
-			{
+			case nano::rep_tier::tier_3:
+				representatives_3_l.insert (representative);
+				[[fallthrough]];
+			case nano::rep_tier::tier_2:
 				representatives_2_l.insert (representative);
-				if (weight > stake / 20) // 5% or above (level 3)
-				{
-					representatives_3_l.insert (representative);
-				}
-			}
-		}
-		else
-		{
-			++ignored;
+				[[fallthrough]];
+			case nano::rep_tier::tier_1:
+				representatives_1_l.insert (representative);
+				break;
+			case nano::rep_tier::none:
+				++ignored;
+				break;
 		}
 	}
 
