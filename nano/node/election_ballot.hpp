@@ -74,9 +74,7 @@ public: // Votes
 		ignored, // Valid but arrived within the rep's cooldown window
 	};
 
-	// Record a representative's vote
-	// The hash may refer to a block this ballot does not hold: the vote is still recorded and anchors the rep's replay and cooldown checks, but carries no tally weight while unheld
-	// A cooldown of 0 disables throttling; a rep's first final vote always bypasses it
+	// Record a representative's vote; an unheld hash is still recorded and anchors the rep's replay and cooldown checks, a cooldown of 0 disables throttling and a rep's first final vote always bypasses it
 	vote_result vote (nano::account const & rep, uint64_t timestamp, nano::block_hash const & hash, std::chrono::seconds cooldown, std::chrono::steady_clock::time_point now);
 
 	// The representative's recorded vote, if any
@@ -97,9 +95,7 @@ public: // Blocks
 		std::shared_ptr<nano::block> evicted{}; // Set when replaced, so the caller can undo routing and filters
 	};
 
-	// The only way blocks enter or leave, keeping the ballot within its block limit
-	// `cached_tally` is externally observed weight backing the incoming block (e.g. from the vote cache); when the ballot is full it must exceed the weakest non-winner's tallied weight to evict it
-	// Eviction does not touch recorded votes: votes for an evicted block keep anchoring their reps and count again if the block is ever re-inserted
+	// The only way blocks enter or leave; on a full ballot the externally observed cached_tally must exceed the weakest non-winner's tallied weight to evict it, and eviction retains the evicted block's recorded votes
 	insert_result insert (std::shared_ptr<nano::block> const &, nano::uint128_t cached_tally = 0);
 
 public: // Tally
@@ -115,9 +111,7 @@ public: // Tally
 		bool final_quorum{ false }; // Final-vote weight alone reaches the quorum threshold
 	};
 
-	// Recompute the tally and advance the winner; the only state change besides vote/insert
-	// The heaviest block takes the winner slot only once `total_weight` reaches `quorum_threshold`, so a lead among the first few votes cannot move the winner while participation is still low
-	// Votes for unheld blocks count neither toward the tally nor toward `total_weight`: they express no preference between the held blocks, and counting them would let weight that cannot back any candidate push the winner around
+	// Recompute the tally and advance the winner; the heaviest block takes the winner slot only once the participating weight reaches quorum_threshold, and votes for unheld blocks count toward neither
 	[[nodiscard]] round evaluate (nano::uint128_t quorum_threshold);
 
 public: // Queries
