@@ -2250,7 +2250,7 @@ void nano::json_handler::confirmation_info ()
 						{
 							auto amount (node.ledger.weight (representative));
 							representatives.emplace (amount, representative);
-							if (vote.timestamp == std::numeric_limits<uint64_t>::max ())
+							if (vote.final ())
 							{
 								representatives_final.emplace (amount, representative);
 							}
