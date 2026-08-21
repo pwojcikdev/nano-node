@@ -499,34 +499,31 @@ bool nano::election::publish (std::shared_ptr<nano::block> const & block_a)
 	{
 		return true;
 	}
-	if (ballot.contains_block (block_a->hash ()))
+	auto result = ballot.insert (block_a);
+	if (result.outcome == nano::election_ballot::insert_outcome::rejected)
 	{
-		auto const result = ballot.insert (block_a);
-		debug_assert (result.outcome == nano::election_ballot::insert_outcome::updated);
-		return true; // Block was already present, only its contents were refreshed
-	}
+		// The ballot is full: look up the vote cache weight backing the new fork without holding the election mutex, then retry
+		lock.unlock ();
+		nano::uint128_t cached_tally{ 0 };
+		for (auto const & vote : node.vote_cache.find (block_a->hash ()))
+		{
+			cached_tally += node.ledger.weight (vote->account);
+		}
+		lock.lock ();
 
-	// Look up the vote cache weight backing the new fork without holding the election mutex
-	lock.unlock ();
-	nano::uint128_t cached_tally{ 0 };
-	for (auto const & vote : node.vote_cache.find (block_a->hash ()))
-	{
-		cached_tally += node.ledger.weight (vote->account);
+		if (confirmed_locked ())
+		{
+			return true;
+		}
+		result = ballot.insert (block_a, cached_tally);
 	}
-	lock.lock ();
-
-	if (confirmed_locked ())
-	{
-		return true;
-	}
-	auto const result = ballot.insert (block_a, cached_tally);
 
 	switch (result.outcome)
 	{
 		case nano::election_ballot::insert_outcome::inserted:
 			return false;
 		case nano::election_ballot::insert_outcome::updated:
-			return true; // Another insert of the same block won the race
+			return true; // Block was already present, only its contents were refreshed
 		case nano::election_ballot::insert_outcome::replaced:
 			// The evicted block no longer participates: stop routing votes to it and allow receiving it again
 			// Disconnect while still holding the mutex, so a concurrent republish of the evicted block cannot reconnect it first and have its fresh route erased here
