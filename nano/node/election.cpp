@@ -552,7 +552,10 @@ bool nano::election::publish (std::shared_ptr<nano::block> const & block_a)
 nano::election_snapshot nano::election::snapshot_locked () const
 {
 	debug_assert (!mutex.try_lock ());
-	return { qualified_root, ballot.winner (), is_quorum.load (), ballot.votes () };
+	// Solicitation only cares about votes that back a held block; retained votes for evicted forks must not exempt their reps from the per-election request budget
+	auto votes_l = ballot.votes ();
+	std::erase_if (votes_l, [this] (auto const & entry) { return !ballot.contains_block (entry.second.hash); });
+	return { qualified_root, ballot.winner (), is_quorum.load (), std::move (votes_l) };
 }
 
 nano::election_extended_status nano::election::current_status () const
