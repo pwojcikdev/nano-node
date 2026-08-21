@@ -197,18 +197,19 @@ auto nano::election_ballot::evaluate (nano::uint128_t quorum_threshold) -> round
 {
 	auto const [block_weights, final_weights] = compute_weights ();
 
-	round result;
-	result.tally = make_tally (block_weights);
+	auto const tally = make_tally (block_weights);
 	// Participation is the weight distributed over held blocks, votes for unheld hashes were filtered out of the tally
-	for (auto const & [key, block] : result.tally)
+	nano::uint128_t total_weight{ 0 };
+	for (auto const & [key, block] : tally)
 	{
-		result.total_weight += key.weight;
+		total_weight += key.weight;
 	}
 
+	round result;
 	// The heaviest block takes over as winner only once enough weight participates in the tally
-	if (!result.tally.empty () && result.total_weight >= quorum_threshold)
+	if (!tally.empty () && total_weight >= quorum_threshold)
 	{
-		auto const & leader = result.tally.begin ()->first;
+		auto const & leader = tally.begin ()->first;
 		if (leader.hash != winner_m)
 		{
 			winner_m = leader.hash;
@@ -229,7 +230,7 @@ auto nano::election_ballot::evaluate (nano::uint128_t quorum_threshold) -> round
 
 	// Quorum requires the winner to lead the runner-up by the full threshold, so that even if all weight not yet tallied backed the runner-up, it could no longer overtake the winner
 	nano::uint128_t runner_up{ 0 };
-	for (auto const & [key, block] : result.tally)
+	for (auto const & [key, block] : tally)
 	{
 		if (key.hash != winner_m)
 		{

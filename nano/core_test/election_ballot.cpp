@@ -68,6 +68,17 @@ std::vector<std::shared_ptr<nano::block>> create_blocks_hash_ordered (size_t cou
 	});
 	return blocks;
 }
+
+// Sum of the tallied weight over held blocks, the participation measure evaluate gates the winner on
+nano::uint128_t total_weight (nano::election_ballot const & ballot)
+{
+	nano::uint128_t result{ 0 };
+	for (auto const & [key, block] : ballot.tally ())
+	{
+		result += key.weight;
+	}
+	return result;
+}
 }
 
 /*
@@ -192,12 +203,12 @@ TEST (election_ballot, evaluate_no_votes)
 
 	// The threshold value is irrelevant, without votes nothing can reach it
 	auto round = ballot.evaluate (10);
-	ASSERT_TRUE (round.tally.empty ());
+	ASSERT_TRUE (ballot.tally ().empty ());
 	ASSERT_EQ (initial, round.winner);
 	ASSERT_FALSE (round.winner_changed);
 	ASSERT_EQ (0, round.winner_weight);
 	ASSERT_EQ (0, round.final_weight);
-	ASSERT_EQ (0, round.total_weight);
+	ASSERT_EQ (0, total_weight (ballot));
 	ASSERT_FALSE (round.quorum);
 	ASSERT_FALSE (round.final_quorum);
 }
@@ -364,7 +375,7 @@ TEST (election_ballot, vote_unheld_hash_recorded_not_tallied)
 	ASSERT_TRUE (ballot.tally ().empty ());
 
 	auto round = ballot.evaluate (5);
-	ASSERT_EQ (0, round.total_weight);
+	ASSERT_EQ (0, total_weight (ballot));
 	ASSERT_EQ (initial, round.winner);
 	// A replayed older vote is still rejected, the unheld vote anchors the rep's ordering
 	ASSERT_EQ (nano::election_ballot::vote_result::replay, ballot.vote (rep, nano::vote::timestamp_min * 1, initial->hash (), 0s, epoch));
@@ -385,12 +396,12 @@ TEST (election_ballot, vote_before_block)
 
 	// The vote arrives before its block, while the hash is unheld the weight stays out of the tally
 	ASSERT_EQ (nano::election_ballot::vote_result::accepted, ballot.vote (rep, nano::vote::timestamp_min, fork->hash (), 0s, epoch));
-	ASSERT_EQ (0, ballot.evaluate (5).total_weight);
+	ASSERT_EQ (0, total_weight (ballot));
 
 	// Inserting the block makes the parked weight count: 10 passes the threshold of 5 and flips the winner
 	ASSERT_EQ (nano::election_ballot::insert_outcome::inserted, ballot.insert (fork).outcome);
 	auto round = ballot.evaluate (5);
-	ASSERT_EQ (10, round.total_weight);
+	ASSERT_EQ (10, total_weight (ballot));
 	ASSERT_TRUE (round.winner_changed);
 	ASSERT_EQ (fork, round.winner);
 }
@@ -581,11 +592,11 @@ TEST (election_ballot, eviction_keeps_votes)
 	ASSERT_EQ (1, ballot.voter_count ());
 	ASSERT_EQ (fork->hash (), ballot.find_vote (rep)->hash);
 	ASSERT_EQ (nano::election_ballot::vote_result::replay, ballot.vote (rep, nano::vote::timestamp_min * 1, initial->hash (), 0s, epoch));
-	ASSERT_EQ (0, ballot.evaluate (100).total_weight);
+	ASSERT_EQ (0, total_weight (ballot));
 
 	// Re-inserting the evicted fork restores its recorded weight
 	ASSERT_EQ (nano::election_ballot::insert_outcome::replaced, ballot.insert (fork, 6).outcome);
-	ASSERT_EQ (5, ballot.evaluate (100).total_weight);
+	ASSERT_EQ (5, total_weight (ballot));
 }
 
 /*
@@ -610,7 +621,7 @@ TEST (election_ballot, evaluate_winner_gate)
 	ASSERT_EQ (initial, round1.winner);
 	ASSERT_EQ (initial, ballot.winner ());
 	ASSERT_EQ (0, round1.winner_weight); // The winner itself has no votes
-	ASSERT_EQ (10, round1.total_weight);
+	ASSERT_EQ (10, total_weight (ballot));
 	ASSERT_FALSE (round1.quorum);
 
 	// Enough participation lets the leader take over
@@ -646,7 +657,7 @@ TEST (election_ballot, evaluate_gate_counts_only_held_blocks)
 
 	// Held-block participation is 10, below the threshold of 15, so the winner may not move yet
 	auto round = ballot.evaluate (15);
-	ASSERT_EQ (10, round.total_weight);
+	ASSERT_EQ (10, total_weight (ballot));
 	ASSERT_FALSE (round.winner_changed);
 	ASSERT_EQ (initial, round.winner);
 }
@@ -675,7 +686,7 @@ TEST (election_ballot, evaluate_quorum_margin)
 	ASSERT_EQ (nano::election_ballot::vote_result::accepted, ballot.vote (reps.rep (25), nano::vote::timestamp_min, initial->hash (), 0s, epoch));
 	auto round2 = ballot.evaluate (10);
 	ASSERT_EQ (30, round2.winner_weight);
-	ASSERT_EQ (55, round2.total_weight);
+	ASSERT_EQ (55, total_weight (ballot));
 	ASSERT_FALSE (round2.quorum);
 }
 
@@ -697,13 +708,14 @@ TEST (election_ballot, evaluate_equal_forks_block_quorum)
 
 	// Both forks stay distinct in the tally and a tie can never reach quorum
 	auto round = ballot.evaluate (10);
-	ASSERT_EQ (2, round.tally.size ());
-	ASSERT_EQ (40, round.total_weight);
+	auto tally = ballot.tally ();
+	ASSERT_EQ (2, tally.size ());
+	ASSERT_EQ (40, total_weight (ballot));
 	ASSERT_EQ (20, round.winner_weight);
 	ASSERT_FALSE (round.quorum);
 	// The heavier hash leads the tally on equal weights
 	auto const leader = std::max (initial->hash (), fork->hash ());
-	ASSERT_EQ (leader, round.tally.begin ()->first.hash);
+	ASSERT_EQ (leader, tally.begin ()->first.hash);
 	ASSERT_EQ (leader, round.winner->hash ());
 }
 

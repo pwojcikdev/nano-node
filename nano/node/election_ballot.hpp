@@ -101,12 +101,10 @@ public: // Blocks
 public: // Tally
 	struct round final
 	{
-		nano::tally_map tally; // Held blocks with the vote weight behind each, heaviest first
 		std::shared_ptr<nano::block> winner; // Current winner after this round, never null
 		bool winner_changed{ false }; // Winner switched to a different block this round, the caller must act on it
 		nano::uint128_t winner_weight{ 0 }; // Vote weight behind the winner
 		nano::uint128_t final_weight{ 0 }; // Final-vote weight behind the winner
-		nano::uint128_t total_weight{ 0 }; // Sum over `tally`; votes for unheld blocks are excluded, see `evaluate`
 		bool quorum{ false }; // Winner leads every other held block by at least the quorum threshold
 		bool final_quorum{ false }; // Final-vote weight alone reaches the quorum threshold
 	};
