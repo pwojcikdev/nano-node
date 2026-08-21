@@ -150,6 +150,7 @@ enum class type
 	pruning,
 	fork_cache,
 	wallet,
+	work_generator,
 
 	_last // Must be the last enum
 };
@@ -779,6 +780,16 @@ enum class detail
 
 	// fork_cache
 	overfill_entry,
+
+	// work_generator
+	generate,
+	refused,
+	failure_local,
+	failure_peers,
+	peer_error,
+	bad_response,
+	invalid_work,
+	resolve_error,
 
 	_last // Must be the last enum
 };

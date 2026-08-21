@@ -83,10 +83,6 @@ add_library(
   confirmation_solicitor.cpp
   daemonconfig.hpp
   daemonconfig.cpp
-  distributed_work.hpp
-  distributed_work.cpp
-  distributed_work_factory.hpp
-  distributed_work_factory.cpp
   election.hpp
   election.cpp
   election_behavior.hpp
@@ -244,6 +240,9 @@ add_library(
   websocketconfig.cpp
   websocket_stream.hpp
   websocket_stream.cpp
+  work_generation.hpp
+  work_generator.hpp
+  work_generator.cpp
   xorshift.hpp)
 
 target_link_libraries(

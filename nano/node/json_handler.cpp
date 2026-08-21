@@ -17,7 +17,6 @@
 #include <nano/node/block_processor.hpp>
 #include <nano/node/bootstrap/bootstrap_service.hpp>
 #include <nano/node/cementing_set.hpp>
-#include <nano/node/distributed_work_factory.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/endpoint.hpp>
 #include <nano/node/epoch_upgrader.hpp>
@@ -32,6 +31,7 @@
 #include <nano/node/telemetry.hpp>
 #include <nano/node/unchecked_map.hpp>
 #include <nano/node/wallet.hpp>
+#include <nano/node/work_generator.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_cemented.hpp>
@@ -5348,11 +5348,8 @@ void nano::json_handler::work_generate ()
 			{
 				if (node.local_work_generation_enabled ())
 				{
-					auto error = node.distributed_work.make (work_version, hash, {}, difficulty, callback, {});
-					if (error)
-					{
-						ec = nano::error_common::failure_work_generation;
-					}
+					// Empty peer list ensures only the local work pool is used
+					node.work_generator.generate (nano::work_request{ work_version, hash, difficulty }, callback);
 				}
 				else
 				{
@@ -5374,7 +5371,7 @@ void nano::json_handler::work_generate ()
 				auto const & peers_l (secondary_work_peers_l ? node.config.secondary_work_peers : node.config.work_peers);
 				if (node.work_generation_enabled (peers_l))
 				{
-					node.work_generate (work_version, hash, difficulty, callback, account, secondary_work_peers_l);
+					node.work_generator.generate (nano::work_request{ work_version, hash, difficulty, account, peers_l }, callback);
 				}
 				else
 				{
@@ -5481,7 +5478,7 @@ void nano::json_handler::work_peer_add ()
 	uint16_t port;
 	if (!nano::parse_port (port_text, port))
 	{
-		node.config.work_peers.push_back (std::make_pair (address_text, port));
+		node.config.work_peers.push_back ({ address_text, port });
 		response_l.put ("success", "");
 	}
 	else
@@ -5494,10 +5491,10 @@ void nano::json_handler::work_peer_add ()
 void nano::json_handler::work_peers ()
 {
 	boost::property_tree::ptree work_peers_l;
-	for (auto i (node.config.work_peers.begin ()), n (node.config.work_peers.end ()); i != n; ++i)
+	for (auto const & peer : node.config.work_peers)
 	{
 		boost::property_tree::ptree entry;
-		entry.put ("", boost::str (boost::format ("%1%:%2%") % i->first % i->second));
+		entry.put ("", peer.address + ":" + std::to_string (peer.port));
 		work_peers_l.push_back (std::make_pair ("", entry));
 	}
 	response_l.add_child ("work_peers", work_peers_l);

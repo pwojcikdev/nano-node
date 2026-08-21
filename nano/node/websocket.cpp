@@ -15,6 +15,7 @@
 #include <nano/node/vote_router.hpp>
 #include <nano/node/wallet.hpp>
 #include <nano/node/websocket.hpp>
+#include <nano/node/work_generation.hpp>
 #include <nano/secure/ledger.hpp>
 
 #include <boost/algorithm/string.hpp>
@@ -1084,6 +1085,28 @@ nano::websocket_server::websocket_server (nano::websocket::config & config_a, na
 			nano::websocket::message_builder builder{ ledger };
 			auto msg{ builder.vote_received (vote_a, code_a) };
 			server->broadcast (msg);
+		}
+	});
+
+	observers.work_generation.add ([this, &node = node_a] (nano::work_generation_result const & result) {
+		if (node.stopped || !server->any_subscriber (nano::websocket::topic::work))
+		{
+			return;
+		}
+		auto const & request = result.request;
+		auto const publish_threshold = node.default_difficulty (request.version);
+		nano::websocket::message_builder builder{ ledger };
+		switch (result.status)
+		{
+			case nano::work_generation_status::success:
+				server->broadcast (builder.work_generation (request.version, request.root.as_block_hash (), result.work, request.difficulty, publish_threshold, result.duration, result.winner, result.bad_peers));
+				break;
+			case nano::work_generation_status::cancelled:
+				server->broadcast (builder.work_cancelled (request.version, request.root.as_block_hash (), request.difficulty, publish_threshold, result.duration, result.bad_peers));
+				break;
+			case nano::work_generation_status::failure:
+				server->broadcast (builder.work_failed (request.version, request.root.as_block_hash (), request.difficulty, publish_threshold, result.duration, result.bad_peers));
+				break;
 		}
 	});
 }

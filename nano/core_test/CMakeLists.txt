@@ -29,7 +29,6 @@ add_executable(
   cementing_set.cpp
   conflicts.cpp
   difficulty.cpp
-  distributed_work.cpp
   election.cpp
   election_pacing.cpp
   election_scheduler.cpp
@@ -96,6 +95,7 @@ add_executable(
   wallets.cpp
   wallets_backend.cpp
   websocket.cpp
+  work_generator.cpp
   work_pool.cpp)
 
 target_compile_definitions(

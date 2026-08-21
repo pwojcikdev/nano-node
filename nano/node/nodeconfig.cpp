@@ -190,9 +190,9 @@ nano::error nano::node_config::serialize_toml (nano::tomlconfig & toml) const
 	toml.put ("extended_ledger_index", extended_ledger_index, "Enable optional extended ledger indices to accelerate RPCs that otherwise require large ledger scans. This increases disk usage and ledger write I/O.\nOnce populated, the indices are maintained even if this option is later disabled; to remove them, run the node with --drop_extended_ledger_indices.\ntype:bool");
 
 	auto work_peers_l (toml.create_array ("work_peers", "A list of \"address:port\" entries to identify work peers."));
-	for (auto i (work_peers.begin ()), n (work_peers.end ()); i != n; ++i)
+	for (auto const & peer : work_peers)
 	{
-		work_peers_l->push_back (boost::str (boost::format ("%1%:%2%") % i->first % i->second));
+		work_peers_l->push_back (peer.address + ":" + std::to_string (peer.port));
 	}
 
 	auto preconfigured_peers_l (toml.create_array ("preconfigured_peers", "A list of \"address\" (hostname or ipv6 notation ip address) entries to identify preconfigured peers.\nThe contents of the NANO_DEFAULT_PEER environment variable are added to preconfigured_peers."));
@@ -210,9 +210,9 @@ nano::error nano::node_config::serialize_toml (nano::tomlconfig & toml) const
 	/** Experimental node entries */
 	nano::tomlconfig experimental_l;
 	auto secondary_work_peers_l (experimental_l.create_array ("secondary_work_peers", "A list of \"address:port\" entries to identify work peers for secondary work generation."));
-	for (auto i (secondary_work_peers.begin ()), n (secondary_work_peers.end ()); i != n; ++i)
+	for (auto const & peer : secondary_work_peers)
 	{
-		secondary_work_peers_l->push_back (boost::str (boost::format ("%1%:%2%") % i->first % i->second));
+		secondary_work_peers_l->push_back (peer.address + ":" + std::to_string (peer.port));
 	}
 	experimental_l.put ("max_pruning_age", max_pruning_age.count (), "Time limit for blocks age after pruning.\ntype:seconds");
 	experimental_l.put ("max_pruning_depth", max_pruning_depth, "Limit for full blocks in chain after pruning.\ntype:uint64");
@@ -766,21 +766,19 @@ nano::error nano::node_config::deserialize_toml (nano::tomlconfig & toml)
 	return toml.get_error ();
 }
 
-void nano::node_config::deserialize_address (std::string const & entry_a, std::vector<std::pair<std::string, uint16_t>> & container_a)
+void nano::node_config::deserialize_address (std::string const & entry, std::vector<nano::work_peer> & container)
 {
-	auto port_position (entry_a.rfind (':'));
-	bool result = (port_position == -1);
-	if (!result)
+	auto port_position = entry.rfind (':');
+	if (port_position == std::string::npos)
 	{
-		auto port_str (entry_a.substr (port_position + 1));
-		uint16_t port;
-		result |= parse_port (port_str, port);
-		if (!result)
-		{
-			auto address (entry_a.substr (0, port_position));
-			container_a.emplace_back (address, port);
-		}
+		return;
 	}
+	uint16_t port;
+	if (parse_port (entry.substr (port_position + 1), port))
+	{
+		return;
+	}
+	container.push_back ({ entry.substr (0, port_position), port });
 }
 
 nano::account nano::node_config::random_representative () const

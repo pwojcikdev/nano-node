@@ -2010,7 +2010,7 @@ TEST (rpc, work_generate_with_peers_defaults_distributed)
 	// Set up requesting node (node2) with local work generation disabled and work_peers pointing to node1's RPC
 	nano::node_config config2 = system.default_config ();
 	config2.work_threads = 0;
-	config2.work_peers.emplace_back ("::1", rpc_ctx_peer.rpc->listening_port ());
+	config2.work_peers.push_back ({ "::1", rpc_ctx_peer.rpc->listening_port () });
 	auto node2 = add_ipc_enabled_node (system, config2);
 	auto const rpc_ctx = add_rpc (system, node2);
 	ASSERT_FALSE (node2->local_work_generation_enabled ());
@@ -2315,7 +2315,7 @@ TEST (rpc, work_peer_bad)
 	nano::test::system system;
 	auto node1 = add_ipc_enabled_node (system);
 	auto & node2 = *system.add_node ();
-	node2.config.work_peers.emplace_back (boost::asio::ip::address_v6::any ().to_string (), 0);
+	node2.config.work_peers.push_back ({ boost::asio::ip::address_v6::any ().to_string (), 0 });
 	auto const rpc_ctx = add_rpc (system, node1);
 	nano::block_hash hash1 (1);
 	std::atomic<uint64_t> work (0);
@@ -2335,7 +2335,7 @@ TEST (rpc, DISABLED_work_peer_one)
 	auto node1 = add_ipc_enabled_node (system);
 	auto & node2 = *system.add_node ();
 	auto const rpc_ctx = add_rpc (system, node1);
-	node2.config.work_peers.emplace_back (node1->network.endpoint ().address ().to_string (), rpc_ctx.rpc->listening_port ());
+	node2.config.work_peers.push_back ({ node1->network.endpoint ().address ().to_string (), rpc_ctx.rpc->listening_port () });
 	nano::keypair key1;
 	std::atomic<uint64_t> work (0);
 	node2.work_generate (nano::work_version::work_1, key1.pub, node1->network_params.work.base, [&work] (std::optional<uint64_t> work_a) {
@@ -2361,9 +2361,9 @@ TEST (rpc, DISABLED_work_peer_many)
 	const auto rpc_ctx_2 = add_rpc (system2, node2);
 	const auto rpc_ctx_3 = add_rpc (system3, node3);
 	const auto rpc_ctx_4 = add_rpc (system4, node4);
-	node1.config.work_peers.emplace_back (node2->network.endpoint ().address ().to_string (), rpc_ctx_2.rpc->listening_port ());
-	node1.config.work_peers.emplace_back (node3->network.endpoint ().address ().to_string (), rpc_ctx_3.rpc->listening_port ());
-	node1.config.work_peers.emplace_back (node4->network.endpoint ().address ().to_string (), rpc_ctx_4.rpc->listening_port ());
+	node1.config.work_peers.push_back ({ node2->network.endpoint ().address ().to_string (), rpc_ctx_2.rpc->listening_port () });
+	node1.config.work_peers.push_back ({ node3->network.endpoint ().address ().to_string (), rpc_ctx_3.rpc->listening_port () });
+	node1.config.work_peers.push_back ({ node4->network.endpoint ().address ().to_string (), rpc_ctx_4.rpc->listening_port () });
 
 	std::array<std::atomic<uint64_t>, 10> works{};
 	for (auto & work : works)

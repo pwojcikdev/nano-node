@@ -8,6 +8,7 @@
 #include <nano/lib/ratios.hpp>
 #include <nano/lib/threading.hpp>
 #include <nano/node/fwd.hpp>
+#include <nano/node/work_generation.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/generate_cache_flags.hpp>
 #include <nano/secure/network_params.hpp>
@@ -38,8 +39,8 @@ public:
 	nano::network_params network_params;
 
 	std::optional<uint16_t> peering_port{};
-	std::vector<std::pair<std::string, uint16_t>> work_peers;
-	std::vector<std::pair<std::string, uint16_t>> secondary_work_peers{ { "127.0.0.1", 8076 } }; // Default of nano-pow-server
+	std::vector<nano::work_peer> work_peers;
+	std::vector<nano::work_peer> secondary_work_peers{ { "127.0.0.1", 8076 } }; // Default of nano-pow-server
 	std::vector<std::string> preconfigured_peers;
 	std::vector<nano::account> preconfigured_representatives;
 	unsigned bootstrap_fraction_numerator{ 1 };
@@ -127,7 +128,7 @@ public: // Subsystem configs
 
 public:
 	/** Entry is ignored if it cannot be parsed as a valid address:port */
-	static void deserialize_address (std::string const &, std::vector<std::pair<std::string, uint16_t>> &);
+	static void deserialize_address (std::string const &, std::vector<nano::work_peer> &);
 	static std::optional<unsigned> env_io_threads ();
 };
 

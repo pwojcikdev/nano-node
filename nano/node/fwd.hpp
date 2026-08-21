@@ -28,7 +28,6 @@ class bootstrap_server_config;
 class bootstrap_service;
 class cementing_set;
 class cementing_set_config;
-class distributed_work_factory;
 class election;
 class election_pacing;
 class election_status;
@@ -80,12 +79,19 @@ class vote_router;
 class vote_spacing;
 class voting_policy;
 class websocket_server;
+class work_generator;
+class work_pool;
+
+struct work_peer;
+struct work_request;
+struct work_generation_result;
 
 enum class block_source;
 enum class election_behavior;
 enum class election_state;
 enum class vote_code;
 enum class vote_source;
+enum class work_generation_status;
 }
 
 namespace nano::bootstrap
