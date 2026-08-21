@@ -181,7 +181,7 @@ private:
 	nano::election_ballot::round evaluate_locked ();
 	// Confirm the current winner once final vote quorum is met
 	void confirm_if_quorum (nano::unique_lock<nano::mutex> &);
-	// Snapshot for vote solicitation and winner broadcasts
+	// Snapshot for vote solicitation and winner broadcasts, filtered to votes backing held blocks
 	nano::election_snapshot snapshot_locked () const;
 	// Whether the election reached confirmation, including the expired-confirmed end state
 	bool confirmed_locked () const;
