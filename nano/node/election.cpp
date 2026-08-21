@@ -58,12 +58,9 @@ void nano::election::confirm_once (nano::unique_lock<nano::mutex> & lock)
 
 	if (just_confirmed)
 	{
-		status.winner = ballot.winner ();
+		status = status_locked ();
 		status.election_end = std::chrono::system_clock::now (); // Timestamp as system time
 		status.election_duration = std::chrono::duration_cast<std::chrono::milliseconds> (std::chrono::steady_clock::now () - election_start);
-		status.confirmation_request_count = confirmation_request_count;
-		status.block_count = nano::narrow_cast<decltype (status.block_count)> (ballot.block_count ());
-		status.voter_count = nano::narrow_cast<decltype (status.voter_count)> (ballot.voter_count ());
 		auto const status_l = status;
 
 		node.active.recently_confirmed.put (qualified_root, status_l.winner->hash (), status_l);
@@ -189,8 +186,8 @@ void nano::election::request_sent ()
 	qualified_root,
 	to_string (behavior_m),
 	to_string (state_m),
-	status.voter_count,
-	status.block_count,
+	ballot.voter_count (),
+	ballot.block_count (),
 	duration ().count (),
 	confirmation_request_count.load ());
 }
@@ -267,17 +264,27 @@ void nano::election::broadcast_sent (nano::block_hash const & winner)
 	qualified_root,
 	to_string (behavior_m),
 	to_string (state_m),
-	status.voter_count,
-	status.block_count,
+	ballot.voter_count (),
+	ballot.block_count (),
 	duration ().count ());
+}
+
+nano::election_status nano::election::status_locked () const
+{
+	debug_assert (!mutex.try_lock ());
+	auto result = status;
+	result.winner = ballot.winner ();
+	result.confirmation_request_count = confirmation_request_count;
+	result.vote_broadcast_count = vote_broadcast_count;
+	result.block_count = nano::narrow_cast<decltype (result.block_count)> (ballot.block_count ());
+	result.voter_count = nano::narrow_cast<decltype (result.voter_count)> (ballot.voter_count ());
+	return result;
 }
 
 nano::election_status nano::election::get_status () const
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
-	auto status_l = status;
-	status_l.winner = ballot.winner ();
-	return status_l;
+	return status_locked ();
 }
 
 nano::election_actions nano::election::tick (std::chrono::steady_clock::time_point now)
@@ -379,8 +386,8 @@ nano::election_ballot::round nano::election::evaluate_locked ()
 		qualified_root,
 		to_string (behavior_m),
 		to_string (state_m),
-		status.voter_count,
-		status.block_count,
+		ballot.voter_count (),
+		ballot.block_count (),
 		duration ().count ());
 
 		// The new winner might be missing from the ledger if its fork was processed first, force reprocessing
@@ -557,14 +564,7 @@ nano::election_extended_status nano::election::current_status () const
 nano::election_extended_status nano::election::current_status_locked () const
 {
 	debug_assert (!mutex.try_lock ());
-
-	nano::election_status status_l = status;
-	status_l.winner = ballot.winner ();
-	status_l.confirmation_request_count = confirmation_request_count;
-	status_l.vote_broadcast_count = vote_broadcast_count;
-	status_l.block_count = nano::narrow_cast<decltype (status_l.block_count)> (ballot.block_count ());
-	status_l.voter_count = nano::narrow_cast<decltype (status_l.voter_count)> (ballot.voter_count ());
-	return nano::election_extended_status{ status_l, ballot.votes (), ballot.blocks (), ballot.tally () };
+	return nano::election_extended_status{ status_locked (), ballot.votes (), ballot.blocks (), ballot.tally () };
 }
 
 std::shared_ptr<nano::block> nano::election::winner () const

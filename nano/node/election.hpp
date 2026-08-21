@@ -185,6 +185,8 @@ private:
 	void confirm_if_quorum (nano::unique_lock<nano::mutex> &);
 	nano::election_snapshot snapshot_locked () const;
 	bool confirmed_locked () const;
+	// Compose the current status from the ballot, the single place where the public status copy is derived
+	nano::election_status status_locked () const;
 	nano::election_extended_status current_status_locked () const;
 	// lock_a does not own the mutex on return
 	void confirm_once (nano::unique_lock<nano::mutex> & lock_a);
