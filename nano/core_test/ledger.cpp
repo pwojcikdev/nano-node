@@ -1072,7 +1072,7 @@ TEST (votes, add_existing)
 	ASSERT_TIMELY (5s, [&] () {
 		node1.vote_router.vote (vote2);
 		return election1->votes ()[nano::dev::genesis_key.pub].timestamp == nano::vote::timestamp_min * 2;
-	} ());
+	}());
 	// Also resend the old vote, and see if we respect the timestamp
 	ASSERT_EQ (nano::vote_code::replay, node1.vote_router.vote (vote1).at (send1->hash ()));
 	ASSERT_EQ (nano::vote::timestamp_min * 2, election1->votes ()[nano::dev::genesis_key.pub].timestamp);
