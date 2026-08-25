@@ -225,12 +225,7 @@ auto nano::election_ballot::evaluate (nano::uint128_t quorum_threshold) -> round
 	// The heaviest block takes over as winner only once enough weight participates in the tally
 	if (!tally.empty () && total_weight >= quorum_threshold)
 	{
-		auto const & leader = tally.begin ()->first;
-		if (leader.hash != winner_m)
-		{
-			winner_m = leader.hash;
-			result.winner_changed = true;
-		}
+		winner_m = tally.begin ()->first.hash;
 	}
 
 	// The winner may have no votes at all, e.g. the initial block before any vote arrived, so both weights may be zero

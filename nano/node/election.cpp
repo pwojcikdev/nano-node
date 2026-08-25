@@ -381,12 +381,16 @@ nano::election_ballot::round nano::election::evaluate_locked ()
 {
 	debug_assert (!mutex.try_lock ());
 
+	// The switch detection below relies on status.winner mirroring the ballot winner between evaluations
+	release_assert (status.winner != nullptr);
+	release_assert (status.winner->hash () == ballot.winner ()->hash ());
+
 	auto const round = ballot.evaluate (node.online_reps.delta ());
 
 	status.tally = round.winner_weight;
 	status.final_tally = round.final_winner_weight;
 
-	if (round.winner_changed)
+	if (round.winner->hash () != status.winner->hash ())
 	{
 		auto const previous_winner = status.winner;
 		status.winner = round.winner;

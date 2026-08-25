@@ -115,7 +115,6 @@ public: // Tally
 	struct round final
 	{
 		std::shared_ptr<nano::block> winner; // Current winner after this round, never null
-		bool winner_changed{ false }; // Winner switched to a different block this round, the caller must act on it
 		nano::uint128_t winner_weight{ 0 }; // Vote weight behind the winner, normal + final votes
 		nano::uint128_t final_winner_weight{ 0 }; // Vote weight behind the winner, final votes only
 		bool quorum{ false }; // The winner leads every rival by the full threshold: safe to issue a final vote for it

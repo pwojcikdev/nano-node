@@ -219,7 +219,6 @@ TEST (election_ballot, evaluate_no_votes)
 	auto round = ballot.evaluate (10);
 	ASSERT_TRUE (ballot.tally ().empty ());
 	ASSERT_EQ (initial, round.winner);
-	ASSERT_FALSE (round.winner_changed);
 	ASSERT_EQ (0, round.winner_weight);
 	ASSERT_EQ (0, round.final_winner_weight);
 	ASSERT_EQ (0, total_weight (ballot));
@@ -416,7 +415,6 @@ TEST (election_ballot, vote_before_block)
 	ASSERT_EQ (nano::election_ballot::insert_outcome::inserted, ballot.insert (fork).outcome);
 	auto round = ballot.evaluate (5);
 	ASSERT_EQ (10, total_weight (ballot));
-	ASSERT_TRUE (round.winner_changed);
 	ASSERT_EQ (fork, round.winner);
 }
 
@@ -616,7 +614,7 @@ TEST (election_ballot, eviction_keeps_votes)
 /*
  * The winner only follows the tally leader once the total tallied weight reaches the quorum threshold.
  * A fork may lead the tally, but with too little overall participation the winner does not move: this keeps the winner stable while only a few early votes are in, instead of flapping after every vote.
- * Once participation is sufficient the leader takes over, and the switch is reported exactly once through winner_changed.
+ * Once participation is sufficient the leader takes over and the winner stays with it.
  */
 TEST (election_ballot, evaluate_winner_gate)
 {
@@ -631,7 +629,6 @@ TEST (election_ballot, evaluate_winner_gate)
 
 	// The fork leads the tally, but with too little participation the winner does not move
 	auto round1 = ballot.evaluate (15);
-	ASSERT_FALSE (round1.winner_changed);
 	ASSERT_EQ (initial, round1.winner);
 	ASSERT_EQ (initial, ballot.winner ());
 	ASSERT_EQ (0, round1.winner_weight); // The winner itself has no votes
@@ -641,14 +638,12 @@ TEST (election_ballot, evaluate_winner_gate)
 	// Enough participation lets the leader take over
 	ASSERT_EQ (nano::election_ballot::vote_result::accepted, ballot.vote (reps.rep (10), nano::vote::timestamp_min, fork->hash (), 0s, epoch));
 	auto round2 = ballot.evaluate (15);
-	ASSERT_TRUE (round2.winner_changed);
 	ASSERT_EQ (fork, round2.winner);
 	ASSERT_EQ (fork, ballot.winner ());
 	ASSERT_EQ (20, round2.winner_weight);
 
-	// The switch is reported only once
+	// The winner stays with the leader on subsequent evaluations
 	auto round3 = ballot.evaluate (15);
-	ASSERT_FALSE (round3.winner_changed);
 	ASSERT_EQ (fork, round3.winner);
 }
 
@@ -672,7 +667,6 @@ TEST (election_ballot, evaluate_gate_counts_only_held_blocks)
 	// Held-block participation is 10, below the threshold of 15, so the winner may not move yet
 	auto round = ballot.evaluate (15);
 	ASSERT_EQ (10, total_weight (ballot));
-	ASSERT_FALSE (round.winner_changed);
 	ASSERT_EQ (initial, round.winner);
 }
 
@@ -692,7 +686,6 @@ TEST (election_ballot, evaluate_quorum_margin)
 	// A single 30-weight vote passes the gate (30 >= 10) and leads unopposed by its full weight
 	ASSERT_EQ (nano::election_ballot::vote_result::accepted, ballot.vote (reps.rep (30), nano::vote::timestamp_min, fork->hash (), 0s, epoch));
 	auto round1 = ballot.evaluate (10);
-	ASSERT_TRUE (round1.winner_changed);
 	ASSERT_EQ (fork, round1.winner);
 	ASSERT_TRUE (round1.quorum); // Unopposed winner with weight above the threshold
 
@@ -806,7 +799,7 @@ TEST (election_ballot, tally_does_not_advance_winner)
 	ASSERT_EQ (initial, ballot.winner ());
 
 	// The pending switch happens on the next evaluation
-	ASSERT_TRUE (ballot.evaluate (10).winner_changed);
+	ASSERT_EQ (fork, ballot.evaluate (10).winner);
 	ASSERT_EQ (fork, ballot.winner ());
 }
 
