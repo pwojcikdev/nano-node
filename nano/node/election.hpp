@@ -42,16 +42,6 @@ struct election_actions final
 	bool cleanup{ false };
 };
 
-struct election_extended_status final
-{
-	nano::election_status status;
-	std::unordered_map<nano::account, nano::vote_info> votes;
-	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> blocks;
-	nano::tally_map tally;
-
-	void operator() (nano::object_stream &) const;
-};
-
 enum class election_state
 {
 	passive, // only listening for incoming votes
