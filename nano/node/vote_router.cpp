@@ -53,10 +53,11 @@ void nano::vote_router::connect (nano::block_hash const & hash, std::weak_ptr<na
 std::size_t nano::vote_router::disconnect (nano::election const & election)
 {
 	// Query the election before locking, the election mutex must never be acquired under the router mutex
-	auto const blocks = election.blocks ();
+	// Evicted blocks keep their routes, so the covering set is every hash that ever entered the election
+	auto const hashes = election.all_hashes ();
 	std::unique_lock lock{ mutex };
 	std::size_t erased = 0;
-	for (auto const & [hash, _] : blocks)
+	for (auto const & hash : hashes)
 	{
 		erased += elections.erase (hash);
 	}

@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace nano
@@ -56,7 +57,7 @@ std::chrono::seconds vote_cooldown (nano::uint128_t weight, nano::uint128_t onli
 
 /**
  * Consensus bookkeeping for a single election: records one vote per representative, holds the competing blocks (forks of a single root) and owns the current winner, advancing it by the quorum rule.
- * The entire state is { votes, blocks, winner }, each mutator writes exactly one of them and every tally is computed fresh from the recorded votes.
+ * The entire state is { votes, blocks, evicted hashes, winner }; vote () writes the votes, insert () the blocks and the eviction record, evaluate () the winner, and every tally is computed fresh from the recorded votes.
  * Representative weight and time are supplied by the caller, making the class deterministic and self-contained; locking is the responsibility of the owning election.
  *
  * Invariants:
@@ -64,6 +65,7 @@ std::chrono::seconds vote_cooldown (nano::uint128_t weight, nano::uint128_t onli
  * - A rep's vote only advances in (timestamp, hash) order and is never erased, so a replayed older vote can never overwrite a newer one, regardless of which blocks come and go.
  * - The number of held blocks never exceeds the maximum.
  * - The winner is always one of the held blocks and is never evicted.
+ * - Every hash that ever entered is either held or evicted, never both.
  */
 class election_ballot final
 {
@@ -103,7 +105,7 @@ public: // Blocks
 	struct insert_result final
 	{
 		insert_outcome outcome;
-		std::shared_ptr<nano::block> evicted{}; // Set when replaced, so the caller can undo routing and filters
+		std::shared_ptr<nano::block> evicted{}; // The evicted block, set when replaced
 	};
 
 	// The only way blocks enter or leave, keeping the ballot within its block limit
@@ -142,6 +144,9 @@ public: // Queries
 	// All held blocks by hash
 	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> blocks () const;
 
+	// Hashes of all blocks that ever entered the ballot, the held ones and the evicted ones
+	std::unordered_set<nano::block_hash> all_hashes () const;
+
 	// All recorded votes by representative
 	std::unordered_map<nano::account, nano::vote_info> votes () const;
 
@@ -177,9 +182,10 @@ private: // Dependencies
 	weight_fn const weight_query;
 	size_t const max_blocks;
 
-private: // The entire mutable state, one field per mutator
+private: // The entire mutable state
 	std::unordered_map<nano::account, nano::vote_info> votes_m; // vote (): latest vote per rep, may reference unheld hashes
 	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> blocks_m; // insert (): competing blocks, always includes the winner
+	std::unordered_set<nano::block_hash> evicted_m; // insert (): hashes of evicted blocks, disjoint from the held ones
 	nano::block_hash winner_m; // evaluate (): current winner, always one of the held blocks
 };
 }

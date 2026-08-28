@@ -557,17 +557,15 @@ bool nano::election::publish (std::shared_ptr<nano::block> const & block)
 	switch (result.outcome)
 	{
 		case nano::election_ballot::insert_outcome::inserted:
-			return false;
+			break;
 		case nano::election_ballot::insert_outcome::updated:
 			return true; // Block was already present, only its contents were refreshed
 		case nano::election_ballot::insert_outcome::replaced:
 		{
-			// The evicted block no longer participates: stop routing votes to it and allow receiving it again
-			// Disconnect while still holding the mutex, so a concurrent republish of the evicted block cannot reconnect it first and have its fresh route erased here
-			node.vote_router.disconnect (result.evicted->hash ());
+			// Only the block is dropped: votes for it keep routing here and keep backing its return; clear the network filter so the block itself can be received again
 			node.network.filter.clear (result.evicted);
-			return false;
 		}
+		break;
 		case nano::election_ballot::insert_outcome::rejected:
 		{
 			// Not backed by enough weight to take part, allow receiving it again
@@ -575,8 +573,10 @@ bool nano::election::publish (std::shared_ptr<nano::block> const & block)
 			return true;
 		}
 	}
-	debug_assert (false);
-	return true;
+
+	// The block may be admitted with retained weight already behind it, enough to decide the election, so re-evaluate immediately
+	confirm_if_quorum (lock);
+	return false;
 }
 
 nano::election_snapshot nano::election::snapshot_locked () const
@@ -669,6 +669,12 @@ std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> nano::electio
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
 	return ballot.blocks ();
+}
+
+std::unordered_set<nano::block_hash> nano::election::all_hashes () const
+{
+	nano::lock_guard<nano::mutex> guard{ mutex };
+	return ballot.all_hashes ();
 }
 
 std::unordered_map<nano::account, nano::vote_info> nano::election::votes () const

@@ -171,6 +171,8 @@ auto nano::election_ballot::insert (std::shared_ptr<nano::block> const & block, 
 	auto evicted = blocks_m.find (weakest->second)->second;
 	blocks_m.erase (weakest->second);
 	blocks_m.emplace (hash, block);
+	evicted_m.insert (weakest->second);
+	evicted_m.erase (hash); // The incoming block may itself be returning from eviction
 
 	debug_assert (blocks_m.size () <= max_blocks);
 
@@ -299,6 +301,18 @@ nano::tally_map nano::election_ballot::tally () const
 std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> nano::election_ballot::blocks () const
 {
 	return blocks_m;
+}
+
+std::unordered_set<nano::block_hash> nano::election_ballot::all_hashes () const
+{
+	std::unordered_set<nano::block_hash> result;
+	result.reserve (blocks_m.size () + evicted_m.size ());
+	for (auto const & [hash, block] : blocks_m)
+	{
+		result.insert (hash);
+	}
+	result.insert (evicted_m.begin (), evicted_m.end ());
+	return result;
 }
 
 std::unordered_map<nano::account, nano::vote_info> nano::election_ballot::votes () const

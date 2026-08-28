@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <unordered_map>
+#include <unordered_set>
 
 using namespace std::chrono_literals;
 
@@ -698,6 +699,34 @@ TEST (election_ballot, insert_backing_sources_do_not_add)
 
 	// Cached 5 plus retained 5 would sum past the 9, but the stronger single source is 5 and the readmission is rejected
 	ASSERT_EQ (nano::election_ballot::insert_outcome::rejected, ballot.insert (fork, 5).outcome);
+}
+
+/*
+ * The ballot remembers every hash that ever entered it: all_hashes reports the held blocks and the evicted ones as one set.
+ * A returning block moves back from the evicted side to the held side, so a hash never appears twice and the set only ever grows.
+ */
+TEST (election_ballot, all_hashes_cover_held_and_evicted)
+{
+	test_reps reps;
+	auto initial = create_block ();
+	auto fork = create_block ();
+	nano::election_ballot ballot{ initial, reps.query (), 2 };
+	ASSERT_EQ ((std::unordered_set<nano::block_hash>{ initial->hash () }), ballot.all_hashes ());
+	ASSERT_EQ (nano::election_ballot::insert_outcome::inserted, ballot.insert (fork).outcome);
+	ASSERT_EQ ((std::unordered_set<nano::block_hash>{ initial->hash (), fork->hash () }), ballot.all_hashes ());
+
+	// Eviction moves the fork to the evicted side, the set itself keeps covering it
+	ASSERT_EQ (nano::election_ballot::vote_result::accepted, ballot.vote (reps.rep (5), nano::vote::timestamp_min, fork->hash (), 0s, epoch));
+	auto newcomer = create_block ();
+	ASSERT_EQ (nano::election_ballot::insert_outcome::replaced, ballot.insert (newcomer, 6).outcome);
+	ASSERT_EQ ((std::unordered_set<nano::block_hash>{ initial->hash (), fork->hash (), newcomer->hash () }), ballot.all_hashes ());
+	ASSERT_FALSE (ballot.contains_block (fork->hash ()));
+
+	// The returning fork is held again and the set is unchanged
+	ASSERT_EQ (nano::election_ballot::insert_outcome::replaced, ballot.insert (fork).outcome);
+	ASSERT_EQ ((std::unordered_set<nano::block_hash>{ initial->hash (), fork->hash (), newcomer->hash () }), ballot.all_hashes ());
+	ASSERT_TRUE (ballot.contains_block (fork->hash ()));
+	ASSERT_FALSE (ballot.contains_block (newcomer->hash ()));
 }
 
 /*
