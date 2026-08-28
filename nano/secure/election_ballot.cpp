@@ -57,7 +57,8 @@ std::chrono::seconds nano::vote_cooldown (nano::uint128_t weight, nano::uint128_
 nano::election_ballot::election_ballot (std::shared_ptr<nano::block> const & initial, weight_fn weight_query_a, size_t max_blocks_a) :
 	weight_query{ std::move (weight_query_a) },
 	max_blocks{ max_blocks_a },
-	winner_m{ initial->hash () }
+	winner_m{ initial->hash () },
+	leader_m{ initial->hash () }
 {
 	debug_assert (initial != nullptr);
 	debug_assert (max_blocks > 0);
@@ -158,13 +159,23 @@ auto nano::election_ballot::insert (std::shared_ptr<nano::block> const & block, 
 			weakest = entry;
 		}
 	}
-	// The incoming block is also backed by any votes retained for it here; a rep may be counted by both sources, so they must not add
-	auto const incoming_weight = std::max (cached_tally, block_weights.weight (hash));
 
-	// Evict only if the incoming block is backed by strictly more weight than the weakest, equal weight favors the incumbent
-	if (!weakest || incoming_weight <= weakest->first)
+	if (!weakest)
 	{
 		return { insert_outcome::rejected };
+	}
+
+	// The leader is admitted unconditionally: the heaviest voted-for block must never stay locked out by an equal-weight incumbent
+	if (hash != leader_m)
+	{
+		// The incoming block is also backed by any votes retained for it here; a rep may be counted by both sources, so they must not add
+		auto const incoming_weight = std::max (cached_tally, block_weights.weight (hash));
+
+		// Evict only if the incoming block is backed by strictly more weight than the weakest, equal weight favors the incumbent
+		if (incoming_weight <= weakest->first)
+		{
+			return { insert_outcome::rejected };
+		}
 	}
 
 	// Only the block is removed, its recorded votes are deliberately retained (see the class description)
@@ -229,37 +240,59 @@ nano::tally_map nano::election_ballot::make_tally (std::unordered_map<nano::bloc
 auto nano::election_ballot::evaluate (nano::uint128_t quorum_threshold) -> round
 {
 	auto const block_weights = compute_weights ();
-
 	auto const tally = make_tally (block_weights.weights);
-	// Participation is the weight distributed over held blocks, votes for unheld hashes were filtered out of the tally
+
+	// Participation is all recorded vote weight, held or unheld: it measures how much weight has spoken, not what it backs
 	nano::uint128_t total_weight{ 0 };
-	for (auto const & [key, block] : tally)
+	for (auto const & [hash, weight] : block_weights.weights)
 	{
-		total_weight += key.weight;
+		total_weight += weight;
+	}
+
+	// Both slots advance only once enough weight participates, so a lead among the first few votes cannot move them
+	if (total_weight >= quorum_threshold)
+	{
+		// The heaviest held block takes the winner slot
+		if (!tally.empty ())
+		{
+			winner_m = tally.begin ()->first.hash;
+		}
+
+		// The heaviest voted-for hash takes the leader slot, held or not; ties resolve to the higher hash, mirroring the tally order
+		std::optional<std::pair<nano::uint128_t, nano::block_hash>> heaviest;
+		for (auto const & [hash, weight] : block_weights.weights)
+		{
+			std::pair<nano::uint128_t, nano::block_hash> const entry{ weight, hash };
+			if (!heaviest || entry > *heaviest)
+			{
+				heaviest = entry;
+			}
+		}
+
+		if (heaviest)
+		{
+			leader_m = heaviest->second;
+		}
 	}
 
 	round result;
-	// The heaviest block takes over as winner only once enough weight participates in the tally
-	if (!tally.empty () && total_weight >= quorum_threshold)
-	{
-		winner_m = tally.begin ()->first.hash;
-	}
 
 	// The winner may have no votes at all, e.g. the initial block before any vote arrived, so both weights may be zero
 	result.winner = winner ();
 	result.winner_weight = block_weights.weight (winner_m);
 	result.final_winner_weight = block_weights.final_weight (winner_m);
 
-	// Quorum requires the winner to lead the runner-up by the full threshold, not merely reach it in absolute weight, so a close race between heavy forks does not count as a decided election
+	// The runner-up is the heaviest rival across every voted-for hash, so weight behind an unheld fork opposes the winner like any held rival
 	nano::uint128_t runner_up{ 0 };
-	for (auto const & [key, block] : tally)
+	for (auto const & [hash, weight] : block_weights.weights)
 	{
-		if (key.hash != winner_m)
+		if (hash != winner_m)
 		{
-			runner_up = key.weight; // The tally is ordered, so the first non-winner entry is the heaviest
-			break;
+			runner_up = std::max (runner_up, weight);
 		}
 	}
+
+	// Quorum requires the winner to lead the runner-up by the full threshold, not merely reach it in absolute weight, so a close race between heavy forks does not count as a decided election
 	// While the participation gate holds the tally leader out, the winner can trail the runner-up; the first comparison rejects that case and guards the unsigned subtraction
 	result.quorum = result.winner_weight >= runner_up && result.winner_weight - runner_up >= quorum_threshold;
 	result.final_quorum = result.final_winner_weight >= quorum_threshold;
@@ -277,6 +310,11 @@ std::shared_ptr<nano::block> nano::election_ballot::winner () const
 	auto existing = blocks_m.find (winner_m);
 	release_assert (existing != blocks_m.end ());
 	return existing->second;
+}
+
+nano::block_hash nano::election_ballot::leader () const
+{
+	return leader_m;
 }
 
 std::shared_ptr<nano::block> nano::election_ballot::find_block (nano::block_hash const & hash) const

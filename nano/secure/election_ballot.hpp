@@ -57,7 +57,7 @@ std::chrono::seconds vote_cooldown (nano::uint128_t weight, nano::uint128_t onli
 
 /**
  * Consensus bookkeeping for a single election: records one vote per representative, holds the competing blocks (forks of a single root) and owns the current winner, advancing it by the quorum rule.
- * The entire state is { votes, blocks, evicted hashes, winner }; vote () writes the votes, insert () the blocks and the eviction record, evaluate () the winner, and every tally is computed fresh from the recorded votes.
+ * The entire state is { votes, blocks, evicted hashes, winner, leader }; vote () writes the votes, insert () the blocks and the eviction record, evaluate () the winner and the leader, and every tally is computed fresh from the recorded votes.
  * Representative weight and time are supplied by the caller, making the class deterministic and self-contained; locking is the responsibility of the owning election.
  *
  * Invariants:
@@ -65,6 +65,7 @@ std::chrono::seconds vote_cooldown (nano::uint128_t weight, nano::uint128_t onli
  * - A rep's vote only advances in (timestamp, hash) order and is never erased, so a replayed older vote can never overwrite a newer one, regardless of which blocks come and go.
  * - The number of held blocks never exceeds the maximum.
  * - The winner is always one of the held blocks and is never evicted.
+ * - The leader may reference an unheld hash; the winner never does.
  * - Every hash that ever entered is either held or evicted, never both.
  */
 class election_ballot final
@@ -110,6 +111,7 @@ public: // Blocks
 
 	// The only way blocks enter or leave, keeping the ballot within its block limit
 	// `cached_tally` is externally observed weight backing the incoming block (e.g. from the vote cache); when the ballot is full, the stronger of it and the block's retained tallied weight must exceed the weakest non-winner's tallied weight to evict it
+	// The leader is exempt from the weight comparison: a full ballot always makes room for it by evicting the weakest non-winner
 	// Eviction does not touch recorded votes: votes for an evicted block keep anchoring their reps, back its readmission and count again once it is re-inserted
 	insert_result insert (std::shared_ptr<nano::block> const &, nano::uint128_t cached_tally = 0);
 
@@ -123,14 +125,17 @@ public: // Tally
 		bool final_quorum{ false }; // A full threshold of weight has committed to the winner with final votes: safe to confirm the election
 	};
 
-	// Recompute the tally and advance the winner; the only state change besides vote/insert
-	// The heaviest block takes the winner slot only once `total_weight` reaches `quorum_threshold`, so a lead among the first few votes cannot move the winner while participation is still low
-	// Votes for unheld blocks count neither toward the tally nor toward `total_weight`: they express no preference between the held blocks, and counting them would let weight that cannot back any candidate push the winner around
+	// Recompute the tally and advance the winner and the leader; the only state change besides vote/insert
+	// Both slots move only once the total voted weight reaches `quorum_threshold`, so a lead among the first few votes cannot move them while participation is still low
+	// The winner is the heaviest held block; the leader is the heaviest voted-for hash overall and may be unheld, e.g. backing an evicted fork
 	[[nodiscard]] round evaluate (nano::uint128_t quorum_threshold);
 
 public: // Queries
 	// Current winner, never null
 	std::shared_ptr<nano::block> winner () const;
+
+	// Hash of the heaviest voted-for block, held or not; diverges from the winner while that block is unheld
+	nano::block_hash leader () const;
 
 	// The held block with the given hash, or null
 	std::shared_ptr<nano::block> find_block (nano::block_hash const &) const;
@@ -187,5 +192,6 @@ private: // The entire mutable state
 	std::unordered_map<nano::block_hash, std::shared_ptr<nano::block>> blocks_m; // insert (): competing blocks, always includes the winner
 	std::unordered_set<nano::block_hash> evicted_m; // insert (): hashes of evicted blocks, disjoint from the held ones
 	nano::block_hash winner_m; // evaluate (): current winner, always one of the held blocks
+	nano::block_hash leader_m; // evaluate (): heaviest voted-for hash, may be unheld
 };
 }
