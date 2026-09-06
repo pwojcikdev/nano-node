@@ -37,6 +37,7 @@
 #include <future>
 #include <numeric>
 #include <random>
+#include <thread>
 
 using namespace std::chrono_literals;
 
@@ -844,6 +845,46 @@ TEST (active_elections, erase_seals_live_election)
 	// A vote already dispatched to the election is answered as unknown and registers no route
 	ASSERT_EQ (nano::vote_code::indeterminate, election->vote (nano::dev::genesis_key.pub, nano::vote::timestamp_min, send->hash (), nano::vote_source::live));
 	ASSERT_FALSE (node.vote_router.contains (send->hash ()));
+}
+
+/*
+ * The request loop can retain an old election in its tick list after that election has been removed.
+ * If another election starts for the same root, cleanup of the old instance must leave the replacement intact.
+ * This test repeatedly replaces the election for one unconfirmed block and checks that each new instance survives until the test explicitly erases it.
+ * The interleaving depends on thread scheduling, so a passing run does not guarantee the race was exercised.
+ */
+TEST (active_elections, stale_tick_preserves_replacement)
+{
+	nano::test::system system;
+	nano::node_config config = system.default_config ();
+	// Keep the block unconfirmed and prevent automatic scheduling from interfering with the replacements
+	config.enable_voting = false;
+	config.backlog_scan->enable = false;
+	config.priority_scheduler->enable = false;
+	config.hinted_scheduler->enable = false;
+	config.optimistic_scheduler->enable = false;
+
+	auto & node = *system.add_node (config);
+	auto const block = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false).front ();
+	auto const root = block->qualified_root ();
+
+	for (int iteration = 0; iteration < 10; ++iteration)
+	{
+		SCOPED_TRACE (iteration);
+		auto const result = node.active.insert (block, nano::election_behavior::manual);
+		ASSERT_TRUE (result.inserted);
+
+		// Let the request loop resume a tick it may have saved for the instance erased in the previous iteration
+		std::this_thread::yield ();
+
+		// Stale cleanup must not cancel this new instance, remove it from active elections, or disconnect its votes
+		ASSERT_EQ (result.election, node.active.election (root));
+		ASSERT_EQ (result.election, node.vote_router.election (block->hash ()));
+		ASSERT_EQ (nano::election_state::active, result.election->state ());
+
+		// The next iteration reuses this root while the request loop may still hold the removed instance
+		ASSERT_TRUE (node.active.erase (root));
+	}
 }
 
 TEST (active_elections, republish_winner)
