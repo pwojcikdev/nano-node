@@ -190,7 +190,7 @@ TEST (websocket, started_election)
 	ASSERT_EQ (event.get<std::string> ("topic"), "started_election");
 }
 
-// Tests getting notification of an erased election
+// Tests getting notification of a retired election
 TEST (websocket, stopped_election)
 {
 	nano::test::system system;
@@ -212,7 +212,7 @@ TEST (websocket, stopped_election)
 
 	ASSERT_TIMELY (5s, ack_ready);
 
-	// Create election, then erase it, causing a websocket message to be emitted
+	// Create election, then retire it, causing a websocket message to be emitted
 	nano::keypair key1;
 	nano::block_builder builder;
 	auto send1 = builder
@@ -227,7 +227,7 @@ TEST (websocket, stopped_election)
 	auto channel1 = std::make_shared<nano::transport::fake::channel> (*node1);
 	node1->inbound (publish1, channel1);
 	ASSERT_TIMELY (5s, node1->active.election (send1->qualified_root ()));
-	node1->active.erase (*send1);
+	node1->active.retire_current (send1->qualified_root ());
 
 	ASSERT_TIMELY_EQ (5s, future.wait_for (0s), std::future_status::ready);
 

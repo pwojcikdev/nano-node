@@ -95,7 +95,7 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 		{
 			if (block->qualified_root () != rollback_root)
 			{
-				erase (block->qualified_root ());
+				retire_current (block->qualified_root ());
 			}
 		}
 	});
@@ -143,7 +143,7 @@ void nano::active_elections::stop ()
 	clear ();
 }
 
-auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block, nano::election_behavior behavior, nano::bucket_index bucket, nano::priority_timestamp priority, erased_callback_t erased_callback) -> insert_result
+auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block, nano::election_behavior behavior, nano::bucket_index bucket, nano::priority_timestamp priority, retired_callback_t retired_callback) -> insert_result
 {
 	release_assert (block);
 	release_assert (block->has_sideband ());
@@ -180,10 +180,10 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 
 			result.election = std::make_shared<nano::election> (node, block, behavior, bucket, nullptr, observe_rep_action, update_action);
 
-			// Store erased callback if provided
-			if (erased_callback)
+			// Store retirement callback if provided
+			if (retired_callback)
 			{
-				erased_callbacks[root] = std::move (erased_callback);
+				retired_callbacks[root] = std::move (retired_callback);
 			}
 
 			// Insert the election into index
@@ -317,101 +317,93 @@ bool nano::active_elections::publish (std::shared_ptr<nano::block> const & block
 	return false;
 }
 
-void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lock, std::shared_ptr<nano::election> election)
+bool nano::active_elections::retire (std::shared_ptr<nano::election> const & election)
+{
+	nano::unique_lock<nano::mutex> lock{ mutex };
+	return retire_impl (lock, election);
+}
+
+bool nano::active_elections::retire_current (nano::qualified_root const & root)
+{
+	nano::unique_lock<nano::mutex> lock{ mutex };
+	return retire_impl (lock, index.election (root));
+}
+
+bool nano::active_elections::retire_impl (nano::unique_lock<nano::mutex> & lock, std::shared_ptr<nano::election> election)
 {
 	debug_assert (!mutex.try_lock ());
 	debug_assert (lock.owns_lock ());
+
+	// A saved tick may refer to an instance already replaced at the same root
+	if (!index.exists (election))
+	{
+		return false;
+	}
 	debug_assert (!election->confirmed () || recently_confirmed.contains (election->qualified_root));
 
-	// Seal a live election first so nothing already dispatched to it can register a route after the disconnect, a confirmed or expired election is already sealed and keeps its state
-	// The state observed by the seal is the state the election was erased in, reported by the stats and logs below
+	// Seal before disconnecting so in-flight votes and forks cannot register new routes; terminal states are preserved
 	auto const transition = election->cancel ();
 
 	// Disconnect routes for both held and previously evicted blocks
 	node.vote_router.disconnect (election);
 
-	// Erase from index
 	bool erased = index.erase (election);
 	debug_assert (erased);
 
-	// Get and remove the erased callback
-	auto callback_it = erased_callbacks.find (election->qualified_root);
-	erased_callback_t erased_callback;
-	if (callback_it != erased_callbacks.end ())
+	retired_callback_t callback;
+	if (auto it = retired_callbacks.find (election->qualified_root); it != retired_callbacks.end ())
 	{
-		erased_callback = std::move (callback_it->second);
-		erased_callbacks.erase (callback_it);
+		callback = std::move (it->second);
+		retired_callbacks.erase (it);
 	}
 
+	auto const confirmed = election->confirmed ();
+	auto const duration = election->duration ();
+	auto const blocks = election->blocks ();
+
 	node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::stopped);
-	node.stats.inc (nano::stat::type::active_elections, election->confirmed () ? nano::stat::detail::confirmed : nano::stat::detail::unconfirmed);
+	node.stats.inc (nano::stat::type::active_elections, confirmed ? nano::stat::detail::confirmed : nano::stat::detail::unconfirmed);
 	node.stats.inc (nano::stat::type::active_elections_stopped, to_stat_detail (transition.previous));
 	node.stats.inc (to_stat_type (transition.previous), to_stat_detail (election->behavior ()));
 
 	node.logger.trace (nano::log::type::active_elections, nano::log::detail::active_stopped, nano::log::arg{ "election", election });
 
-	node.logger.debug (nano::log::type::active_elections, "Erased election for root: {} with blocks: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
+	node.logger.debug (nano::log::type::active_elections, "Retired election for root: {} with blocks: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
 	election->qualified_root,
-	fmt::join (election->blocks_hashes (), ", "), // TODO: Lazy eval
+	fmt::join (blocks | std::views::keys, ", "), // TODO: Lazy eval
 	to_string (election->behavior ()),
 	to_string (transition.previous),
 	election->voter_count (),
-	election->block_count (),
-	election->duration ().count ());
-
-	auto blocks_l = election->blocks ();
+	blocks.size (),
+	duration.count ());
 
 	lock.unlock ();
 
-	// Track election duration
-	node.stats.sample (nano::stat::sample::active_election_duration, election->duration ().count (), { 0, 1000 * 60 * 10 /* 0-10 minutes range */ });
+	node.stats.sample (nano::stat::sample::active_election_duration, duration.count (), { 0, 1000 * 60 * 10 /* 0-10 minutes range */ });
 
-	// Notify observers without holding the lock
-	if (erased_callback)
+	if (callback)
 	{
-		erased_callback (election);
+		callback (election);
 	}
 
-	// Notify observers that the election was erased
-	election_erased.notify (election);
-
+	election_retired.notify (election);
 	vacancy_updated.notify ();
 
-	for (auto const & [hash, block] : blocks_l)
+	for (auto const & [hash, block] : blocks)
 	{
-		// Notify observers about dropped elections & blocks lost confirmed elections
-		if (!election->confirmed () || hash != election->winner ()->hash ())
+		// Notify observers about dropped elections and losing forks of confirmed elections
+		if (!confirmed || hash != election->winner ()->hash ())
 		{
 			node.observers.active_stopped.notify (hash);
 		}
 
-		if (!election->confirmed ())
+		if (!confirmed)
 		{
 			// Clear from publish filter
 			node.network.filter.clear (block);
 		}
 	}
-}
-
-bool nano::active_elections::erase (nano::qualified_root const & root)
-{
-	nano::unique_lock<nano::mutex> lock{ mutex };
-
-	if (auto election = index.election (root))
-	{
-		release_assert (election->qualified_root == root);
-		erase_election (lock, election);
-		return true;
-	}
-	else
-	{
-		return false;
-	}
-}
-
-bool nano::active_elections::erase (nano::block const & block)
-{
-	return erase (block.qualified_root ());
+	return true;
 }
 
 auto nano::active_elections::block_cemented (std::shared_ptr<nano::block> const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election) -> block_cemented_result
@@ -555,7 +547,7 @@ void nano::active_elections::tick_elections (nano::unique_lock<nano::mutex> & lo
 		}
 		if (actions.cleanup)
 		{
-			erase (election->qualified_root);
+			retire (election);
 		}
 	}
 
@@ -834,11 +826,11 @@ std::size_t nano::active_elections::stale_count () const
 
 void nano::active_elections::clear ()
 {
-	// TODO: Call erased_callback for each election
+	// TODO: Call retired_callback for each election
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
 		index.clear ();
-		erased_callbacks.clear ();
+		retired_callbacks.clear ();
 	}
 	vacancy_updated.notify ();
 }

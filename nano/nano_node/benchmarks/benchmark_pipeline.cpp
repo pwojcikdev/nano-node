@@ -192,7 +192,7 @@ pipeline_benchmark::pipeline_benchmark (std::shared_ptr<nano::node> node_a, benc
 	});
 
 	// Track when elections stop (regardless of confirmation)
-	node->active.election_erased.add ([this] (std::shared_ptr<nano::election> const & election) {
+	node->active.election_retired.add ([this] (std::shared_ptr<nano::election> const & election) {
 		auto now = std::chrono::steady_clock::now ();
 		auto hash = election->winner ()->hash ();
 		auto timings_l = block_timings.lock ();

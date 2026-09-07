@@ -5,7 +5,10 @@
 #include <nano/node/backlog_scan.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/node/scheduler/bucket.hpp>
 #include <nano/node/scheduler/component.hpp>
+#include <nano/node/scheduler/hinted.hpp>
+#include <nano/node/scheduler/optimistic.hpp>
 #include <nano/node/scheduler/priority.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/test_common/chains.hpp>
@@ -15,8 +18,73 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <future>
+#include <thread>
 
 using namespace std::chrono_literals;
+
+/*
+ * An old election's retirement callback can be delayed until after the bucket activates a replacement at the same root.
+ * The replacement must remain registered with its own priority, so bucket cleanup cancels the correct election.
+ * The interleaving depends on thread scheduling, so a passing run does not guarantee the race was exercised.
+ */
+TEST (priority_scheduler, retire_reactivate_same_root)
+{
+	nano::test::system system;
+	nano::node_config config = system.default_config ();
+	config.enable_voting = false;
+	config.backlog_scan->enable = false;
+	config.priority_scheduler->enable = false;
+	config.hinted_scheduler->enable = false;
+	config.optimistic_scheduler->enable = false;
+	nano::node_flags flags;
+	flags.disable_request_loop = true;
+	auto & node = *system.add_node (config, flags);
+	auto const blocks = nano::test::setup_chain (system, node, 2, nano::dev::genesis_key, false);
+
+	auto bucket_config = *config.priority_scheduler;
+	bucket_config.reserved_elections = 0;
+	bucket_config.max_elections = 1;
+	nano::scheduler::bucket bucket{ 7, bucket_config, node.active, node.stats, node.logger };
+	nano::test::stop_guard guard{ node };
+	ASSERT_TRUE (bucket.activate ({ blocks[0], bucket.index, 150 }));
+	auto const other = node.active.election (blocks[0]->qualified_root ());
+	ASSERT_NE (nullptr, other);
+
+	for (unsigned iteration = 0; iteration < 10; ++iteration)
+	{
+		SCOPED_TRACE (iteration);
+		ASSERT_TRUE (bucket.activate ({ blocks[1], bucket.index, 100 }));
+		auto const original = node.active.election (blocks[1]->qualified_root ());
+		ASSERT_NE (nullptr, original);
+
+		auto retired = std::async (std::launch::async, [&node, original] () {
+			return node.active.retire (original);
+		});
+
+		// Activation competes with the old election's callback for the bucket mutex
+		auto const deadline = std::chrono::steady_clock::now () + 5s;
+		while (!bucket.activate ({ blocks[1], bucket.index, 200 }))
+		{
+			ASSERT_LT (std::chrono::steady_clock::now (), deadline);
+			std::this_thread::yield ();
+		}
+		ASSERT_TRUE (retired.get ());
+
+		auto const replacement = node.active.election (blocks[1]->qualified_root ());
+		ASSERT_NE (nullptr, replacement);
+		ASSERT_NE (original, replacement);
+		ASSERT_EQ (2, bucket.election_count ());
+		ASSERT_TRUE (bucket.cleanup ());
+		ASSERT_EQ (nano::election_state::cancelled, replacement->state ());
+		ASSERT_EQ (nano::election_state::active, other->state ());
+		ASSERT_TRUE (node.active.retire (replacement));
+		ASSERT_EQ (1, bucket.election_count ());
+	}
+
+	ASSERT_TRUE (node.active.retire (other));
+	ASSERT_EQ (0, bucket.election_count ());
+}
 
 /*
  * Verifies that the priority scheduler:

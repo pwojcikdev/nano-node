@@ -775,7 +775,7 @@ TEST (active_elections, dropped_cleanup)
 
 	// Now simulate dropping the election
 	ASSERT_FALSE (election->confirmed ());
-	node.active.erase (*chain[0]);
+	ASSERT_TRUE (node.active.retire (election));
 
 	// The filter must have been cleared
 	ASSERT_FALSE (node.network.filter.apply (block_bytes.data (), block_bytes.size ()));
@@ -793,7 +793,9 @@ TEST (active_elections, dropped_cleanup)
 	ASSERT_NE (nullptr, election);
 	election->force_confirm ();
 	ASSERT_TIMELY (5s, election->confirmed ());
-	node.active.erase (*chain[0]);
+	auto const confirmed_state = election->state ();
+	ASSERT_TRUE (node.active.retire (election));
+	ASSERT_EQ (confirmed_state, election->state ());
 
 	// The filter should not have been cleared
 	ASSERT_TRUE (node.network.filter.apply (block_bytes.data (), block_bytes.size ()));
@@ -805,8 +807,8 @@ TEST (active_elections, dropped_cleanup)
 	ASSERT_FALSE (node.vote_router.active (hash));
 }
 
-// Erasing a live election seals it, so a block or vote still on its way to the election registers no route after the erase
-TEST (active_elections, erase_seals_live_election)
+/* Retiring a live election seals it, so a block or vote still on its way to the election registers no route after retirement. */
+TEST (active_elections, retire_seals_live_election)
 {
 	nano::test::system system;
 	nano::node_config node_config = system.default_config ();
@@ -833,8 +835,8 @@ TEST (active_elections, erase_seals_live_election)
 	ASSERT_TIMELY (5s, (election = node.active.election (send->qualified_root ())) != nullptr);
 	ASSERT_TRUE (node.vote_router.contains (send->hash ()));
 
-	// The erase seals the election and removes its routes
-	ASSERT_TRUE (node.active.erase (send->qualified_root ()));
+	// Retirement seals the election and removes its routes
+	ASSERT_TRUE (node.active.retire (election));
 	ASSERT_EQ (nano::election_state::cancelled, election->state ());
 	ASSERT_FALSE (node.vote_router.contains (send->hash ()));
 
@@ -883,8 +885,137 @@ TEST (active_elections, stale_tick_preserves_replacement)
 		ASSERT_EQ (nano::election_state::active, result.election->state ());
 
 		// The next iteration reuses this root while the request loop may still hold the removed instance
-		ASSERT_TRUE (node.active.erase (root));
+		ASSERT_TRUE (node.active.retire_current (root));
 	}
+}
+
+/*
+ * A tick saved for an old election can request cleanup after a replacement has been inserted at the same root.
+ * Retiring that saved instance must be a no-op: the replacement keeps its state, routes, callback and publish filter entry.
+ * Calling the public retirement API directly makes this identity check deterministic; the test above also runs the live request loop.
+ */
+TEST (active_elections, retire_stale_instance)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	config.backlog_scan->enable = false;
+	config.priority_scheduler->enable = false;
+	config.hinted_scheduler->enable = false;
+	config.optimistic_scheduler->enable = false;
+	nano::node_flags flags;
+	flags.disable_request_loop = true;
+	auto & node = *system.add_node (config, flags);
+	auto const block = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false).front ();
+	auto const root = block->qualified_root ();
+	auto const behavior = nano::election_behavior::manual;
+	int old_callbacks = 0;
+	int replacement_callbacks = 0;
+	int retired_events = 0;
+	int vacancy_events = 0;
+	nano::test::stop_guard guard{ node };
+	node.active.election_retired.add ([&] (auto const &) { ++retired_events; });
+	node.active.vacancy_updated.add ([&] () { ++vacancy_events; });
+
+	auto const old = node.active.insert (block, behavior, 0, 0, [&] (auto const &) { ++old_callbacks; });
+	ASSERT_TRUE (old.inserted);
+	ASSERT_TRUE (node.active.retire_current (root));
+	ASSERT_EQ (nano::election_state::cancelled, old.election->state ());
+	ASSERT_EQ (1, old_callbacks);
+	ASSERT_EQ (1, retired_events);
+	auto const replacement = node.active.insert (block, behavior, 0, 0, [&] (auto const &) { ++replacement_callbacks; });
+	ASSERT_TRUE (replacement.inserted);
+	ASSERT_NE (old.election, replacement.election);
+	auto const vacancy_events_before = vacancy_events;
+
+	std::vector<uint8_t> block_bytes;
+	{
+		nano::vectorstream stream (block_bytes);
+		block->serialize (stream);
+	}
+	ASSERT_FALSE (node.network.filter.apply (block_bytes.data (), block_bytes.size ()));
+
+	// Resume the saved tick only after its root belongs to the replacement
+	ASSERT_TRUE (old.election->tick (std::chrono::steady_clock::now ()).cleanup);
+	ASSERT_FALSE (node.active.retire (old.election));
+	ASSERT_FALSE (node.active.retire (nullptr));
+	ASSERT_EQ (replacement.election, node.active.election (root));
+	ASSERT_EQ (replacement.election, node.vote_router.election (block->hash ()));
+	ASSERT_EQ (nano::election_state::active, replacement.election->state ());
+	ASSERT_EQ (1, node.active.size ());
+	ASSERT_EQ (1, node.active.size (behavior, 0));
+	ASSERT_TRUE (node.network.filter.apply (block_bytes.data (), block_bytes.size ()));
+	ASSERT_EQ (1, node.stats.count (nano::stat::type::active_elections, nano::stat::detail::stopped));
+	ASSERT_EQ (1, old_callbacks);
+	ASSERT_EQ (0, replacement_callbacks);
+	ASSERT_EQ (1, retired_events);
+	ASSERT_EQ (vacancy_events_before, vacancy_events);
+
+	// The replacement still owns its callback and can be retired normally, exactly once
+	ASSERT_TRUE (node.active.retire (replacement.election));
+	ASSERT_FALSE (node.active.retire (replacement.election));
+	ASSERT_FALSE (node.active.retire_current (root));
+	ASSERT_EQ (1, old_callbacks);
+	ASSERT_EQ (1, replacement_callbacks);
+	ASSERT_EQ (2, retired_events);
+	ASSERT_EQ (vacancy_events_before + 1, vacancy_events);
+	ASSERT_EQ (2, node.stats.count (nano::stat::type::active_elections, nano::stat::detail::stopped));
+	ASSERT_TRUE (node.active.empty ());
+	ASSERT_FALSE (node.vote_router.contains (block->hash ()));
+}
+
+/*
+ * Retirement callbacks run after the old election is sealed and detached, with the active mutex released.
+ * A callback may immediately start a replacement at the same root; finishing the old retirement must preserve its callback and routes.
+ */
+TEST (active_elections, retirement_callback_starts_replacement)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	config.backlog_scan->enable = false;
+	config.priority_scheduler->enable = false;
+	config.hinted_scheduler->enable = false;
+	config.optimistic_scheduler->enable = false;
+	nano::node_flags flags;
+	flags.disable_request_loop = true;
+	auto & node = *system.add_node (config, flags);
+	auto const block = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false).front ();
+	auto const root = block->qualified_root ();
+	std::shared_ptr<nano::election> replacement;
+	int replacement_callbacks = 0;
+	int retired_events = 0;
+	nano::test::stop_guard guard{ node };
+
+	auto const old = node.active.insert (block, nano::election_behavior::manual, 0, 0, [&] (auto const & retired) {
+		EXPECT_EQ (nano::election_state::cancelled, retired->state ());
+		EXPECT_FALSE (node.active.active (root));
+		EXPECT_FALSE (node.vote_router.contains (block->hash ()));
+		auto result = node.active.insert (block, nano::election_behavior::manual, 0, 0, [&] (auto const & retired) {
+			EXPECT_EQ (replacement, retired);
+			++replacement_callbacks;
+		});
+		EXPECT_TRUE (result.inserted);
+		replacement = result.election;
+	});
+	ASSERT_TRUE (old.inserted);
+	node.active.election_retired.add ([&] (auto const & retired) {
+		// Observers can also reenter retirement without repeating cleanup or notifications
+		EXPECT_FALSE (node.active.retire (retired));
+		++retired_events;
+	});
+
+	ASSERT_TRUE (node.active.retire (old.election));
+	ASSERT_NE (nullptr, replacement);
+	ASSERT_NE (old.election, replacement);
+	ASSERT_EQ (replacement, node.active.election (root));
+	ASSERT_EQ (replacement, node.vote_router.election (block->hash ()));
+	ASSERT_EQ (nano::election_state::active, replacement->state ());
+	ASSERT_EQ (1, retired_events);
+	ASSERT_EQ (0, replacement_callbacks);
+	ASSERT_TRUE (node.active.retire_current (root));
+	ASSERT_EQ (1, replacement_callbacks);
+	ASSERT_EQ (2, retired_events);
 }
 
 TEST (active_elections, republish_winner)

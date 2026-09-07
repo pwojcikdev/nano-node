@@ -91,16 +91,29 @@ bool nano::scheduler::bucket::activate (priority_entry top)
 
 	nano::lock_guard<nano::mutex> lock{ mutex };
 
-	auto erase_callback = [this] (std::shared_ptr<nano::election> election) {
+	auto retired_callback = [this] (std::shared_ptr<nano::election> election) {
 		nano::lock_guard<nano::mutex> lock{ mutex };
-		elections.get<tag_root> ().erase (election->qualified_root);
+		auto & by_root = elections.get<tag_root> ();
+		auto existing = by_root.find (election->qualified_root);
+		if (existing != by_root.end () && existing->election == election)
+		{
+			by_root.erase (existing);
+		}
 	};
 
-	auto result = active.insert (top.block, nano::election_behavior::priority, index, top.priority, erase_callback);
+	auto result = active.insert (top.block, nano::election_behavior::priority, index, top.priority, retired_callback);
 	if (result.inserted)
 	{
 		release_assert (result.election);
-		elections.get<tag_root> ().insert ({ result.election, result.election->qualified_root, top.priority });
+		auto & by_root = elections.get<tag_root> ();
+		election_entry const entry{ result.election, result.election->qualified_root, top.priority };
+		auto [existing, inserted] = by_root.insert (entry);
+		if (!inserted)
+		{
+			// The previous election's retirement callback may still be waiting for this bucket
+			bool replaced = by_root.replace (existing, entry);
+			release_assert (replaced);
+		}
 
 		stats.inc (nano::stat::type::election_bucket, nano::stat::detail::activate_success);
 

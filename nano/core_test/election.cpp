@@ -779,8 +779,11 @@ TEST (election, evicted_routes_do_not_accumulate)
 	ASSERT_EQ (fixture.election->block_count () + 1, route_count);
 }
 
-// Erasing an election removes the vote routes of its evicted forks along with those of the held blocks, so no route outlives the election it points to
-TEST (election, erase_disconnects_evicted_forks)
+/*
+ * Retiring an election removes the vote routes of its evicted forks along with those of the held blocks,
+ * so no route outlives the election it points to.
+ */
+TEST (election, retire_disconnects_evicted_forks)
 {
 	nano::test::system system;
 	nano::node_config node_config = system.default_config ();
@@ -793,7 +796,7 @@ TEST (election, erase_disconnects_evicted_forks)
 	ASSERT_TRUE (node.vote_router.contains (fixture.evicted->hash ()));
 	ASSERT_TRUE (node.vote_router.contains (fixture.fork_new->hash ()));
 
-	ASSERT_TRUE (node.active.erase (fixture.forks[0]->qualified_root ()));
+	ASSERT_TRUE (node.active.retire (fixture.election));
 	for (auto const & fork : fixture.forks)
 	{
 		ASSERT_FALSE (node.vote_router.contains (fork->hash ()));

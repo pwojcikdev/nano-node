@@ -60,7 +60,7 @@ TEST (vote_processor, codes)
 	ASSERT_EQ (nano::vote_code::invalid, node.vote_processor.vote_blocking (vote_invalid, channel));
 
 	// Once the election is removed (confirmed / dropped) the vote is again indeterminate
-	ASSERT_TRUE (node.active.erase (blocks[0]->qualified_root ()));
+	ASSERT_TRUE (node.active.retire (election));
 	ASSERT_EQ (nano::vote_code::indeterminate, node.vote_processor.vote_blocking (vote, channel));
 }
 

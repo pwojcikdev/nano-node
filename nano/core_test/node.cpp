@@ -3476,7 +3476,7 @@ TEST (node, deferred_dependent_elections)
 
 	// It is however possible to manually start an election from elsewhere
 	ASSERT_TRUE (nano::test::start_election (system, node, open->hash ()));
-	node.active.erase (*open);
+	node.active.retire_current (open->qualified_root ());
 	ASSERT_FALSE (node.active.active (open->qualified_root ()));
 
 	/// The election was dropped but it's still not possible to restart it
@@ -3486,9 +3486,9 @@ TEST (node, deferred_dependent_elections)
 	ASSERT_NEVER (0.5s, node.active.active (open->qualified_root ()));
 
 	// Drop both elections
-	node.active.erase (*open);
+	node.active.retire_current (open->qualified_root ());
 	ASSERT_FALSE (node.active.active (open->qualified_root ()));
-	node.active.erase (*send2);
+	node.active.retire_current (send2->qualified_root ());
 	ASSERT_FALSE (node.active.active (send2->qualified_root ()));
 
 	// Confirming send1 will automatically start elections for the dependents

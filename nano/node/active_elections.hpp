@@ -58,7 +58,7 @@ public:
 class active_elections final
 {
 public:
-	using erased_callback_t = std::function<void (std::shared_ptr<nano::election>)>;
+	using retired_callback_t = std::function<void (std::shared_ptr<nano::election>)>;
 
 public:
 	active_elections (nano::node &, nano::ledger_notifications &, nano::cementing_set &);
@@ -79,7 +79,7 @@ public:
 	nano::election_behavior = nano::election_behavior::priority,
 	nano::bucket_index bucket = 0,
 	nano::priority_timestamp priority = 0,
-	erased_callback_t = nullptr);
+	retired_callback_t = nullptr);
 
 	// Submit a potential fork block to the election for its root, if any; returns whether it was newly admitted
 	bool publish (std::shared_ptr<nano::block> const &);
@@ -96,8 +96,10 @@ public:
 	/// Returns a list of elections sorted by difficulty
 	std::vector<std::shared_ptr<nano::election>> list_active (std::size_t max_count = std::numeric_limits<std::size_t>::max ());
 
-	bool erase (nano::block const &);
-	bool erase (nano::qualified_root const &);
+	// Retire this exact instance if it is still indexed; stale instances have no effect
+	bool retire (std::shared_ptr<nano::election> const &);
+	// Retire whichever election currently occupies the root
+	bool retire_current (nano::qualified_root const &);
 
 	bool empty () const;
 
@@ -118,7 +120,7 @@ public:
 public: // Events
 	nano::observer_set<> vacancy_updated;
 	nano::observer_set<std::shared_ptr<nano::election>, nano::bucket_index, nano::priority_timestamp> election_started;
-	nano::observer_set<std::shared_ptr<nano::election>> election_erased;
+	nano::observer_set<std::shared_ptr<nano::election>> election_retired;
 	nano::observer_set<std::shared_ptr<nano::election>> election_stale;
 
 private:
@@ -128,8 +130,8 @@ private:
 	void tick_elections (nano::unique_lock<nano::mutex> &);
 	void checkup_elections (nano::unique_lock<nano::mutex> &);
 
-	// Erase all blocks from active and, if not confirmed, clear digests from network filters
-	void erase_election (nano::unique_lock<nano::mutex> & lock_a, std::shared_ptr<nano::election>);
+	// Retire an indexed instance, releasing the caller's lock before notifications
+	bool retire_impl (nano::unique_lock<nano::mutex> &, std::shared_ptr<nano::election>);
 
 	struct block_cemented_result
 	{
@@ -154,12 +156,13 @@ private: // Dependencies
 public:
 	nano::active_elections_index index;
 
-	std::unordered_map<nano::qualified_root, erased_callback_t> erased_callbacks;
-
 	nano::recently_confirmed_cache recently_confirmed;
 	nano::recently_cemented_cache recently_cemented;
 
 private:
+	// Per-election callbacks, protected by the active mutex
+	std::unordered_map<nano::qualified_root, retired_callback_t> retired_callbacks;
+
 	mutable nano::mutex mutex{ mutex_identifier (mutexes::active) };
 	nano::condition_variable condition;
 	bool stopped{ false };

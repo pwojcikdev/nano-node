@@ -473,7 +473,7 @@ void nano::test::system::generate_rollback (nano::node & node_a, std::vector<nan
 			debug_assert (!error);
 			for (auto & i : rollback_list)
 			{
-				node_a.active.erase (*i);
+				node_a.active.retire_current (i->qualified_root ());
 			}
 		}
 	}

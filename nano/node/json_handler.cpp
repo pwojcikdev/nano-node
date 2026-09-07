@@ -3606,7 +3606,7 @@ void nano::json_handler::process ()
 								bool const force = rpc_l->request.get<bool> ("force", false);
 								if (force)
 								{
-									rpc_l->node.active.erase (*block);
+									rpc_l->node.active.retire_current (block->qualified_root ());
 									rpc_l->node.block_processor.force (block);
 									rpc_l->response_l.put ("hash", block->hash ().to_string ());
 								}
