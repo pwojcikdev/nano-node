@@ -19,7 +19,9 @@ add_library(
   telemetry.hpp
   telemetry.cpp
   testutil.hpp
-  testutil.cpp)
+  testutil.cpp
+  topology.hpp
+  topology.cpp)
 
 target_link_libraries(test_common node gtest)
 
