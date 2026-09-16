@@ -180,6 +180,113 @@ TEST (tomlconfig, type_description)
 	ASSERT_EQ (t.get_error ().get_message (), "c is not an IPv6 address such as ::1 or ::ffff:127.0.0.1");
 }
 
+/** Overrides with dotted keys land in the addressed table and keep its other keys */
+TEST (tomlconfig, override_dotted_keys)
+{
+	std::stringstream ss;
+	ss << R"toml(
+		[node]
+		b=5
+		c=3
+	)toml";
+
+	nano::tomlconfig t;
+	t.read (ss);
+	ASSERT_FALSE (t.apply_overrides ({ "node.a = 1", "node.b = 2" }));
+
+	auto node = t.get_required_child ("node");
+	uint16_t a, b, c;
+	node.get<uint16_t> ("a", a);
+	ASSERT_EQ (a, 1);
+	node.get<uint16_t> ("b", b);
+	ASSERT_EQ (b, 2);
+	node.get<uint16_t> ("c", c);
+	ASSERT_EQ (c, 3);
+}
+
+/** An override replaces the file's value and later overrides win over earlier ones */
+TEST (tomlconfig, override_precedence)
+{
+	std::stringstream ss;
+	ss << R"toml(
+		node.peering_port=7075
+	)toml";
+
+	nano::tomlconfig t;
+	t.read (ss);
+	ASSERT_FALSE (t.apply_overrides ({ "node.peering_port=8075", "node.peering_port=9075" }));
+
+	uint16_t port = 0;
+	t.get_optional<uint16_t> ("node.peering_port", port);
+	ASSERT_EQ (port, 9075);
+	ASSERT_FALSE (t.get_error ());
+}
+
+/** Overrides create missing tables and arrays replace the whole array */
+TEST (tomlconfig, override_creates_tables)
+{
+	nano::tomlconfig t;
+	std::stringstream ss;
+	ss << R"toml(
+		[node]
+		items = ["old"]
+	)toml";
+	t.read (ss);
+	ASSERT_FALSE (t.apply_overrides ({ "node.child.value=1", "node.items=[\"a\",\"b\"]" }));
+
+	uint16_t value = 0;
+	t.get_required<uint16_t> ("node.child.value", value);
+	ASSERT_EQ (value, 1);
+
+	std::vector<std::string> items;
+	t.get_required_child ("node").array_entries_required<std::string> ("items", [&items] (std::string item) {
+		items.push_back (item);
+	});
+	ASSERT_EQ (items, (std::vector<std::string>{ "a", "b" }));
+}
+
+/** A malformed override is reported with the offending entry and leaves the document untouched */
+TEST (tomlconfig, override_invalid)
+{
+	std::stringstream ss;
+	ss << R"toml(
+		[node]
+		a=1
+	)toml";
+
+	nano::tomlconfig t;
+	t.read (ss);
+	ASSERT_TRUE (t.apply_overrides ({ "node.b=2", "node.foo" }));
+	ASSERT_NE (t.get_error ().get_message ().find ("node.foo"), std::string::npos);
+
+	// The valid override before the malformed one was applied, the document itself is intact
+	t.get_error ().clear ();
+	uint16_t a = 0, b = 0;
+	t.get_required<uint16_t> ("node.a", a);
+	t.get_required<uint16_t> ("node.b", b);
+	ASSERT_EQ (a, 1);
+	ASSERT_EQ (b, 2);
+}
+
+/** Type errors on overridden values are reported like any other value */
+TEST (tomlconfig, override_type_error)
+{
+	nano::tomlconfig t;
+	ASSERT_FALSE (t.apply_overrides ({ "node.too_big=70000" }));
+
+	uint16_t port = 65535;
+	t.get_optional<uint16_t> ("node.missing", port);
+	ASSERT_EQ (port, 65535);
+	ASSERT_FALSE (t.get_error ());
+
+	t.get_required<uint16_t> ("node.missing", port);
+	ASSERT_EQ (t.get_error (), nano::error_config::missing_value);
+	t.get_error ().clear ();
+
+	t.get_required<uint16_t> ("node.too_big", port);
+	ASSERT_EQ (t.get_error (), nano::error_config::invalid_value);
+}
+
 TEST (tomlconfig, put)
 {
 	nano::tomlconfig config;
