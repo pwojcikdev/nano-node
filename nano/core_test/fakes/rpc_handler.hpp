@@ -118,20 +118,28 @@ private:
 	std::deque<std::function<void (std::string const &)>> pending;
 };
 
-/** Throws from every call, as a backend with a bug would */
+/** Fails every call by throwing, as a backend with a bug would; a `std::runtime_error` unless told otherwise */
 class throwing_rpc_handler final : public nano::rpc_handler_interface
 {
 public:
+	throwing_rpc_handler () = default;
+
+	// `fail` is called for every request and is expected to throw
+	explicit throwing_rpc_handler (std::function<void ()> fail_a) :
+		fail{ std::move (fail_a) }
+	{
+	}
+
 	void process_request (std::string const &, std::string const &, std::function<void (std::string const &)>) override
 	{
 		++requests;
-		throw std::logic_error ("backend failure");
+		fail ();
 	}
 
 	void process_request_v2 (nano::rpc_handler_request_params const &, std::string const &, std::function<void (std::shared_ptr<std::string> const &)>) override
 	{
 		++requests;
-		throw std::logic_error ("backend failure");
+		fail ();
 	}
 
 	void stop () override
@@ -143,6 +151,9 @@ public:
 	}
 
 	std::atomic<int> requests{ 0 };
+
+private:
+	std::function<void ()> fail{ [] () { throw std::runtime_error ("backend failure"); } };
 };
 
 /** Takes every request and lets go of it without ever responding */

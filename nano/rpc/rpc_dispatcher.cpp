@@ -32,111 +32,123 @@ void nano::rpc_dispatcher::process_request (nano::rpc_handler_request_params con
 {
 	try
 	{
-		auto max_depth_exceeded (false);
-		auto max_depth_possible (0u);
-		for (auto ch : body)
-		{
-			if (ch == '[' || ch == '{')
-			{
-				if (max_depth_possible >= rpc_config.max_json_depth)
-				{
-					max_depth_exceeded = true;
-					break;
-				}
-				++max_depth_possible;
-			}
-		}
-		if (max_depth_exceeded)
+		if (exceeds_max_depth ())
 		{
 			json_error_response (response, "Max JSON depth exceeded");
 		}
+		else if (request_params.rpc_version == 1)
+		{
+			process_v1 ();
+		}
+		else if (request_params.rpc_version == 2)
+		{
+			process_v2 (request_params);
+		}
 		else
 		{
-			if (request_params.rpc_version == 1)
-			{
-				boost::property_tree::ptree request;
-				{
-					std::stringstream ss;
-					ss << body;
-					boost::property_tree::read_json (ss, request);
-				}
-
-				auto action = request.get<std::string> ("action");
-
-				// Bump logging level if RPC request logging is enabled
-				logger.log (rpc_config.rpc_logging.log_rpc ? nano::log::level::info : nano::log::level::debug,
-				nano::log::type::rpc_request, "Request {} : {}", request_id, filter_request (request));
-
-				// Check if this is a RPC command which requires RPC enabled control
-				std::error_code rpc_control_disabled_ec = nano::error_rpc::rpc_control_disabled;
-
-				bool error = false;
-				auto found = rpc_control_impl_set.find (action);
-				if (found != rpc_control_impl_set.cend () && !rpc_config.enable_control)
-				{
-					json_error_response (response, rpc_control_disabled_ec.message ());
-					error = true;
-				}
-				else
-				{
-					// Special case with stats, type -> objects
-					if (action == "stats" && !rpc_config.enable_control)
-					{
-						if (request.get<std::string> ("type") == "objects")
-						{
-							json_error_response (response, rpc_control_disabled_ec.message ());
-							error = true;
-						}
-					}
-					else if (action == "process")
-					{
-						auto force = request.get_optional<bool> ("force").value_or (false);
-						if (force && !rpc_config.enable_control)
-						{
-							json_error_response (response, rpc_control_disabled_ec.message ());
-							error = true;
-						}
-					}
-					// Add random id to RPC send via IPC if not included
-					else if (action == "send" && request.find ("id") == request.not_found ())
-					{
-						nano::uint128_union random_id;
-						nano::random_pool::generate_block (random_id.bytes.data (), random_id.bytes.size ());
-						std::string random_id_text = random_id.to_string ();
-						request.put ("id", random_id_text);
-						std::stringstream ostream;
-						boost::property_tree::write_json (ostream, request);
-						body = ostream.str ();
-					}
-				}
-
-				if (!error)
-				{
-					rpc_handler_interface.process_request (action, body, this->response);
-				}
-			}
-			else if (request_params.rpc_version == 2)
-			{
-				rpc_handler_interface.process_request_v2 (request_params, body, [response = response] (std::shared_ptr<std::string> const & body) {
-					std::string body_l = *body;
-					response (body_l);
-				});
-			}
-			else
-			{
-				debug_assert (false);
-				json_error_response (response, "Invalid RPC version");
-			}
+			debug_assert (false);
+			json_error_response (response, "Invalid RPC version");
 		}
 	}
-	catch (std::runtime_error const &)
+	catch (std::exception const & ex)
 	{
-		json_error_response (response, "Unable to parse JSON");
+		// A request that cannot be parsed is answered where it is parsed, so what arrives here is a failure of the server, the backend included
+		logger.error (nano::log::type::rpc_request, "Request {} failed: {}", request_id, ex.what ());
+		json_error_response (response, "Internal server error in RPC");
 	}
 	catch (...)
 	{
+		logger.error (nano::log::type::rpc_request, "Request {} failed: unknown error", request_id);
 		json_error_response (response, "Internal server error in RPC");
 	}
+}
+
+void nano::rpc_dispatcher::process_v1 ()
+{
+	boost::property_tree::ptree request;
+	try
+	{
+		std::stringstream stream{ body };
+		boost::property_tree::read_json (stream, request);
+	}
+	catch (boost::property_tree::json_parser_error const &)
+	{
+		json_error_response (response, "Unable to parse JSON");
+		return;
+	}
+
+	auto const action = request.get_optional<std::string> ("action");
+	if (!action)
+	{
+		json_error_response (response, "Unable to parse JSON"); // What the node itself answers to a request without an action
+		return;
+	}
+
+	// Bump logging level if RPC request logging is enabled
+	logger.log (rpc_config.rpc_logging.log_rpc ? nano::log::level::info : nano::log::level::debug,
+	nano::log::type::rpc_request, "Request {} : {}", request_id, filter_request (request));
+
+	if (!rpc_config.enable_control && requires_control (*action, request))
+	{
+		std::error_code const rpc_control_disabled_ec = nano::error_rpc::rpc_control_disabled;
+		json_error_response (response, rpc_control_disabled_ec.message ());
+		return;
+	}
+
+	// Add random id to RPC send via IPC if not included
+	if (*action == "send" && request.find ("id") == request.not_found ())
+	{
+		nano::uint128_union random_id;
+		nano::random_pool::generate_block (random_id.bytes.data (), random_id.bytes.size ());
+		request.put ("id", random_id.to_string ());
+		std::stringstream ostream;
+		boost::property_tree::write_json (ostream, request);
+		body = ostream.str ();
+	}
+
+	rpc_handler_interface.process_request (*action, body, response);
+}
+
+void nano::rpc_dispatcher::process_v2 (nano::rpc_handler_request_params const & request_params)
+{
+	rpc_handler_interface.process_request_v2 (request_params, body, [response = response] (std::shared_ptr<std::string> const & body) {
+		response (*body);
+	});
+}
+
+bool nano::rpc_dispatcher::exceeds_max_depth () const
+{
+	auto depth (0u);
+	for (auto ch : body)
+	{
+		if (ch == '[' || ch == '{')
+		{
+			if (depth >= rpc_config.max_json_depth)
+			{
+				return true;
+			}
+			++depth;
+		}
+	}
+	return false;
+}
+
+bool nano::rpc_dispatcher::requires_control (std::string const & action, boost::property_tree::ptree const & request) const
+{
+	if (rpc_control_impl_set.contains (action))
+	{
+		return true;
+	}
+	// Two actions are gated on a parameter; one that is missing or malformed is left to the backend to complain about
+	if (action == "stats")
+	{
+		return request.get<std::string> ("type", "") == "objects";
+	}
+	if (action == "process")
+	{
+		return request.get_optional<bool> ("force").value_or (false);
+	}
+	return false;
 }
 
 namespace

@@ -435,7 +435,7 @@ TEST (rpc_connection, concurrent_requests)
 }
 
 /**
- * A backend that throws is answered for with an error, and the server goes on serving
+ * A backend that throws is answered for with an internal error, whatever it threw, and the server goes on serving
  */
 TEST (rpc_connection, backend_throws)
 {
