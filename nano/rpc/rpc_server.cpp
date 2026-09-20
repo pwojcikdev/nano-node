@@ -188,20 +188,35 @@ asio::awaitable<void> nano::rpc_server::close_connections ()
 {
 	debug_assert (strand.running_in_this_thread ());
 
+	// No connection can appear from here on: the acceptor is closed and `accept_connections` has returned
 	for (auto const & [id, connection] : connections)
 	{
-		connection->cancel ();
+		connection->stop_if_idle ();
+	}
+	auto const deadline = std::chrono::steady_clock::now () + config.drain_timeout;
+	while (!connections.empty () && std::chrono::steady_clock::now () < deadline)
+	{
+		co_await wait_connection_ended (deadline);
+	}
+
+	if (!connections.empty ())
+	{
+		logger.warn (nano::log::type::rpc, "Closing {} connection(s) still serving a request after waiting {}ms", connections.size (), config.drain_timeout.count ());
+		for (auto const & [id, connection] : connections)
+		{
+			connection->cancel ();
+		}
 	}
 	while (!connections.empty ())
 	{
-		co_await wait_connection_ended ();
+		co_await wait_connection_ended (std::chrono::steady_clock::time_point::max ());
 	}
 }
 
-asio::awaitable<void> nano::rpc_server::wait_connection_ended ()
+asio::awaitable<void> nano::rpc_server::wait_connection_ended (std::chrono::steady_clock::time_point deadline)
 {
 	// Checking for connections and waiting here happen on the strand with nothing in between, so no wakeup is missed
 	debug_assert (strand.running_in_this_thread ());
-	connection_ended.expires_at (std::chrono::steady_clock::time_point::max ());
+	connection_ended.expires_at (deadline);
 	co_await connection_ended.async_wait (asio::as_tuple (asio::use_awaitable));
 }

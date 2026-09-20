@@ -15,6 +15,11 @@ namespace nano
  * One accepted HTTP connection, served from start to end by a single coroutine on a strand of its own: it reads
  * one request, hands it to the backend, writes the response and closes. Nothing but that coroutine touches the
  * socket, and the backend, which answers through a callback from a thread of its choosing, runs off the strand.
+ *
+ * A connection is serving from the moment it has a request to answer. A server that stops ends the connections
+ * that are not serving and lets the others finish. Whether a connection is serving is only ever decided on its
+ * strand: `stop_if_idle` runs there, and the coroutine goes from checking for a stop to serving without
+ * suspending in between, so every request is either never handed to the backend or allowed to be answered.
  */
 class rpc_connection final : public std::enable_shared_from_this<nano::rpc_connection>
 {
@@ -24,6 +29,8 @@ public:
 	// Starts serving; `on_done` is called on the connection's strand once the connection has ended
 	void start (std::function<void ()> on_done);
 
+	// Ends the connection unless it is serving a request, callable from any thread
+	void stop_if_idle ();
 	// Ends the connection wherever it is, callable from any thread
 	void cancel ();
 
@@ -52,5 +59,6 @@ private:
 	nano::async::strand strand;
 	boost::beast::tcp_stream stream; // Only touched by the coroutine
 	nano::async::cancellation cancellation;
+	bool serving{ false }; // Only touched on the strand
 };
 }

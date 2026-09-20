@@ -44,6 +44,16 @@ void nano::rpc_connection::start (std::function<void ()> on_done)
 	}));
 }
 
+void nano::rpc_connection::stop_if_idle ()
+{
+	asio::dispatch (strand, [this_s = shared_from_this ()] () {
+		if (!this_s->serving)
+		{
+			this_s->cancellation.emit ();
+		}
+	});
+}
+
 void nano::rpc_connection::cancel ()
 {
 	cancellation.emit ();
@@ -86,31 +96,43 @@ asio::awaitable<void> nano::rpc_connection::serve ()
 	{
 		co_return; // The peer left without sending a request, or the connection was cancelled
 	}
-	if (header_ec)
-	{
-		logger.error (nano::log::type::rpc_connection, "RPC header error: {}", header_ec.message ());
-		co_await write (make_response (11, json_error ("Invalid header: " + header_ec.message ())));
-		co_return;
-	}
 
-	if (boost::iequals (parser.get ()[http::field::expect], "100-continue"))
+	bool const malformed = !!header_ec; // Answered with the reason
+	if (!malformed)
 	{
-		http::response<http::empty_body> interim{ http::status::continue_, 11 };
-		interim.set (http::field::server, "nano");
-		auto [interim_ec, interim_size] = co_await http::async_write (stream, interim, asio::as_tuple (asio::use_awaitable));
-		if (interim_ec)
+		if (boost::iequals (parser.get ()[http::field::expect], "100-continue"))
 		{
+			http::response<http::empty_body> interim{ http::status::continue_, 11 };
+			interim.set (http::field::server, "nano");
+			auto [interim_ec, interim_size] = co_await http::async_write (stream, interim, asio::as_tuple (asio::use_awaitable));
+			if (interim_ec)
+			{
+				co_return;
+			}
+		}
+
+		auto [body_ec, body_size] = co_await http::async_read (stream, buffer, parser, asio::as_tuple (asio::use_awaitable));
+		if (body_ec)
+		{
+			if (body_ec != asio::error::operation_aborted)
+			{
+				logger.error (nano::log::type::rpc_connection, "RPC read error: {}", body_ec.message ());
+			}
 			co_return;
 		}
 	}
 
-	auto [body_ec, body_size] = co_await http::async_read (stream, buffer, parser, asio::as_tuple (asio::use_awaitable));
-	if (body_ec)
+	// The gate: a stop may have run on this strand while the completed read waited to resume. The next co_await would throw as well, this does not depend on it; nothing suspends between here and the flag
+	if ((co_await asio::this_coro::cancellation_state).cancelled () != asio::cancellation_type::none)
 	{
-		if (body_ec != asio::error::operation_aborted)
-		{
-			logger.error (nano::log::type::rpc_connection, "RPC read error: {}", body_ec.message ());
-		}
+		co_return;
+	}
+	serving = true;
+
+	if (malformed)
+	{
+		logger.error (nano::log::type::rpc_connection, "RPC header error: {}", header_ec.message ());
+		co_await write (make_response (11, json_error ("Invalid header: " + header_ec.message ())));
 		co_return;
 	}
 

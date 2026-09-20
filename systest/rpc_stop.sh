@@ -35,8 +35,9 @@ done
 RPC_PORT=$(jq -r '.rpc_port' "$RUNTIME_INFO")
 [ "$RPC_PORT" != "0" ] && [ -n "$RPC_PORT" ] && [ "$RPC_PORT" != "null" ] || { echo "FAIL: invalid rpc_port"; exit 1; }
 
-# Send the stop rpc command
-curl -g -d '{ "action": "stop" }' "[::1]:$RPC_PORT"
+# Send the stop rpc command; the node must acknowledge it before it goes down
+RESPONSE=$(curl -sS -g -d '{ "action": "stop" }' "[::1]:$RPC_PORT")
+echo "$RESPONSE" | jq -e 'has("success")' > /dev/null || { echo "FAIL: stop was not acknowledged: $RESPONSE"; exit 1; }
 
 # Check if the process has stopped using a timeout to avoid infinite waiting
 if wait $NODE_PID; then

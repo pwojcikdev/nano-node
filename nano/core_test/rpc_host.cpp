@@ -1,3 +1,4 @@
+#include <nano/core_test/fakes/http_client.hpp>
 #include <nano/core_test/fakes/rpc_handler.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/rpc/rpc_host.hpp>
@@ -10,7 +11,12 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/property_tree/ptree.hpp>
 
+#include <atomic>
+#include <chrono>
+#include <deque>
+#include <memory>
 #include <stdexcept>
+#include <thread>
 
 using namespace std::chrono_literals;
 
@@ -104,4 +110,94 @@ TEST (rpc_host, bind_failure)
 
 	nano::rpc_host second{ host_config (system, first.listening_port ()) };
 	ASSERT_THROW (second.start (std::make_unique<nano::test::echo_rpc_handler> ()), std::runtime_error);
+}
+
+/**
+ * Connections that never sent a request are closed by `stop` and do not delay it
+ */
+TEST (rpc_host, stop_closes_idle_connections)
+{
+	nano::test::system system;
+	nano::rpc_host host{ host_config (system) };
+	host.start (std::make_unique<nano::test::echo_rpc_handler> ());
+
+	std::deque<std::unique_ptr<nano::test::http_client>> clients;
+	for (int i = 0; i < 16; ++i)
+	{
+		clients.push_back (std::make_unique<nano::test::http_client> (host.listening_port ()));
+		ASSERT_TRUE (clients.back ()->connected ());
+	}
+
+	auto const start = std::chrono::steady_clock::now ();
+	host.stop ();
+	ASSERT_LT (std::chrono::steady_clock::now () - start, host.config.drain_timeout);
+
+	ASSERT_FALSE (accepts_connections (host.listening_port ()));
+	for (auto const & client : clients)
+	{
+		ASSERT_TRUE (client->closed_by_server ());
+	}
+}
+
+/**
+ * A request that is being served when `stop` is called is still answered, which is what makes the
+ * acknowledgement of a `stop` request reach its client. The response is released only once the server is known
+ * to be stopping: an idle connection opened beforehand has been closed by it.
+ */
+TEST (rpc_host, stop_writes_pending_response)
+{
+	nano::test::system system;
+	nano::rpc_host host{ host_config (system) };
+	auto backend = std::make_unique<nano::test::deferred_rpc_handler> ();
+	auto & handler = *backend;
+	host.start (std::move (backend));
+
+	nano::test::http_client client{ host.listening_port () };
+	ASSERT_TRUE (client.send (nano::test::http_post (R"({"action":"echo"})")));
+	ASSERT_TIMELY_EQ (5s, handler.pending_count (), 1);
+
+	nano::test::http_client idle{ host.listening_port () };
+	ASSERT_TRUE (idle.connected ());
+
+	std::string const released = R"({"released":"1"})";
+	std::atomic<bool> server_was_stopping{ false };
+	std::thread releaser{ [&] () {
+		server_was_stopping = idle.closed_by_server (10s);
+		handler.respond_all (released);
+	} };
+
+	host.stop (); // Returns once the response has been written
+	releaser.join ();
+	ASSERT_TRUE (server_was_stopping);
+
+	auto response = client.read_response ();
+	ASSERT_TRUE (response);
+	ASSERT_EQ (boost::beast::http::status::ok, response->result ());
+	ASSERT_EQ (released, response->body ());
+}
+
+/**
+ * A request that is never answered delays `stop` by the drain timeout and no longer, then loses its connection
+ */
+TEST (rpc_host, stop_drain_timeout)
+{
+	nano::test::system system;
+	auto config = host_config (system);
+	config.drain_timeout = 500ms;
+	nano::rpc_host host{ config };
+	auto backend = std::make_unique<nano::test::deferred_rpc_handler> ();
+	auto & handler = *backend;
+	host.start (std::move (backend));
+
+	nano::test::http_client client{ host.listening_port () };
+	ASSERT_TRUE (client.send (nano::test::http_post (R"({"action":"echo"})")));
+	ASSERT_TIMELY_EQ (5s, handler.pending_count (), 1);
+
+	auto const start = std::chrono::steady_clock::now ();
+	host.stop ();
+	auto const elapsed = std::chrono::steady_clock::now () - start;
+	ASSERT_GE (elapsed, 500ms);
+	ASSERT_LT (elapsed, 5s);
+
+	ASSERT_TRUE (client.closed_by_server ());
 }

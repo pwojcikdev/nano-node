@@ -559,8 +559,9 @@ TEST (rpc_connection, client_disconnects_without_request)
 }
 
 /*
- * The connection as a unit, on a strand the test controls, which is what it takes to decide the order in which
- * events reach it instead of hoping for it.
+ * The connection as a unit, on a strand the test controls. A server that stops has to end the connections that
+ * are not serving a request and spare the ones that are, and what decides a case is the order in which the stop
+ * and the request reach the connection's strand, so these tests force that order instead of hoping for it.
  */
 
 namespace
@@ -652,6 +653,118 @@ TEST (rpc_connection, cancel_before_first_instruction)
 	fixture.start (); // Queues up behind the blocker
 	blocker.release ([&fixture] () {
 		fixture.connection->cancel ();
+	});
+
+	ASSERT_TRUE (fixture.ended_within (5s));
+	ASSERT_EQ (0, handler.requests);
+	ASSERT_TRUE (fixture.client.closed_by_server ());
+}
+
+/**
+ * A stop ends a connection that is waiting for its request
+ */
+TEST (rpc_connection, stop_if_idle_while_idle)
+{
+	nano::test::echo_rpc_handler handler;
+	connection_fixture fixture{ handler };
+	fixture.start ();
+
+	fixture.connection->stop_if_idle ();
+
+	ASSERT_TRUE (fixture.ended_within (5s));
+	ASSERT_TRUE (fixture.client.closed_by_server ());
+	ASSERT_EQ (0, handler.requests);
+}
+
+/**
+ * A stop spares a connection that is serving a request, which is then answered as if nothing had happened
+ */
+TEST (rpc_connection, stop_if_idle_while_serving)
+{
+	nano::test::system system;
+	nano::test::deferred_rpc_handler handler;
+	connection_fixture fixture{ handler };
+	fixture.start ();
+
+	ASSERT_TRUE (fixture.client.send (echo_post));
+	ASSERT_TIMELY_EQ (5s, handler.pending_count (), 1);
+
+	fixture.connection->stop_if_idle ();
+	fixture.flush_strand ();
+	ASSERT_FALSE (fixture.ended_within (200ms));
+
+	std::string const released = R"({"released":"1"})";
+	handler.respond_all (released);
+	auto response = fixture.client.read_response ();
+	ASSERT_TRUE (response);
+	ASSERT_EQ (http::status::ok, response->result ());
+	ASSERT_EQ (released, response->body ());
+	ASSERT_TRUE (fixture.ended_within (5s));
+}
+
+/**
+ * A stop ends a connection that has read the header of its request and is waiting for the body
+ */
+TEST (rpc_connection, stop_if_idle_while_reading_body)
+{
+	nano::test::echo_rpc_handler handler;
+	connection_fixture fixture{ handler };
+	fixture.start ();
+
+	ASSERT_TRUE (fixture.client.send ("POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\n"));
+	fixture.flush_strand ();
+	fixture.connection->stop_if_idle ();
+
+	ASSERT_TRUE (fixture.ended_within (5s));
+	ASSERT_EQ (0, handler.requests);
+	ASSERT_TRUE (fixture.client.closed_by_server ());
+}
+
+/**
+ * The race the gate exists for: the request has been read in full, but the stop reaches the strand before the
+ * connection resumes from its last read. The request must not be served, although nothing failed while reading it.
+ * The client asks before sending its body, so the interim response tells the test that the connection has moved on
+ * to reading the body. The strand is then blocked while the body arrives, so the completed read queues up behind
+ * the blocker, and the stop runs on the strand ahead of it.
+ */
+TEST (rpc_connection, stop_if_idle_before_resuming_from_read)
+{
+	nano::test::echo_rpc_handler handler;
+	connection_fixture fixture{ handler };
+	fixture.start ();
+
+	std::string const body = R"({"action":"echo"})";
+	ASSERT_TRUE (fixture.client.send ("POST / HTTP/1.1\r\nHost: localhost\r\nExpect: 100-continue\r\nContent-Length: " + std::to_string (body.size ()) + "\r\n\r\n"));
+	auto interim = fixture.client.read_response ();
+	ASSERT_TRUE (interim);
+	ASSERT_EQ (http::status::continue_, interim->result ());
+
+	nano::test::strand_blocker blocker{ fixture.strand }; // Occupies the strand only once the connection is suspended in the body read
+	ASSERT_TRUE (fixture.client.send (body));
+	std::this_thread::sleep_for (250ms); // The other IO thread completes the read, which cannot resume the connection yet
+	blocker.release ([&fixture] () {
+		fixture.connection->stop_if_idle ();
+	});
+
+	ASSERT_TRUE (fixture.ended_within (5s));
+	ASSERT_EQ (0, handler.requests);
+	ASSERT_TRUE (fixture.client.closed_by_server ());
+}
+
+/**
+ * A stop that lands after a connection was started but before it ran its first instruction is not lost: the
+ * connection ends without serving the request already waiting in its socket
+ */
+TEST (rpc_connection, stop_if_idle_before_first_instruction)
+{
+	nano::test::echo_rpc_handler handler;
+	connection_fixture fixture{ handler };
+	ASSERT_TRUE (fixture.client.send (echo_post));
+
+	nano::test::strand_blocker blocker{ fixture.strand };
+	fixture.start (); // Queues up behind the blocker
+	blocker.release ([&fixture] () {
+		fixture.connection->stop_if_idle ();
 	});
 
 	ASSERT_TRUE (fixture.ended_within (5s));

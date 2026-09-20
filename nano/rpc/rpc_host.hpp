@@ -19,9 +19,10 @@ class thread_runner;
  * Hosts an RPC endpoint: the HTTP listener, the backend that serves its requests and the IO
  * threads both run on. `start` brings them up and `stop` takes them down in a fixed order, so
  * the standalone `nano_rpc` process, the daemon, the wallet and the test harness share one
- * shutdown sequence. `stop` blocks until every connection has ended and the IO threads have exited,
- * so calling it from one of them, for example from a request handler, would deadlock; owners call
- * it from their own thread.
+ * shutdown sequence. `stop` lets the requests already being served be answered, for no longer than
+ * the configured `drain_timeout`, and blocks until every connection has ended and the IO threads
+ * have exited, so calling it from one of them, for example from a request handler, would deadlock;
+ * owners call it from their own thread.
  */
 class rpc_host final
 {
@@ -34,7 +35,7 @@ public:
 
 	// Binds the listener and serves requests through `backend`, throws if the port cannot be bound
 	void start (std::unique_ptr<nano::rpc_handler_interface> backend);
-	// Closes the listener, ends every connection, stops the IO threads and releases the backend; idempotent
+	// Closes the listener, lets the requests being served finish, stops the IO threads and releases the backend; idempotent
 	void stop ();
 
 	// Port the listener is bound to, only meaningful after `start`
