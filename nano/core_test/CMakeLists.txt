@@ -3,6 +3,7 @@ add_executable(
   entry.cpp
   fakes/http_client.hpp
   fakes/rpc_handler.hpp
+  fakes/strand_blocker.hpp
   fakes/websocket_client.hpp
   fakes/work_peer.hpp
   active_elections.cpp
