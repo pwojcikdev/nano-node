@@ -1,6 +1,7 @@
 add_executable(
   core_test
   entry.cpp
+  fakes/http_client.hpp
   fakes/rpc_handler.hpp
   fakes/websocket_client.hpp
   fakes/work_peer.hpp
@@ -73,6 +74,7 @@ add_executable(
   peer_container.cpp
   rep_tiers.cpp
   rep_weight_store.cpp
+  rpc_connection.cpp
   rpc_host.cpp
   scheduler_buckets.cpp
   stats.cpp
