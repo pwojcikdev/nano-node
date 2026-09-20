@@ -27,7 +27,7 @@ void nano::rpc_host::start (std::unique_ptr<nano::rpc_handler_interface> backend
 	release_assert (backend_a);
 
 	backend = std::move (backend_a);
-	server = std::make_shared<nano::rpc_server> (io_ctx, config, *backend);
+	server = std::make_unique<nano::rpc_server> (io_ctx, config, *backend);
 	runner = std::make_unique<nano::thread_runner> (io_ctx, logger, config.rpc_process.io_threads, nano::thread_role::name::io_rpc);
 	server->start ();
 }
@@ -44,7 +44,7 @@ void nano::rpc_host::stop ()
 	}
 	if (runner)
 	{
-		runner->abort (); // Whatever is still queued on the IO threads is dropped
+		runner->abort (); // The server has nothing left running, what a backend still has queued is dropped
 		runner->join ();
 	}
 	backend.reset ();

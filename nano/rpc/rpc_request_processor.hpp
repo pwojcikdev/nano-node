@@ -105,8 +105,9 @@ public:
 
 	void rpc_instance (nano::rpc_server & rpc) override
 	{
+		// Called from a request handler, which must not wait for the server
 		rpc_request_processor.stop_callback = [&rpc] () {
-			rpc.stop ();
+			rpc.stop_async ();
 		};
 	}
 

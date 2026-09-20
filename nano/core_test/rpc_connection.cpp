@@ -1,6 +1,10 @@
 #include <nano/core_test/fakes/http_client.hpp>
 #include <nano/core_test/fakes/rpc_handler.hpp>
+#include <nano/core_test/fakes/strand_blocker.hpp>
 #include <nano/lib/config.hpp>
+#include <nano/lib/logging.hpp>
+#include <nano/lib/thread_runner.hpp>
+#include <nano/rpc/rpc_connection.hpp>
 #include <nano/rpc/rpc_host.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
@@ -12,6 +16,7 @@
 
 #include <chrono>
 #include <deque>
+#include <future>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -551,4 +556,105 @@ TEST (rpc_connection, client_disconnects_without_request)
 	auto response = client.read_response ();
 	ASSERT_TRUE (response);
 	ASSERT_EQ (body, response->body ());
+}
+
+/*
+ * The connection as a unit, on a strand the test controls, which is what it takes to decide the order in which
+ * events reach it instead of hoping for it.
+ */
+
+namespace
+{
+class connection_fixture final
+{
+public:
+	explicit connection_fixture (nano::rpc_handler_interface & handler) :
+		acceptor{ *io_ctx, boost::asio::ip::tcp::endpoint{ boost::asio::ip::address_v6::loopback (), 0 } },
+		client{ acceptor.local_endpoint ().port () }
+	{
+		boost::asio::ip::tcp::socket socket{ strand };
+		acceptor.accept (socket);
+		connection = std::make_shared<nano::rpc_connection> (strand, std::move (socket), config, handler, logger);
+	}
+
+	~connection_fixture ()
+	{
+		connection->cancel ();
+		runner.abort ();
+		runner.join ();
+	}
+
+	void start ()
+	{
+		connection->start ([this] () {
+			ended_promise.set_value ();
+		});
+	}
+
+	bool ended_within (std::chrono::milliseconds time)
+	{
+		return ended.wait_for (time) == std::future_status::ready;
+	}
+
+	// Returns once everything queued on the strand so far has run
+	void flush_strand ()
+	{
+		boost::asio::post (strand, boost::asio::use_future ([] () {})).wait ();
+	}
+
+	std::shared_ptr<boost::asio::io_context> io_ctx{ std::make_shared<boost::asio::io_context> () };
+	nano::logger logger;
+	nano::async::strand strand{ io_ctx->get_executor () };
+	nano::rpc_config config{ nano::dev::network_params.network };
+	boost::asio::ip::tcp::acceptor acceptor;
+	nano::test::http_client client;
+	std::shared_ptr<nano::rpc_connection> connection;
+	std::promise<void> ended_promise;
+	std::future<void> ended{ ended_promise.get_future () };
+	nano::thread_runner runner{ io_ctx, logger, 2 }; // Last, so its threads are joined before anything they use goes away
+};
+
+std::string const echo_post = nano::test::http_post (R"({"action":"echo"})");
+}
+
+/**
+ * Cancelling ends a connection even while it is serving, and the response that comes too late goes nowhere
+ */
+TEST (rpc_connection, cancel_while_serving)
+{
+	nano::test::system system;
+	nano::test::deferred_rpc_handler handler;
+	connection_fixture fixture{ handler };
+	fixture.start ();
+
+	ASSERT_TRUE (fixture.client.send (echo_post));
+	ASSERT_TIMELY_EQ (5s, handler.pending_count (), 1);
+
+	fixture.connection->cancel ();
+
+	ASSERT_TRUE (fixture.ended_within (5s));
+	ASSERT_TRUE (fixture.client.closed_by_server ());
+	handler.respond_all (R"({"released":"too late"})");
+	fixture.flush_strand ();
+}
+
+/**
+ * Cancelling a connection that was started but has not run its first instruction yet is not lost: the
+ * connection ends, its socket is closed and the request already waiting in it is not served
+ */
+TEST (rpc_connection, cancel_before_first_instruction)
+{
+	nano::test::echo_rpc_handler handler;
+	connection_fixture fixture{ handler };
+	ASSERT_TRUE (fixture.client.send (echo_post));
+
+	nano::test::strand_blocker blocker{ fixture.strand };
+	fixture.start (); // Queues up behind the blocker
+	blocker.release ([&fixture] () {
+		fixture.connection->cancel ();
+	});
+
+	ASSERT_TRUE (fixture.ended_within (5s));
+	ASSERT_EQ (0, handler.requests);
+	ASSERT_TRUE (fixture.client.closed_by_server ());
 }

@@ -46,6 +46,8 @@ class network_constants;
 class network_filter;
 class object_stream;
 class rocksdb_config;
+class rpc_config;
+class rpc_handler_interface;
 class stats;
 class stats_config;
 class thread_pool;

@@ -1,5 +1,3 @@
-#include <nano/boost/asio/bind_executor.hpp>
-#include <nano/boost/asio/post.hpp>
 #include <nano/lib/json_error_response.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/rpc_handler_interface.hpp>
@@ -10,147 +8,192 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/format.hpp>
 
-nano::rpc_connection::rpc_connection (nano::rpc_config const & rpc_config, boost::asio::io_context & io_ctx, nano::logger & logger, nano::rpc_handler_interface & rpc_handler_interface) :
-	socket (io_ctx),
-	strand (io_ctx.get_executor ()),
-	io_ctx (io_ctx),
-	logger (logger),
-	rpc_config (rpc_config),
-	rpc_handler_interface (rpc_handler_interface)
+#include <chrono>
+
+namespace http = boost::beast::http;
+
+namespace
 {
-	responded.clear ();
+std::string json_error (std::string const & message)
+{
+	std::string result;
+	nano::json_error_response ([&result] (std::string const & body) { result = body; }, message);
+	return result;
+}
 }
 
-void nano::rpc_connection::parse_connection ()
+nano::rpc_connection::rpc_connection (nano::async::strand strand_a, asio::ip::tcp::socket socket, nano::rpc_config const & config_a, nano::rpc_handler_interface & rpc_handler_interface_a, nano::logger & logger_a) :
+	config{ config_a },
+	rpc_handler_interface{ rpc_handler_interface_a },
+	logger{ logger_a },
+	strand{ std::move (strand_a) },
+	stream{ std::move (socket) },
+	cancellation{ strand }
 {
-	read ();
 }
 
-void nano::rpc_connection::prepare_head (unsigned version, boost::beast::http::status status)
+void nano::rpc_connection::start (std::function<void ()> on_done)
 {
-	res.version (version);
-	res.result (status);
-	res.set (boost::beast::http::field::allow, "POST, OPTIONS");
-	res.set (boost::beast::http::field::content_type, "application/json");
-	res.set (boost::beast::http::field::access_control_allow_origin, "*");
-	res.set (boost::beast::http::field::access_control_allow_methods, "POST, OPTIONS");
-	res.set (boost::beast::http::field::access_control_allow_headers, "Accept, Accept-Language, Content-Language, Content-Type");
-	res.set (boost::beast::http::field::connection, "close");
-}
-
-void nano::rpc_connection::write_result (std::string body, unsigned version, boost::beast::http::status status)
-{
-	if (!responded.test_and_set ())
-	{
-		prepare_head (version, status);
-		res.body () = body;
-		res.prepare_payload ();
-	}
-	else
-	{
-		debug_assert (false && "RPC already responded and should only respond once");
-	}
-}
-
-void nano::rpc_connection::read ()
-{
-	auto this_l (shared_from_this ());
-	auto header_parser (std::make_shared<boost::beast::http::request_parser<boost::beast::http::empty_body>> ());
-	header_parser->body_limit (rpc_config.max_request_size);
-
-	boost::beast::http::async_read_header (socket, buffer, *header_parser, boost::asio::bind_executor (strand, [this_l, header_parser] (boost::system::error_code const & ec, size_t bytes_transferred) {
-		if (!ec)
-		{
-			if (boost::iequals (header_parser->get ()[boost::beast::http::field::expect], "100-continue"))
-			{
-				auto continue_response (std::make_shared<boost::beast::http::response<boost::beast::http::empty_body>> ());
-				continue_response->version (11);
-				continue_response->result (boost::beast::http::status::continue_);
-				continue_response->set (boost::beast::http::field::server, "nano");
-				boost::beast::http::async_write (this_l->socket, *continue_response, boost::asio::bind_executor (this_l->strand, [this_l, continue_response] (boost::system::error_code const & ec, size_t bytes_transferred) {}));
-			}
-
-			this_l->parse_request (header_parser);
-		}
-		else
-		{
-			this_l->logger.error (nano::log::type::rpc_connection, "RPC header error: {}", ec.message ());
-
-			// Respond with the reason for the invalid header
-			auto response_handler ([this_l] (std::string const & tree_a) {
-				this_l->write_result (tree_a, 11);
-				boost::beast::http::async_write (this_l->socket, this_l->res, boost::asio::bind_executor (this_l->strand, [this_l] (boost::system::error_code const & ec, size_t bytes_transferred) {}));
-			});
-			nano::json_error_response (response_handler, std::string ("Invalid header: ") + ec.message ());
-		}
+	// The completion handler keeps the connection alive for as long as its coroutine runs
+	asio::co_spawn (strand, run (), asio::bind_cancellation_slot (cancellation.slot (), [this_s = shared_from_this (), on_done = std::move (on_done)] (std::exception_ptr const &) {
+		// A connection cancelled before its first instruction never enters `run`, so the socket is closed here, on every path
+		debug_assert (this_s->strand.running_in_this_thread ());
+		this_s->stream.close ();
+		on_done ();
 	}));
 }
 
-void nano::rpc_connection::parse_request (std::shared_ptr<boost::beast::http::request_parser<boost::beast::http::empty_body>> const & header_parser)
+void nano::rpc_connection::cancel ()
 {
-	auto this_l (shared_from_this ());
-	auto header_field_credentials_l (header_parser->get ()["nano-api-key"]);
-	auto header_corr_id_l (header_parser->get ()["nano-correlation-id"]);
-	auto body_parser (std::make_shared<boost::beast::http::request_parser<boost::beast::http::string_body>> (std::move (*header_parser)));
-	std::string path_l = body_parser->get ().target ();
-	boost::beast::http::async_read (socket, buffer, *body_parser, boost::asio::bind_executor (strand, [this_l, body_parser, header_field_credentials_l, header_corr_id_l, path_l] (boost::system::error_code const & ec, size_t bytes_transferred) {
-		if (!ec)
+	cancellation.emit ();
+}
+
+asio::awaitable<void> nano::rpc_connection::run ()
+{
+	debug_assert (strand.running_in_this_thread ());
+	try
+	{
+		co_await serve ();
+	}
+	catch (boost::system::system_error const & ex)
+	{
+		// A cancelled connection ends here from whichever operation it was waiting in
+		if (ex.code () != asio::error::operation_aborted)
 		{
-			boost::asio::post (this_l->io_ctx, [this_l, body_parser, header_field_credentials_l, header_corr_id_l, path_l] () {
-				auto & req (body_parser->get ());
-				auto start (std::chrono::steady_clock::now ());
-				auto version (req.version ());
-				std::stringstream ss;
-				ss << std::hex << std::showbase << reinterpret_cast<uintptr_t> (this_l.get ());
-				auto request_id = ss.str ();
-				auto response_handler ([this_l, version, start, request_id] (std::string const & tree_a) {
-					auto body = tree_a;
-					this_l->write_result (body, version);
-					boost::beast::http::async_write (this_l->socket, this_l->res, boost::asio::bind_executor (this_l->strand, [this_l] (boost::system::error_code const & ec, size_t bytes_transferred) {}));
-
-					// Bump logging level if RPC request logging is enabled
-					this_l->logger.log (this_l->rpc_config.rpc_logging.log_rpc ? nano::log::level::info : nano::log::level::debug,
-					nano::log::type::rpc_request, "RPC request {} completed in {} microseconds", request_id, std::chrono::duration_cast<std::chrono::microseconds> (std::chrono::steady_clock::now () - start).count ());
-				});
-
-				std::string api_path_l = "/api/v2";
-				int rpc_version_l = boost::starts_with (path_l, api_path_l) ? 2 : 1;
-
-				auto method = req.method ();
-				switch (method)
-				{
-					case boost::beast::http::verb::post:
-					{
-						auto dispatcher (std::make_shared<nano::rpc_dispatcher> (this_l->rpc_config, req.body (), request_id, response_handler, this_l->rpc_handler_interface, this_l->logger));
-						nano::rpc_handler_request_params request_params;
-						request_params.rpc_version = rpc_version_l;
-						request_params.credentials = header_field_credentials_l;
-						request_params.correlation_id = header_corr_id_l;
-						request_params.path = boost::algorithm::erase_first_copy (path_l, api_path_l);
-						request_params.path = boost::algorithm::erase_first_copy (request_params.path, "/");
-						dispatcher->process_request (request_params);
-						break;
-					}
-					case boost::beast::http::verb::options:
-					{
-						this_l->prepare_head (version);
-						this_l->res.prepare_payload ();
-						boost::beast::http::async_write (this_l->socket, this_l->res, boost::asio::bind_executor (this_l->strand, [this_l] (boost::system::error_code const & ec, size_t bytes_transferred) {}));
-						break;
-					}
-					default:
-					{
-						nano::json_error_response (response_handler, "Can only POST requests");
-						break;
-					}
-				}
-			});
+			logger.error (nano::log::type::rpc_connection, "RPC request {} failed: {}", request_id (), ex.code ().message ());
 		}
-		else
+	}
+	catch (std::exception const & ex)
+	{
+		// Whatever goes wrong while serving one request costs that connection, nothing else
+		logger.error (nano::log::type::rpc_connection, "RPC request {} failed: {}", request_id (), ex.what ());
+	}
+	catch (...)
+	{
+		logger.error (nano::log::type::rpc_connection, "RPC request {} failed: unknown error", request_id ());
+	}
+}
+
+asio::awaitable<void> nano::rpc_connection::serve ()
+{
+	boost::beast::flat_buffer buffer;
+	http::request_parser<http::string_body> parser;
+	parser.body_limit (config.max_request_size);
+
+	auto [header_ec, header_size] = co_await http::async_read_header (stream, buffer, parser, asio::as_tuple (asio::use_awaitable));
+	if (header_ec == http::error::end_of_stream || header_ec == asio::error::operation_aborted)
+	{
+		co_return; // The peer left without sending a request, or the connection was cancelled
+	}
+	if (header_ec)
+	{
+		logger.error (nano::log::type::rpc_connection, "RPC header error: {}", header_ec.message ());
+		co_await write (make_response (11, json_error ("Invalid header: " + header_ec.message ())));
+		co_return;
+	}
+
+	if (boost::iequals (parser.get ()[http::field::expect], "100-continue"))
+	{
+		http::response<http::empty_body> interim{ http::status::continue_, 11 };
+		interim.set (http::field::server, "nano");
+		auto [interim_ec, interim_size] = co_await http::async_write (stream, interim, asio::as_tuple (asio::use_awaitable));
+		if (interim_ec)
 		{
-			this_l->logger.error (nano::log::type::rpc_connection, "RPC read error: {}", ec.message ());
+			co_return;
 		}
-	}));
+	}
+
+	auto [body_ec, body_size] = co_await http::async_read (stream, buffer, parser, asio::as_tuple (asio::use_awaitable));
+	if (body_ec)
+	{
+		if (body_ec != asio::error::operation_aborted)
+		{
+			logger.error (nano::log::type::rpc_connection, "RPC read error: {}", body_ec.message ());
+		}
+		co_return;
+	}
+
+	auto const & request = parser.get ();
+	switch (request.method ())
+	{
+		case http::verb::post:
+		{
+			auto const start = std::chrono::steady_clock::now ();
+			auto body = co_await process (request);
+
+			// Bump logging level if RPC request logging is enabled
+			logger.log (config.rpc_logging.log_rpc ? nano::log::level::info : nano::log::level::debug,
+			nano::log::type::rpc_request, "RPC request {} completed in {} microseconds", request_id (), std::chrono::duration_cast<std::chrono::microseconds> (std::chrono::steady_clock::now () - start).count ());
+
+			co_await write (make_response (request.version (), std::move (body)));
+			break;
+		}
+		case http::verb::options:
+		{
+			co_await write (make_response (request.version (), {}));
+			break;
+		}
+		default:
+		{
+			co_await write (make_response (request.version (), json_error ("Can only POST requests")));
+			break;
+		}
+	}
+}
+
+asio::awaitable<std::string> nano::rpc_connection::process (request_type const & request)
+{
+	std::string const api_path = "/api/v2";
+	std::string const path{ request.target () };
+
+	nano::rpc_handler_request_params params;
+	params.rpc_version = boost::starts_with (path, api_path) ? 2 : 1;
+	params.credentials = std::string{ request["nano-api-key"] };
+	params.correlation_id = std::string{ request["nano-correlation-id"] };
+	params.path = boost::algorithm::erase_first_copy (path, api_path);
+	params.path = boost::algorithm::erase_first_copy (params.path, "/");
+
+	// A cancelled connection may be gone before the backend returns, so the call owns what it needs of the request
+	co_return co_await nano::async::await_callback<std::string> (strand.get_inner_executor (), [&config_l = config, &rpc_handler_interface_l = rpc_handler_interface, &logger_l = logger, body = request.body (), id = request_id (), params] (auto respond) {
+		try
+		{
+			auto dispatcher = std::make_shared<nano::rpc_dispatcher> (config_l, body, id, respond, rpc_handler_interface_l, logger_l);
+			dispatcher->process_request (params);
+		}
+		catch (std::exception const & ex)
+		{
+			// An exception escaping here would end the IO thread running this; the connection sees its callback dropped instead
+			logger_l.error (nano::log::type::rpc_connection, "RPC request {} could not be handed to the backend: {}", id, ex.what ());
+		}
+	});
+}
+
+asio::awaitable<void> nano::rpc_connection::write (response_type response)
+{
+	auto [ec, size] = co_await http::async_write (stream, response, asio::as_tuple (asio::use_awaitable));
+	if (!ec)
+	{
+		boost::system::error_code ignored;
+		stream.socket ().shutdown (asio::ip::tcp::socket::shutdown_send, ignored);
+	}
+}
+
+auto nano::rpc_connection::make_response (unsigned version, std::string body) const -> response_type
+{
+	response_type response{ http::status::ok, version };
+	response.set (http::field::allow, "POST, OPTIONS");
+	response.set (http::field::content_type, "application/json");
+	response.set (http::field::access_control_allow_origin, "*");
+	response.set (http::field::access_control_allow_methods, "POST, OPTIONS");
+	response.set (http::field::access_control_allow_headers, "Accept, Accept-Language, Content-Language, Content-Type");
+	response.set (http::field::connection, "close");
+	response.body () = std::move (body);
+	response.prepare_payload ();
+	return response;
+}
+
+std::string nano::rpc_connection::request_id () const
+{
+	return fmt::format ("{}", fmt::ptr (this));
 }

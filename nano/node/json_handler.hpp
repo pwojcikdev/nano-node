@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/lib/numbers.hpp>
+#include <nano/lib/rpc_handler_interface.hpp>
 #include <nano/node/fwd.hpp>
 #include <nano/node/ipc/flatbuffers_handler.hpp>
 #include <nano/rpc/rpc_server.hpp>
@@ -202,7 +203,7 @@ public:
 	{
 		if (rpc)
 		{
-			rpc->get ().stop ();
+			rpc->get ().stop_async (); // Called from a request handler, which must not wait for the server
 		}
 	}
 
