@@ -99,8 +99,3 @@ std::uint16_t nano::rpc_server::listening_port () const
 {
 	return port;
 }
-
-std::shared_ptr<nano::rpc_server> nano::get_rpc (std::shared_ptr<boost::asio::io_context> io_ctx_a, nano::rpc_config const & config_a, nano::rpc_handler_interface & rpc_handler_interface_a)
-{
-	return std::make_shared<nano::rpc_server> (io_ctx_a, config_a, rpc_handler_interface_a);
-}

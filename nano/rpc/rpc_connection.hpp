@@ -21,9 +21,7 @@ class rpc_connection : public std::enable_shared_from_this<nano::rpc_connection>
 {
 public:
 	rpc_connection (nano::rpc_config const & rpc_config, boost::asio::io_context & io_ctx, nano::logger &, nano::rpc_handler_interface & rpc_handler_interface_a);
-	virtual ~rpc_connection () = default;
-	virtual void parse_connection ();
-	virtual void write_completion_handler (std::shared_ptr<nano::rpc_connection> const & rpc_connection);
+	void parse_connection ();
 	void prepare_head (unsigned version, boost::beast::http::status status = boost::beast::http::status::ok);
 	void write_result (std::string body, unsigned version, boost::beast::http::status status = boost::beast::http::status::ok);
 
@@ -37,11 +35,8 @@ public:
 	nano::rpc_config const & rpc_config;
 	nano::rpc_handler_interface & rpc_handler_interface;
 
-protected:
-	template <typename STREAM_TYPE>
-	void read (STREAM_TYPE & stream);
-
-	template <typename STREAM_TYPE>
-	void parse_request (STREAM_TYPE & stream, std::shared_ptr<boost::beast::http::request_parser<boost::beast::http::empty_body>> const & header_parser);
+private:
+	void read ();
+	void parse_request (std::shared_ptr<boost::beast::http::request_parser<boost::beast::http::empty_body>> const & header_parser);
 };
 }

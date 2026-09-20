@@ -16,12 +16,12 @@ class rpc_server : public std::enable_shared_from_this<rpc_server>
 {
 public:
 	rpc_server (std::shared_ptr<boost::asio::io_context>, nano::rpc_config config_a, nano::rpc_handler_interface & rpc_handler_interface_a);
-	virtual ~rpc_server ();
+	~rpc_server ();
 
 	void start ();
 	void stop ();
 
-	virtual void accept ();
+	void accept ();
 
 	// Port the acceptor was bound to, only meaningful after `start`
 	std::uint16_t listening_port () const;
@@ -37,7 +37,4 @@ public:
 	std::atomic<bool> stopped{ false };
 	std::uint16_t port{ 0 };
 };
-
-/** Returns the correct RPC implementation based on TLS configuration */
-std::shared_ptr<nano::rpc_server> get_rpc (std::shared_ptr<boost::asio::io_context>, nano::rpc_config const & config_a, nano::rpc_handler_interface & rpc_handler_interface_a);
 }
