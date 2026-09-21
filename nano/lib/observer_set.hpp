@@ -4,11 +4,19 @@
 #include <nano/lib/locks.hpp>
 #include <nano/lib/utility.hpp>
 
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
+#include <boost/smart_ptr/make_shared.hpp>
+
 #include <functional>
 #include <vector>
 
 namespace nano
 {
+/**
+ * Observers that are all called on every notification.
+ * They are kept in an immutable list that is replaced as a whole when it changes, so a notification only takes a reference to the current list: it copies nothing, holds no lock while observers run and may overlap other notifications.
+ * An observer added while a notification is running is first called by the next one.
+ */
 template <typename... T>
 class observer_set final
 {
@@ -19,17 +27,15 @@ public:
 	void add (observer_type observer)
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
-		observers.push_back (observer);
+		auto updated = boost::make_shared<observer_list> (*observers.load ());
+		updated->push_back (std::move (observer));
+		observers.store (updated);
 	}
 
 	void notify (T const &... args) const
 	{
-		// Make observers copy to allow parallel notifications
-		nano::unique_lock<nano::mutex> lock{ mutex };
-		auto observers_copy = observers;
-		lock.unlock ();
-
-		for (auto const & observer : observers_copy)
+		auto const current = observers.load ();
+		for (auto const & observer : *current)
 		{
 			observer (args...);
 		}
@@ -37,34 +43,32 @@ public:
 
 	bool empty () const
 	{
-		nano::lock_guard<nano::mutex> lock{ mutex };
-		return observers.empty ();
+		return observers.load ()->empty ();
 	}
 
 	size_t size () const
 	{
-		nano::lock_guard<nano::mutex> lock{ mutex };
-		return observers.size ();
+		return observers.load ()->size ();
 	}
 
 	void clear ()
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
-		observers.clear ();
+		observers.store (boost::make_shared<observer_list> ());
 	}
 
 	nano::container_info container_info () const
 	{
-		nano::unique_lock<nano::mutex> lock{ mutex };
-
 		nano::container_info info;
-		info.put ("observers", observers);
+		info.put ("observers", *observers.load ());
 		return info;
 	}
 
 private:
-	mutable nano::mutex mutex{ mutex_identifier (mutexes::observer_set) };
-	std::vector<observer_type> observers;
+	using observer_list = std::vector<observer_type>;
+
+	mutable nano::mutex mutex{ mutex_identifier (mutexes::observer_set) }; // Serializes changes of the list, notifications never take it
+	boost::atomic_shared_ptr<observer_list const> observers{ boost::make_shared<observer_list const> () }; // Never null
 };
 
 }

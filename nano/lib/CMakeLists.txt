@@ -178,6 +178,7 @@ target_link_libraries(
   Boost::multiprecision
   Boost::program_options
   Boost::property_tree
+  Boost::smart_ptr
   Boost::stacktrace)
 
 target_compile_definitions(nano_lib PUBLIC -DACTIVE_NETWORK=${ACTIVE_NETWORK})
