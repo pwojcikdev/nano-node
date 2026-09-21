@@ -301,13 +301,23 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 	});
 
 	// Representative is defined as online if replying to live votes or rep crawler queries
+	// Track rep weight voting on live elections
+	// The online weight has to be current before an election checks its quorum, so the representative is observed ahead of the elections and once for the whole vote
+	vote_router.vote_matched.add ([this] (std::shared_ptr<nano::vote> const & vote) {
+		// Elections only count votes of principal representatives
+		if (network_params.network.is_dev_network () || ledger.weight (vote->account) > minimum_principal_weight ())
+		{
+			online_reps.observe (vote->account);
+		}
+	});
+
 	observers.vote.add ([this] (std::shared_ptr<nano::vote> const & vote, std::shared_ptr<nano::transport::channel> const & channel, nano::vote_source source, nano::vote_code code) {
 		release_assert (vote != nullptr);
 		release_assert (channel != nullptr);
 		debug_assert (code != nano::vote_code::invalid);
 
-		// Track rep weight voting on live elections
-		bool should_observe = (code != nano::vote_code::indeterminate);
+		// A representative whose vote reached an election was observed ahead of that, which leaves the votes that came too late
+		bool should_observe = (code == nano::vote_code::late);
 
 		// Ignore republished votes when rep crawling
 		if (source == nano::vote_source::live)

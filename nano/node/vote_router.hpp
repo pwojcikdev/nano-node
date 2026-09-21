@@ -136,6 +136,10 @@ public:
 	nano::container_info container_info () const;
 
 public: // Events
+	// Notified once for a vote with at least one hash that a live election claims, before the vote reaches any election
+	using vote_matched_event_t = nano::observer_set<std::shared_ptr<nano::vote> const &>;
+	vote_matched_event_t vote_matched;
+
 	using vote_processed_event_t = nano::observer_set<std::shared_ptr<nano::vote> const &, nano::vote_source, nano::vote_results const &>;
 	vote_processed_event_t vote_processed;
 

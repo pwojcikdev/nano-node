@@ -209,6 +209,17 @@ nano::vote_results nano::vote_router::vote (std::shared_ptr<nano::vote> const & 
 		}
 	}
 
+	// Observers hear about a matched vote once, ahead of the first election that gets it
+	bool announced{ false };
+	auto announce = [&] () {
+		if (!announced && !matches.empty ())
+		{
+			announced = true;
+			vote_matched.notify (vote);
+		}
+	};
+
+	announce ();
 	for (auto const & [position, election] : matches)
 	{
 		results.set (position, election->vote (vote->account, vote->timestamp (), hashes[position], source));
@@ -238,6 +249,7 @@ nano::vote_results nano::vote_router::vote (std::shared_ptr<nano::vote> const & 
 				}
 			}
 		}
+		announce ();
 		for (auto const & [position, election] : matches)
 		{
 			// Any other result means the election got the vote from the cache or is over already
