@@ -9,6 +9,7 @@
 #include <nano/secure/common.hpp>
 #include <nano/secure/fwd.hpp>
 
+#include <boost/container/small_vector.hpp>
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/mem_fun.hpp>
 #include <boost/multi_index/member.hpp>
@@ -86,21 +87,12 @@ private:
 	bool vote_impl (std::shared_ptr<nano::vote> const & vote, nano::uint128_t const & rep_weight, std::size_t max_voters);
 	std::pair<nano::uint128_t, nano::uint128_t> calculate_tally () const; // <tally, final_tally>
 
-	// clang-format off
-	class tag_representative {};
-	class tag_weight {};
-	// clang-format on
+	// At most `max_voters` small records: searching them linearly beats an index, and the first few need no allocation
+	using voter_list = boost::container::small_vector<voter_entry, 4>;
+	voter_list voters;
 
-	// clang-format off
-	using ordered_voters = boost::multi_index_container<voter_entry,
-	mi::indexed_by<
-		mi::hashed_unique<mi::tag<tag_representative>,
-			mi::member<voter_entry, nano::account, &voter_entry::representative>>,
-		mi::ordered_non_unique<mi::tag<tag_weight>,
-			mi::member<voter_entry, nano::uint128_t, &voter_entry::weight>>
-	>>;
-	// clang-format on
-	ordered_voters voters;
+	// Lowest weight voter, the earliest one among equals
+	voter_list::iterator lowest_voter ();
 
 	nano::block_hash const hash_m;
 	std::chrono::steady_clock::time_point last_vote_m{};
