@@ -69,9 +69,21 @@ void nano::online_reps::observe (nano::account const & rep)
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
 
-		auto now = std::chrono::steady_clock::now ();
-		bool new_insert = reps.get<tag_account> ().erase (rep) == 0;
-		reps.insert ({ now, rep });
+		auto const now = std::chrono::steady_clock::now ();
+		auto & by_account = reps.get<tag_account> ();
+		auto const existing = by_account.find (rep);
+		bool const new_insert = existing == by_account.end ();
+		if (new_insert)
+		{
+			reps.insert ({ now, rep });
+		}
+		else
+		{
+			// Moves the entry within the time index, which allocates nothing
+			by_account.modify (existing, [&now] (rep_info & info) {
+				info.time = now;
+			});
+		}
 
 		stats.inc (nano::stat::type::online_reps, new_insert ? nano::stat::detail::rep_new : nano::stat::detail::rep_update);
 
