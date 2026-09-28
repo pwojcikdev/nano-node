@@ -563,21 +563,27 @@ TEST (priority_scheduler, stress_test)
 	auto blocks = nano::test::setup_independent_blocks (system, node, num_blocks);
 
 	// Worker pool for async activation - decouples notification from activation
-	nano::thread_pool workers{ 1, nano::thread_role::name::unknown };
-	nano::test::start_stop_guard guard{ workers };
+	// Shared with the observer, which the node keeps after the test body returns; once stopped, the pool drops new tasks
+	auto workers = std::make_shared<nano::thread_pool> (1, nano::thread_role::name::unknown);
+	nano::test::start_stop_guard guard{ *workers };
 
 	// Track activations via batch_activated callback
-	std::atomic<size_t> activated_count{ 0 };
-	std::atomic<size_t> next_to_activate{ 1 }; // Start from 1 since we activate 0 manually
+	nano::test::shared_counter activated_count;
+	nano::test::shared_counter activations_requested; // The first block is activated by the test itself
 
-	node.scheduler.priority.batch_activated.add ([&] (auto const & batch) {
-		activated_count += batch.size ();
+	node.scheduler.priority.batch_activated.add ([&node, blocks, workers, activated_count, activations_requested] (auto const & batch) {
+		for ([[maybe_unused]] auto const & hash : batch)
+		{
+			activated_count.increment ();
+		}
 
-		workers.post ([&] () {
+		// Tasks run only while the guard keeps the pool running, before the node stops
+		workers->post ([&node, blocks, activations_requested] () {
 			std::this_thread::yield (); // Increase timing variability
 
-			// Activate the next account
-			auto idx = next_to_activate.fetch_add (1);
+			// Activate the next account, only the single worker thread claims indices
+			auto idx = activations_requested.value () + 1;
+			activations_requested.increment ();
 			if (idx < blocks.size ())
 			{
 				auto txn = node.ledger.tx_begin_read ();
@@ -591,7 +597,7 @@ TEST (priority_scheduler, stress_test)
 
 	// All blocks should eventually be activated
 	// If race occurs, some activations sit in pool and never get processed → timeout
-	ASSERT_TIMELY (15s, activated_count >= num_blocks);
+	ASSERT_TIMELY (15s, activated_count.value () >= num_blocks);
 
 	// Verify pool is empty (all blocks were activated)
 	ASSERT_TRUE (node.scheduler.priority.empty ());
