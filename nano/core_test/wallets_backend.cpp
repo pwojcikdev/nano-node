@@ -91,7 +91,8 @@ TEST (wallets_backend, tx_single_writer)
 		// With the first write txn live, the second must block. 100ms is generous
 		// enough that flake would indicate a real contract violation, not noise.
 		std::this_thread::sleep_for (std::chrono::milliseconds (100));
-		ASSERT_FALSE (second_txn_begun.load ());
+		// Not fatal, returning would leave the thread unjoined and terminate the whole binary
+		EXPECT_FALSE (second_txn_begun.load ());
 	}
 	// first_wallet_txn destroyed -> write lock released -> second writer unblocks.
 	second_writer.join ();

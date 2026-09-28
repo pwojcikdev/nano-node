@@ -232,9 +232,9 @@ public:
 	shared_counter (shared_counter const &) = default; // Also serves moves, so a moved-from copy still holds the counter
 	shared_counter & operator= (shared_counter const &) = delete; // Would rebind a copy to another counter
 
-	void increment () const
+	void increment (std::size_t amount = 1) const
 	{
-		counter->fetch_add (1);
+		counter->fetch_add (amount);
 	}
 
 	std::size_t value () const

@@ -854,7 +854,8 @@ TEST (wallet, insert_lock_race)
 	for (int i = 0; i < 100; ++i)
 	{
 		auto insert_result = wallet->deterministic_insert (false);
-		ASSERT_TRUE (insert_result || insert_result.error () == nano::error_common::wallet_locked);
+		// Not fatal, returning would leave the locker unjoined and terminate the whole binary
+		EXPECT_TRUE (insert_result || insert_result.error () == nano::error_common::wallet_locked);
 	}
 	done = true;
 	locker.join ();

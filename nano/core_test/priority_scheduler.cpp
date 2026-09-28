@@ -572,10 +572,7 @@ TEST (priority_scheduler, stress_test)
 	nano::test::shared_counter activations_requested; // The first block is activated by the test itself
 
 	node.scheduler.priority.batch_activated.add ([&node, blocks, workers, activated_count, activations_requested] (auto const & batch) {
-		for ([[maybe_unused]] auto const & hash : batch)
-		{
-			activated_count.increment ();
-		}
+		activated_count.increment (batch.size ());
 
 		// Tasks run only while the guard keeps the pool running, before the node stops
 		workers->post ([&node, blocks, activations_requested] () {

@@ -210,33 +210,32 @@ TEST (ledger, deep_account_compute)
  */
 TEST (wallet, multithreaded_send_async)
 {
+	nano::test::system system (1);
+	nano::keypair key;
+	auto wallet_l (system.wallet (0));
+	wallet_l->insert_adhoc (nano::dev::genesis_key.prv);
+	wallet_l->insert_adhoc (key.prv);
+	int num_of_threads = 20;
+	int num_of_sends = 1000;
 	std::vector<boost::thread> threads;
+	for (auto i (0); i < num_of_threads; ++i)
 	{
-		nano::test::system system (1);
-		nano::keypair key;
-		auto wallet_l (system.wallet (0));
-		wallet_l->insert_adhoc (nano::dev::genesis_key.prv);
-		wallet_l->insert_adhoc (key.prv);
-		int num_of_threads = 20;
-		int num_of_sends = 1000;
-		for (auto i (0); i < num_of_threads; ++i)
-		{
-			threads.push_back (boost::thread ([wallet_l, &key, num_of_threads, num_of_sends] () {
-				for (auto i (0); i < num_of_sends; ++i)
-				{
-					wallet_l->send_async (nano::dev::genesis_key.pub, key.pub, 1000, [] (std::shared_ptr<nano::block> const & block_a) {
-						ASSERT_FALSE (block_a == nullptr);
-						ASSERT_FALSE (block_a->hash ().is_zero ());
-					});
-				}
-			}));
-		}
-		ASSERT_TIMELY_EQ (1000s, system.nodes[0]->balance (nano::dev::genesis_key.pub), (nano::dev::constants.genesis_amount - num_of_threads * num_of_sends * 1000));
+		threads.push_back (boost::thread ([wallet_l, &key, num_of_threads, num_of_sends] () {
+			for (auto i (0); i < num_of_sends; ++i)
+			{
+				wallet_l->send_async (nano::dev::genesis_key.pub, key.pub, 1000, [] (std::shared_ptr<nano::block> const & block_a) {
+					ASSERT_FALSE (block_a == nullptr);
+					ASSERT_FALSE (block_a->hash ().is_zero ());
+				});
+			}
+		}));
 	}
-	for (auto i (threads.begin ()), n (threads.end ()); i != n; ++i)
+	// The threads only queue the sends, so they are joined before a failing wait can return and leave them running on `key`
+	for (auto & thread : threads)
 	{
-		i->join ();
+		thread.join ();
 	}
+	ASSERT_TIMELY_EQ (1000s, system.nodes[0]->balance (nano::dev::genesis_key.pub), (nano::dev::constants.genesis_amount - num_of_threads * num_of_sends * 1000));
 }
 
 TEST (store, load)
@@ -1396,10 +1395,15 @@ namespace transport
 			});
 		}
 
-		ASSERT_TIMELY (30s, shared_data.done);
+		// Failures are not fatal until the threads are joined, returning would leave them running on this scope's data
+		EXPECT_TIMELY (30s, shared_data.done);
+		EXPECT_TRUE (std::all_of (node_data.begin (), node_data.end (), [] (auto const & data) { return !data.keep_requesting_metrics; }));
 
-		ASSERT_TRUE (std::all_of (node_data.begin (), node_data.end (), [] (auto const & data) { return !data.keep_requesting_metrics; }));
-
+		// Releases threads still requesting after a failed wait
+		for (auto & data : node_data)
+		{
+			data.keep_requesting_metrics = false;
+		}
 		for (auto & thread : threads)
 		{
 			thread.join ();
@@ -2066,15 +2070,19 @@ TEST (node, wallet_create_block_confirm_conflicts)
 		});
 
 		// Call block confirm on the top level send block which will confirm everything underneath on both accounts.
+		// Failures are not fatal until the wallet thread is joined, returning with it running would terminate the whole binary
 		{
 			auto block = node->ledger.any.block_get (node->ledger.tx_begin_read (), latest);
 			node->scheduler.manual.push (block);
 			std::shared_ptr<nano::election> election;
-			ASSERT_TIMELY (10s, (election = node->active.election (block->qualified_root ())) != nullptr);
-			election->force_confirm ();
+			EXPECT_TIMELY (10s, (election = node->active.election (block->qualified_root ())) != nullptr);
+			if (election)
+			{
+				election->force_confirm ();
+			}
 		}
 
-		ASSERT_TIMELY (120s, node->ledger.cemented.block_exists_or_pruned (node->ledger.tx_begin_read (), latest) && node->cementing_set.size () == 0);
+		EXPECT_TIMELY (120s, node->ledger.cemented.block_exists_or_pruned (node->ledger.tx_begin_read (), latest) && node->cementing_set.size () == 0);
 		done = true;
 		t.join ();
 	}

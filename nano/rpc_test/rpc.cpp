@@ -6749,6 +6749,8 @@ TEST (rpc, database_txn_tracker)
 	// It can take a long time to generate stack traces
 	auto response (wait_response (system, rpc_ctx, request, 60s));
 	keep_txn_alive_promise.set_value ();
+	// Joined before any assertion can return, a joinable thread going out of scope terminates the whole binary
+	thread.join ();
 	std::vector<std::tuple<std::string, std::string, std::string, std::vector<std::tuple<std::string, std::string, std::string, std::string>>>> json_l;
 	auto & json_node (response.get_child ("txn_tracking"));
 	for (auto & stat : json_node)
@@ -6772,7 +6774,6 @@ TEST (rpc, database_txn_tracker)
 	// Due to results being different for different compilers/build options we cannot reliably check the contents.
 	// The best we can do is just check that there are entries.
 	ASSERT_TRUE (!std::get<3> (json_l.front ()).empty ());
-	thread.join ();
 }
 
 TEST (rpc, database_stats)

@@ -33,8 +33,9 @@ TEST (vote_processor, producer_consumer)
 		}
 	};
 
-	auto monitor = [&node, &number_of_votes, &producer_wins, &consumer_wins] () -> void {
-		while (node.vote_processor.total_processed.load () < number_of_votes)
+	std::atomic<bool> stop_monitor{ false };
+	auto monitor = [&node, &number_of_votes, &producer_wins, &consumer_wins, &stop_monitor] () -> void {
+		while (!stop_monitor && node.vote_processor.total_processed.load () < number_of_votes)
 		{
 			std::this_thread::sleep_for (std::chrono::milliseconds (50));
 			if (node.vote_processor.empty ())
@@ -57,7 +58,9 @@ TEST (vote_processor, producer_consumer)
 
 	std::thread monitor_thread{ monitor };
 
-	ASSERT_TIMELY (30s, node.vote_processor.total_processed.load () >= number_of_votes);
+	// Not fatal, returning would leave the threads unjoined and terminate the whole binary
+	EXPECT_TIMELY (30s, node.vote_processor.total_processed.load () >= number_of_votes);
+	stop_monitor = true;
 
 	for (auto & producer : producers)
 	{
