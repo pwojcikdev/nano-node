@@ -1786,10 +1786,11 @@ TEST (active_elections, stale_election)
 				.work (*system.work.generate (nano::dev::genesis->hash ()))
 				.build ();
 
-	std::atomic<bool> stale_detected{ false };
-	node.active.election_stale.add ([&] (auto const & election) {
-		EXPECT_EQ (send->qualified_root (), election->qualified_root);
-		stale_detected = true;
+	// The election stays stale after the test body returns, so the checkup keeps notifying until the node stops
+	nano::test::shared_flag stale_detected;
+	node.active.election_stale.add ([root = send->qualified_root (), stale_detected] (auto const & election) {
+		EXPECT_EQ (root, election->qualified_root);
+		stale_detected.set ();
 	});
 
 	// Process the block and start an election
@@ -1804,7 +1805,7 @@ TEST (active_elections, stale_election)
 	ASSERT_EQ (0, node.active.stale_count ());
 
 	// Wait for stale_threshold to pass and stats to be incremented
-	ASSERT_TIMELY (5s, stale_detected);
+	ASSERT_TIMELY (5s, stale_detected.is_set ());
 	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::active_elections, nano::stat::detail::stale) > 0);
 	ASSERT_TIMELY_EQ (5s, 1, node.active.stale_count ());
 }
@@ -1822,10 +1823,10 @@ TEST (active_elections, stale_election_multiple)
 	// Create 10 independent blocks that will each have their own election
 	auto blocks = nano::test::setup_independent_blocks (system, node, 10);
 
-	// Track which elections had stale events fired
-	nano::locked<std::set<nano::qualified_root>> stale_detected;
+	// Track which elections had stale events fired, the elections stay stale after the test body returns
+	nano::shared_locked<std::set<nano::qualified_root>> stale_detected;
 
-	node.active.election_stale.add ([&] (auto const & election) {
+	node.active.election_stale.add ([stale_detected] (auto const & election) {
 		stale_detected.lock ()->insert (election->qualified_root);
 	});
 
