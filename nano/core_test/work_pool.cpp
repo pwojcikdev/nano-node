@@ -10,6 +10,7 @@
 #include <nano/node/openclwork.hpp>
 #include <nano/secure/common.hpp>
 #include <nano/secure/network_params.hpp>
+#include <nano/test_common/testutil.hpp>
 
 #include <gtest/gtest.h>
 
@@ -63,11 +64,15 @@ TEST (work, cancel)
 	nano::work_pool pool{ nano::dev::network_params.network, std::numeric_limits<unsigned>::max () };
 	const nano::root key (1);
 	auto iterations = 0;
-	auto done = false;
-	while (!done)
+	// A worker that already took a request calls back without the pool lock, possibly after the test body returned
+	nano::test::shared_flag done;
+	while (!done.is_set ())
 	{
-		pool.generate (nano::work_version::work_1, key, nano::dev::network_params.work.base, [&done] (std::optional<uint64_t> work_a) {
-			done = !work_a;
+		pool.generate (nano::work_version::work_1, key, nano::dev::network_params.work.base, [done] (std::optional<uint64_t> work_a) {
+			if (!work_a)
+			{
+				done.set ();
+			}
 		});
 		pool.cancel (key);
 		++iterations;
