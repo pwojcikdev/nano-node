@@ -23,34 +23,26 @@ namespace
 class responses_helper final
 {
 public:
-	void add (nano::messages::asc_pull_ack const & ack)
-	{
-		nano::lock_guard<nano::mutex> lock{ mutex };
-		responses.push_back (ack);
-	}
-
 	std::vector<nano::messages::asc_pull_ack> get ()
 	{
-		nano::lock_guard<nano::mutex> lock{ mutex };
 		return responses;
 	}
 
 	std::size_t size ()
 	{
-		nano::lock_guard<nano::mutex> lock{ mutex };
-		return responses.size ();
+		return responses.lock ()->size ();
 	}
 
 	void connect (nano::bootstrap_server & server)
 	{
-		server.on_response.add ([&] (auto & response, auto & channel) {
-			add (response);
+		// The node keeps the observer after the test body returns, so it shares the responses rather than referring to this helper
+		server.on_response.add ([responses = responses] (auto & response, auto & channel) {
+			responses.lock ()->push_back (response);
 		});
 	}
 
 private:
-	nano::mutex mutex;
-	std::vector<nano::messages::asc_pull_ack> responses;
+	nano::shared_locked<std::vector<nano::messages::asc_pull_ack>> responses;
 };
 
 /**
