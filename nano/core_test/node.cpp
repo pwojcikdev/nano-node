@@ -1703,16 +1703,16 @@ TEST (node, balance_observer)
 {
 	nano::test::system system (1);
 	auto & node1 (*system.nodes[0]);
-	std::atomic<int> balances (0);
+	nano::test::shared_counter balances;
 	nano::keypair key;
-	node1.observers.account_balance.add ([&key, &balances] (nano::account const & account_a, bool is_pending) {
-		if (key.pub == account_a && is_pending)
+	node1.observers.account_balance.add ([destination = key.pub, balances] (nano::account const & account_a, bool is_pending) {
+		if (destination == account_a && is_pending)
 		{
-			balances++;
+			balances.increment ();
 		}
 		else if (nano::dev::genesis_key.pub == account_a && !is_pending)
 		{
-			balances++;
+			balances.increment ();
 		}
 	});
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
@@ -1722,7 +1722,7 @@ TEST (node, balance_observer)
 	while (!done)
 	{
 		auto ec = system.poll ();
-		done = balances.load () == 2;
+		done = balances.value () == 2;
 		ASSERT_NO_ERROR (ec);
 	}
 }

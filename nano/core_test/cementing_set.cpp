@@ -803,9 +803,10 @@ TEST (confirmation_callback, dependent_election)
 	node_config.backlog_scan->enable = false;
 	auto node = system.add_node (node_config);
 
-	batch_collector collector;
-	node->cementing_set.batch_cemented.add ([&] (auto const & batch) {
-		collector.collect (batch);
+	// Shared with the observer, which the node keeps after the test body returns
+	auto collector = std::make_shared<batch_collector> ();
+	node->cementing_set.batch_cemented.add ([collector] (auto const & batch) {
+		collector->collect (batch);
 	});
 
 	auto blocks = make_chain (system, 3);
@@ -831,8 +832,8 @@ TEST (confirmation_callback, dependent_election)
 	ASSERT_EQ (4, node->ledger.cemented_count ());
 
 	// The source election is propagated to every context cemented under its confirmation root
-	ASSERT_TIMELY_EQ (5s, collector.size (), 3);
-	auto contexts = collector.get ();
+	ASSERT_TIMELY_EQ (5s, collector->size (), 3);
+	auto contexts = collector->get ();
 	for (size_t i = 0; i < contexts.size (); ++i)
 	{
 		ASSERT_EQ (blocks[i]->hash (), contexts[i].block->hash ());

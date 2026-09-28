@@ -542,14 +542,12 @@ TEST (vote_replier, multiple_representatives)
 
 	auto channel = nano::test::test_channel (node);
 
-	// Collect all confirm_ack messages
-	std::vector<std::shared_ptr<nano::vote>> votes;
-	nano::mutex votes_mutex;
-	channel->observe ([&] (nano::messages::message const & message, nano::transport::traffic_type) {
+	// Collect all confirm_ack messages, shared with the observer since the vote replier sends on the channel from its own threads
+	nano::shared_locked<std::vector<std::shared_ptr<nano::vote>>> votes;
+	channel->observe ([votes] (nano::messages::message const & message, nano::transport::traffic_type) {
 		if (auto * ack = dynamic_cast<nano::messages::confirm_ack const *> (&message))
 		{
-			nano::lock_guard<nano::mutex> guard{ votes_mutex };
-			votes.push_back (ack->vote);
+			votes.lock ()->push_back (ack->vote);
 		}
 	});
 
@@ -557,15 +555,11 @@ TEST (vote_replier, multiple_representatives)
 
 	// Two representatives should produce two separate votes
 	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::vote_replier, nano::stat::detail::reply_final), 1);
-	auto get_votes_size = [&] () {
-		nano::lock_guard<nano::mutex> guard{ votes_mutex };
-		return votes.size ();
-	};
-	ASSERT_TIMELY_EQ (5s, get_votes_size (), 2);
+	ASSERT_TIMELY_EQ (5s, votes.lock ()->size (), 2);
 
-	nano::lock_guard<nano::mutex> guard{ votes_mutex };
+	auto locked = votes.lock ();
 	std::set<nano::account> signers;
-	for (auto const & vote : votes)
+	for (auto const & vote : *locked)
 	{
 		ASSERT_TRUE (vote->is_final ());
 		ASSERT_EQ (1, vote->hashes.size ());

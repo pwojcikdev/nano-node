@@ -140,9 +140,9 @@ TEST (vote_router, vote_during_election_start)
 {
 	nano::test::system system (1);
 	auto & node = *system.nodes[0];
-	std::size_t matched{ 0 };
-	node.vote_router.vote_matched.add ([&] (auto const &) {
-		++matched;
+	nano::test::shared_counter matched;
+	node.vote_router.vote_matched.add ([matched] (auto const &) {
+		matched.increment ();
 	});
 	nano::block_hash const routed{ 1 };
 	nano::block_hash const starting{ 2 };
@@ -160,7 +160,7 @@ TEST (vote_router, vote_during_election_start)
 	auto results = node.vote_router.vote (vote);
 	ASSERT_EQ (nano::vote_code::vote, results.at (routed));
 	ASSERT_EQ (nano::vote_code::vote, results.at (starting));
-	ASSERT_EQ (1, matched);
+	ASSERT_EQ (1, matched.value ());
 
 	auto votes = started->votes ();
 	ASSERT_TRUE (votes.contains (nano::dev::genesis_key.pub));
@@ -180,14 +180,14 @@ TEST (vote_router, vote_during_election_start_observes_representative)
 	flags.disable_rep_crawler = true;
 	auto & node = *system.add_node (flags);
 	nano::block_hash const starting{ 1 };
-	std::size_t matched{ 0 };
+	nano::test::shared_counter matched;
 	std::size_t counted{ 0 };
-	node.vote_router.vote_matched.add ([&] (auto const &) {
-		++matched;
+	node.vote_router.vote_matched.add ([matched] (auto const &) {
+		matched.increment ();
 	});
 	auto check_observed = [&] (nano::account const &) {
 		++counted;
-		EXPECT_EQ (1, matched);
+		EXPECT_EQ (1, matched.value ());
 		EXPECT_GT (node.online_reps.online (), 0);
 	};
 	auto started = std::make_shared<nano::election> (node, nano::dev::genesis, nano::election_behavior::priority, 0, nullptr, check_observed);
@@ -195,7 +195,7 @@ TEST (vote_router, vote_during_election_start_observes_representative)
 
 	// Cache insertion queries weight after the first lookup, before the vote is stored
 	node.vote_cache.rep_weight_query = [&] (nano::account const & representative) {
-		EXPECT_EQ (0, matched);
+		EXPECT_EQ (0, matched.value ());
 		EXPECT_TRUE (node.vote_router.connect (starting, started));
 		EXPECT_TRUE (node.vote_cache.find (starting).empty ());
 		return weight_query (representative);
@@ -207,7 +207,7 @@ TEST (vote_router, vote_during_election_start_observes_representative)
 	node.vote_cache.rep_weight_query = weight_query;
 
 	ASSERT_EQ (nano::vote_code::vote, results.at (starting));
-	ASSERT_EQ (1, matched);
+	ASSERT_EQ (1, matched.value ());
 	ASSERT_EQ (1, counted);
 	ASSERT_EQ (starting, started->votes ().at (nano::dev::genesis_key.pub).hash);
 }

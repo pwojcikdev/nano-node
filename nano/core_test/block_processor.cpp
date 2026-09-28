@@ -128,10 +128,10 @@ TEST (block_processor, tags)
 	nano::test::system system;
 	auto & node = *system.add_node ();
 
-	std::mutex mutex;
-	std::vector<std::pair<nano::block_hash, std::string>> observed;
-	node.ledger_notifications.blocks_processed.add ([&] (auto const & batch) {
-		std::lock_guard<std::mutex> lock{ mutex };
+	// Shared with the observer, which the node keeps after the test body returns
+	nano::shared_locked<std::vector<std::pair<nano::block_hash, std::string>>> observed;
+	node.ledger_notifications.blocks_processed.add ([observed] (auto const & batch) {
+		auto locked = observed.lock ();
 		for (auto const & entry : batch)
 		{
 			auto const & context = entry.second;
@@ -139,7 +139,7 @@ TEST (block_processor, tags)
 			{
 				if (auto tag = std::any_cast<std::string> (&context.tag))
 				{
-					observed.emplace_back (context.block->hash (), *tag);
+					locked->emplace_back (context.block->hash (), *tag);
 				}
 			}
 		}
@@ -189,8 +189,8 @@ TEST (block_processor, tags)
 	ASSERT_EQ (result.value (), nano::block_status::progress);
 
 	auto has_observed = [&] (nano::block_hash const & hash, std::string const & tag) {
-		std::lock_guard<std::mutex> lock{ mutex };
-		return std::any_of (observed.begin (), observed.end (), [&] (auto const & entry) {
+		auto locked = observed.lock ();
+		return std::any_of (locked->begin (), locked->end (), [&] (auto const & entry) {
 			return entry.first == hash && entry.second == tag;
 		});
 	};

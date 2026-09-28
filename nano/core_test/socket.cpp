@@ -91,10 +91,11 @@ TEST (socket, disconnection_of_silent_connections)
 	auto node = system.add_node (config);
 
 	// On a connection, a server data socket is created. The shared pointer guarantees the object's lifecycle until the end of this test.
-	std::promise<std::shared_ptr<nano::transport::tcp_socket>> server_data_socket_promise;
-	std::future<std::shared_ptr<nano::transport::tcp_socket>> server_data_socket_future = server_data_socket_promise.get_future ();
-	node->tcp_listener.connection_accepted.add ([&server_data_socket_promise] (auto const & socket, auto const & server) {
-		server_data_socket_promise.set_value (socket);
+	// The promise is shared with the observer, which the node keeps after the test body returns
+	auto server_data_socket_promise = std::make_shared<std::promise<std::shared_ptr<nano::transport::tcp_socket>>> ();
+	std::future<std::shared_ptr<nano::transport::tcp_socket>> server_data_socket_future = server_data_socket_promise->get_future ();
+	node->tcp_listener.connection_accepted.add ([server_data_socket_promise] (auto const & socket, auto const & server) {
+		server_data_socket_promise->set_value (socket);
 	});
 
 	boost::asio::ip::tcp::endpoint dst_endpoint{ boost::asio::ip::address_v6::loopback (), node->tcp_listener.endpoint ().port () };

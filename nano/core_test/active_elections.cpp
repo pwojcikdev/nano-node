@@ -313,16 +313,16 @@ TEST (active_elections, fork_cached_before_publish)
 	std::future<void> insertion;
 	std::promise<void> release_promise;
 	auto released = release_promise.get_future ().share ();
-	std::atomic<bool> inserting{ false };
-	node.active.election_started.add ([&inserting, released] (auto const &...) {
-		inserting = true;
+	nano::test::shared_flag inserting;
+	node.active.election_started.add ([inserting, released] (auto const &...) {
+		inserting.set ();
 		released.wait (); // Keep the election inserted but not yet past its read of the fork cache
 	});
 
 	insertion = std::async (std::launch::async, [&node, send] () {
 		node.active.insert (send);
 	});
-	ASSERT_TIMELY (5s, inserting);
+	ASSERT_TIMELY (5s, inserting.is_set ());
 
 	// Elections cannot be asked about the fork while the insertion is held, the fork has to be in the cache regardless
 	node.process_active (fork);
