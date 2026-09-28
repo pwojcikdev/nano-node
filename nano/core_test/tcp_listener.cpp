@@ -19,6 +19,7 @@
 #include <future>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -185,28 +186,29 @@ TEST (tcp_listener, node_id_handshake)
 	nano::messages::node_id_handshake::query_payload query{ *cookie };
 	nano::messages::node_id_handshake node_id_handshake{ nano::dev::network_params.network, query };
 	auto input (node_id_handshake.to_shared_const_buffer ());
-	std::atomic<bool> write_done (false);
-	socket->async_connect (bootstrap_endpoint, [&input, socket, &write_done] (boost::system::error_code const & ec) {
+	// Callbacks capture copies, so a wait that times out does not leave them pointing at this test's locals
+	nano::test::shared_flag write_done;
+	socket->async_connect (bootstrap_endpoint, [input, socket, write_done] (boost::system::error_code const & ec) {
 		ASSERT_FALSE (ec);
-		socket->async_write (input, [&input, &write_done] (boost::system::error_code const & ec, size_t size_a) {
+		socket->async_write (input, [input, write_done] (boost::system::error_code const & ec, size_t size_a) {
 			ASSERT_FALSE (ec);
 			ASSERT_EQ (input.size (), size_a);
-			write_done = true;
+			write_done.set ();
 		});
 	});
 
-	ASSERT_TIMELY (5s, write_done);
+	ASSERT_TIMELY (5s, write_done.is_set ());
 
 	nano::messages::node_id_handshake::response_payload response_zero{ 0 };
 	nano::messages::node_id_handshake node_id_handshake_response{ nano::dev::network_params.network, std::nullopt, response_zero };
 	auto output (node_id_handshake_response.to_bytes ());
-	std::atomic<bool> done (false);
-	socket->async_read (output, output->size (), [&output, &done] (boost::system::error_code const & ec, size_t size_a) {
+	nano::test::shared_flag done;
+	socket->async_read (output, output->size (), [output, done] (boost::system::error_code const & ec, size_t size_a) {
 		ASSERT_FALSE (ec);
 		ASSERT_EQ (output->size (), size_a);
-		done = true;
+		done.set ();
 	});
-	ASSERT_TIMELY (5s, done);
+	ASSERT_TIMELY (5s, done.is_set ());
 }
 
 TEST (tcp_listener, timeout_empty)
@@ -265,15 +267,16 @@ TEST (tcp_listener, asc_pull_oversized_payload_no_crash)
 	}
 
 	auto socket = std::make_shared<nano::transport::tcp_socket> (*node);
-	std::atomic<bool> write_done{ false };
-	socket->async_connect (node->tcp_listener.endpoint (), [socket, bytes, &write_done] (boost::system::error_code const & ec) {
+	// Callbacks capture a copy, so a wait that times out does not leave them pointing at this test's locals
+	nano::test::shared_flag write_done;
+	socket->async_connect (node->tcp_listener.endpoint (), [socket, bytes, write_done] (boost::system::error_code const & ec) {
 		ASSERT_FALSE (ec);
-		socket->async_write (bytes, [&write_done] (boost::system::error_code const & ec, size_t size) {
+		socket->async_write (bytes, [write_done] (boost::system::error_code const & ec, size_t size) {
 			ASSERT_FALSE (ec);
-			write_done = true;
+			write_done.set ();
 		});
 	});
-	ASSERT_TIMELY (5s, write_done);
+	ASSERT_TIMELY (5s, write_done.is_set ());
 
 	// The header fits the buffer, so the node reads it and stalls on the absent body until timeout.
 	ASSERT_TIMELY_EQ (10s, node->tcp_listener.connection_count (), 0);
@@ -290,17 +293,16 @@ TEST (tcp_listener, connect_callback_reports_success)
 	auto node = system.add_node (node_flags);
 
 	auto target = node->tcp_listener.endpoint ();
-	std::atomic<bool> called{ false };
-	std::atomic<bool> reported_error{ true };
+	// Shared with the callback, which a wait that times out leaves pending
+	nano::shared_locked<std::optional<std::error_code>> reported;
 
-	bool initiated = node->tcp_listener.connect (target.address (), target.port (), [&] (nano::tcp_endpoint const &, std::error_code ec) {
-		reported_error = static_cast<bool> (ec);
-		called = true;
+	bool initiated = node->tcp_listener.connect (target.address (), target.port (), [reported] (nano::tcp_endpoint const &, std::error_code ec) {
+		*reported.lock () = ec;
 	});
 	ASSERT_TRUE (initiated);
 
-	ASSERT_TIMELY (5s, called.load ());
-	ASSERT_FALSE (reported_error.load ()); // Success => empty error code
+	ASSERT_TIMELY (5s, reported.lock ()->has_value ());
+	ASSERT_FALSE (reported.lock ()->value ()); // Success => empty error code
 }
 
 TEST (tcp_listener, connect_callback_reports_failure)
@@ -316,19 +318,16 @@ TEST (tcp_listener, connect_callback_reports_failure)
 		dead_endpoint = acceptor.local_endpoint ();
 	}
 
-	std::atomic<bool> called{ false };
-	std::atomic<bool> reported_error{ false };
-	std::string reported_message;
+	// Shared with the callback, which a wait that times out leaves pending
+	nano::shared_locked<std::optional<std::error_code>> reported;
 
-	bool initiated = node->tcp_listener.connect (dead_endpoint.address (), dead_endpoint.port (), [&] (nano::tcp_endpoint const &, std::error_code ec) {
-		// Written before the atomic flag, so it is visible once `called` is observed true
-		reported_message = ec.message ();
-		reported_error = static_cast<bool> (ec);
-		called = true;
+	bool initiated = node->tcp_listener.connect (dead_endpoint.address (), dead_endpoint.port (), [reported] (nano::tcp_endpoint const &, std::error_code ec) {
+		*reported.lock () = ec;
 	});
 	ASSERT_TRUE (initiated);
 
-	ASSERT_TIMELY (5s, called.load ());
-	ASSERT_TRUE (reported_error.load ());
-	ASSERT_FALSE (reported_message.empty ());
+	ASSERT_TIMELY (5s, reported.lock ()->has_value ());
+	auto const ec = reported.lock ()->value ();
+	ASSERT_TRUE (ec);
+	ASSERT_FALSE (ec.message ().empty ());
 }

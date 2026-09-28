@@ -102,13 +102,13 @@ TEST (socket, disconnection_of_silent_connections)
 
 	// Instantiates a client to simulate an incoming connection.
 	auto client_socket = std::make_shared<nano::transport::tcp_socket> (*node);
-	std::atomic<bool> connected{ false };
+	nano::test::shared_flag connected;
 	// Opening a connection that will be closed because it remains silent during the tolerance time.
-	client_socket->async_connect (dst_endpoint, [client_socket, &connected] (boost::system::error_code const & ec_a) {
+	client_socket->async_connect (dst_endpoint, [client_socket, connected] (boost::system::error_code const & ec_a) {
 		ASSERT_FALSE (ec_a);
-		connected = true;
+		connected.set ();
 	});
-	ASSERT_TIMELY (5s, connected);
+	ASSERT_TIMELY (5s, connected.is_set ());
 
 	// Checking the connection was closed.
 	ASSERT_TIMELY (10s, server_data_socket_future.wait_for (0s) == std::future_status::ready);
