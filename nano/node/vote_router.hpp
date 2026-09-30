@@ -150,6 +150,8 @@ private: // Dependencies
 private:
 	void run ();
 
+	static size_t constexpr inline_matches{ 16 }; // Elections one vote reaches without allocating
+
 	struct route
 	{
 		nano::block_hash hash;

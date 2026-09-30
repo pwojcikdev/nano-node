@@ -87,8 +87,10 @@ private:
 	bool vote_impl (std::shared_ptr<nano::vote> const & vote, nano::uint128_t const & rep_weight, std::size_t max_voters);
 	std::pair<nano::uint128_t, nano::uint128_t> calculate_tally () const; // <tally, final_tally>
 
-	// At most `max_voters` small records: searching them linearly beats an index, and the first few need no allocation
-	using voter_list = boost::container::small_vector<voter_entry, 4>;
+	static std::size_t constexpr inline_voters{ 4 }; // Voters an entry holds without allocating
+
+	// At most `max_voters` small records: searching them linearly beats an index
+	using voter_list = boost::container::small_vector<voter_entry, inline_voters>;
 	voter_list voters;
 
 	// Lowest weight voter, the earliest one among equals

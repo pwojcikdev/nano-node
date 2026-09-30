@@ -172,6 +172,9 @@ public: // Queries
 	size_t block_count () const;
 
 private:
+	static size_t constexpr inline_hashes{ 4 }; // Voted-for hashes weighed without allocating, an election rarely sees more
+	static size_t constexpr inline_reps{ 128 }; // Voters tallied without allocating
+
 	// Vote weight behind one voted-for block hash
 	struct block_weight final
 	{
@@ -180,10 +183,9 @@ private:
 	};
 
 	// Vote weight per voted-for block hash, including unheld hashes
-	// An election rarely sees more than a few hashes, so they stay on the stack
 	struct block_weights final
 	{
-		boost::container::flat_map<nano::block_hash, block_weight, std::less<nano::block_hash>, boost::container::small_vector<std::pair<nano::block_hash, block_weight>, 4>> weights;
+		boost::container::small_flat_map<nano::block_hash, block_weight, inline_hashes> weights;
 
 		// Weight behind the hash (normal + final votes), zero when nothing is tallied for it
 		nano::uint128_t weight (nano::block_hash const &) const;

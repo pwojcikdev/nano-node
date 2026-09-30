@@ -163,7 +163,7 @@ nano::vote_results nano::vote_router::vote (std::shared_ptr<nano::vote> const & 
 		size_t position;
 		std::shared_ptr<nano::election> election;
 	};
-	boost::container::small_vector<match, 16> matches;
+	boost::container::small_vector<match, inline_matches> matches;
 
 	// Positions ordered by their hash, so inserting a position fails if its hash occurred before
 	auto const hash_less = [&hashes] (uint8_t lhs, uint8_t rhs) {

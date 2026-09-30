@@ -213,8 +213,8 @@ nano::uint128_t nano::election_ballot::block_weights::final_weight (nano::block_
 template <typename Visitor>
 void nano::election_ballot::for_each_weighted_vote (Visitor && visit) const
 {
-	// Reps and their weights side by side, a typical election fits on the stack
-	boost::container::small_vector<nano::account, 128> reps;
+	// Reps and their weights side by side
+	boost::container::small_vector<nano::account, inline_reps> reps;
 	reps.reserve (votes_m.size ());
 	for (auto const & [rep, info] : votes_m)
 	{
@@ -222,7 +222,7 @@ void nano::election_ballot::for_each_weighted_vote (Visitor && visit) const
 	}
 
 	// A rep the query knows nothing about keeps its zero
-	boost::container::small_vector<nano::uint128_t, 128> weights (reps.size (), nano::uint128_t{ 0 });
+	boost::container::small_vector<nano::uint128_t, inline_reps> weights (reps.size (), nano::uint128_t{ 0 });
 	weight_query (reps, weights);
 
 	// The votes have not changed since the reps were collected, so they come in the same order
