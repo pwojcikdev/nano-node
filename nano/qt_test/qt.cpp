@@ -118,6 +118,25 @@ TEST (wallet, startup_balance)
 	ASSERT_EQ ("Balance: 0 nano", wallet->self.balance_label->text ().toStdString ());
 }
 
+// Refresh Wallet shows the balance the wallet holds now, not the one from its previous refresh
+TEST (wallet, refresh_wallet_balance)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	auto key = system.wallet (0)->deterministic_insert ().value ();
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, *system.nodes[0], system.wallet (0), key);
+	wallet->start ();
+	ASSERT_EQ ("Balance: " + wallet->format_balance (0), wallet->accounts.wallet_balance_label->text ().toStdString ());
+
+	// Adding genesis puts the whole supply in the wallet without the label noticing
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv));
+	ASSERT_EQ ("Balance: " + wallet->format_balance (0), wallet->accounts.wallet_balance_label->text ().toStdString ());
+
+	// The button refreshes the label right away
+	QTest::mouseClick (wallet->advanced.wallet_refresh, Qt::LeftButton);
+	ASSERT_EQ ("Balance: " + wallet->format_balance (nano::dev::constants.genesis_amount), wallet->accounts.wallet_balance_label->text ().toStdString ());
+}
+
 TEST (wallet, select_account)
 {
 	nano_qt::eventloop_processor processor;
