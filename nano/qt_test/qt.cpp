@@ -443,6 +443,86 @@ TEST (wallet, use_wallet_lock_state)
 	ASSERT_EQ (nano::error (nano::error_common::wallet_locked).get_message (), wallet->wallets.use_wallet->text ().toStdString ());
 }
 
+// Create wallet adds a wallet with a seed of its own and shows it with its first account
+TEST (wallet, create_wallet)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	auto system_wallet = system.wallet (0);
+	auto key = system_wallet->deterministic_insert ().value ();
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, node, system_wallet, key);
+	wallet->start ();
+	std::vector<selection> selections;
+	wallet->selection_observer = [&selections] (nano::wallet_id const & wallet_id, nano::account const & account) {
+		selections.push_back ({ wallet_id, account });
+	};
+	wallet->wallets.refresh ();
+
+	QTest::mouseClick (wallet->wallets.create_wallet, Qt::LeftButton);
+	ASSERT_EQ ("New wallet was created", wallet->wallets.create_wallet->text ().toStdString ());
+
+	// The new wallet is shown with its only account
+	ASSERT_EQ (2, node.wallets.wallet_count ());
+	ASSERT_NE (system_wallet, wallet->wallet_m);
+	auto accounts = wallet->wallet_m->accounts ();
+	ASSERT_EQ (1, accounts.size ());
+	ASSERT_EQ (accounts.front (), wallet->account);
+
+	// It has a seed of its own and no password yet
+	ASSERT_NE (system_wallet->get_seed ().value (), wallet->wallet_m->get_seed ().value ());
+	ASSERT_TRUE (wallet->active_status.active.contains (nano_qt::status_types::vulnerable));
+
+	// It is reported and listed in bold
+	ASSERT_EQ (1, selections.size ());
+	ASSERT_EQ (wallet->wallet_m, node.wallets.open (selections.back ().wallet));
+	ASSERT_EQ (2, wallet->wallets.model->rowCount ());
+	ASSERT_TRUE (listed_in_bold (*wallet, selections.back ().wallet));
+}
+
+// Restore wallet from seed adds a wallet with the accounts of the seed, leaving the wallet shown before untouched
+TEST (wallet, restore_wallet)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	auto system_wallet = system.wallet (0);
+	auto key = system_wallet->deterministic_insert ().value ();
+	auto system_seed = system_wallet->get_seed ().value ();
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, node, system_wallet, key);
+	wallet->start ();
+	wallet->wallets.refresh ();
+
+	// A seed missing digits adds nothing, though it decodes as a smaller number
+	QTest::keyClicks (wallet->wallets.seed, "1234");
+	QTest::mouseClick (wallet->wallets.restore_wallet, Qt::LeftButton);
+	ASSERT_EQ ("Incorrect seed, length must be 64", wallet->wallets.restore_wallet->text ().toStdString ());
+
+	// Neither does one with characters that are not hex digits
+	wallet->wallets.seed->clear ();
+	QTest::keyClicks (wallet->wallets.seed, std::string (64, 'z').c_str ());
+	QTest::mouseClick (wallet->wallets.restore_wallet, Qt::LeftButton);
+	ASSERT_EQ ("Incorrect seed. Only HEX characters allowed", wallet->wallets.restore_wallet->text ().toStdString ());
+	ASSERT_EQ (1, node.wallets.wallet_count ());
+	ASSERT_EQ (system_wallet, wallet->wallet_m);
+
+	// A seed restores into a new wallet, shown with the first account of the seed
+	auto seed = nano::keypair ().prv;
+	wallet->wallets.seed->clear ();
+	QTest::keyClicks (wallet->wallets.seed, seed.to_string ().c_str ());
+	QTest::mouseClick (wallet->wallets.restore_wallet, Qt::LeftButton);
+	ASSERT_EQ ("Wallet was restored", wallet->wallets.restore_wallet->text ().toStdString ());
+	ASSERT_EQ (2, node.wallets.wallet_count ());
+	ASSERT_NE (system_wallet, wallet->wallet_m);
+	ASSERT_EQ (seed, wallet->wallet_m->get_seed ().value ());
+	ASSERT_EQ (nano::pub_key (nano::deterministic_key (seed, 0)), wallet->account);
+	ASSERT_TRUE (wallet->wallets.seed->text ().isEmpty ());
+
+	// The wallet shown before keeps its seed and accounts
+	ASSERT_EQ (system_seed, system_wallet->get_seed ().value ());
+	ASSERT_TRUE (system_wallet->exists (key));
+}
+
 // The account viewer shows the history of the account entered into it
 TEST (wallet, account_viewer_history)
 {
