@@ -210,6 +210,45 @@ TEST (wallet, select_account_history)
 	ASSERT_EQ (0, wallet->history.model->rowCount ());
 }
 
+// Picking an account reports it with the id of its wallet, which the wallet executable saves in its config
+TEST (wallet, select_account_observer)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	auto const id = nano::random_wallet_id ();
+	auto wallet_l = system.nodes[0]->wallets.create (id);
+	auto key1 = wallet_l->deterministic_insert ().value ();
+	auto key2 = wallet_l->deterministic_insert ().value ();
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, *system.nodes[0], wallet_l, key1);
+	wallet->start ();
+	struct selection
+	{
+		nano::wallet_id wallet;
+		nano::account account;
+	};
+	std::vector<selection> selections;
+	wallet->selection_observer = [&selections] (nano::wallet_id const & wallet_id, nano::account const & account) {
+		selections.push_back ({ wallet_id, account });
+	};
+
+	// Use account reports the account picked
+	use_account (*wallet, key2);
+	ASSERT_EQ (1, selections.size ());
+	ASSERT_EQ (id, selections.back ().wallet);
+	ASSERT_EQ (key2, selections.back ().account);
+
+	// Importing a seed replaces the accounts and reports the restored one
+	nano::raw_key seed;
+	seed.clear ();
+	QTest::keyClicks (wallet->import.seed, seed.to_string ().c_str ());
+	QTest::keyClicks (wallet->import.clear_line, "clear keys");
+	QTest::mouseClick (wallet->import.import_seed, Qt::LeftButton);
+	ASSERT_NE (key2, wallet->account);
+	ASSERT_EQ (2, selections.size ());
+	ASSERT_EQ (id, selections.back ().wallet);
+	ASSERT_EQ (wallet->account, selections.back ().account);
+}
+
 // The account viewer shows the history of the account entered into it
 TEST (wallet, account_viewer_history)
 {
