@@ -28,6 +28,23 @@ using namespace std::chrono_literals;
 
 extern QApplication * test_application;
 
+namespace
+{
+/** Selects the row of \p account on the accounts screen and clicks Use account */
+void use_account (nano_qt::wallet & wallet, nano::account const & account)
+{
+	auto & model = *wallet.accounts.model;
+	for (auto row = 0; row < model.rowCount (); ++row)
+	{
+		if (model.item (row, 1)->text ().toStdString () == account.to_account ())
+		{
+			wallet.accounts.view->selectionModel ()->setCurrentIndex (model.index (row, 0), QItemSelectionModel::ClearAndSelect);
+		}
+	}
+	QTest::mouseClick (wallet.accounts.use_account, Qt::LeftButton);
+}
+}
+
 TEST (wallet, construction)
 {
 	nano_qt::eventloop_processor processor;
@@ -167,6 +184,51 @@ TEST (wallet, select_account)
 	{
 		ASSERT_EQ (key1, key4);
 	}
+}
+
+// The history on the main screen follows the account picked with Use account
+TEST (wallet, select_account_history)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv));
+	auto key = system.wallet (0)->deterministic_insert ().value ();
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, *system.nodes[0], system.wallet (0), key);
+	wallet->start ();
+
+	// The new account has no blocks yet
+	ASSERT_EQ (0, wallet->history.model->rowCount ());
+
+	// Genesis has its open block
+	use_account (*wallet, nano::dev::genesis_key.pub);
+	ASSERT_EQ (nano::dev::genesis_key.pub, wallet->account);
+	ASSERT_EQ (1, wallet->history.model->rowCount ());
+
+	// Going back to the new account empties the history again
+	use_account (*wallet, key);
+	ASSERT_EQ (key, wallet->account);
+	ASSERT_EQ (0, wallet->history.model->rowCount ());
+}
+
+// The account viewer shows the history of the account entered into it
+TEST (wallet, account_viewer_history)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	auto key = system.wallet (0)->deterministic_insert ().value ();
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, *system.nodes[0], system.wallet (0), key);
+	wallet->start ();
+
+	// Genesis has its open block
+	QTest::keyClicks (wallet->account_viewer.account_line, nano::dev::genesis_key.pub.to_account ().c_str ());
+	QTest::mouseClick (wallet->account_viewer.refresh, Qt::LeftButton);
+	ASSERT_EQ (1, wallet->account_viewer.history.model->rowCount ());
+
+	// An account without blocks has an empty history
+	wallet->account_viewer.account_line->clear ();
+	QTest::keyClicks (wallet->account_viewer.account_line, key.to_account ().c_str ());
+	QTest::mouseClick (wallet->account_viewer.refresh, Qt::LeftButton);
+	ASSERT_EQ (0, wallet->account_viewer.history.model->rowCount ());
 }
 
 TEST (wallet, main)
