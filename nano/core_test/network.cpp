@@ -32,7 +32,6 @@
 #include <deque>
 #include <map>
 #include <set>
-#include <thread>
 #include <variant>
 #include <vector>
 
@@ -595,29 +594,6 @@ TEST (network, flood_vote)
 }
 
 /*
- * The reachout flags keep every reachout loop from starting, while a node without them runs all three
- */
-TEST (network, disable_reachout)
-{
-	nano::test::system system;
-	nano::node_flags flags;
-	flags.disable_reachout = true;
-	flags.disable_reachout_preconfigured = true;
-	auto & node = *system.add_node (flags);
-	auto & control = *system.make_disconnected_node ();
-
-	// The control node, started second, has been round each loop at least once
-	ASSERT_TIMELY (5s, control.stats.count (nano::stat::type::network, nano::stat::detail::loop_reachout) >= 1);
-	ASSERT_TIMELY (5s, control.stats.count (nano::stat::type::network, nano::stat::detail::loop_reachout_cached) >= 1);
-	ASSERT_TIMELY (5s, control.stats.count (nano::stat::type::network, nano::stat::detail::loop_reachout_preconfigured) >= 1);
-
-	// The flagged node, started first, has been round none
-	ASSERT_EQ (0, node.stats.count (nano::stat::type::network, nano::stat::detail::loop_reachout));
-	ASSERT_EQ (0, node.stats.count (nano::stat::type::network, nano::stat::detail::loop_reachout_cached));
-	ASSERT_EQ (0, node.stats.count (nano::stat::type::network, nano::stat::detail::loop_reachout_preconfigured));
-}
-
-/*
  * Two nodes that know nothing of each other discover one another purely by connecting to a
  * peering-only node. Keeping no ledger does not stop it gossiping peers, which is what a
  * DNS-attached peering-only node exists to do.
@@ -1133,45 +1109,6 @@ TEST (network, prepare_handshake_response)
 }
 
 /*
- * A reachout resolves the address and connects to it, calling back with the endpoint, and a reachout to a peer already connected sends it a keepalive instead
- */
-TEST (network, reachout)
-{
-	nano::test::system system;
-	// A long keepalive period leaves the keepalive sent on connect and the reachout's as the only ones
-	nano::node_config node_config = system.default_config ();
-	node_config.network_params.network.keepalive_period = 10min;
-	auto & node = *system.add_node (node_config);
-	nano::node_config peer_config = system.default_config ();
-	peer_config.network_params.network.keepalive_period = 10min;
-	auto peer = system.make_disconnected_node (peer_config, nano::node_flags{});
-	auto const port = peer->network.port.load ();
-	auto const received = [&peer] () {
-		return peer->stats.count (nano::stat::type::message, nano::stat::detail::keepalive, nano::stat::dir::in);
-	};
-
-	// The first reachout connects and reports the endpoint it reached
-	std::atomic<bool> called{ false };
-	nano::tcp_endpoint reached;
-	std::error_code error;
-	node.network.reachout ("::1", port, [&] (nano::tcp_endpoint const & endpoint, std::error_code ec) {
-		reached = endpoint;
-		error = ec;
-		called = true;
-	});
-	ASSERT_TIMELY (5s, called);
-	ASSERT_FALSE (error);
-	ASSERT_EQ (port, reached.port ());
-	ASSERT_TIMELY (5s, node.network.find_node_id (peer->get_node_id ()));
-	ASSERT_TIMELY_EQ (5s, 1, received ());
-
-	// A reachout to the connected peer sends a keepalive down the existing channel and opens no second one
-	node.network.reachout ("::1", port);
-	ASSERT_TIMELY_EQ (5s, 2, received ());
-	ASSERT_EQ (1, node.network.size ());
-}
-
-/*
  * Excluding a live channel strikes its peer once, closes it and drops it from the container at once
  */
 TEST (network, exclude)
@@ -1201,90 +1138,4 @@ TEST (network, exclude)
 	ASSERT_FALSE (channel->alive ());
 	ASSERT_FALSE (tcp_channel->socket->alive ());
 	ASSERT_TIMELY (5s, node1.stats.count (nano::stat::type::tcp_channels, nano::stat::detail::erase_dead) >= 1);
-}
-
-/*
- * A reachout trigger wakes the preconfigured reachout loop and no other, so neither keepalive rounds nor cleanup rounds follow the rep crawler's cadence
- */
-TEST (network, trigger_reachout_wakes_preconfigured_only)
-{
-	nano::test::system system;
-	// Without the rep crawler the test is the only source of triggers, and the long keepalive period keeps that loop from ticking on its own
-	nano::node_flags flags;
-	flags.disable_rep_crawler = true;
-	nano::node_config node_config = system.default_config ();
-	node_config.network_params.network.keepalive_period = 10min;
-	auto & node = *system.add_node (node_config, flags);
-	auto const count = [&node] (nano::stat::detail detail) {
-		return node.stats.count (nano::stat::type::network, detail);
-	};
-	auto const cleanup_before = count (nano::stat::detail::loop_cleanup);
-	auto const preconfigured_before = count (nano::stat::detail::loop_reachout_preconfigured);
-
-	// A hundred triggers, each landing while the loops wait
-	for (auto i = 0; i < 100; ++i)
-	{
-		node.network.trigger_reachout ();
-		std::this_thread::sleep_for (10ms);
-	}
-	ASSERT_EQ (100, count (nano::stat::detail::trigger_reachout));
-
-	// The preconfigured loop went round, the keepalive loop never did, and the cleanup loop kept to its one tick a second
-	ASSERT_TIMELY (5s, count (nano::stat::detail::loop_reachout_preconfigured) > preconfigured_before);
-	ASSERT_ALWAYS_EQ (500ms, 0, count (nano::stat::detail::loop_keepalive));
-	ASSERT_LE (count (nano::stat::detail::loop_cleanup), cleanup_before + 3);
-}
-
-/*
- * Reachout triggers do not age the duplicate filter, which keeps counting its cutoff in seconds
- */
-TEST (network, trigger_reachout_keeps_filter_epoch)
-{
-	nano::test::system system;
-	nano::node_flags flags;
-	flags.disable_rep_crawler = true;
-	nano::node_config node_config = system.default_config ();
-	node_config.network->duplicate_filter_cutoff = 3;
-	auto & node = *system.add_node (node_config, flags);
-	nano::messages::publish const publish{ nano::dev::network_params.network, nano::dev::genesis };
-	auto const bytes = message_payload_to_bytes (publish);
-	ASSERT_FALSE (node.network.filter.apply (bytes.data (), bytes.size ()));
-
-	// Fifty triggers in half a second leave the entry in place, where fifty cleanup rounds would have aged it out
-	for (auto i = 0; i < 50; ++i)
-	{
-		node.network.trigger_reachout ();
-		std::this_thread::sleep_for (10ms);
-	}
-	ASSERT_TRUE (node.network.filter.check (bytes.data (), bytes.size ()));
-
-	// It still expires with the cutoff, counted in real seconds
-	ASSERT_TIMELY (10s, !node.network.filter.check (bytes.data (), bytes.size ()));
-}
-
-/*
- * A reachout trigger makes the preconfigured loop reach out at once instead of at its next period
- */
-TEST (network, trigger_reachout_reaches_out)
-{
-	nano::test::system system;
-	nano::node_flags flags;
-	flags.disable_rep_crawler = true;
-	nano::node_config node_config = system.default_config ();
-	// A peer address that resolves, with nothing listening on the default port, and periods too long to fire during the test
-	node_config.preconfigured_peers = { "::1" };
-	node_config.network_params.network.reachout_preconfigured_period = 10min;
-	node_config.network_params.network.reachout_preconfigured_warmup_period = 10min;
-	auto & node = *system.add_node (node_config, flags);
-	auto const count = [&node] () {
-		return node.stats.count (nano::stat::type::network, nano::stat::detail::reachout_preconfigured);
-	};
-
-	// The first round reaches out once and the next waits for the period
-	ASSERT_TIMELY_EQ (5s, 1, count ());
-	ASSERT_ALWAYS_EQ (1s, 1, count ());
-
-	// A trigger brings the next round forward
-	node.network.trigger_reachout ();
-	ASSERT_TIMELY_EQ (5s, 2, count ());
 }

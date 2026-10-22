@@ -136,6 +136,8 @@ add_library(
   monitor.cpp
   network.hpp
   network.cpp
+  network_reachout.hpp
+  network_reachout.cpp
   nodeconfig.hpp
   nodeconfig.cpp
   node_observers.hpp
