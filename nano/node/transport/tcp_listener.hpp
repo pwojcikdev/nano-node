@@ -65,6 +65,9 @@ public:
 	uint16_t port = 0,
 	nano::transport::connect_callback callback = noop<nano::transport::connect_callback> ());
 
+	// Connects to the endpoint from a coroutine and completes with the outcome: empty on success, else the refusal or the connection error
+	asio::awaitable<std::error_code> co_connect (nano::tcp_endpoint);
+
 	nano::tcp_endpoint endpoint () const;
 
 	size_t connection_count () const;

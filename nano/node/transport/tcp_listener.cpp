@@ -309,6 +309,30 @@ bool nano::transport::tcp_listener::connect (asio::ip::address ip, uint16_t port
 	return true; // Attempt started
 }
 
+asio::awaitable<std::error_code> nano::transport::tcp_listener::co_connect (nano::tcp_endpoint endpoint)
+{
+	auto token = asio::use_awaitable;
+	co_return co_await asio::async_initiate<decltype (token), void (std::error_code)> (
+	[this, endpoint] (auto handler) {
+		// The attempt completes on this listener's strand, so the outcome is dispatched back to the executor of the awaiting coroutine
+		auto executor = asio::get_associated_executor (handler);
+		auto handler_s = std::make_shared<decltype (handler)> (std::move (handler));
+		auto complete = [executor, handler_s] (std::error_code ec) {
+			asio::dispatch (executor, [handler_s, ec] () {
+				(*handler_s) (ec);
+			});
+		};
+		bool const started = connect (endpoint.address (), endpoint.port (), [complete] (nano::tcp_endpoint const &, std::error_code ec) {
+			complete (ec);
+		});
+		if (!started)
+		{
+			complete (nano::error_network::connection_rejected_locally);
+		}
+	},
+	token);
+}
+
 auto nano::transport::tcp_listener::connect_impl (asio::ip::tcp::endpoint endpoint, nano::transport::connect_callback callback) -> asio::awaitable<void>
 {
 	debug_assert (strand.running_in_this_thread ());

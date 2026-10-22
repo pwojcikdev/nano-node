@@ -1,5 +1,6 @@
 #include <nano/boost/asio/ip/address_v6.hpp>
 #include <nano/boost/asio/ip/network_v6.hpp>
+#include <nano/lib/errors.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/lib/thread_runner.hpp>
 #include <nano/messages/keepalive.hpp>
@@ -8,6 +9,7 @@
 #include <nano/messages/node_id_handshake.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/node/peer_blocklist.hpp>
 #include <nano/node/transport/tcp_listener.hpp>
 #include <nano/node/transport/tcp_socket.hpp>
 #include <nano/node/transport/transport.hpp>
@@ -331,4 +333,54 @@ TEST (tcp_listener, connect_callback_reports_failure)
 	ASSERT_TIMELY (5s, called.load ());
 	ASSERT_TRUE (reported_error.load ());
 	ASSERT_FALSE (reported_message.empty ());
+}
+
+// A coroutine connect completes with an empty error once the connection is accepted
+TEST (tcp_listener, co_connect_reports_success)
+{
+	nano::test::system system;
+	nano::node_flags node_flags;
+	// Without the per-ip and per-subnetwork limits the connection to itself is always accepted
+	node_flags.disable_max_peers_per_ip = true;
+	node_flags.disable_max_peers_per_subnetwork = true;
+	auto & node = *system.add_node (node_flags);
+
+	auto result = asio::co_spawn (node.io_ctx, node.tcp_listener.co_connect (node.tcp_listener.endpoint ()), asio::use_future);
+	ASSERT_EQ (std::future_status::ready, result.wait_for (5s));
+	ASSERT_FALSE (result.get ());
+}
+
+// A coroutine connect completes with the connection error when nothing listens at the endpoint
+TEST (tcp_listener, co_connect_reports_failure)
+{
+	nano::test::system system{ 1 };
+	auto & node = *system.nodes[0];
+
+	// Reserve then release a loopback port so nothing listens on it
+	boost::asio::ip::tcp::endpoint dead_endpoint;
+	{
+		boost::asio::io_context io_ctx;
+		boost::asio::ip::tcp::acceptor acceptor{ io_ctx, boost::asio::ip::tcp::endpoint{ boost::asio::ip::address_v6::loopback (), 0 } };
+		dead_endpoint = acceptor.local_endpoint ();
+	}
+
+	auto result = asio::co_spawn (node.io_ctx, node.tcp_listener.co_connect (dead_endpoint), asio::use_future);
+	ASSERT_EQ (std::future_status::ready, result.wait_for (5s));
+	auto const ec = result.get ();
+	ASSERT_TRUE (ec);
+	ASSERT_FALSE (ec.message ().empty ());
+}
+
+// A connect the listener refuses completes at once with a local rejection and starts no attempt
+TEST (tcp_listener, co_connect_reports_refusal)
+{
+	nano::test::system system{ 1 };
+	auto & node = *system.nodes[0];
+	// A blocklisted address is refused before any connection is made
+	node.peer_blocklist.add (boost::asio::ip::address_v6::loopback ());
+
+	auto result = asio::co_spawn (node.io_ctx, node.tcp_listener.co_connect (node.tcp_listener.endpoint ()), asio::use_future);
+	ASSERT_EQ (std::future_status::ready, result.wait_for (5s));
+	ASSERT_EQ (std::error_code{ nano::error_network::connection_rejected_locally }, result.get ());
+	ASSERT_EQ (0, node.tcp_listener.attempt_count ());
 }
