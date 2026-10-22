@@ -232,6 +232,11 @@ nano::logger::~logger ()
 	flush ();
 }
 
+bool nano::logger::should_log (nano::log::level level, nano::log::type type)
+{
+	return get_logger (type).should_log (to_spdlog_level (level));
+}
+
 spdlog::logger & nano::logger::get_logger (nano::log::type type, nano::log::detail detail)
 {
 	// This is a two-step process to avoid exclusively locking the mutex in the common case

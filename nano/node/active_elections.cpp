@@ -303,14 +303,17 @@ bool nano::active_elections::publish (std::shared_ptr<nano::block> const & block
 
 			node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::fork);
 
-			node.logger.debug (nano::log::type::active_elections, "Block was added to an existing election: {} with root: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
-			block->hash (),
-			election->qualified_root,
-			to_string (election->behavior ()),
-			to_string (election->state ()),
-			election->voter_count (),
-			election->block_count (),
-			election->duration ().count ());
+			if (node.logger.should_log (nano::log::level::debug, nano::log::type::active_elections))
+			{
+				node.logger.debug (nano::log::type::active_elections, "Block was added to an existing election: {} with root: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
+				block->hash (),
+				election->qualified_root,
+				to_string (election->behavior ()),
+				to_string (election->state ()),
+				election->voter_count (),
+				election->block_count (),
+				election->duration ().count ());
+			}
 
 			return true;
 		}
@@ -352,14 +355,17 @@ void nano::active_elections::erase_election (nano::unique_lock<nano::mutex> & lo
 
 	node.logger.trace (nano::log::type::active_elections, nano::log::detail::active_stopped, nano::log::arg{ "election", election });
 
-	node.logger.debug (nano::log::type::active_elections, "Erased election for root: {} with blocks: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
-	election->qualified_root,
-	nano::log::as_election_hashes (*election),
-	to_string (election->behavior ()),
-	to_string (transition.previous),
-	election->voter_count (),
-	election->block_count (),
-	election->duration ().count ());
+	if (node.logger.should_log (nano::log::level::debug, nano::log::type::active_elections))
+	{
+		node.logger.debug (nano::log::type::active_elections, "Erased election for root: {} with blocks: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
+		election->qualified_root,
+		nano::log::as_election_hashes (*election),
+		to_string (election->behavior ()),
+		to_string (transition.previous),
+		election->voter_count (),
+		election->block_count (),
+		election->duration ().count ());
+	}
 
 	auto blocks_l = election->blocks ();
 
@@ -631,14 +637,17 @@ void nano::active_elections::checkup_elections (nano::unique_lock<nano::mutex> &
 			if (transition.previous != transition.current)
 			{
 				node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::cancel_checkup);
-				node.logger.debug (nano::log::type::active_elections, "Checkup cancelled election for root: {} with blocks: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
-				election->qualified_root,
-				nano::log::as_election_hashes (*election),
-				to_string (election->behavior ()),
-				to_string (election->state ()),
-				election->voter_count (),
-				election->block_count (),
-				election->duration ().count ());
+				if (node.logger.should_log (nano::log::level::debug, nano::log::type::active_elections))
+				{
+					node.logger.debug (nano::log::type::active_elections, "Checkup cancelled election for root: {} with blocks: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
+					election->qualified_root,
+					nano::log::as_election_hashes (*election),
+					to_string (election->behavior ()),
+					to_string (election->state ()),
+					election->voter_count (),
+					election->block_count (),
+					election->duration ().count ());
+				}
 			}
 		}
 		else if (election->duration () > config.stale_threshold)
@@ -656,15 +665,18 @@ void nano::active_elections::checkup_elections (nano::unique_lock<nano::mutex> &
 
 		for (auto const & election : stale_elections)
 		{
-			node.logger.debug (nano::log::type::active_elections, "Stale election for account: {} with root: {} blocks: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
-			election->account,
-			election->qualified_root,
-			nano::log::as_election_hashes (*election),
-			to_string (election->behavior ()),
-			to_string (election->state ()),
-			election->voter_count (),
-			election->block_count (),
-			election->duration ().count ());
+			if (node.logger.should_log (nano::log::level::debug, nano::log::type::active_elections))
+			{
+				node.logger.debug (nano::log::type::active_elections, "Stale election for account: {} with root: {} blocks: {} (behavior: {}, state: {}, voters: {}, blocks: {}, duration: {}ms)",
+				election->account,
+				election->qualified_root,
+				nano::log::as_election_hashes (*election),
+				to_string (election->behavior ()),
+				to_string (election->state ()),
+				election->voter_count (),
+				election->block_count (),
+				election->duration ().count ());
+			}
 
 			election_stale.notify (election);
 		}

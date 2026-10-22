@@ -121,6 +121,9 @@ private:
 	static void initialize_common (nano::log_config const &, std::optional<std::filesystem::path> data_path);
 
 public:
+	// Whether a line at the level would be emitted for the type
+	bool should_log (nano::log::level, nano::log::type);
+
 	template <class... Args>
 	void log (nano::log::level level, nano::log::type type, spdlog::format_string_t<Args...> fmt, Args &&... args)
 	{

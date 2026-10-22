@@ -134,3 +134,19 @@ TEST (log_parse, parse_logger_id)
 	ASSERT_THROW (nano::log::parse_logger_id ("::all"), std::invalid_argument);
 	ASSERT_THROW (nano::log::parse_logger_id (""), std::invalid_argument);
 }
+TEST (logging, should_log)
+{
+	// Give the test type its own level, which the NANO_LOG override of the default cannot touch
+	auto config = nano::log_config::tests_default ();
+	config.levels[{ nano::log::type::test, nano::log::detail::all }] = nano::log::level::info;
+	nano::logger::initialize_for_tests (config);
+
+	// The threshold is inclusive: below the type's level is dropped, at and above it is emitted
+	nano::logger logger;
+	ASSERT_FALSE (logger.should_log (nano::log::level::debug, nano::log::type::test));
+	ASSERT_TRUE (logger.should_log (nano::log::level::info, nano::log::type::test));
+	ASSERT_TRUE (logger.should_log (nano::log::level::warn, nano::log::type::test));
+
+	// Put the process-wide test logging back for the tests that follow
+	nano::logger::initialize_for_tests (nano::log_config::tests_default ());
+}
