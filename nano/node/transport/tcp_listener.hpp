@@ -55,16 +55,8 @@ public:
 	void start ();
 	void stop ();
 
-	/**
-	 * @param port is optional, if 0 then default peering port is used
-	 * @param callback is optional, invoked with the final outcome of the connection attempt
-	 * @return true if connection attempt was initiated
-	 */
-	bool connect (
-	asio::ip::address ip,
-	uint16_t port = 0,
-	nano::transport::connect_callback callback = noop<nano::transport::connect_callback> ());
-
+	// Starts an outgoing connection to the address, true when the attempt was started; port 0 means the default peering port
+	bool connect (asio::ip::address ip, uint16_t port = 0);
 	// Connects to the endpoint from a coroutine and completes with the outcome: empty on success, else the refusal or the connection error
 	asio::awaitable<std::error_code> co_connect (nano::tcp_endpoint);
 
@@ -100,7 +92,11 @@ private:
 	void purge (nano::unique_lock<nano::mutex> &);
 	void timeout ();
 
-	asio::awaitable<void> connect_impl (asio::ip::tcp::endpoint, nano::transport::connect_callback callback);
+	// Called once with the outcome of an attempt, on the strand
+	using connect_completion = std::function<void (std::error_code)>;
+	// Starts an attempt when the limits allow it, true when started; the completion runs only for a started attempt
+	bool start_attempt (nano::tcp_endpoint, connect_completion);
+	asio::awaitable<void> connect_impl (asio::ip::tcp::endpoint, connect_completion);
 	asio::awaitable<asio::ip::tcp::socket> connect_socket (asio::ip::tcp::endpoint);
 
 	struct accept_return

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <nano/lib/function.hpp>
 #include <nano/lib/network_types.hpp>
 #include <nano/node/transport/fwd.hpp>
 
@@ -15,9 +14,6 @@ namespace nano::transport
 {
 // Channels picked for one send, with inline room for the fanout of a flood or the principal representatives
 using channel_list = boost::container::small_vector<std::shared_ptr<channel>, 128>;
-
-/** Completion callback for an outbound connection attempt. An empty error code indicates success. */
-using connect_callback = std::function<void (nano::tcp_endpoint const & endpoint, std::error_code ec)>;
 
 /** Policy to affect at which stage a buffer can be dropped */
 enum class buffer_drop_policy

@@ -485,9 +485,9 @@ std::deque<std::shared_ptr<nano::transport::channel>> nano::transport::tcp_chann
 	return result;
 }
 
-bool nano::transport::tcp_channels::start_tcp (nano::endpoint const & endpoint, nano::transport::connect_callback callback)
+bool nano::transport::tcp_channels::start_tcp (nano::endpoint const & endpoint)
 {
-	return node.tcp_listener.connect (endpoint.address (), endpoint.port (), std::move (callback));
+	return node.tcp_listener.connect (endpoint.address (), endpoint.port ());
 }
 
 auto nano::transport::tcp_channels::all_sockets () const -> std::deque<std::shared_ptr<tcp_socket>>

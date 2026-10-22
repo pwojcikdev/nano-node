@@ -76,10 +76,8 @@ public:
 	void keepalive ();
 	std::optional<nano::messages::keepalive> sample_keepalive ();
 
-	// Connection start
-	bool start_tcp (
-	nano::endpoint const & endpoint,
-	nano::transport::connect_callback callback = noop<nano::transport::connect_callback> ());
+	// Starts an outgoing connection to the endpoint, true when the attempt was started
+	bool start_tcp (nano::endpoint const &);
 
 	std::deque<std::shared_ptr<tcp_socket>> all_sockets () const;
 	std::deque<std::shared_ptr<tcp_server>> all_servers () const;
