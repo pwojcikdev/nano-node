@@ -6,7 +6,6 @@
 
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <thread>
 #include <vector>
 
@@ -36,7 +35,7 @@ TEST (network_reachout, disabled)
 }
 
 /*
- * A reachout resolves the address and connects to it, calling back with the endpoint, and a reachout to a peer already connected sends it a keepalive instead
+ * A reachout resolves the address and connects to it, and a reachout to a peer already connected sends it a keepalive instead
  */
 TEST (network_reachout, resolve_and_connect)
 {
@@ -53,18 +52,8 @@ TEST (network_reachout, resolve_and_connect)
 		return peer->stats.count (nano::stat::type::message, nano::stat::detail::keepalive, nano::stat::dir::in);
 	};
 
-	// The first reachout connects and reports the endpoint it reached
-	std::atomic<bool> called{ false };
-	nano::tcp_endpoint reached;
-	std::error_code error;
-	node.network_reachout.reachout ("::1", port, [&] (nano::tcp_endpoint const & endpoint, std::error_code ec) {
-		reached = endpoint;
-		error = ec;
-		called = true;
-	});
-	ASSERT_TIMELY (5s, called);
-	ASSERT_FALSE (error);
-	ASSERT_EQ (port, reached.port ());
+	// The first reachout connects
+	node.network_reachout.reachout ("::1", port);
 	ASSERT_TIMELY (5s, node.network.find_node_id (peer->get_node_id ()));
 	ASSERT_TIMELY_EQ (5s, 1, received ());
 
@@ -75,7 +64,7 @@ TEST (network_reachout, resolve_and_connect)
 }
 
 /*
- * A reachout trigger wakes the preconfigured reachout loop and no other, so neither keepalive rounds nor cleanup rounds follow the rep crawler's cadence
+ * A reachout trigger wakes the reachout loop and no network loop, so neither keepalive rounds nor cleanup rounds follow the rep crawler's cadence
  */
 TEST (network_reachout, trigger_wakes_only_its_loop)
 {
@@ -100,7 +89,7 @@ TEST (network_reachout, trigger_wakes_only_its_loop)
 	}
 	ASSERT_EQ (100, count (nano::stat::detail::trigger_reachout));
 
-	// The preconfigured loop went round, the keepalive loop never did, and the cleanup loop kept to its one tick a second
+	// The reachout loop went round, the keepalive loop never did, and the cleanup loop kept to its one tick a second
 	ASSERT_TIMELY (5s, count (nano::stat::detail::loop_reachout_preconfigured) > preconfigured_before);
 	ASSERT_ALWAYS_EQ (500ms, 0, count (nano::stat::detail::loop_keepalive));
 	ASSERT_LE (count (nano::stat::detail::loop_cleanup), cleanup_before + 3);
@@ -157,4 +146,27 @@ TEST (network_reachout, trigger_reaches_out)
 	// A trigger brings the next round forward
 	node.network_reachout.trigger ();
 	ASSERT_TIMELY_EQ (5s, 2, count ());
+}
+
+/*
+ * A stop joins the reachout tasks the loop has not purged yet, so the node shuts down with reachouts still listed
+ */
+TEST (network_reachout, stop_with_tasks)
+{
+	nano::test::system system;
+	// Without the rep crawler nothing triggers the loop, and the long merge period keeps it from ticking, so the finished task is never purged and is still listed at stop
+	nano::node_flags flags;
+	flags.disable_rep_crawler = true;
+	nano::node_config node_config = system.default_config ();
+	node_config.network_params.network.merge_period = 10min;
+	auto & node = *system.add_node (node_config, flags);
+	auto peer = system.make_disconnected_node ();
+
+	node.network_reachout.reachout ("::1", peer->network.port.load ());
+	ASSERT_TIMELY (5s, node.network.find_node_id (peer->get_node_id ()));
+
+	// The stop returns with the task joined and the channel closed
+	node.stop ();
+	ASSERT_TRUE (node.stopped);
+	ASSERT_EQ (0, node.network.size ());
 }

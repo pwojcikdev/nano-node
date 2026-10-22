@@ -154,8 +154,6 @@ public:
 	nano::peer_blocklist & peer_blocklist;
 	std::unique_ptr<nano::network> network_impl;
 	nano::network & network;
-	std::unique_ptr<nano::network_reachout> network_reachout_impl;
-	nano::network_reachout & network_reachout;
 	std::shared_ptr<nano::transport::channel> loopback_channel;
 	std::unique_ptr<nano::telemetry> telemetry_impl;
 	nano::telemetry & telemetry;
@@ -219,6 +217,8 @@ public:
 	nano::local_block_broadcaster & local_block_broadcaster;
 	std::unique_ptr<nano::peer_history> peer_history_impl;
 	nano::peer_history & peer_history;
+	std::unique_ptr<nano::network_reachout> network_reachout_impl;
+	nano::network_reachout & network_reachout;
 	std::unique_ptr<nano::monitor> monitor_impl;
 	nano::monitor & monitor;
 	std::unique_ptr<nano::http_callbacks> http_callbacks_impl;

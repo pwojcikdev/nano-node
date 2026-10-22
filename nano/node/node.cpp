@@ -160,8 +160,6 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 	//
 	network_impl{ std::make_unique<nano::network> (*this, config.peering_port.has_value () ? *config.peering_port : 0) },
 	network{ *network_impl },
-	network_reachout_impl{ std::make_unique<nano::network_reachout> (*this) },
-	network_reachout{ *network_reachout_impl },
 	loopback_channel{ create_loopback_channel () },
 	telemetry_impl{ std::make_unique<nano::telemetry> (flags, *this, network, observers, network_params, stats) },
 	telemetry{ *telemetry_impl },
@@ -232,6 +230,8 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 	local_block_broadcaster{ *local_block_broadcaster_impl },
 	peer_history_impl{ std::make_unique<nano::peer_history> (config.peer_history, store, network, logger, stats) },
 	peer_history{ *peer_history_impl },
+	network_reachout_impl{ std::make_unique<nano::network_reachout> (config, flags, network, tcp_listener, peer_history, io_ctx, stats, logger) },
+	network_reachout{ *network_reachout_impl },
 	monitor_impl{ std::make_unique<nano::monitor> (config.monitor, *this) },
 	monitor{ *monitor_impl },
 	http_callbacks_impl{ std::make_unique<nano::http_callbacks> (*this) },
@@ -1011,6 +1011,7 @@ nano::container_info nano::node::container_info () const
 	info.add ("active", active.container_info ());
 	info.add ("tcp_listener", tcp_listener.container_info ());
 	info.add ("network", network.container_info ());
+	info.add ("network_reachout", network_reachout.container_info ());
 	info.add ("peer_blocklist", peer_blocklist.container_info ());
 	info.add ("telemetry", telemetry.container_info ());
 	info.add ("workers", workers.container_info ());
