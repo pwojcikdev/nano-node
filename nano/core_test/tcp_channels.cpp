@@ -202,15 +202,13 @@ TEST (tcp_channels, reachout)
 TEST (tcp_channels, keepalive_idle)
 {
 	nano::test::system system;
-	// A long keepalive period keeps the node's own sweep out of the way, with the rep crawler off since its reachout trigger wakes the keepalive loop too
-	nano::node_flags flags;
-	flags.disable_rep_crawler = true;
+	// A long keepalive period keeps the node's own sweep out of the way
 	nano::node_config node_config = system.default_config ();
 	node_config.network_params.network.keepalive_period = 10min;
-	auto & node = *system.add_node (node_config, flags);
+	auto & node = *system.add_node (node_config);
 	nano::node_config peer_config = system.default_config ();
 	peer_config.network_params.network.keepalive_period = 10min;
-	auto & peer = *system.add_node (peer_config, flags);
+	auto & peer = *system.add_node (peer_config);
 	auto const channel = node.network.find_node_id (peer.get_node_id ());
 	ASSERT_NE (nullptr, channel);
 	auto const received = [&peer] () {
