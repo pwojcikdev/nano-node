@@ -1,13 +1,17 @@
 #include <nano/node/network.hpp>
 #include <nano/node/network_reachout.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/node/peer_history.hpp>
+#include <nano/node/transport/channel.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -163,4 +167,40 @@ TEST (network_reachout, trigger_reaches_out)
 	// A trigger brings the next round forward
 	node.network_reachout.trigger ();
 	ASSERT_TIMELY_EQ (5s, 2, count ());
+}
+
+/*
+ * Peers whose channels died are reconnected from the peer history cache
+ */
+TEST (network_reachout, reconnect_cached)
+{
+	nano::test::system system;
+	auto & node1 = *system.add_node ();
+	auto & node2 = *system.add_node ();
+	ASSERT_EQ (1, node1.network.size ());
+	ASSERT_EQ (1, node2.network.size ());
+	auto const channel1 = node1.network.list ().front ();
+	auto const channel2 = node2.network.list ().front ();
+	auto const has_channel = [] (nano::node & node, std::shared_ptr<nano::transport::channel> const & channel) {
+		auto const channels = node.network.list ();
+		return std::find (channels.begin (), channels.end (), channel) != channels.end ();
+	};
+
+	// Each node caches its one peer
+	node1.peer_history.trigger ();
+	node2.peer_history.trigger ();
+	ASSERT_TIMELY_EQ (5s, 1, node1.peer_history.size ());
+	ASSERT_TIMELY_EQ (5s, 1, node2.peer_history.size ());
+
+	// Both channels are closed and drop out of the containers
+	channel1->close ();
+	channel2->close ();
+	ASSERT_TIMELY (5s, !has_channel (node1, channel1));
+	ASSERT_TIMELY (5s, !has_channel (node2, channel2));
+
+	// The cached reachout brings the two back together
+	ASSERT_TIMELY_EQ (5s, 1, node1.network.size ());
+	ASSERT_TIMELY_EQ (5s, 1, node2.network.size ());
+	ASSERT_TRUE (node1.network.find_node_id (node2.get_node_id ()));
+	ASSERT_TRUE (node2.network.find_node_id (node1.get_node_id ()));
 }

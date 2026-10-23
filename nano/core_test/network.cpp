@@ -10,7 +10,6 @@
 #include <nano/node/block_processor.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
-#include <nano/node/peer_history.hpp>
 #include <nano/node/repcrawler.hpp>
 #include <nano/node/transport/tcp_channel.hpp>
 #include <nano/node/transport/tcp_config.hpp>
@@ -472,38 +471,6 @@ TEST (network, fill_keepalive_self)
 	ASSERT_EQ (nano::endpoint (boost::asio::ip::address_v6{}, node.network.port), target[0]);
 	ASSERT_EQ (unspecified, target[1]);
 	ASSERT_TRUE (std::all_of (target.begin () + 3, target.end (), [&unspecified] (auto const & slot) { return slot == unspecified; }));
-}
-
-/*
- * Peers whose channels died are reconnected from the peer history cache
- */
-TEST (network, reconnect_cached)
-{
-	nano::test::system system;
-	auto & node1 = *system.add_node ();
-	auto & node2 = *system.add_node ();
-	ASSERT_EQ (1, node1.network.size ());
-	ASSERT_EQ (1, node2.network.size ());
-	auto const channel1 = node1.network.list ().front ();
-	auto const channel2 = node2.network.list ().front ();
-
-	// Each node caches its one peer
-	node1.peer_history.trigger ();
-	node2.peer_history.trigger ();
-	ASSERT_TIMELY_EQ (5s, 1, node1.peer_history.size ());
-	ASSERT_TIMELY_EQ (5s, 1, node2.peer_history.size ());
-
-	// Both channels are closed and drop out of the containers
-	channel1->close ();
-	channel2->close ();
-	ASSERT_TIMELY (5s, !has_channel (node1, channel1));
-	ASSERT_TIMELY (5s, !has_channel (node2, channel2));
-
-	// The cached reachout brings the two back together
-	ASSERT_TIMELY_EQ (5s, 1, node1.network.size ());
-	ASSERT_TIMELY_EQ (5s, 1, node2.network.size ());
-	ASSERT_TRUE (node1.network.find_node_id (node2.get_node_id ()));
-	ASSERT_TRUE (node2.network.find_node_id (node1.get_node_id ()));
 }
 
 /*
