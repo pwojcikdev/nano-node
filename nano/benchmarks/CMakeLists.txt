@@ -4,7 +4,10 @@ add_executable(
   allocations.cpp
   entry.cpp
   ledger.cpp
+  message_processing.cpp
   message_sending.cpp
+  processing_strategies.hpp
+  processing_strategies.cpp
   rep_weights.cpp
   stats.cpp
   vote_processing.cpp)
