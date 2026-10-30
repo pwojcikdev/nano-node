@@ -61,6 +61,12 @@ jobs:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
 
       - name: Upload Packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: packages-${{ runner.os }}-${{ matrix.network }}
+          path: packages/
+
+      - name: Publish Packages
         if: env.AWS_ACCESS_KEY_ID != ''
         run: ci/deploy/upload.sh packages/*
         env:
@@ -107,6 +113,12 @@ jobs:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
 
       - name: Upload Packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: packages-${{ runner.os }}-${{ matrix.network }}
+          path: packages/
+
+      - name: Publish Packages
         if: env.AWS_ACCESS_KEY_ID != ''
         run: ci/deploy/upload.sh packages/*
         env:
@@ -155,6 +167,12 @@ jobs:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
 
       - name: Upload Packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: packages-${{ runner.os }}-${{ matrix.network }}
+          path: packages/
+
+      - name: Publish Packages
         if: env.AWS_ACCESS_KEY_ID != ''
         run: ci/deploy/upload.sh packages/*
         shell: bash
