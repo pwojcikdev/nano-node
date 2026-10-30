@@ -97,8 +97,9 @@ bool nano::scheduler::bucket::activate (priority_entry top)
 	};
 
 	auto result = active.insert (top.block, nano::election_behavior::priority, index, top.priority, erase_callback);
-	bool const inserted = result.outcome == nano::active_elections::insert_outcome::inserted;
-	if (inserted)
+	// An election another scheduler started and this call upgraded to priority is tracked from now on like one started here
+	bool const tracked = result.outcome == nano::active_elections::insert_outcome::inserted || result.outcome == nano::active_elections::insert_outcome::transitioned;
+	if (tracked)
 	{
 		release_assert (result.election);
 		elections.get<tag_election> ().insert ({ result.election, top.priority });
@@ -106,7 +107,7 @@ bool nano::scheduler::bucket::activate (priority_entry top)
 		stats.inc (nano::stat::type::election_bucket, nano::stat::detail::activate_success);
 
 		logger.debug (nano::log::type::election_scheduler,
-		"Inserted election for block: {}, root: {} (account: {}, bucket: {}, priority timestamp: {})",
+		"Tracking election for block: {}, root: {} (account: {}, bucket: {}, priority timestamp: {})",
 		top.block->hash (),
 		top.block->qualified_root (),
 		top.block->account (),
@@ -118,7 +119,7 @@ bool nano::scheduler::bucket::activate (priority_entry top)
 		stats.inc (nano::stat::type::election_bucket, nano::stat::detail::activate_failed);
 	}
 
-	return inserted;
+	return tracked;
 }
 
 bool nano::scheduler::bucket::cleanup ()

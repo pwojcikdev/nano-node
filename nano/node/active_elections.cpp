@@ -240,6 +240,12 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 				index.update (result.election, behavior);
 				node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::transition_priority);
 
+				// The caller takes the election over as a priority election and tracks its erasure like one it started
+				if (erased_callback)
+				{
+					erased_callbacks[root] = std::move (erased_callback);
+				}
+
 				// Notify observers that this election is now priority (same as election_started)
 				election_started.notify (result.election, bucket, priority);
 			}

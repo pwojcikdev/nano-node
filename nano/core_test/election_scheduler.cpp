@@ -2,6 +2,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/backlog_scan.hpp>
+#include <nano/node/bucketing.hpp>
 #include <nano/node/cementing_set.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -294,4 +295,45 @@ TEST (election_scheduler, no_vacancy)
 	election->force_confirm ();
 	ASSERT_TIMELY (5s, node.active.election (block2->qualified_root ()) != nullptr);
 	ASSERT_TRUE (node.scheduler.priority.empty ());
+}
+/*
+ * A hinted election upgraded to priority through the bucket is tracked by the bucket like one it started, until the election is erased
+ */
+TEST (election_scheduler, bucket_tracks_transitioned_election)
+{
+	nano::test::system system;
+
+	nano::node_config config;
+	config.backlog_scan->enable = false;
+	auto & node = *system.add_node (config);
+
+	nano::state_block_builder builder;
+	auto send = builder.make_block ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - nano::Knano_ratio)
+				.link (nano::dev::genesis_key.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, node.ledger.process (node.ledger.tx_begin_write (), send));
+
+	// The bucket the priority scheduler files this block under
+	auto const priority = node.ledger.block_priority (node.ledger.tx_begin_read (), *send);
+	auto const bucket = node.bucketing.bucket_index (priority.first);
+
+	// Another scheduler starts the election, the bucket knows nothing of it
+	auto result = node.active.insert (send, nano::election_behavior::hinted);
+	ASSERT_EQ (nano::active_elections::insert_outcome::inserted, result.outcome);
+	ASSERT_EQ (0, node.scheduler.priority.election_count (bucket));
+
+	// The priority scheduler activates the same block, upgrades the election and takes it over
+	node.scheduler.priority.activate (node.ledger.tx_begin_read (), nano::dev::genesis_key.pub);
+	ASSERT_TIMELY_EQ (5s, nano::election_behavior::priority, result.election->behavior ());
+	ASSERT_TIMELY_EQ (5s, 1, node.scheduler.priority.election_count (bucket));
+
+	// Erasing the election releases its slot in the bucket
+	ASSERT_TRUE (node.active.erase (send->qualified_root ()));
+	ASSERT_EQ (0, node.scheduler.priority.election_count (bucket));
 }
