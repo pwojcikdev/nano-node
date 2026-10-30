@@ -153,6 +153,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 	nano::unique_lock<nano::mutex> lock{ mutex };
 
 	insert_result result{ nullptr, false };
+	bool joins_election = false;
 
 	// Short circuit if elections are disabled
 	if (stopped || !config.enable)
@@ -211,8 +212,8 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 	{
 		result.election = index.election (root);
 
-		// The existing election should already contain this block
-		debug_assert (result.election->contains_block (hash));
+		// A forced block replaces the ledger block of a root under its running election, which has not seen the new block yet
+		joins_election = !result.election->contains_block (hash);
 
 		// Upgrade to priority election to enable immediate vote broadcasting.
 		auto previous_behavior = result.election->behavior ();
@@ -235,6 +236,12 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 	}
 
 	lock.unlock ();
+
+	// The ledger block joins the running election for its root as a fork, the votes decide between the two
+	if (joins_election)
+	{
+		publish (block);
+	}
 
 	if (result.inserted)
 	{

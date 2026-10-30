@@ -75,7 +75,7 @@ public:
 		bool inserted;
 	};
 
-	/// Starts new election
+	/// Starts a new election for the block, a running election for its root admits the block as a fork instead
 	insert_result insert (
 	std::shared_ptr<nano::block> const &,
 	nano::election_behavior = nano::election_behavior::priority,

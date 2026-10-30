@@ -2061,3 +2061,50 @@ TEST (active_elections, cancel_already_cemented)
 	ASSERT_GT (node.stats.count (nano::stat::type::active_elections, nano::stat::detail::cancel_checkup), 0)
 	<< "Expected election to be cancelled by checkup thread";
 }
+/*
+ * A forced block replaces the ledger block of a root whose election is already running, the election must admit it as a fork
+ */
+TEST (active_elections, forced_block_joins_election)
+{
+	nano::test::system system;
+	auto & node = *system.add_node ();
+
+	nano::keypair key1;
+	nano::keypair key2;
+	nano::block_builder builder;
+	auto send = builder
+				.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - 1)
+				.link (key1.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+	auto fork = builder
+				.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - 2)
+				.link (key2.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+
+	// The block goes through the block processor so the priority scheduler starts its election
+	ASSERT_EQ (nano::block_status::progress, node.process_local (send).value ());
+	std::shared_ptr<nano::election> election;
+	ASSERT_TIMELY (5s, (election = node.active.election (send->qualified_root ())) != nullptr);
+	ASSERT_TRUE (election->contains_block (send->hash ()));
+
+	// Forcing the fork rolls the first block back and lands the fork, which the election has never seen
+	node.block_processor.force (fork);
+	ASSERT_TIMELY (5s, node.block_or_pruned_exists (fork->hash ()));
+	ASSERT_FALSE (node.block_or_pruned_exists (send->hash ()));
+
+	// The scheduler activates the new ledger block of the root and the running election admits it as a fork
+	ASSERT_TIMELY (5s, election->contains_block (fork->hash ()));
+	ASSERT_TRUE (election->contains_block (send->hash ()));
+}
