@@ -533,6 +533,7 @@ enum class detail
 	// active_elections
 	insert,
 	insert_failed,
+	insert_stale,
 	transition_priority,
 	transition_priority_failed,
 	election_cleanup,

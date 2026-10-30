@@ -74,6 +74,7 @@ public:
 		inserted, // A new election was started for the block
 		transitioned, // The running election for the root was upgraded to priority
 		existing, // The root already has a running election, nothing changed
+		stale, // The block is not the ledger's current block for its root
 		rejected, // Elections are disabled or the root was recently confirmed
 	};
 

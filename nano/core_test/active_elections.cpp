@@ -2061,3 +2061,58 @@ TEST (active_elections, cancel_already_cemented)
 	ASSERT_GT (node.stats.count (nano::stat::type::active_elections, nano::stat::detail::cancel_checkup), 0)
 	<< "Expected election to be cancelled by checkup thread";
 }
+/*
+ * A scheduler can hand over a block the ledger has rolled back since, insert refuses it and starts no election
+ */
+TEST (active_elections, stale_block_refused)
+{
+	nano::test::system system;
+
+	nano::node_config node_config;
+	node_config.backlog_scan->enable = false;
+	auto & node = *system.add_node (node_config);
+
+	nano::keypair key1;
+	nano::keypair key2;
+	nano::block_builder builder;
+	auto send = builder
+				.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - 1)
+				.link (key1.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+	auto fork = builder
+				.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - 2)
+				.link (key2.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+
+	// The first block lands and is rolled back straight in the ledger, the fork takes its place
+	ASSERT_EQ (nano::block_status::progress, node.process (send));
+	{
+		auto transaction = node.ledger.tx_begin_write ();
+		ASSERT_FALSE (node.ledger.rollback (transaction, send->hash ()));
+	}
+	ASSERT_EQ (nano::block_status::progress, node.process (fork));
+
+	// The rolled back block still carries its sideband, which is all a scheduler entry has to offer
+	auto result = node.active.insert (send);
+	ASSERT_EQ (nano::active_elections::insert_outcome::stale, result.outcome);
+	ASSERT_EQ (nullptr, result.election);
+	ASSERT_TRUE (node.active.empty ());
+	ASSERT_EQ (1, node.stats.count (nano::stat::type::active_elections, nano::stat::detail::insert_stale));
+
+	// The ledger's current block for the root starts the election
+	auto current = node.active.insert (fork);
+	ASSERT_EQ (nano::active_elections::insert_outcome::inserted, current.outcome);
+	ASSERT_TRUE (current.election->contains_block (fork->hash ()));
+}

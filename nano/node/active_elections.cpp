@@ -150,18 +150,30 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 	release_assert (block);
 	release_assert (block->has_sideband ());
 
-	nano::unique_lock<nano::mutex> lock{ mutex };
+	auto const root = block->qualified_root ();
+	auto const hash = block->hash ();
 
 	insert_result result{ nullptr, insert_outcome::rejected };
+
+	// Schedulers hand over blocks they read earlier, only the ledger's current block for the root may start or join an election
+	{
+		auto const transaction = node.ledger.tx_begin_read ();
+		if (node.ledger.any.block_successor (transaction, root) != hash)
+		{
+			result.outcome = insert_outcome::stale;
+			node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::insert_stale);
+			node.logger.debug (nano::log::type::active_elections, "Refused stale block: {} for root: {}", hash, root);
+			return result;
+		}
+	}
+
+	nano::unique_lock<nano::mutex> lock{ mutex };
 
 	// Short circuit if elections are disabled
 	if (stopped || !config.enable)
 	{
 		return result;
 	}
-
-	auto const root = block->qualified_root ();
-	auto const hash = block->hash ();
 
 	if (!index.exists (root))
 	{
@@ -212,8 +224,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 		result.election = index.election (root);
 		result.outcome = insert_outcome::existing;
 
-		// The existing election should already contain this block
-		debug_assert (result.election->contains_block (hash));
+		// Which blocks the election holds is not for the scheduler to assert, forks reach it through the block processor notifications
 
 		// Upgrade to priority election to enable immediate vote broadcasting.
 		auto previous_behavior = result.election->behavior ();
