@@ -93,7 +93,7 @@ bool nano::scheduler::bucket::activate (priority_entry top)
 
 	auto erase_callback = [this] (std::shared_ptr<nano::election> election) {
 		nano::lock_guard<nano::mutex> lock{ mutex };
-		elections.get<tag_root> ().erase (election->qualified_root);
+		elections.get<tag_election> ().erase (election);
 	};
 
 	auto result = active.insert (top.block, nano::election_behavior::priority, index, top.priority, erase_callback);
@@ -101,7 +101,7 @@ bool nano::scheduler::bucket::activate (priority_entry top)
 	if (inserted)
 	{
 		release_assert (result.election);
-		elections.get<tag_root> ().insert ({ result.election, result.election->qualified_root, top.priority });
+		elections.get<tag_election> ().insert ({ result.election, top.priority });
 
 		stats.inc (nano::stat::type::election_bucket, nano::stat::detail::activate_success);
 

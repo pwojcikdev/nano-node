@@ -59,22 +59,22 @@ private: // Elections
 	struct election_entry
 	{
 		std::shared_ptr<nano::election> election;
-		nano::qualified_root root;
 		nano::priority_timestamp priority;
 	};
 
 	// clang-format off
 	class tag_sequenced {};
-	class tag_root {};
+	class tag_election {};
 	class tag_priority {};
 	// clang-format on
 
+	// Keyed by the election itself: an erase can race a new election for the same root, a root key would drop the newcomer's entry
 	// clang-format off
 	using ordered_elections = boost::multi_index_container<election_entry,
 	mi::indexed_by<
 		mi::sequenced<mi::tag<tag_sequenced>>,
-		mi::hashed_unique<mi::tag<tag_root>,
-			mi::member<election_entry, nano::qualified_root, &election_entry::root>>,
+		mi::hashed_unique<mi::tag<tag_election>,
+			mi::member<election_entry, std::shared_ptr<nano::election>, &election_entry::election>>,
 		mi::ordered_non_unique<mi::tag<tag_priority>,
 			mi::member<election_entry, nano::priority_timestamp, &election_entry::priority>, std::greater<>> // Descending
 	>>;
