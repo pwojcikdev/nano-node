@@ -116,7 +116,7 @@ void nano::scheduler::hinted::activate (secure::read_transaction & transaction, 
 
 			// Try to insert it into AEC as hinted election
 			auto result = node.active.insert (block, nano::election_behavior::hinted);
-			stats.inc (nano::stat::type::hinting, result.inserted ? nano::stat::detail::insert : nano::stat::detail::insert_failed);
+			stats.inc (nano::stat::type::hinting, result.outcome == nano::active_elections::insert_outcome::inserted ? nano::stat::detail::insert : nano::stat::detail::insert_failed);
 		}
 		else
 		{

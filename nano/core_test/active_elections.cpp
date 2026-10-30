@@ -1877,7 +1877,7 @@ TEST (active_elections, transition_optimistic_to_priority)
 
 	// Start optimistic election
 	auto result = node.active.insert (block, nano::election_behavior::optimistic);
-	ASSERT_TRUE (result.inserted);
+	ASSERT_EQ (nano::active_elections::insert_outcome::inserted, result.outcome);
 	auto election = result.election;
 	ASSERT_EQ (nano::election_behavior::optimistic, election->behavior ());
 
@@ -1887,7 +1887,7 @@ TEST (active_elections, transition_optimistic_to_priority)
 
 	// Transition to priority
 	auto transition_result = node.active.insert (block, nano::election_behavior::priority);
-	ASSERT_FALSE (transition_result.inserted);
+	ASSERT_EQ (nano::active_elections::insert_outcome::transitioned, transition_result.outcome);
 	ASSERT_EQ (election, transition_result.election);
 
 	// Verify transition
@@ -1918,7 +1918,7 @@ TEST (active_elections, transition_hinted_to_priority)
 
 	// Start hinted election
 	auto result = node.active.insert (block, nano::election_behavior::hinted);
-	ASSERT_TRUE (result.inserted);
+	ASSERT_EQ (nano::active_elections::insert_outcome::inserted, result.outcome);
 	auto election = result.election;
 	ASSERT_EQ (nano::election_behavior::hinted, election->behavior ());
 
@@ -1928,7 +1928,7 @@ TEST (active_elections, transition_hinted_to_priority)
 
 	// Transition to priority
 	auto transition_result = node.active.insert (block, nano::election_behavior::priority);
-	ASSERT_FALSE (transition_result.inserted);
+	ASSERT_EQ (nano::active_elections::insert_outcome::transitioned, transition_result.outcome);
 	ASSERT_EQ (election, transition_result.election);
 
 	// Verify transition

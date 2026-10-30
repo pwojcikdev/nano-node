@@ -152,7 +152,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 
 	nano::unique_lock<nano::mutex> lock{ mutex };
 
-	insert_result result{ nullptr, false };
+	insert_result result{ nullptr, insert_outcome::rejected };
 
 	// Short circuit if elections are disabled
 	if (stopped || !config.enable)
@@ -167,7 +167,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 	{
 		if (!recently_confirmed.contains (root) && !recently_cemented.contains (root))
 		{
-			result.inserted = true;
+			result.outcome = insert_outcome::inserted;
 
 			// On any election state update, schedule a call to tick it immediately
 			auto update_action = [this] (auto const & root) {
@@ -210,6 +210,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 	else
 	{
 		result.election = index.election (root);
+		result.outcome = insert_outcome::existing;
 
 		// The existing election should already contain this block
 		debug_assert (result.election->contains_block (hash));
@@ -221,6 +222,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 			bool transitioned = result.election->transition_priority ();
 			if (transitioned)
 			{
+				result.outcome = insert_outcome::transitioned;
 				index.update (result.election, behavior);
 				node.stats.inc (nano::stat::type::active_elections, nano::stat::detail::transition_priority);
 
@@ -236,7 +238,7 @@ auto nano::active_elections::insert (std::shared_ptr<nano::block> const & block,
 
 	lock.unlock ();
 
-	if (result.inserted)
+	if (result.outcome == insert_outcome::inserted)
 	{
 		release_assert (result.election);
 

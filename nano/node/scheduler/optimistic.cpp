@@ -203,7 +203,7 @@ bool nano::scheduler::optimistic::run_one (secure::transaction const & transacti
 		{
 			// Try to insert it into AEC
 			auto result = node.active.insert (block, nano::election_behavior::optimistic);
-			stats.inc (nano::stat::type::optimistic_scheduler, result.inserted ? nano::stat::detail::insert : nano::stat::detail::insert_failed);
+			stats.inc (nano::stat::type::optimistic_scheduler, result.outcome == nano::active_elections::insert_outcome::inserted ? nano::stat::detail::insert : nano::stat::detail::insert_failed);
 
 			return true; // Activation attempted
 		}

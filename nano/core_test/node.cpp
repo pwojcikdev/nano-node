@@ -4086,7 +4086,7 @@ TEST (node, disable_elections)
 	auto stored = node.block (send1->hash ());
 	ASSERT_NE (nullptr, stored);
 	auto result = node.active.insert (stored);
-	ASSERT_FALSE (result.inserted);
+	ASSERT_EQ (nano::active_elections::insert_outcome::rejected, result.outcome);
 	ASSERT_EQ (nullptr, result.election);
 	ASSERT_TRUE (node.active.empty ());
 }

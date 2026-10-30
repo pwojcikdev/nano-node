@@ -107,7 +107,7 @@ void nano::scheduler::manual::run ()
 			lock.unlock ();
 
 			auto result = node.active.insert (block, nano::election_behavior::manual);
-			if (result.inserted)
+			if (result.outcome == nano::active_elections::insert_outcome::inserted)
 			{
 				node.stats.inc (nano::stat::type::election_scheduler, nano::stat::detail::insert_manual);
 			}

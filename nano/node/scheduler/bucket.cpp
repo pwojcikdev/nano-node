@@ -97,7 +97,8 @@ bool nano::scheduler::bucket::activate (priority_entry top)
 	};
 
 	auto result = active.insert (top.block, nano::election_behavior::priority, index, top.priority, erase_callback);
-	if (result.inserted)
+	bool const inserted = result.outcome == nano::active_elections::insert_outcome::inserted;
+	if (inserted)
 	{
 		release_assert (result.election);
 		elections.get<tag_root> ().insert ({ result.election, result.election->qualified_root, top.priority });
@@ -117,7 +118,7 @@ bool nano::scheduler::bucket::activate (priority_entry top)
 		stats.inc (nano::stat::type::election_bucket, nano::stat::detail::activate_failed);
 	}
 
-	return result.inserted;
+	return inserted;
 }
 
 bool nano::scheduler::bucket::cleanup ()

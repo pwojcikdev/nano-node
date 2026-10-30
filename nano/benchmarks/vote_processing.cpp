@@ -113,7 +113,7 @@ public:
 		for (auto const & block : blocks)
 		{
 			auto const result = node->active.insert (block, nano::election_behavior::priority);
-			release_assert (result.inserted);
+			release_assert (result.outcome == nano::active_elections::insert_outcome::inserted);
 		}
 	}
 

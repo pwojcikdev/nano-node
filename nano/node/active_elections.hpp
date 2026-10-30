@@ -69,13 +69,21 @@ public:
 	void start ();
 	void stop ();
 
+	enum class insert_outcome
+	{
+		inserted, // A new election was started for the block
+		transitioned, // The running election for the root was upgraded to priority
+		existing, // The root already has a running election, nothing changed
+		rejected, // Elections are disabled or the root was recently confirmed
+	};
+
 	struct insert_result
 	{
 		std::shared_ptr<nano::election> election;
-		bool inserted;
+		insert_outcome outcome;
 	};
 
-	/// Starts new election
+	/// Starts a new election for the block or upgrades the running election for its root, the outcome says which
 	insert_result insert (
 	std::shared_ptr<nano::block> const &,
 	nano::election_behavior = nano::election_behavior::priority,
