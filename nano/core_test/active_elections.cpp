@@ -2116,3 +2116,104 @@ TEST (active_elections, stale_block_refused)
 	ASSERT_EQ (nano::active_elections::insert_outcome::inserted, current.outcome);
 	ASSERT_TRUE (current.election->contains_block (fork->hash ()));
 }
+
+/*
+ * A forced block replaces the ledger block of a root under a running election, the block processor notification hands it to that election without any scheduler
+ */
+TEST (active_elections, forced_block_published)
+{
+	nano::test::system system;
+
+	nano::node_config node_config;
+	node_config.backlog_scan->enable = false;
+	node_config.priority_scheduler->enable = false;
+	auto & node = *system.add_node (node_config);
+
+	nano::keypair key1;
+	nano::keypair key2;
+	nano::block_builder builder;
+	auto send = builder
+				.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - 1)
+				.link (key1.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+	auto fork = builder
+				.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - 2)
+				.link (key2.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+
+	// The election starts on the first block directly, no scheduler runs in this node
+	ASSERT_EQ (nano::block_status::progress, node.process (send));
+	auto election = node.active.insert (send).election;
+	ASSERT_NE (nullptr, election);
+
+	// Forcing the fork rolls the first block back and lands the fork
+	node.block_processor.force (fork);
+	ASSERT_TIMELY (5s, node.block_or_pruned_exists (fork->hash ()));
+	ASSERT_FALSE (node.block_or_pruned_exists (send->hash ()));
+
+	// The processed notification publishes the forced block into the running election, the rolled back block stays held
+	ASSERT_TIMELY (5s, election->contains_block (fork->hash ()));
+	ASSERT_TRUE (election->contains_block (send->hash ()));
+	ASSERT_EQ (election, node.active.election (send->qualified_root ()));
+	ASSERT_EQ (1, node.stats.count (nano::stat::type::active_elections, nano::stat::detail::fork));
+}
+
+/*
+ * A forced block replaces the ledger block of a root whose election the scheduler started, the election ends up holding both blocks
+ */
+TEST (active_elections, forced_block_joins_election)
+{
+	nano::test::system system;
+	auto & node = *system.add_node ();
+
+	nano::keypair key1;
+	nano::keypair key2;
+	nano::block_builder builder;
+	auto send = builder
+				.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - 1)
+				.link (key1.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+	auto fork = builder
+				.state ()
+				.account (nano::dev::genesis_key.pub)
+				.previous (nano::dev::genesis->hash ())
+				.representative (nano::dev::genesis_key.pub)
+				.balance (nano::dev::constants.genesis_amount - 2)
+				.link (key2.pub)
+				.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+				.work (*system.work.generate (nano::dev::genesis->hash ()))
+				.build ();
+
+	// The block goes through the block processor so the priority scheduler starts its election
+	ASSERT_EQ (nano::block_status::progress, node.process_local (send).value ());
+	std::shared_ptr<nano::election> election;
+	ASSERT_TIMELY (5s, (election = node.active.election (send->qualified_root ())) != nullptr);
+	ASSERT_TRUE (election->contains_block (send->hash ()));
+
+	// Forcing the fork rolls the first block back and lands the fork, which the election has never seen
+	node.block_processor.force (fork);
+	ASSERT_TIMELY (5s, node.block_or_pruned_exists (fork->hash ()));
+	ASSERT_FALSE (node.block_or_pruned_exists (send->hash ()));
+
+	// The running election ends up holding the forced block next to the rolled back one
+	ASSERT_TIMELY (5s, election->contains_block (fork->hash ()));
+	ASSERT_TRUE (election->contains_block (send->hash ()));
+}

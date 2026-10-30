@@ -7,6 +7,7 @@
 #include <nano/lib/tomlconfig.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/block_rebroadcaster.hpp>
+#include <nano/node/block_source.hpp>
 #include <nano/node/cementing_set.hpp>
 #include <nano/node/confirmation_solicitor.hpp>
 #include <nano/node/election.hpp>
@@ -81,10 +82,12 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 	});
 
 	// Cache alternative (forked) blocks and notify elections about them
+	// A forced block replaced the ledger block of its root, the running election for the root has never seen it and gets it the same way
 	ledger_notifications.blocks_processed.add ([this] (auto const & batch) {
 		for (auto const & [result, context] : batch)
 		{
-			if (result == nano::block_status::fork)
+			bool const forced = result == nano::block_status::progress && context.source == nano::block_source::forced;
+			if (result == nano::block_status::fork || forced)
 			{
 				handle_fork (context.block);
 			}
