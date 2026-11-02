@@ -15,6 +15,7 @@ jobs:
   check_tag:
     name: Check Tag
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - name: Require a build tag
         run: |
@@ -27,6 +28,7 @@ jobs:
     name: macOS [${{ matrix.network }}]
     needs: check_tag
     runs-on: macos-26
+    timeout-minutes: 90
     permissions:
       contents: read
       id-token: write
@@ -66,6 +68,7 @@ jobs:
         with:
           name: nano-node-${{ env.CI_TAG }}-Darwin-${{ matrix.network }}
           path: packages/
+          overwrite: true # a re-run of the job replaces its earlier upload
 
       - name: Publish Packages
         if: env.AWS_ACCESS_KEY_ID != ''
@@ -80,6 +83,7 @@ jobs:
     name: Linux [${{ matrix.network }}]
     needs: check_tag
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     permissions:
       contents: read
       id-token: write
@@ -119,6 +123,7 @@ jobs:
         with:
           name: nano-node-${{ env.CI_TAG }}-Linux-${{ matrix.network }}
           path: packages/
+          overwrite: true # a re-run of the job replaces its earlier upload
 
       - name: Publish Packages
         if: env.AWS_ACCESS_KEY_ID != ''
@@ -133,6 +138,7 @@ jobs:
     name: Windows [${{ matrix.network }}]
     needs: check_tag
     runs-on: windows-2022
+    timeout-minutes: 90
     permissions:
       contents: read
       id-token: write
@@ -174,6 +180,7 @@ jobs:
         with:
           name: nano-node-${{ env.CI_TAG }}-win64-${{ matrix.network }}
           path: packages/
+          overwrite: true # a re-run of the job replaces its earlier upload
 
       - name: Publish Packages
         if: env.AWS_ACCESS_KEY_ID != ''
@@ -189,6 +196,7 @@ jobs:
     name: Docker [${{ matrix.network }}]
     needs: check_tag
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     permissions:
       contents: read
       id-token: write

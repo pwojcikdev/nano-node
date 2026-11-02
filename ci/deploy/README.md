@@ -130,7 +130,7 @@ Builds, attests and publishes the packages and images of one build tag.
 - **Job `Docker`**, once per network: build the image with `ci/deploy/docker-build.sh`, push it to `ghcr.io` with `ci/deploy/docker-push.sh` and attest the push, then do the same for Docker Hub when `DOCKER_PASSWORD` is set.
 - **Permissions**: `id-token: write` and `attestations: write` in every job for the attestations, `packages: write` in the Docker job for `ghcr.io`.
 
-The four jobs, and the two network builds within each job, are independent: a failed build cancels no other build, so the run shows exactly which outputs of the tag were published.
+The four jobs, and the two network builds within each job, are independent: a failed build cancels no other build, so the run shows exactly which outputs of the tag were published. Every job has a time limit, 90 minutes for a build, so a hung upload fails its job instead of holding the run. A failed job is re-run in place from the run's page; the workflow artifact it uploads replaces its earlier one.
 
 ## Scripts
 
@@ -167,6 +167,8 @@ Nothing to do. The scheduled Tag Build runs on `develop` twice a week, tags its 
 ### Rebuilding or republishing a tag
 
 Run Build & Deploy by hand on the tag. It builds the same commit and publishes under the same names: the files in the bucket and the image tags on both registries replace the earlier ones, the new run carries its own workflow artifacts, and a new attestation is recorded for everything it built. Tag Build cannot be used for this; it never recreates a tag.
+
+A run in which a job failed needs no new run: *Re-run failed jobs* on the run's page runs only those jobs again, their workflow artifacts replace the earlier ones, and the rest of the run stands.
 
 ### After the pipeline
 
