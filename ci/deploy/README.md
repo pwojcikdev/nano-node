@@ -111,8 +111,8 @@ Creates the next build tag for the branch it runs on and starts Build & Deploy o
 Opens the release branch for the major `develop` is at and moves `develop` on to the next major.
 
 - **Trigger**: by hand only, on `develop`.
-- **Preconditions**, checked by `ci/deploy/prepare-release.sh` before anything is pushed: the run is on the repository's default branch; `CMakeLists.txt` is at minor `0`; neither `releases/v<major>` nor `version-<major+1>.0` exists on `origin`.
-- **Results**:
+- **Preconditions**, checked by `ci/deploy/prepare-release.sh` before anything is pushed: the run is on the repository's default branch; `CMakeLists.txt` is at minor `0`; neither `releases/v<major>` nor `version-<major+1>.0` exists on `origin`, or both exist without their pull request, which is then all the run opens.
+- **Results**, the two branches pushed in one atomic push:
   - the branch `releases/v<major>`, created from HEAD with one commit, `Open releases/v<major> at version <major>.0`, that sets the pre-release number to `0`;
   - the branch `version-<major+1>.0`, created from HEAD with one commit, `Set develop to version <major+1>.0`, that sets the major to `<major+1>`;
   - a pull request from `version-<major+1>.0` to `develop` with the same title.
