@@ -18,10 +18,26 @@ image=$1
 repository=$2
 shift 2
 
+# Three attempts; a later attempt skips the layers an earlier one already uploaded
+push() {
+    local reference=$1
+    local attempt
+    for attempt in 1 2 3; do
+        if docker push "${reference}"; then
+            return 0
+        fi
+        echo "Pushing ${reference} failed, attempt ${attempt} of 3"
+        if ((attempt < 3)); then
+            sleep 15
+        fi
+    done
+    return 1
+}
+
 echo "Pushing ${image} to ${repository} as: $*"
 for tag in "$@"; do
     docker tag "${image}" "${repository}:${tag}"
-    docker push "${repository}:${tag}"
+    push "${repository}:${tag}" || die "Could not push ${repository}:${tag}"
 done
 
 # Docker records Docker Hub repositories without their docker.io/ prefix

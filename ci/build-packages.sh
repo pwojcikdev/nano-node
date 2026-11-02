@@ -35,7 +35,7 @@ echo "Building the ${network} network ${build_type} packages for ${tag}"
 if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then
     echo "Fetching the Visual C++ redistributable for the installer"
     mkdir -p build
-    curl -fsSL -o build/vc_redist.x64.exe https://aka.ms/vs/17/release/vc_redist.x64.exe
+    curl -fsSL --retry 5 --retry-all-errors -o build/vc_redist.x64.exe https://aka.ms/vs/17/release/vc_redist.x64.exe
 fi
 
 NANO_NETWORK=${network} \

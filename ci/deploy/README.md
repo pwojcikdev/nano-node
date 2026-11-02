@@ -127,7 +127,7 @@ Builds, attests and publishes the packages and images of one build tag.
 - **Trigger**: by hand only, on a tag. Tag Build starts it on every tag it creates; run it yourself to rebuild a tag, see [Rebuilding or republishing a tag](#rebuilding-or-republishing-a-tag).
 - **Job `Check Tag`** fails the run unless the ref is a tag starting with `V`. The tag name is passed to every job as `CI_TAG`.
 - **Jobs `macOS`, `Linux`, `Windows`**, each once per network: prepare the runner with `ci/prepare/<os>/`, build the packages with `ci/build-packages.sh`, attest them, copy the attestation bundle into `packages/`, upload `packages/` as a workflow artifact, and run `ci/deploy/upload.sh packages/*` when `AWS_ACCESS_KEY_ID` is set.
-- **Job `Docker`**, once per network: build the image with `ci/deploy/docker-build.sh`, push it to `ghcr.io` with `ci/deploy/docker-push.sh` and attest the push, then do the same for Docker Hub when `DOCKER_PASSWORD` is set.
+- **Job `Docker`**, once per network: log in to Docker Hub when `DOCKER_PASSWORD` is set, build the image with `ci/deploy/docker-build.sh`, push it to `ghcr.io` with `ci/deploy/docker-push.sh` and attest the push, then push and attest on Docker Hub when logged in.
 - **Permissions**: `id-token: write` and `attestations: write` in every job for the attestations, `packages: write` in the Docker job for `ghcr.io`.
 
 The four jobs, and the two network builds within each job, are independent: a failed build cancels no other build, so the run shows exactly which outputs of the tag were published. Every job has a time limit, 90 minutes for a build, so a hung upload fails its job instead of holding the run. A failed job is re-run in place from the run's page; the workflow artifact it uploads replaces its earlier one.
@@ -144,7 +144,7 @@ All scripts are bash and stop with a `::error::` annotation when a precondition 
 | `prepare-release.sh` | `prepare-release.sh [--dry-run]` | `DEFAULT_BRANCH` (default `develop`), `GITHUB_REF_NAME`, `GITHUB_REPOSITORY`, `GITHUB_ACTOR`, `GH_TOKEN` | the two branches and the pull request; outputs `release_branch` and `pull_request` |
 | `upload.sh` | `upload.sh <file>...` | `NETWORK`, `S3_BUCKET_NAME` (default `repo.nano.org`), `S3_BUILD_DIRECTORY` (optional prefix), AWS credentials from the environment | each file and its `.sha256` in the bucket |
 | `docker-build.sh` | `docker-build.sh` | `NETWORK`, `CI_TAG`, `GITHUB_REPOSITORY` (for the image's source label) | the local image `nano-node:<tag>`; outputs `image` and `name` |
-| `docker-push.sh` | `docker-push.sh <image> <repository> <tag>...` | a registry login made by the caller | the image under each tag; outputs `digest`, the manifest digest in that repository |
+| `docker-push.sh` | `docker-push.sh <image> <repository> <tag>...` | a registry login made by the caller | the image under each tag, in up to three attempts per push; outputs `digest`, the manifest digest in that repository |
 
 `ci/build-packages.sh`, one directory up, is the package build the platform jobs run. It reads `NETWORK` and `CI_TAG`, builds through `ci/build.sh` with the wallet enabled, runs the `cpack` that ships with the `cmake` in use, and leaves the packages in `packages/`.
 
