@@ -1,5 +1,5 @@
 name: Tag Build
-# Creates the next build tag for the branch it runs on and starts Build & Deploy on that tag.
+# Creates the next build tag for the branch it runs on and starts Build & Deploy on the tag that covers its head, if it has no run yet.
 on:
   schedule:
     - cron: "0 0 * * 3,6" # Wednesday and Saturday at 00:00 UTC, on develop
@@ -21,6 +21,7 @@ jobs:
   tag:
     name: Tag ${{ github.ref_name }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -35,8 +36,8 @@ jobs:
           RELEASE: ${{ inputs.release || false }}
 
       - name: Start Build & Deploy
-        if: steps.tag.outputs.created == 'true'
-        run: gh workflow run build_deploy.yml --ref "$TAG"
+        if: steps.tag.outputs.tag != ''
+        run: ci/deploy/start-build.sh "$TAG"
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           GH_TOKEN: ${{ github.token }}

@@ -1,14 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-# Creates the next build tag for the checked-out branch and hands it to the workflow.
+# Creates the next build tag for the checked-out branch and hands the tag that covers HEAD to the workflow.
 #
 # Build tags are V<major>.<minor>DB<n> on develop, V<major>.<minor>RC<n> on the release branch
 # of the current major and V<major>.<minor>-<branch>-<n> elsewhere. With RELEASE=true, accepted
 # only on a release branch, the tag is a plain V<major>.<minor>. The version numbers come from
 # CMakeLists.txt, which is updated to match and committed first, so the tag carries the version
 # it names. The commit of a release is pushed to the branch; a pre-release commit exists only
-# through its tag. Nothing is created while the latest tag of the kind already covers HEAD.
+# through its tag. Nothing is created while the latest tag of the kind already covers HEAD; that
+# tag is reported instead.
 #
 # Usage: ci/deploy/next-tag.sh [--dry-run]
 
@@ -97,7 +98,7 @@ echo "Latest tag of this kind: ${previous:-none}"
 if [[ -n "${previous}" ]] && covers_head "${previous}"; then
     echo "HEAD is already covered by ${previous}, nothing new to tag"
     if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-        echo "created=false" >>"${GITHUB_OUTPUT}"
+        echo "tag=${previous}" >>"${GITHUB_OUTPUT}"
     fi
     exit 0
 fi
@@ -139,8 +140,5 @@ fi
 
 echo "::notice::Created ${tag} from ${branch}"
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-    {
-        echo "tag=${tag}"
-        echo "created=true"
-    } >>"${GITHUB_OUTPUT}"
+    echo "tag=${tag}" >>"${GITHUB_OUTPUT}"
 fi

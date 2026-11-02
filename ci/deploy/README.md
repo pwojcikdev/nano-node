@@ -33,7 +33,7 @@ The tag Tag Build creates depends on the branch it runs on and on its *release* 
 
 Rules that apply to every run:
 
-- **A tag is created only when HEAD is new.** Tag Build compares HEAD with the latest existing tag of the same kind. When that tag points at HEAD, or at a version commit made on top of HEAD, nothing is created and Build & Deploy is not started. The first tag of a kind (`V29.0DB1`, `V29.1RC1`, the first build of a branch) has no earlier tag to compare with and is always created.
+- **A tag is created only when HEAD is new.** Tag Build compares HEAD with the latest existing tag of the same kind. When that tag points at HEAD, or at a version commit made on top of HEAD, nothing is created, and Build & Deploy is started for that tag only when it has no run yet. The first tag of a kind (`V29.0DB1`, `V29.1RC1`, the first build of a branch) has no earlier tag to compare with and is always created.
 - **The version is committed before tagging.** Tag Build writes the minor and, for a pre-release tag, the pre-release number `<n>` into `CMakeLists.txt` and commits the change as `Set version for <tag>`. When `CMakeLists.txt` already holds those numbers, HEAD is tagged as it is.
 - **Pre-release commits are reachable only through their tag.** For development builds, release candidates and branch builds the version commit is not pushed to the branch, so the branch keeps the version it had.
 - **Release commits are pushed to the branch.** For a release the version commit is pushed to `releases/v<major>` as well, in one atomic push with the tag, so from then on the branch's `CMakeLists.txt` names the released version and a release never has its tag without its branch update.
@@ -102,7 +102,7 @@ Creates the next build tag for the branch it runs on and starts Build & Deploy o
 
 - **Triggers**: a schedule, Wednesday and Saturday at 00:00 UTC, which GitHub runs on the default branch; and by hand on any branch.
 - **Input** `release` (boolean, default `false`): create the release tag `V<major>.<minor>` instead of a pre-release tag. Accepted only on `releases/v<major>`.
-- **Steps**: check out the branch with its full history and all tags, run `ci/deploy/next-tag.sh`, and when it created a tag run `gh workflow run build_deploy.yml --ref <tag>`.
+- **Steps**: check out the branch with its full history and all tags, run `ci/deploy/next-tag.sh`, then `ci/deploy/start-build.sh` on the tag it reports, which starts Build & Deploy unless the tag already has a run.
 - **Permissions**: `contents: write` to push the version commit and the tag, `actions: write` to start Build & Deploy.
 - **Concurrency**: one run per branch at a time; a second run on the same branch waits.
 
@@ -139,7 +139,8 @@ All scripts are bash and stop with a `::error::` annotation when a precondition 
 | Script | Usage | Reads | Produces |
 |---|---|---|---|
 | `common.sh` | sourced by `next-tag.sh` and `prepare-release.sh` | | `cmake_version`, `set_cmake_version`, `git_as_actor`, `die` |
-| `next-tag.sh` | `next-tag.sh [--dry-run]` | `RELEASE` (`true` or `false`), `GITHUB_REF_NAME` (else the checked-out branch), `GITHUB_ACTOR` | the tag; outputs `created` and `tag` |
+| `next-tag.sh` | `next-tag.sh [--dry-run]` | `RELEASE` (`true` or `false`), `GITHUB_REF_NAME` (else the checked-out branch), `GITHUB_ACTOR` | the tag; outputs `tag`, the tag that covers HEAD, whether created now or earlier |
+| `start-build.sh` | `start-build.sh <tag>` | `GITHUB_REPOSITORY` (else the checkout's origin), `GH_TOKEN` | a Build & Deploy run on the tag unless it has one, in up to three attempts |
 | `prepare-release.sh` | `prepare-release.sh [--dry-run]` | `DEFAULT_BRANCH` (default `develop`), `GITHUB_REF_NAME`, `GITHUB_REPOSITORY`, `GITHUB_ACTOR`, `GH_TOKEN` | the two branches and the pull request; outputs `release_branch` and `pull_request` |
 | `upload.sh` | `upload.sh <file>...` | `NETWORK`, `S3_BUCKET_NAME` (default `repo.nano.org`), `S3_BUILD_DIRECTORY` (optional prefix), AWS credentials from the environment | each file and its `.sha256` in the bucket |
 | `docker-build.sh` | `docker-build.sh` | `NETWORK`, `CI_TAG`, `GITHUB_REPOSITORY` (for the image's source label) | the local image `nano-node:<tag>`; outputs `image` and `name` |
@@ -204,7 +205,7 @@ RELEASE=true ci/deploy/next-tag.sh --dry-run
 ci/deploy/prepare-release.sh --dry-run
 ```
 
-`--dry-run` prints the branch, the version in `CMakeLists.txt`, the tag or branches that would be created, or the check that fails, and stops before writing anything. Without `--dry-run` the scripts push to `origin` exactly as they do in the workflow, authored as the local user.
+`--dry-run` prints the branch, the version in `CMakeLists.txt`, the tag or branches that would be created, or the check that fails, and stops before writing anything. Without `--dry-run` the scripts push to `origin` exactly as they do in the workflow, authored as the local user. `prepare-release.sh` and `start-build.sh` call `gh`, which needs `GH_TOKEN` or an earlier `gh auth login`.
 
 ## Verifying a download
 
