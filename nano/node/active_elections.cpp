@@ -395,7 +395,7 @@ bool nano::active_elections::erase (nano::block const & block)
 auto nano::active_elections::block_cemented (std::shared_ptr<nano::block> const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election) -> block_cemented_result
 {
 	debug_assert (!mutex.try_lock ());
-	debug_assert (node.block_confirmed (block->hash ()));
+	debug_assert (node.block_cemented (block->hash ()));
 
 	// Dependent elections are implicitly confirmed when their block is cemented
 	auto election = election_impl (block->qualified_root ());

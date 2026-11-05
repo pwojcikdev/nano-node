@@ -81,7 +81,7 @@ bool nano::test::confirmed (nano::node & node, std::vector<nano::block_hash> has
 {
 	for (auto & hash : hashes)
 	{
-		if (!node.block_confirmed (hash))
+		if (!node.block_cemented (hash))
 		{
 			return false;
 		}

@@ -104,6 +104,6 @@ TEST (flamegraph, large_confirmation)
 	auto & node3 = *system.add_node (config, flags, nano::transport::transport_type::tcp, reps[2]);
 	auto & node4 = *system.add_node (config, flags, nano::transport::transport_type::tcp, reps[3]);
 	ASSERT_TIMELY (300s, std::all_of (system.nodes.begin (), system.nodes.end (), [&] (auto const & node) {
-		return node->block_confirmed (system.initialization_blocks.back ()->hash ());
+		return node->block_cemented (system.initialization_blocks.back ()->hash ());
 	}));
 }

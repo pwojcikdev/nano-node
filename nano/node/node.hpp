@@ -70,10 +70,11 @@ public:
 	void start_election (std::shared_ptr<nano::block> const & block);
 	bool warmed_up () const;
 
-	bool block_confirmed (nano::block_hash const &);
-	// This function may spuriously return false after returning true until the database transaction is refreshed
-	bool block_confirmed_or_being_confirmed (nano::secure::transaction const &, nano::block_hash const &);
-	bool block_confirmed_or_being_confirmed (nano::block_hash const &);
+	// Whether the block is cemented in the ledger, pruned blocks included
+	bool block_cemented (nano::block_hash const &);
+	// Whether the block is cemented or queued for cementing; may spuriously return false after returning true until the database transaction is refreshed
+	bool block_cemented_or_cementing (nano::secure::transaction const &, nano::block_hash const &);
+	bool block_cemented_or_cementing (nano::block_hash const &);
 
 	uint64_t block_count () const;
 	uint64_t cemented_count () const;

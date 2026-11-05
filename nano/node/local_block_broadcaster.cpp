@@ -230,7 +230,7 @@ void nano::local_block_broadcaster::cleanup (nano::unique_lock<nano::mutex> & lo
 			{
 				continue;
 			}
-			if (node.block_confirmed_or_being_confirmed (transaction, entry.block->hash ()))
+			if (node.block_cemented_or_cementing (transaction, entry.block->hash ()))
 			{
 				stats.inc (nano::stat::type::local_block_broadcaster, nano::stat::detail::already_confirmed);
 				already_confirmed.insert (entry.block->hash ());

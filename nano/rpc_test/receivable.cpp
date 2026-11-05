@@ -28,7 +28,7 @@ TEST (rpc, receivable)
 	auto node = add_ipc_enabled_node (system);
 	auto chain = nano::test::setup_chain (system, *node, 1);
 	auto block1 = chain[0];
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;
 	request.put ("action", "receivable");
@@ -46,7 +46,7 @@ TEST (rpc, receivable_sorting)
 	auto node = add_ipc_enabled_node (system);
 	auto chain = nano::test::setup_chain (system, *node, 1);
 	auto block1 = chain[0];
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;
 	request.put ("action", "receivable");
@@ -67,7 +67,7 @@ TEST (rpc, receivable_threshold_sufficient)
 	auto node = add_ipc_enabled_node (system);
 	auto chain = nano::test::setup_chain (system, *node, 1);
 	auto block1 = chain[0];
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;
 	request.put ("action", "receivable");
@@ -98,7 +98,7 @@ TEST (rpc, receivable_threshold_insufficient)
 	auto node = add_ipc_enabled_node (system);
 	auto chain = nano::test::setup_chain (system, *node, 1);
 	auto block1 = chain[0];
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;
 	request.put ("action", "receivable");
@@ -115,7 +115,7 @@ TEST (rpc, receivable_source_min_version)
 	auto node = add_ipc_enabled_node (system);
 	auto chain = nano::test::setup_chain (system, *node, 1);
 	auto block1 = chain[0];
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;
 	request.put ("action", "receivable");
@@ -214,7 +214,7 @@ TEST (rpc, receivable_exists_include_active)
 
 	ASSERT_TIMELY_EQ (10s, node->ledger.account_receivable (node->store.tx_begin_read (), key1.pub), 1000);
 	ASSERT_TIMELY (5s, !node->active.active (*block4));
-	ASSERT_TIMELY (5s, node->block_confirmed (block4->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block4->hash ()));
 
 	request.put ("count", "2");
 	{
@@ -392,7 +392,7 @@ TEST (rpc, receivable_burn)
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	auto block1 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, nano::dev::constants.burn_account, 100));
 	auto const rpc_ctx = add_rpc (system, node);
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 	boost::property_tree::ptree request;
 	request.put ("action", "receivable");
 	request.put ("account", nano::dev::constants.burn_account.to_account ());
@@ -456,7 +456,7 @@ TEST (rpc, accounts_receivable_blocks)
 	auto node = add_ipc_enabled_node (system);
 	auto chain = nano::test::setup_chain (system, *node, 1);
 	auto block1 = chain[0];
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;
@@ -482,7 +482,7 @@ TEST (rpc, accounts_receivable_sorting)
 	auto node = add_ipc_enabled_node (system);
 	auto chain = nano::test::setup_chain (system, *node, 1);
 	auto block1 = chain[0];
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;
@@ -799,7 +799,7 @@ TEST (rpc, accounts_receivable_threshold)
 	auto node = add_ipc_enabled_node (system);
 	auto chain = nano::test::setup_chain (system, *node, 1);
 	auto block1 = chain[0];
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;

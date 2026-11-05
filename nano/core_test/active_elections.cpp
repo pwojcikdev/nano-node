@@ -233,8 +233,8 @@ TEST (active_elections, confirm_fork)
 	ASSERT_EQ (fork2->hash (), election->winner ()->hash ());
 
 	// Ledger view: fork2 cemented, fork1 not
-	ASSERT_TIMELY (5s, node.block_confirmed (fork2->hash ()));
-	ASSERT_FALSE (node.block_confirmed (fork1->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (fork2->hash ()));
+	ASSERT_FALSE (node.block_cemented (fork1->hash ()));
 }
 
 // Tests that confirming a block that was initially in the fork cache works
@@ -276,7 +276,7 @@ TEST (active_elections, confirm_fork_cache)
 	ASSERT_TIMELY (5s, election->confirmed ());
 	ASSERT_EQ (fork1->hash (), election->winner ()->hash ());
 
-	ASSERT_TIMELY (5s, node.block_confirmed (fork1->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (fork1->hash ()));
 }
 
 /*
@@ -571,7 +571,7 @@ TEST (active_elections, cached_vote_fork)
 
 	node.process_active (send1);
 	ASSERT_TIMELY_EQ (5s, election->blocks ().size (), 2);
-	ASSERT_TIMELY (5s, node.block_confirmed (send1->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (send1->hash ()));
 	ASSERT_EQ (1, node.stats.count (nano::stat::type::election_vote, nano::stat::detail::cache));
 }
 
@@ -780,7 +780,7 @@ TEST (active_elections, cached_vote_election_start)
 	ASSERT_EQ (3, send4_cache.size ());
 	node.process_active (send3);
 	// An election is started for send6 but does not
-	ASSERT_FALSE (node.block_confirmed_or_being_confirmed (send3->hash ()));
+	ASSERT_FALSE (node.block_cemented_or_cementing (send3->hash ()));
 	// send4 cannot be voted on but an election should be started from inactive votes
 	node.process_active (send4);
 	ASSERT_TIMELY_EQ (5s, 7, node.ledger.cemented_count ());
@@ -1042,7 +1042,7 @@ TEST (active_elections, republish_winner)
 	node1.vote_processor.vote (vote, std::make_shared<nano::transport::inproc::channel> (node1, node1));
 	ASSERT_TIMELY (5s, election->confirmed ());
 	ASSERT_EQ (fork->hash (), election->winner ()->hash ());
-	ASSERT_TIMELY (5s, node2.block_confirmed (fork->hash ()));
+	ASSERT_TIMELY (5s, node2.block_cemented (fork->hash ()));
 }
 
 TEST (active_elections, fork_filter_cleanup)
@@ -1296,7 +1296,7 @@ TEST (active_elections, confirmation_consistency)
 	{
 		auto block (system.wallet (0)->send_action (nano::dev::genesis_key.pub, nano::public_key (), node.config.receive_minimum.number ()));
 		ASSERT_NE (nullptr, block);
-		ASSERT_TIMELY (5s, node.block_confirmed (block->hash ()));
+		ASSERT_TIMELY (5s, node.block_cemented (block->hash ()));
 		ASSERT_NO_ERROR (system.poll_until_true (1s, [&node, &block, i] {
 			EXPECT_EQ (i + 1, node.active.recently_confirmed.size ());
 			EXPECT_TRUE (node.active.recently_confirmed.contains (block->qualified_root ()));
@@ -1439,14 +1439,14 @@ TEST (active_elections, activate_account_chain)
 	ASSERT_EQ (1, node.active.size ());
 	ASSERT_EQ (1, election1->blocks ().count (send->hash ()));
 	election1->force_confirm (); // Force confirm to trigger successor activation
-	ASSERT_TIMELY (5s, node.block_confirmed (send->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (send->hash ()));
 	// On cementing, the next election is started
 	ASSERT_TIMELY (5s, node.active.active (send2->qualified_root ()));
 	auto election3 = node.active.election (send2->qualified_root ());
 	ASSERT_NE (nullptr, election3);
 	ASSERT_EQ (1, election3->blocks ().count (send2->hash ()));
 	election3->force_confirm (); // Force confirm to trigger successor and destination activation
-	ASSERT_TIMELY (5s, node.block_confirmed (send2->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (send2->hash ()));
 	// On cementing, the next election is started
 	ASSERT_TIMELY (5s, node.active.active (open->qualified_root ())); // Destination account activated
 	ASSERT_TIMELY (5s, node.active.active (send3->qualified_root ())); // Block successor activated
@@ -1457,12 +1457,12 @@ TEST (active_elections, activate_account_chain)
 	ASSERT_NE (nullptr, election5);
 	ASSERT_EQ (1, election5->blocks ().count (open->hash ()));
 	election5->force_confirm ();
-	ASSERT_TIMELY (5s, node.block_confirmed (open->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (open->hash ()));
 	// Until send3 is also confirmed, the receive block should not activate
 	std::this_thread::sleep_for (200ms);
 	ASSERT_FALSE (node.active.active (receive->qualified_root ()));
 	election4->force_confirm ();
-	ASSERT_TIMELY (5s, node.block_confirmed (send3->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (send3->hash ()));
 	ASSERT_TIMELY (5s, node.active.active (receive->qualified_root ())); // Destination account activated
 }
 
@@ -1513,8 +1513,8 @@ TEST (active_elections, activate_inactive)
 	election->force_confirm ();
 
 	ASSERT_TIMELY (5s, !node.cementing_set.contains (send2->hash ()));
-	ASSERT_TIMELY (5s, node.block_confirmed (send2->hash ()));
-	ASSERT_TIMELY (5s, node.block_confirmed (send->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (send2->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (send->hash ()));
 
 	ASSERT_TIMELY_EQ (5s, 1, node.stats.count (nano::stat::type::confirmation_observer, nano::stat::detail::inactive_conf_height, nano::stat::dir::out));
 	ASSERT_TIMELY_EQ (5s, 1, node.stats.count (nano::stat::type::confirmation_observer, nano::stat::detail::active_quorum, nano::stat::dir::out));

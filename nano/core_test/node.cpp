@@ -912,7 +912,7 @@ TEST (node, fork_open)
 	node.inbound (publish1, channel1);
 	ASSERT_TIMELY (5s, (election = node.active.election (publish1.block->qualified_root ())) != nullptr);
 	election->force_confirm ();
-	ASSERT_TIMELY (5s, node.active.empty () && node.block_confirmed (publish1.block->hash ()));
+	ASSERT_TIMELY (5s, node.active.empty () && node.block_cemented (publish1.block->hash ()));
 
 	// register key for genesis account, not sure why we do this, it seems needless,
 	// since the genesis account at this stage has zero voting weight
@@ -1033,7 +1033,7 @@ TEST (node, fork_open_flip)
 
 	// allow node1 to vote and wait for open1 to be confirmed on node1
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	ASSERT_TIMELY (5s, node1.block_confirmed (open1->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (open1->hash ()));
 
 	// Notify both nodes of both blocks, both nodes will become aware that a fork exists
 	node1.process_active (open2);
@@ -1043,7 +1043,7 @@ TEST (node, fork_open_flip)
 
 	// Node2 should eventually settle on open1
 	ASSERT_TIMELY (10s, node2.block (open1->hash ()));
-	ASSERT_TIMELY (5s, node1.block_confirmed (open1->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (open1->hash ()));
 	auto winner = *election->tally ().begin ();
 	ASSERT_EQ (*open1, *winner.second);
 	ASSERT_EQ (nano::dev::constants.genesis_amount - 1, winner.first.weight);
@@ -1561,13 +1561,13 @@ TEST (node, bootstrap_fork_open)
 	// Confirm send0 to allow starting and voting on the following blocks
 	nano::test::confirm (*node0, { send0 });
 	nano::test::confirm (*node1, { send0 });
-	ASSERT_TIMELY (5s, node0->block_confirmed (send0->hash ()));
-	ASSERT_TIMELY (5s, node1->block_confirmed (send0->hash ()));
+	ASSERT_TIMELY (5s, node0->block_cemented (send0->hash ()));
+	ASSERT_TIMELY (5s, node1->block_cemented (send0->hash ()));
 
 	// They disagree about open0/open1
 	ASSERT_EQ (nano::block_status::progress, node0->process (open0));
 	node0->cementing_set.add (open0->hash ());
-	ASSERT_TIMELY (5s, node0->block_confirmed (open0->hash ()));
+	ASSERT_TIMELY (5s, node0->block_cemented (open0->hash ()));
 
 	ASSERT_EQ (nano::block_status::progress, node1->process (open1));
 	ASSERT_TRUE (node1->block_or_pruned_exists (open1->hash ()));
@@ -1598,7 +1598,7 @@ TEST (node, bootstrap_confirm_frontiers)
 				 .work (*node0->work_generate_blocking (nano::dev::genesis->hash ()))
 				 .build ();
 	ASSERT_EQ (nano::block_status::progress, node0->process (send0));
-	ASSERT_TIMELY (10s, node1->block_confirmed (send0->hash ()));
+	ASSERT_TIMELY (10s, node1->block_cemented (send0->hash ()));
 }
 
 // Test that if we create a block that isn't confirmed, the bootstrapping processes sync the missing block.
@@ -1618,8 +1618,8 @@ TEST (node, unconfirmed_send)
 	// firstly, send two units from node1 to node2 and expect that both nodes see the block as confirmed
 	// (node1 will start an election for it, vote on it and node2 gets synced up)
 	auto send1 = wallet1->send_action (nano::dev::genesis_key.pub, key2.pub, 2 * nano::nano_ratio);
-	ASSERT_TIMELY (5s, node1.block_confirmed (send1->hash ()));
-	ASSERT_TIMELY (5s, node2.block_confirmed (send1->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send1->hash ()));
+	ASSERT_TIMELY (5s, node2.block_cemented (send1->hash ()));
 
 	// wait until receive1 (auto-receive created by wallet) is cemented
 	ASSERT_TIMELY_EQ (5s, node2.ledger.cemented.account_height (node2.ledger.tx_begin_read (), key2.pub), 1);
@@ -1640,10 +1640,10 @@ TEST (node, unconfirmed_send)
 	ASSERT_EQ (nano::block_status::progress, node2.process (send2));
 
 	auto send3 = wallet2->send_action (key2.pub, nano::dev::genesis_key.pub, nano::nano_ratio);
-	ASSERT_TIMELY (5s, node2.block_confirmed (send2->hash ()));
-	ASSERT_TIMELY (5s, node1.block_confirmed (send2->hash ()));
-	ASSERT_TIMELY (5s, node2.block_confirmed (send3->hash ()));
-	ASSERT_TIMELY (5s, node1.block_confirmed (send3->hash ()));
+	ASSERT_TIMELY (5s, node2.block_cemented (send2->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send2->hash ()));
+	ASSERT_TIMELY (5s, node2.block_cemented (send3->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send3->hash ()));
 	ASSERT_TIMELY_EQ (5s, node2.ledger.cemented_count (), 7);
 	ASSERT_TIMELY_EQ (5s, node1.balance (nano::dev::genesis_key.pub), nano::dev::constants.genesis_amount);
 }
@@ -2090,8 +2090,8 @@ TEST (node, vote_republish)
 	// the real node will do a confirm request if it needs to find a lost vote
 
 	// check that send2 won on both nodes
-	ASSERT_TIMELY (5s, node1.block_confirmed (send2->hash ()));
-	ASSERT_TIMELY (5s, node2.block_confirmed (send2->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send2->hash ()));
+	ASSERT_TIMELY (5s, node2.block_cemented (send2->hash ()));
 
 	// check that send1 is deleted from the ledger on nodes
 	ASSERT_FALSE (node1.block (send1->hash ()));
@@ -2201,8 +2201,8 @@ TEST (node, vote_by_hash_republish)
 	node1.vote_processor.vote (vote, std::make_shared<nano::transport::fake::channel> (node1));
 
 	// send2 should win on both nodes
-	ASSERT_TIMELY (5s, node1.block_confirmed (send2->hash ()));
-	ASSERT_TIMELY (5s, node2.block_confirmed (send2->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send2->hash ()));
+	ASSERT_TIMELY (5s, node2.block_cemented (send2->hash ()));
 	ASSERT_FALSE (node1.block (send1->hash ()));
 	ASSERT_FALSE (node2.block (send1->hash ()));
 	ASSERT_TIMELY_EQ (5s, node2.balance (key2.pub), node1.config.receive_minimum.number () * 2);
@@ -3197,7 +3197,7 @@ TEST (node, dependency_graph)
 			{
 				for (auto ancestor : entry.second)
 				{
-					if (!node.block_confirmed (ancestor))
+					if (!node.block_cemented (ancestor))
 					{
 						return true;
 					}
@@ -3473,7 +3473,7 @@ TEST (node, deferred_dependent_elections)
 
 	// Confirming send1 will automatically start elections for the dependents
 	election_send1->force_confirm ();
-	ASSERT_TIMELY (5s, node.block_confirmed (send1->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (send1->hash ()));
 	ASSERT_TIMELY (5s, node.active.active (open->qualified_root ()));
 	ASSERT_TIMELY (5s, node.active.active (send2->qualified_root ()));
 	auto election_open = node.active.election (open->qualified_root ());
@@ -3485,7 +3485,7 @@ TEST (node, deferred_dependent_elections)
 	ASSERT_EQ (nano::block_status::progress, node.process (receive));
 	ASSERT_FALSE (node.active.active (receive->qualified_root ()));
 	election_open->force_confirm ();
-	ASSERT_TIMELY (5s, node.block_confirmed (open->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (open->hash ()));
 	ASSERT_FALSE (node.ledger.dependencies_cemented (node.ledger.tx_begin_read (), *receive));
 	ASSERT_NEVER (0.5s, node.active.active (receive->qualified_root ()));
 	ASSERT_FALSE (node.ledger.rollback (node.ledger.tx_begin_write (), receive->hash ()));
@@ -3501,7 +3501,7 @@ TEST (node, deferred_dependent_elections)
 
 	// Confirming the other dependency allows starting an election from a fork
 	election_send2->force_confirm ();
-	ASSERT_TIMELY (5s, node.block_confirmed (send2->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (send2->hash ()));
 	ASSERT_TIMELY (5s, node.active.active (receive->qualified_root ()));
 }
 
@@ -3548,9 +3548,9 @@ TEST (node, pruning_automatic)
 
 	// Force-confirm both blocks
 	node1.cementing_set.add (send1->hash ());
-	ASSERT_TIMELY (5s, node1.block_confirmed (send1->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send1->hash ()));
 	node1.cementing_set.add (send2->hash ());
-	ASSERT_TIMELY (5s, node1.block_confirmed (send2->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send2->hash ()));
 
 	// Check pruning result
 	ASSERT_EQ (3, node1.ledger.block_count ());
@@ -3601,9 +3601,9 @@ TEST (node, pruning_age)
 
 	// Force-confirm both blocks
 	node1.cementing_set.add (send1->hash ());
-	ASSERT_TIMELY (5s, node1.block_confirmed (send1->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send1->hash ()));
 	node1.cementing_set.add (send2->hash ());
-	ASSERT_TIMELY (5s, node1.block_confirmed (send2->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send2->hash ()));
 
 	// Three blocks in total, nothing pruned yet
 	ASSERT_EQ (0, node1.ledger.pruned_count ());
@@ -3664,9 +3664,9 @@ TEST (node, pruning_depth)
 
 	// Force-confirm both blocks
 	node1.cementing_set.add (send1->hash ());
-	ASSERT_TIMELY (5s, node1.block_confirmed (send1->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send1->hash ()));
 	node1.cementing_set.add (send2->hash ());
-	ASSERT_TIMELY (5s, node1.block_confirmed (send2->hash ()));
+	ASSERT_TIMELY (5s, node1.block_cemented (send2->hash ()));
 
 	// Three blocks in total, nothing pruned yet
 	ASSERT_EQ (0, node1.ledger.pruned_count ());
@@ -4026,9 +4026,9 @@ TEST (node, super_rebroadcaster)
 	ASSERT_TIMELY (5s, node4.stats.count (nano::stat::type::vote_processor_source, nano::stat::detail::rebroadcast) >= 1);
 
 	// Verify all peers confirmed the block (final vote triggers confirmation)
-	ASSERT_TIMELY (5s, node2.block_confirmed (send->hash ()));
-	ASSERT_TIMELY (5s, node3.block_confirmed (send->hash ()));
-	ASSERT_TIMELY (5s, node4.block_confirmed (send->hash ()));
+	ASSERT_TIMELY (5s, node2.block_cemented (send->hash ()));
+	ASSERT_TIMELY (5s, node3.block_cemented (send->hash ()));
+	ASSERT_TIMELY (5s, node4.block_cemented (send->hash ()));
 }
 
 // Tests that when two nodes try to bind to the same port, the second node fails gracefully

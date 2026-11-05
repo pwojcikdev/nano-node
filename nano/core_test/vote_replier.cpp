@@ -451,7 +451,7 @@ TEST (vote_replier, epoch_conflict)
 	// Process and confirm the initial chain with the change block
 	nano::test::process (node, { send, open, change });
 	nano::test::confirm (node, { change });
-	ASSERT_TIMELY (5s, node.block_confirmed (change->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (change->hash ()));
 
 	auto channel = nano::test::test_channel (node);
 

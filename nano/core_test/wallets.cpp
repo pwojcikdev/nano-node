@@ -280,7 +280,7 @@ TEST (wallets, search_receivable)
 		// Now confirm the election
 		election->force_confirm ();
 
-		ASSERT_TIMELY (5s, node.block_confirmed (send->hash ()) && node.active.empty ());
+		ASSERT_TIMELY (5s, node.block_cemented (send->hash ()) && node.active.empty ());
 
 		// Re-insert the key
 		ASSERT_TRUE (wallet->insert_adhoc (nano::dev::genesis_key.prv));
@@ -385,7 +385,7 @@ TEST (wallets, receivable_scan)
 	ASSERT_EQ (nano::block_status::progress, node.process (send));
 
 	// Confirm the send block (receivable scan only processes confirmed blocks)
-	ASSERT_TIMELY (5s, node.block_confirmed (send->hash ()));
+	ASSERT_TIMELY (5s, node.block_cemented (send->hash ()));
 
 	// Clear stats and wait for the receivable scan loop to run
 	node.stats.clear ();

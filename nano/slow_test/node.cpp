@@ -2168,7 +2168,7 @@ TEST (system, block_sequence)
 			std::cerr << message << std::endl;
 			last = std::chrono::system_clock::now ();
 		}
-		done = std::all_of (system.nodes.begin (), system.nodes.end (), [&blocks] (std::shared_ptr<nano::node> node) { return node->block_confirmed (blocks.back ()->hash ()); });
+		done = std::all_of (system.nodes.begin (), system.nodes.end (), [&blocks] (std::shared_ptr<nano::node> node) { return node->block_cemented (blocks.back ()->hash ()); });
 		system.poll ();
 	}
 }

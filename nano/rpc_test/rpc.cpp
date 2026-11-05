@@ -2473,7 +2473,7 @@ TEST (rpc, block_count_pruning)
 					.build ();
 	node1->process_local (receive1);
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	ASSERT_TIMELY (5s, node1->block_confirmed (receive1->hash ()));
+	ASSERT_TIMELY (5s, node1->block_cemented (receive1->hash ()));
 	// Pruning action
 	{
 		auto transaction = node1->ledger.tx_begin_write ();
@@ -2635,7 +2635,7 @@ TEST (rpc, account_representative_set_epoch_2_insufficient_work)
 	std::shared_ptr<nano::block> head;
 	ASSERT_NE (nullptr, system.upgrade_genesis_epoch (*node, nano::epoch::epoch_1));
 	ASSERT_NE (nullptr, (head = system.upgrade_genesis_epoch (*node, nano::epoch::epoch_2)));
-	ASSERT_TIMELY (5s, node->block_confirmed (head->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (head->hash ()));
 
 	auto target_difficulty = nano::dev::network_params.work.threshold (nano::work_version::work_1, nano::block_details (nano::epoch::epoch_2, false, false, false));
 	ASSERT_LT (node->network_params.work.entry, target_difficulty);
@@ -3530,13 +3530,13 @@ TEST (rpc, wallet_info)
 	auto send (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key.pub, nano::Knano_ratio));
 	// after the send, expect 2 blocks immediately, then 2 confirmed in a timely manner,
 	// and finally 3 blocks and 3 confirmed after the wallet generates the receive block for this send
-	ASSERT_TIMELY (5s, node->block_confirmed (send->hash ())); // Send gets confirmed
+	ASSERT_TIMELY (5s, node->block_cemented (send->hash ())); // Send gets confirmed
 	ASSERT_TIMELY (5s, !node->latest (key.pub).is_zero ()); // Receive gets generated
-	ASSERT_TIMELY (5s, node->block_confirmed (node->latest (key.pub))); // Receive gets confirmed
+	ASSERT_TIMELY (5s, node->block_cemented (node->latest (key.pub))); // Receive gets confirmed
 
 	// do another send to be able to expect some "pending" down below
 	auto send2 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key.pub, 1));
-	ASSERT_TIMELY (5s, node->block_confirmed (send2->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (send2->hash ()));
 
 	auto account = system.wallet (0)->deterministic_insert ().value ();
 	system.wallet (0)->remove_account (account);
@@ -3609,7 +3609,7 @@ TEST (rpc, pending_exists)
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 	auto hash0 (node->latest (nano::dev::genesis_key.pub));
 	auto block1 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key1.pub, 100));
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 	ASSERT_TIMELY (5s, !node->active.active (*block1));
 
 	auto const rpc_ctx = add_rpc (system, node);
@@ -3669,7 +3669,7 @@ TEST (rpc, wallet_receivable)
 	system.wallet (0)->insert_adhoc (key1.prv);
 	auto iterations (0);
 	auto block1 (system.wallet (0)->send_action (nano::dev::genesis_key.pub, key1.pub, 100));
-	ASSERT_TIMELY (5s, node->block_confirmed (block1->hash ()));
+	ASSERT_TIMELY (5s, node->block_cemented (block1->hash ()));
 	ASSERT_TIMELY (5s, !node->active.active (*block1));
 	auto const rpc_ctx = add_rpc (system, node);
 	boost::property_tree::ptree request;
@@ -5028,7 +5028,7 @@ TEST (rpc, block_info_pruning)
 					.build ();
 	node1->process_active (receive1);
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	ASSERT_TIMELY (5s, node1->block_confirmed (receive1->hash ()));
+	ASSERT_TIMELY (5s, node1->block_cemented (receive1->hash ()));
 	// Pruning action
 	{
 		auto transaction = node1->ledger.tx_begin_write ();
@@ -5095,7 +5095,7 @@ TEST (rpc, pruned_exists)
 					.build ();
 	node1->process_active (receive1);
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-	ASSERT_TIMELY (5s, node1->block_confirmed (receive1->hash ()));
+	ASSERT_TIMELY (5s, node1->block_cemented (receive1->hash ()));
 	// Pruning action
 	{
 		auto transaction = node1->ledger.tx_begin_write ();
@@ -7415,7 +7415,7 @@ TEST (rpc, receive_pruned)
 	// Extra send frontier
 	auto send3 (wallet1->send_action (nano::dev::genesis_key.pub, key1.pub, node2->config.receive_minimum.number (), *node2->work_generate_blocking (send1->hash ())));
 	// Pruning
-	ASSERT_TIMELY (5s, node2->block_confirmed (send3->hash ()));
+	ASSERT_TIMELY (5s, node2->block_cemented (send3->hash ()));
 	{
 		auto transaction = node2->ledger.tx_begin_write ();
 		ASSERT_EQ (2, node2->ledger.pruning_action (transaction, send2->hash (), 1));

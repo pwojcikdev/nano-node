@@ -89,7 +89,7 @@ void nano::scheduler::hinted::activate (secure::read_transaction & transaction, 
 		if (auto block = node.ledger.any.block_get (transaction, current_hash); block)
 		{
 			// Ensure block is not already confirmed
-			if (node.block_confirmed_or_being_confirmed (transaction, current_hash))
+			if (node.block_cemented_or_cementing (transaction, current_hash))
 			{
 				stats.inc (nano::stat::type::hinting, nano::stat::detail::already_confirmed);
 				vote_cache.erase (current_hash); // Remove from vote cache

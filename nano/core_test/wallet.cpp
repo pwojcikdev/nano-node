@@ -1321,7 +1321,7 @@ TEST (wallet, search_receivable)
 	// Now confirm the election
 	election->force_confirm ();
 
-	ASSERT_TIMELY (5s, node.block_confirmed (send->hash ()) && node.active.empty ());
+	ASSERT_TIMELY (5s, node.block_cemented (send->hash ()) && node.active.empty ());
 
 	// Re-insert the key
 	wallet.insert_adhoc (nano::dev::genesis_key.prv);

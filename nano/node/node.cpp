@@ -855,19 +855,19 @@ void nano::node::start_election (std::shared_ptr<nano::block> const & block)
 	scheduler.manual.push (block);
 }
 
-bool nano::node::block_confirmed (nano::block_hash const & hash)
+bool nano::node::block_cemented (nano::block_hash const & hash)
 {
 	return ledger.cemented.block_exists_or_pruned (ledger.tx_begin_read (), hash);
 }
 
-bool nano::node::block_confirmed_or_being_confirmed (nano::secure::transaction const & transaction, nano::block_hash const & hash)
+bool nano::node::block_cemented_or_cementing (nano::secure::transaction const & transaction, nano::block_hash const & hash)
 {
 	return cementing_set.contains (hash) || ledger.cemented.block_exists_or_pruned (transaction, hash);
 }
 
-bool nano::node::block_confirmed_or_being_confirmed (nano::block_hash const & hash_a)
+bool nano::node::block_cemented_or_cementing (nano::block_hash const & hash_a)
 {
-	return block_confirmed_or_being_confirmed (ledger.tx_begin_read (), hash_a);
+	return block_cemented_or_cementing (ledger.tx_begin_read (), hash_a);
 }
 
 bool nano::node::online () const

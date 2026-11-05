@@ -390,7 +390,7 @@ TEST (election, quorum_minimum_flip_fail)
 	// it would be wrongfully confirmed, have that immediately fail instead of race
 	WAIT (1s);
 	ASSERT_FALSE (election->confirmed ());
-	ASSERT_FALSE (node.block_confirmed (send2->hash ()));
+	ASSERT_FALSE (node.block_cemented (send2->hash ()));
 }
 
 // This test ensures blocks can be confirmed precisely at the quorum minimum
