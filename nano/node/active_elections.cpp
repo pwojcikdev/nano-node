@@ -75,7 +75,7 @@ nano::active_elections::active_elections (nano::node & node_a, nano::ledger_noti
 					}
 				}
 
-				notify_observers (transaction, status, type, votes);
+				notify_cemented (transaction, status, type, votes);
 			}
 		});
 	});
@@ -440,7 +440,7 @@ auto nano::active_elections::block_cemented (std::shared_ptr<nano::block> const 
 	return { election, status, type, votes };
 }
 
-void nano::active_elections::notify_observers (nano::secure::transaction const & transaction, nano::election_status const & status, nano::confirmation_type type, std::vector<nano::vote_with_weight_info> const & votes) const
+void nano::active_elections::notify_cemented (nano::secure::transaction const & transaction, nano::election_status const & status, nano::confirmation_type type, std::vector<nano::vote_with_weight_info> const & votes) const
 {
 	// Get block from ledger to ensure sideband is set (forked blocks may not have sideband)
 	auto const block = node.ledger.any.block_get (transaction, status.winner->hash ());
@@ -460,9 +460,9 @@ void nano::active_elections::notify_observers (nano::secure::transaction const &
 			break;
 	}
 
-	if (!node.observers.block_confirmed.empty ())
+	if (!node.observers.block_cemented.empty ())
 	{
-		nano::block_confirmation_info confirmation{
+		nano::cemented_block_info confirmation{
 			.block = block,
 			.status = status,
 			.type = type,
@@ -472,7 +472,7 @@ void nano::active_elections::notify_observers (nano::secure::transaction const &
 			.is_state_send = block->type () == block_type::state && block->is_send (),
 			.is_state_epoch = block->type () == block_type::state && block->is_epoch (),
 		};
-		node.observers.block_confirmed.notify (confirmation);
+		node.observers.block_cemented.notify (confirmation);
 	}
 
 	node.observers.account_balance.notify (account, false);

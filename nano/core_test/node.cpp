@@ -502,7 +502,7 @@ TEST (node, coherent_observer)
 {
 	nano::test::system system (1);
 	auto & node1 (*system.nodes[0]);
-	node1.observers.block_confirmed.add ([&node1] (nano::block_confirmation_info const & confirmation_a) {
+	node1.observers.block_cemented.add ([&node1] (nano::cemented_block_info const & confirmation_a) {
 		ASSERT_TRUE (node1.ledger.any.block_exists (node1.ledger.tx_begin_read (), confirmation_a.status.winner->hash ()));
 	});
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);

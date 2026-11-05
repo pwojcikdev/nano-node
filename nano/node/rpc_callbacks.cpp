@@ -49,8 +49,8 @@ nano::container_info nano::http_callbacks::container_info () const
 
 void nano::http_callbacks::setup_callbacks ()
 {
-	// Add observer for block confirmations
-	observers.block_confirmed.add ([this] (nano::block_confirmation_info const & confirmation) {
+	// Add observer for cemented blocks
+	observers.block_cemented.add ([this] (nano::cemented_block_info const & confirmation) {
 		// Only process blocks that have achieved quorum or confirmation height
 		if ((confirmation.type == nano::confirmation_type::active_confirmed_quorum || confirmation.type == nano::confirmation_type::active_confirmation_height))
 		{

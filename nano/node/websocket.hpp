@@ -21,7 +21,7 @@
 namespace nano
 {
 class block;
-struct block_confirmation_info;
+struct cemented_block_info;
 class ledger;
 class logger;
 class node;
@@ -94,7 +94,7 @@ namespace websocket
 	public:
 		message_builder (nano::ledger & ledger);
 
-		message block_confirmed (nano::block_confirmation_info const & confirmation, std::string subtype, nano::websocket::confirmation_options const & options);
+		message block_confirmed (nano::cemented_block_info const & confirmation, std::string subtype, nano::websocket::confirmation_options const & options);
 		message started_election (nano::block_hash const & hash);
 		message stopped_election (nano::block_hash const & hash);
 		message vote_received (std::shared_ptr<nano::vote> const & vote, nano::vote_code code);
@@ -346,7 +346,7 @@ namespace websocket
 		void stop ();
 
 		/** Broadcast block confirmation. The content of the message depends on subscription options (such as "include_block") */
-		void broadcast_confirmation (nano::block_confirmation_info const & confirmation, std::string const & subtype);
+		void broadcast_confirmation (nano::cemented_block_info const & confirmation, std::string const & subtype);
 
 		/** Broadcast \p message to all session subscribing to the message topic. */
 		void broadcast (nano::websocket::message message_a);

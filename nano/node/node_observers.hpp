@@ -12,7 +12,7 @@ namespace nano
 class node_observers final
 {
 public:
-	nano::observer_set<nano::block_confirmation_info const &> block_confirmed; // Notification upon block confirmation
+	nano::observer_set<nano::cemented_block_info const &> block_cemented; // A block's cementing has committed; with a non-syncing store it may not be on disk yet
 	nano::observer_set<bool> wallet;
 	nano::observer_set<nano::vote_context const &, nano::vote_code> vote;
 	nano::observer_set<nano::block_hash const &> active_started;

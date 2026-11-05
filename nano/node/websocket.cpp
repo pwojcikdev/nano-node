@@ -658,7 +658,7 @@ void nano::websocket::listener::on_accept (boost::system::error_code ec)
 	}
 }
 
-void nano::websocket::listener::broadcast_confirmation (nano::block_confirmation_info const & confirmation, std::string const & subtype)
+void nano::websocket::listener::broadcast_confirmation (nano::cemented_block_info const & confirmation, std::string const & subtype)
 {
 	nano::websocket::message_builder builder{ node.ledger };
 
@@ -770,7 +770,7 @@ nano::websocket::message nano::websocket::message_builder::stopped_election (nan
 	return message_l;
 }
 
-nano::websocket::message nano::websocket::message_builder::block_confirmed (nano::block_confirmation_info const & confirmation, std::string subtype, nano::websocket::confirmation_options const & options)
+nano::websocket::message nano::websocket::message_builder::block_confirmed (nano::cemented_block_info const & confirmation, std::string subtype, nano::websocket::confirmation_options const & options)
 {
 	auto const & block = confirmation.block;
 	release_assert (block != nullptr, "confirmation without its ledger block");
@@ -1054,7 +1054,7 @@ nano::websocket_server::websocket_server (nano::websocket::config & config_a, na
 	auto endpoint = nano::tcp_endpoint{ boost::asio::ip::make_address_v6 (config.address), config.port };
 	server = std::make_shared<nano::websocket::listener> (logger, node_a, wallets, io_ctx, endpoint);
 
-	observers.block_confirmed.add ([this] (nano::block_confirmation_info const & confirmation) {
+	observers.block_cemented.add ([this] (nano::cemented_block_info const & confirmation) {
 		if (server->any_subscriber (nano::websocket::topic::confirmation))
 		{
 			auto const & block = confirmation.block;

@@ -2275,7 +2275,7 @@ TEST (active_elections, old_block_joins_stale_election)
 }
 
 /*
- * A second copy of the block an election holds comes back from the ledger as old and replaces the held one, leaving the winner without a sideband; confirmation observers still get the block as the ledger stores it
+ * A second copy of the block an election holds comes back from the ledger as old and replaces the held one, leaving the winner without a sideband; cemented block observers still get the block as the ledger stores it
  */
 TEST (active_elections, confirmation_carries_ledger_block)
 {
@@ -2328,12 +2328,12 @@ TEST (active_elections, confirmation_carries_ledger_block)
 	ASSERT_EQ (election, node.active.election (send->qualified_root ()));
 	ASSERT_FALSE (election->winner ()->has_sideband ());
 
-	nano::test::shared_result<nano::block_confirmation_info> confirmed;
-	node.observers.block_confirmed.add ([confirmed] (nano::block_confirmation_info const & confirmation) {
+	nano::test::shared_result<nano::cemented_block_info> confirmed;
+	node.observers.block_cemented.add ([confirmed] (nano::cemented_block_info const & confirmation) {
 		confirmed.set (confirmation);
 	});
 
-	// Confirming the election hands its status to the confirmation observers
+	// Confirming the election hands its status to the cemented block observers
 	election->force_confirm ();
 	ASSERT_TIMELY (5s, confirmed.is_set ());
 	auto const [confirmation] = confirmed.get ();
@@ -2347,7 +2347,7 @@ TEST (active_elections, confirmation_carries_ledger_block)
 }
 
 /*
- * The fork cache keeps the first copy of a fork it sees, while a later copy replaces it in the running election and is the one forced into the ledger; an election started afterwards from the ledger block replays the cached copy as its winner, without a sideband, and confirmation observers still get the block as the ledger stores it
+ * The fork cache keeps the first copy of a fork it sees, while a later copy replaces it in the running election and is the one forced into the ledger; an election started afterwards from the ledger block replays the cached copy as its winner, without a sideband, and cemented block observers still get the block as the ledger stores it
  */
 TEST (active_elections, cached_fork_confirmation_carries_ledger_block)
 {
@@ -2413,12 +2413,12 @@ TEST (active_elections, cached_fork_confirmation_carries_ledger_block)
 	ASSERT_EQ (fork->hash (), election2->winner ()->hash ());
 	ASSERT_FALSE (election2->winner ()->has_sideband ());
 
-	nano::test::shared_result<nano::block_confirmation_info> confirmed;
-	node.observers.block_confirmed.add ([confirmed] (nano::block_confirmation_info const & confirmation) {
+	nano::test::shared_result<nano::cemented_block_info> confirmed;
+	node.observers.block_cemented.add ([confirmed] (nano::cemented_block_info const & confirmation) {
 		confirmed.set (confirmation);
 	});
 
-	// Confirming the election hands its status to the confirmation observers
+	// Confirming the election hands its status to the cemented block observers
 	election2->force_confirm ();
 	ASSERT_TIMELY (5s, confirmed.is_set ());
 	auto const [confirmation] = confirmed.get ();

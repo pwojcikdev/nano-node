@@ -1555,7 +1555,7 @@ void nano_qt::wallet::start ()
 			this_l->push_main_stack (this_l->send_blocks_window);
 		}
 	});
-	node.observers.block_confirmed.add ([this_w] (nano::block_confirmation_info const & confirmation_a) {
+	node.observers.block_cemented.add ([this_w] (nano::cemented_block_info const & confirmation_a) {
 		if (auto this_l = this_w.lock ())
 		{
 			this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w, account_a = confirmation_a.account] () {

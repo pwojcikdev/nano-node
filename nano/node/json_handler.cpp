@@ -1349,7 +1349,7 @@ void nano::json_handler::block_confirm ()
 						is_state_epoch = amount.value () == 0 && node.ledger.is_epoch_link (state->link_field ().value ());
 					}
 				}
-				nano::block_confirmation_info confirmation{
+				nano::cemented_block_info confirmation{
 					.block = block_l,
 					.status = status,
 					.type = nano::confirmation_type::active_confirmation_height,
@@ -1358,7 +1358,7 @@ void nano::json_handler::block_confirm ()
 					.is_state_send = is_state_send,
 					.is_state_epoch = is_state_epoch,
 				};
-				node.observers.block_confirmed.notify (confirmation);
+				node.observers.block_cemented.notify (confirmation);
 			}
 			response_l.put ("started", "1");
 		}

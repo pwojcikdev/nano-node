@@ -27,7 +27,7 @@ std::shared_ptr<flatbuffers::Parser> nano::ipc::subscriber::get_parser (nano::ip
 
 void nano::ipc::broker::start ()
 {
-	node.observers.block_confirmed.add ([this_l = shared_from_this ()] (nano::block_confirmation_info const & confirmation_a) {
+	node.observers.block_cemented.add ([this_l = shared_from_this ()] (nano::cemented_block_info const & confirmation_a) {
 		try
 		{
 			// The subscriber(s) may be gone after the count check, but the only consequence

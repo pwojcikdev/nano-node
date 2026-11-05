@@ -51,10 +51,10 @@ struct election_extended_status final
 	void operator() (nano::object_stream &) const;
 };
 
-/** Notification payload for a confirmed block */
-struct block_confirmation_info final
+/** Notification payload for a block whose cementing has committed */
+struct cemented_block_info final
 {
-	std::shared_ptr<nano::block> block; // The confirmed block as stored in the ledger, sideband included
+	std::shared_ptr<nano::block> block; // The cemented block as stored in the ledger, sideband included
 	nano::election_status status; // Election summary for the confirmed block
 	nano::confirmation_type type; // How the block came to be confirmed
 	std::vector<nano::vote_with_weight_info> votes; // Recorded votes with representative weights
