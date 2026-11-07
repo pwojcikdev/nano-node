@@ -96,6 +96,11 @@ void nano::block_processor::stop ()
 	{
 		thread.join ();
 	}
+
+	// Blocks still queued are dropped, which breaks the result promises of the blocking adds waiting on them
+	nano::lock_guard<nano::mutex> lock{ mutex };
+	stats.add (nano::stat::type::block_processor, nano::stat::detail::stopped, queue.size ());
+	queue.clear ();
 }
 
 // TODO: Remove and replace all checks with calls to size (block_source)
@@ -127,7 +132,7 @@ bool nano::block_processor::add (std::shared_ptr<nano::block> const & block, blo
 
 	logger.debug (nano::log::type::block_processor, "Processing block (async): {} (source: {} {})", block->hash (), source, channel);
 
-	bool added = add_impl ({ block, source, std::move (callback), std::move (tag) }, channel);
+	bool added = add_impl ({ block, source, std::move (callback), std::move (tag) }, channel) == add_result::added;
 	if (added)
 	{
 		stats.inc (nano::stat::type::block_processor, nano::stat::detail::process);
@@ -178,17 +183,25 @@ auto nano::block_processor::add_many (std::deque<std::shared_ptr<nano::block>> c
 	// Push all contexts under a single lock
 	std::size_t added = 0;
 	std::size_t overfill = 0;
+	std::size_t refused = 0;
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
-		for (auto & ctx : contexts)
+		if (stopped)
 		{
-			if (queue.push (std::move (ctx), { source, channel }))
+			refused = contexts.size ();
+		}
+		else
+		{
+			for (auto & ctx : contexts)
 			{
-				++added;
-			}
-			else
-			{
-				++overfill;
+				if (queue.push (std::move (ctx), { source, channel }))
+				{
+					++added;
+				}
+				else
+				{
+					++overfill;
+				}
 			}
 		}
 	}
@@ -203,11 +216,15 @@ auto nano::block_processor::add_many (std::deque<std::shared_ptr<nano::block>> c
 		stats.add (nano::stat::type::block_processor, nano::stat::detail::overfill, overfill);
 		stats.add (nano::stat::type::block_processor_overfill, to_stat_detail (source), overfill);
 	}
+	if (refused > 0)
+	{
+		stats.add (nano::stat::type::block_processor, nano::stat::detail::stopped, refused);
+	}
 
-	logger.debug (nano::log::type::block_processor, "Processing blocks (async batch): total={}, added={}, overfill={}, invalid_work={} (source: {} {})",
-	blocks.size (), added, overfill, insufficient_work_count, source, channel);
+	logger.debug (nano::log::type::block_processor, "Processing blocks (async batch): total={}, added={}, overfill={}, stopped={}, invalid_work={} (source: {} {})",
+	blocks.size (), added, overfill, refused, insufficient_work_count, source, channel);
 
-	return { .added = added, .dropped = overfill + insufficient_work_count };
+	return { .added = added, .dropped = overfill + refused + insufficient_work_count };
 }
 
 std::optional<nano::block_status> nano::block_processor::add_blocking (std::shared_ptr<nano::block> const & block, block_source const source, std::any tag)
@@ -216,7 +233,7 @@ std::optional<nano::block_status> nano::block_processor::add_blocking (std::shar
 
 	nano::block_context ctx{ block, source, nullptr, std::move (tag) };
 	auto future = ctx.get_future ();
-	bool added = add_impl (std::move (ctx));
+	bool added = add_impl (std::move (ctx)) == add_result::added;
 	if (added)
 	{
 		stats.inc (nano::stat::type::block_processor, nano::stat::detail::process_blocking);
@@ -240,36 +257,44 @@ void nano::block_processor::force (std::shared_ptr<nano::block> const & block)
 {
 	logger.debug (nano::log::type::block_processor, "Forcing block: {}", block->hash ());
 
-	bool added = add_impl ({ block, block_source::forced });
-	if (added)
+	auto const result = add_impl ({ block, block_source::forced });
+	if (result == add_result::added)
 	{
 		stats.inc (nano::stat::type::block_processor, nano::stat::detail::force);
 	}
-	else
+	else if (result == add_result::overfill)
 	{
 		stats.inc (nano::stat::type::block_processor, nano::stat::detail::force_overfill);
 		logger.debug (nano::log::type::block_processor, "Failed to force block (queue full): {}", block->hash ());
 	}
 }
 
-bool nano::block_processor::add_impl (nano::block_context ctx, std::shared_ptr<nano::transport::channel> const & channel)
+auto nano::block_processor::add_impl (nano::block_context ctx, std::shared_ptr<nano::transport::channel> const & channel) -> add_result
 {
 	auto const source = ctx.source;
-	bool added = false;
+	auto result = add_result::stopped;
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
-		added = queue.push (std::move (ctx), { source, channel });
+		// Checked under the lock stop () takes, so a block is either refused here or queued before stop () clears the queue
+		if (!stopped)
+		{
+			result = queue.push (std::move (ctx), { source, channel }) ? add_result::added : add_result::overfill;
+		}
 	}
-	if (added)
+	if (result == add_result::added)
 	{
 		condition.notify_all ();
 	}
-	else
+	else if (result == add_result::overfill)
 	{
 		stats.inc (nano::stat::type::block_processor, nano::stat::detail::overfill);
 		stats.inc (nano::stat::type::block_processor_overfill, to_stat_detail (source));
 	}
-	return added;
+	else
+	{
+		stats.inc (nano::stat::type::block_processor, nano::stat::detail::stopped);
+	}
+	return result;
 }
 
 void nano::block_processor::rollback_competitor (secure::write_transaction & transaction, nano::block const & fork_block)

@@ -63,9 +63,10 @@ public:
 	~block_processor ();
 
 	void start ();
+	/// Stops processing and drops the blocks still queued, a blocking add waiting on one of them returns nullopt
 	void stop ();
 
-	/// Queues a block for processing, returns false if the block was dropped (insufficient work or queue overfill)
+	/// Queues a block for processing, returns false if the block was dropped (insufficient work, queue overfill or a stopped processor)
 	bool add (
 	std::shared_ptr<nano::block> const & block,
 	nano::block_source source,
@@ -77,7 +78,7 @@ public:
 	struct add_many_result
 	{
 		std::size_t added;
-		std::size_t dropped; /// Number of blocks that did not make it into the queue (queue overfill or invalid work)
+		std::size_t dropped; /// Number of blocks that did not make it into the queue (queue overfill, invalid work or a stopped processor)
 	};
 
 	/// Queues multiple blocks under a single lock, attaching the callback to the last valid block
@@ -131,8 +132,16 @@ private:
 	/// Rolls back the ledger block occupying the same qualified root, together with its dependents
 	void rollback_competitor (secure::write_transaction &, nano::block const & block);
 
-	/// Pushes a block context onto the queue and notifies the processing thread, returns false on overfill
-	bool add_impl (nano::block_context, std::shared_ptr<nano::transport::channel> const & channel = nullptr);
+	/// Outcome of pushing a block context onto the queue
+	enum class add_result
+	{
+		added,
+		overfill,
+		stopped,
+	};
+
+	/// Pushes a block context onto the queue and notifies the processing thread, the context is dropped on overfill or once the processor is stopped
+	add_result add_impl (nano::block_context, std::shared_ptr<nano::transport::channel> const & channel = nullptr);
 
 	/// Throttles processing when the ledger backlog exceeds the configured threshold
 	void wait_backlog (nano::unique_lock<nano::mutex> &);
