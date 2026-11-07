@@ -31,6 +31,7 @@ public:
 	~ledger_notifications ();
 
 	void start ();
+	/* Stops dispatching and drops the notifications still queued */
 	void stop ();
 
 	/* Components should cooperate to ensure that the notification queue does not grow indefinitely */
