@@ -697,8 +697,9 @@ if(WIN32)
 endif()
 
 # LMDB defaults to SysV semaphores on macOS, which are blocked by Seatbelt
-# sandbox Use POSIX semaphores instead to avoid EPERM from mdb_env_open()
-if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+# sandbox and run out with the many environments of a network simulation. Use
+# POSIX semaphores instead to avoid EPERM and EINVAL from mdb_env_open()
+if(APPLE)
   target_compile_definitions(lmdb PRIVATE MDB_USE_POSIX_SEM=1)
 endif()
 unset(CMAKE_FOLDER)
