@@ -48,9 +48,11 @@ void nano::transport::tcp_channel::start ()
 asio::awaitable<void> nano::transport::tcp_channel::start_sending (nano::async::condition & condition)
 {
 	debug_assert (strand.running_in_this_thread ());
+
+	tcp_channel_queue::batch_t batch;
 	try
 	{
-		co_await run_sending (condition);
+		co_await run_sending (condition, batch);
 	}
 	catch (boost::system::system_error const & ex)
 	{
@@ -63,8 +65,33 @@ asio::awaitable<void> nano::transport::tcp_channel::start_sending (nano::async::
 	}
 	debug_assert (strand.running_in_this_thread ());
 
+	drop_unsent (std::move (batch));
+
 	// Ensure socket gets closed if task is stopped
 	close_async ();
+}
+
+void nano::transport::tcp_channel::drop_unsent (tcp_channel_queue::batch_t batch)
+{
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		sending_stopped = true;
+
+		auto queued = queue.next_batch (queue.size ());
+		batch.insert (batch.end (), std::make_move_iterator (queued.begin ()), std::make_move_iterator (queued.end ()));
+	}
+
+	for (auto const & [type, item] : batch)
+	{
+		node.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::drop_closed, nano::stat::dir::out);
+		node.stats.inc (nano::stat::type::tcp_channel_drop, to_stat_detail (type), nano::stat::dir::out);
+
+		auto const & [buffer, callback] = item;
+		if (callback)
+		{
+			callback (asio::error::operation_aborted, /* size */ 0);
+		}
+	}
 }
 
 void nano::transport::tcp_channel::stop ()
@@ -85,6 +112,18 @@ bool nano::transport::tcp_channel::max_impl (nano::transport::traffic_type traff
 bool nano::transport::tcp_channel::send_buffer_impl (nano::shared_const_buffer const & buffer, nano::transport::traffic_type type, nano::transport::send_callback callback)
 {
 	nano::unique_lock<nano::mutex> lock{ mutex };
+
+	// Nothing writes the queue once sending has stopped
+	if (sending_stopped)
+	{
+		lock.unlock ();
+
+		node.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::drop_closed, nano::stat::dir::out);
+		node.stats.inc (nano::stat::type::tcp_channel_drop, to_stat_detail (type), nano::stat::dir::out);
+
+		return false;
+	}
+
 	if (!queue.full (type))
 	{
 		queue.push (type, { buffer, callback });
@@ -107,7 +146,7 @@ bool nano::transport::tcp_channel::send_buffer_impl (nano::shared_const_buffer c
 	return false;
 }
 
-asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::condition & condition)
+asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::condition & condition, tcp_channel_queue::batch_t & batch)
 {
 	while (!co_await nano::async::cancelled ())
 	{
@@ -119,20 +158,24 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 			return queue.next_batch (max_batch);
 		};
 
-		if (auto batch = next_batch (); !batch.empty ())
-		{
-			for (auto const & [type, item] : batch)
-			{
-				auto const sent = co_await send_one (type, item);
-				if (!sent)
-				{
-					co_return; // Stop on error
-				}
-			}
-		}
-		else
+		batch = next_batch ();
+		if (batch.empty ())
 		{
 			co_await condition.wait ();
+			continue;
+		}
+
+		// A send leaves the batch only once written or failed, so a cancellation leaves the unwritten ones for drop_unsent
+		while (!batch.empty ())
+		{
+			auto const & [type, item] = batch.front ();
+			auto const sent = co_await send_one (type, item);
+			batch.pop_front ();
+
+			if (!sent)
+			{
+				co_return; // Stop on error
+			}
 		}
 	}
 }

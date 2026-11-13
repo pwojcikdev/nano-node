@@ -208,6 +208,7 @@ enum class detail
 	evicted,
 	other,
 	drop,
+	drop_closed,
 	queued,
 	error,
 	failed,

@@ -71,8 +71,11 @@ private:
 	void stop ();
 
 	asio::awaitable<void> start_sending (nano::async::condition &);
-	asio::awaitable<void> run_sending (nano::async::condition &);
+	// Writes queued sends until cancelled or a write fails, keeping the ones taken from the queue but not yet written in `batch`
+	asio::awaitable<void> run_sending (nano::async::condition &, tcp_channel_queue::batch_t & batch);
 	asio::awaitable<nano::io_result<void>> send_one (traffic_type, tcp_channel_queue::entry_t const &);
+	// Fails every send that will not be written once sending stops, and refuses the ones that come later
+	void drop_unsent (tcp_channel_queue::batch_t batch);
 
 public:
 	std::shared_ptr<nano::transport::tcp_socket> socket;
@@ -86,6 +89,7 @@ private:
 
 	mutable nano::mutex mutex;
 	tcp_channel_queue queue;
+	bool sending_stopped{ false }; // Set once the sending loop has ended, after which nothing is queued
 	std::atomic<size_t> allocated_bandwidth{ 0 };
 
 public: // Logging
