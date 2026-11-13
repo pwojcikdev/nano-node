@@ -116,6 +116,7 @@ public:
 			telemetry_broadcast_interval = 500ms;
 			rep_crawler_normal_interval = 500ms;
 			rep_crawler_warmup_interval = 500ms;
+			rep_crawler_query_interval = 500ms;
 			reachout_preconfigured_period = std::chrono::seconds (1);
 			reachout_preconfigured_warmup_period = std::chrono::seconds (1);
 		}
@@ -180,6 +181,8 @@ public:
 
 	std::chrono::milliseconds rep_crawler_normal_interval{ 1000 * 7 };
 	std::chrono::milliseconds rep_crawler_warmup_interval{ 1000 * 3 };
+	/** Time before the rep crawler queries the same peer again */
+	std::chrono::milliseconds rep_crawler_query_interval{ 1000 * 60 };
 
 	/** How often to reach out to preconfigured peers */
 	std::chrono::seconds reachout_preconfigured_period{ 10min };
