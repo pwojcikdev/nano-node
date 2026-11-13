@@ -93,6 +93,7 @@ add_executable(
   stacktrace.cpp
   system.cpp
   tcp_channel.cpp
+  tcp_channel_queue.cpp
   tcp_channels.cpp
   tcp_listener.cpp
   tcp_listener_index.cpp
