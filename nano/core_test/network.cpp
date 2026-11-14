@@ -42,7 +42,7 @@ using namespace std::chrono_literals;
 TEST (network, construction_with_specified_port)
 {
 	nano::test::system system;
-	auto const port = nano::test::speculatively_choose_a_free_tcp_bind_port ();
+	auto const port = nano::test::pick_free_port ();
 	ASSERT_NE (0, port);
 	nano::node_config node_config = system.default_config ();
 	node_config.peering_port = port;
