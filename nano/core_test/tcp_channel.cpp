@@ -37,7 +37,7 @@ struct send_outcomes
 
 	nano::transport::send_callback callback ()
 	{
-		return [this] (boost::system::error_code const & ec, std::size_t size) {
+		return [this] (boost::system::error_code const & ec) {
 			if (!ec)
 			{
 				++written;
