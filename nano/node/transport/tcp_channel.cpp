@@ -55,6 +55,11 @@ asio::awaitable<void> nano::transport::tcp_channel::start_sending (nano::async::
 	auto const ended = co_await nano::async::settle (run_sending (condition, batch));
 	debug_assert (strand.running_in_this_thread ());
 
+	if (ended.ec)
+	{
+		node.logger.debug (nano::log::type::channel, "Sending stopped: {} ({})", ended.ec, get_remote_endpoint ());
+	}
+
 	// A bug in one connection must not take the node down, so it only closes that connection
 	if (ended.unexpected)
 	{
@@ -143,7 +148,7 @@ bool nano::transport::tcp_channel::send_buffer_impl (nano::shared_const_buffer c
 	return false;
 }
 
-asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::condition & condition, tcp_channel_queue::batch_t & batch)
+auto nano::transport::tcp_channel::run_sending (nano::async::condition & condition, tcp_channel_queue::batch_t & batch) -> asio::awaitable<nano::io_result<void>>
 {
 	while (!co_await nano::async::cancelled ())
 	{
@@ -168,9 +173,10 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 			auto & [type, item] = batch.front ();
 
 			// A send still waiting for bandwidth when the socket closes stays in the batch, for drop_unsent to fail
-			if (!co_await wait_bandwidth (type, item.first.size ()))
+			auto const waited = co_await wait_bandwidth (type, item.first.size ());
+			if (!waited)
 			{
-				co_return;
+				co_return waited.error ();
 			}
 
 			auto const written = co_await send_one (type, item.first);
@@ -186,13 +192,15 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 
 			if (!written)
 			{
-				co_return; // Stop on error
+				co_return written.error (); // Stop on error
 			}
 		}
 	}
+
+	co_return nano::io_success ();
 }
 
-auto nano::transport::tcp_channel::wait_bandwidth (traffic_type type, size_t size) -> asio::awaitable<bool>
+auto nano::transport::tcp_channel::wait_bandwidth (traffic_type type, size_t size) -> asio::awaitable<nano::io_result<void>>
 {
 	debug_assert (strand.running_in_this_thread ());
 
@@ -203,7 +211,7 @@ auto nano::transport::tcp_channel::wait_bandwidth (traffic_type type, size_t siz
 		// Every write to a closed socket fails, so waiting on would only hold the sends queued behind this one
 		if (!socket->alive ())
 		{
-			co_return false;
+			co_return asio::error::operation_aborted;
 		}
 
 		if (auto result = node.outbound_limiter.consume (bandwidth_chunk, type))
@@ -219,7 +227,7 @@ auto nano::transport::tcp_channel::wait_bandwidth (traffic_type type, size_t siz
 	}
 	allocated_bandwidth -= size;
 
-	co_return true;
+	co_return nano::io_success ();
 }
 
 auto nano::transport::tcp_channel::send_one (traffic_type type, nano::shared_const_buffer const & buffer) -> asio::awaitable<nano::io_result<void>>

@@ -71,10 +71,10 @@ private:
 	void stop ();
 
 	asio::awaitable<void> start_sending (nano::async::condition &);
-	// Writes queued sends until cancelled, the socket closes or a write fails, keeping the ones taken from the queue but not yet written in `batch`
-	asio::awaitable<void> run_sending (nano::async::condition &, tcp_channel_queue::batch_t & batch);
-	// Takes `size` bytes of outbound bandwidth, waiting for the limiter as needed; false if the socket closes first
-	asio::awaitable<bool> wait_bandwidth (traffic_type, size_t size);
+	// Writes queued sends until cancelled, the socket closes or a write fails, returning that error and keeping the ones taken from the queue but not yet written in `batch`
+	asio::awaitable<nano::io_result<void>> run_sending (nano::async::condition &, tcp_channel_queue::batch_t & batch);
+	// Takes `size` bytes of outbound bandwidth, waiting for the limiter as needed; operation_aborted if the socket closes first
+	asio::awaitable<nano::io_result<void>> wait_bandwidth (traffic_type, size_t size);
 	// Writes one buffer, leaving its callback to the caller
 	asio::awaitable<nano::io_result<void>> send_one (traffic_type, nano::shared_const_buffer const &);
 	// Fails every send that will not be written once sending stops, and refuses the ones that come later
