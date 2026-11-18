@@ -10,6 +10,7 @@ add_executable(
   message_sending.cpp
   rep_weights.cpp
   stats.cpp
+  tcp_channel.cpp
   vote_processing.cpp)
 
 target_link_libraries(benchmarks test_common benchmark::benchmark)

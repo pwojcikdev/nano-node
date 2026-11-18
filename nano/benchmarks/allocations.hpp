@@ -25,6 +25,23 @@ struct allocation_stats
 // Allocations the calling thread has made since it started
 allocation_stats thread_allocations ();
 
+// Allocations every thread has made through malloc while a process_allocation_tracker was installed, zero where it cannot count
+allocation_stats process_allocations ();
+
+/**
+ * Counts process_allocations () while alive: every malloc of every thread, including those that bypass operator new, such as asio's recycled coroutine frames.
+ * It counts through the malloc_logger hook of macOS and counts nothing elsewhere. The hook slows every allocation a little, so only benchmarks that report it install it.
+ */
+class process_allocation_tracker final
+{
+public:
+	process_allocation_tracker ();
+	~process_allocation_tracker ();
+
+	process_allocation_tracker (process_allocation_tracker const &) = delete;
+	process_allocation_tracker & operator= (process_allocation_tracker const &) = delete;
+};
+
 /**
  * Measures the allocations of the calling thread from construction until report, per iteration and as a rate.
  * `unit` names what one iteration does, so a unit of "vote" reports allocs/vote, bytes/vote and votes/s.
