@@ -2,6 +2,7 @@
 #include <nano/messages/confirm.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/node.hpp>
+#include <nano/node/nodeconfig.hpp>
 #include <nano/node/transport/tcp_channel.hpp>
 #include <nano/node/transport/tcp_socket.hpp>
 #include <nano/test_common/peer.hpp>
@@ -131,4 +132,43 @@ TEST (tcp_channel, write_error_fails_unsent)
 	ASSERT_EQ (written_before, outcomes.written.load ());
 	ASSERT_LT (0, outcomes.aborted.load ());
 	ASSERT_EQ (outcomes.aborted.load (), node.stats.count (nano::stat::type::tcp_channel, nano::stat::detail::drop_closed, nano::stat::dir::out));
+}
+
+/*
+ * Closing the socket under a channel stalled on bandwidth ends the wait while the bandwidth stays starved: every send not yet written
+ * is failed as aborted and a later send is refused. Connection cleanup is disabled, so only the channel itself can notice the closed socket
+ */
+TEST (tcp_channel, socket_close_ends_bandwidth_wait)
+{
+	nano::test::system system;
+	nano::node_flags flags;
+	flags.disable_connection_cleanup = true;
+	auto & node = *system.add_node (flags);
+	nano::test::peer peer{ node };
+	ASSERT_TRUE (peer.handshake ());
+	auto const channel = std::dynamic_pointer_cast<nano::transport::tcp_channel> (node.network.find_node_id (peer.node_id ()));
+	ASSERT_NE (nullptr, channel);
+
+	// A stalled channel with sends queued behind the stall
+	node.outbound_limiter.reset (nano::rate_limit{ 1, 1.0 });
+	auto const large = make_large_vote ();
+	send_outcomes outcomes;
+	size_t const count = 64;
+	for (size_t i = 0; i < count; ++i)
+	{
+		ASSERT_TRUE (channel->send (large, nano::transport::traffic_type::test, outcomes.callback ()));
+	}
+	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_bandwidth, nano::stat::dir::out) >= 1);
+	auto const written_before = outcomes.written.load ();
+
+	// The socket goes away and the bandwidth never returns
+	channel->socket->close ();
+
+	// The wait ends and every send not yet written is reported as aborted
+	ASSERT_TIMELY_EQ (5s, count, outcomes.total ());
+	ASSERT_EQ (written_before, outcomes.written.load ());
+	ASSERT_EQ (count - written_before, outcomes.aborted.load ());
+
+	// Sending has stopped, so a later send is refused
+	ASSERT_FALSE (channel->send (large, nano::transport::traffic_type::test, outcomes.callback ()));
 }

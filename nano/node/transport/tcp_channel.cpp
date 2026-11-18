@@ -166,6 +166,13 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 		while (!batch.empty ())
 		{
 			auto & [type, item] = batch.front ();
+
+			// A send still waiting for bandwidth when the socket closes stays in the batch, for drop_unsent to fail
+			if (!co_await wait_bandwidth (type, item.first.size ()))
+			{
+				co_return;
+			}
+
 			auto const written = co_await send_one (type, item.first);
 
 			// Out of the batch before its callback runs, so drop_unsent cannot report it a second time
@@ -185,16 +192,20 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 	}
 }
 
-auto nano::transport::tcp_channel::send_one (traffic_type type, nano::shared_const_buffer const & buffer) -> asio::awaitable<nano::io_result<void>>
+auto nano::transport::tcp_channel::wait_bandwidth (traffic_type type, size_t size) -> asio::awaitable<bool>
 {
 	debug_assert (strand.running_in_this_thread ());
 
-	auto const size = buffer.size ();
-
-	// Wait for bandwidth, allocated in larger chunks to reduce the number of limiter calls
+	// Allocated in larger chunks to reduce the number of limiter calls
 	const size_t bandwidth_chunk = 128 * 1024; // TODO: Make this configurable
 	while (allocated_bandwidth < size)
 	{
+		// Every write to a closed socket fails, so waiting on would only hold the sends queued behind this one
+		if (!socket->alive ())
+		{
+			co_return false;
+		}
+
 		if (auto result = node.outbound_limiter.consume (bandwidth_chunk, type))
 		{
 			allocated_bandwidth += bandwidth_chunk;
@@ -207,6 +218,15 @@ auto nano::transport::tcp_channel::send_one (traffic_type type, nano::shared_con
 		}
 	}
 	allocated_bandwidth -= size;
+
+	co_return true;
+}
+
+auto nano::transport::tcp_channel::send_one (traffic_type type, nano::shared_const_buffer const & buffer) -> asio::awaitable<nano::io_result<void>>
+{
+	debug_assert (strand.running_in_this_thread ());
+
+	auto const size = buffer.size ();
 
 	node.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::send, nano::stat::dir::out);
 	node.stats.inc (nano::stat::type::tcp_channel_send, to_stat_detail (type), nano::stat::dir::out);
