@@ -62,10 +62,10 @@ asio::awaitable<void> nano::transport::tcp_channel::start_sending (nano::async::
 		debug_assert (false, "unexpected exception");
 	}
 
-	drop_unsent (std::move (batch));
-
-	// Ensure socket gets closed if task is stopped
+	// Ensure socket gets closed if task is stopped, also when a callback in drop_unsent throws
 	close_async ();
+
+	drop_unsent (std::move (batch));
 }
 
 void nano::transport::tcp_channel::drop_unsent (tcp_channel_queue::batch_t batch)
@@ -165,11 +165,19 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 		// A send leaves the batch only once written or failed, so a cancellation leaves the unwritten ones for drop_unsent
 		while (!batch.empty ())
 		{
-			auto const & [type, item] = batch.front ();
-			auto const sent = co_await send_one (type, item);
+			auto & [type, item] = batch.front ();
+			auto const written = co_await send_one (type, item.first);
+
+			// Out of the batch before its callback runs, so drop_unsent cannot report it a second time
+			auto const callback = std::move (item.second);
 			batch.pop_front ();
 
-			if (!sent)
+			if (callback)
+			{
+				callback (written.error ()); // Empty on success
+			}
+
+			if (!written)
 			{
 				co_return; // Stop on error
 			}
@@ -177,11 +185,10 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 	}
 }
 
-auto nano::transport::tcp_channel::send_one (traffic_type type, tcp_channel_queue::entry_t const & item) -> asio::awaitable<nano::io_result<void>>
+auto nano::transport::tcp_channel::send_one (traffic_type type, nano::shared_const_buffer const & buffer) -> asio::awaitable<nano::io_result<void>>
 {
 	debug_assert (strand.running_in_this_thread ());
 
-	auto const & [buffer, callback] = item;
 	auto const size = buffer.size ();
 
 	// Wait for bandwidth, allocated in larger chunks to reduce the number of limiter calls
@@ -210,22 +217,11 @@ auto nano::transport::tcp_channel::send_one (traffic_type type, tcp_channel_queu
 	if (!written)
 	{
 		node.stats.inc (nano::stat::type::tcp_channel_ec, nano::to_stat_detail (written.error ()), nano::stat::dir::out);
-
-		if (callback)
-		{
-			callback (written.error ());
-		}
-
 		co_return written.error ();
 	}
 
 	node.stats.add (nano::stat::type::traffic_tcp_type, to_stat_detail (type), nano::stat::dir::out, size);
 	set_last_packet_sent (std::chrono::steady_clock::now ());
-
-	if (callback)
-	{
-		callback (boost::system::error_code{});
-	}
 
 	co_return nano::io_success ();
 }

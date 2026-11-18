@@ -73,7 +73,8 @@ private:
 	asio::awaitable<void> start_sending (nano::async::condition &);
 	// Writes queued sends until cancelled or a write fails, keeping the ones taken from the queue but not yet written in `batch`
 	asio::awaitable<void> run_sending (nano::async::condition &, tcp_channel_queue::batch_t & batch);
-	asio::awaitable<nano::io_result<void>> send_one (traffic_type, tcp_channel_queue::entry_t const &);
+	// Writes one buffer once outbound bandwidth allows it, leaving its callback to the caller
+	asio::awaitable<nano::io_result<void>> send_one (traffic_type, nano::shared_const_buffer const &);
 	// Fails every send that will not be written once sending stops, and refuses the ones that come later
 	void drop_unsent (tcp_channel_queue::batch_t batch);
 
