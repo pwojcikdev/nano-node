@@ -180,6 +180,7 @@ void bootstrap_context::reset ()
 	peers.reset ();
 	throttle.reset ();
 	topo_strat.reset ();
+	dependency_strat.reset ();
 }
 
 bool bootstrap_context::send (std::shared_ptr<nano::transport::channel> const & channel, query_descriptor query, strategy source)
@@ -268,10 +269,22 @@ void bootstrap_context::conclude (async_tag const & tag, conclusion result)
 			}
 		}
 		break;
+		case strategy::dependency:
+		{
+			switch (result)
+			{
+				case conclusion::timeout:
+					dependency_strat.timeout (tag);
+					break;
+				case conclusion::failure:
+					dependency_strat.failure (tag);
+					break;
+			}
+		}
+		break;
 		case strategy::invalid:
 		case strategy::priority:
 		case strategy::database:
-		case strategy::dependency:
 			break;
 	}
 }
@@ -978,6 +991,7 @@ nano::container_info bootstrap_context::container_info () const
 	info.add ("database_scan", database_scan.container_info ());
 	info.add ("frontiers", frontiers.container_info ());
 	info.add ("topo", topo_strat.container_info ());
+	info.add ("dependency", dependency_strat.container_info ());
 	info.add ("workers", workers.container_info ());
 	info.add ("peers", peers.container_info ());
 	info.add ("limiters", collect_limiters ());

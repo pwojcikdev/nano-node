@@ -51,6 +51,7 @@ enum class name
 	bootstrap_database_scan,
 	bootstrap_dependency_walker,
 	bootstrap_dependency_sync,
+	bootstrap_lookup,
 	bootstrap_frontier_scan,
 	bootstrap_frontier_processing,
 	bootstrap_topo_scan,

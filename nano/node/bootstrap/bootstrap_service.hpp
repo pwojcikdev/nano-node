@@ -33,6 +33,11 @@ public:
 	 */
 	void prioritize (nano::account const & account);
 
+	/**
+	 * Looks up the account of a block known to exist but missing from the ledger, so that the account is pulled with priority
+	 */
+	void lookup (nano::block_hash const & hash);
+
 	std::size_t blocked_size () const;
 	std::size_t priority_size () const;
 

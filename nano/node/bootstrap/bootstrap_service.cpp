@@ -1,6 +1,7 @@
 #include <nano/messages/asc_pull.hpp>
 #include <nano/node/bootstrap/bootstrap_context.hpp>
 #include <nano/node/bootstrap/bootstrap_service.hpp>
+#include <nano/node/bootstrap/dependency_strategy.hpp>
 
 #include <boost/property_tree/ptree.hpp>
 
@@ -46,6 +47,17 @@ void nano::bootstrap_service::prioritize (nano::account const & account)
 {
 	nano::lock_guard<nano::mutex> lock{ ctx.mutex };
 	ctx.accounts.priority_set (account);
+}
+
+void nano::bootstrap_service::lookup (nano::block_hash const & hash)
+{
+	{
+		nano::lock_guard<nano::mutex> lock{ ctx.mutex };
+		ctx.dependency_strat.lookup (hash);
+	}
+
+	// Wake the lookup thread, which may be waiting for a block to become due
+	ctx.condition.notify_all ();
 }
 
 std::size_t nano::bootstrap_service::priority_size () const

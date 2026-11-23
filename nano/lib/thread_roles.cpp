@@ -136,6 +136,9 @@ std::string nano::thread_role::get_string (nano::thread_role::name role)
 		case nano::thread_role::name::bootstrap_dependency_sync:
 			thread_role_name_string = "Bootstrap dsync";
 			break;
+		case nano::thread_role::name::bootstrap_lookup:
+			thread_role_name_string = "Bootstrap lookp";
+			break;
 		case nano::thread_role::name::bootstrap_frontier_scan:
 			thread_role_name_string = "Bootstrap front";
 			break;
