@@ -7,6 +7,9 @@
 #include <nano/node/bootstrap/bootstrap_server.hpp>
 #include <nano/node/bootstrap/bootstrap_service.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/node/vote_cache.hpp>
+#include <nano/secure/ledger.hpp>
+#include <nano/secure/vote.hpp>
 #include <nano/test_common/random.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
@@ -382,4 +385,73 @@ TEST (bootstrap_lookup, bootstrap_disabled)
 	client.bootstrap.lookup (nano::test::random_hash ());
 
 	ASSERT_EQ (0, client.stats.count (nano::stat::type::bootstrap_lookup_insert, nano::stat::detail::inserted));
+}
+
+/*
+ * Votes for a block that never reached the node lead to the block: the hinted scan finds it missing and has it looked up.
+ * The votes go straight into the vote cache, so the scan is the only thing that knows of the block.
+ */
+TEST (bootstrap_lookup, hinted_scan_looks_up_missing_block)
+{
+	nano::test::system system;
+	auto & server = *system.add_node (server_config (system));
+	auto & client = *system.add_node (client_config (system));
+	test_chain chain{ system };
+
+	// Only the serving node holds the account
+	ASSERT_EQ (nano::block_status::progress, server.process (chain.genesis_send));
+	ASSERT_EQ (nano::block_status::progress, server.process (chain.open));
+	ASSERT_EQ (nano::block_status::progress, client.process (chain.genesis_send));
+
+	// Enough vote weight for the missing block reaches the vote cache
+	auto const vote = nano::test::make_final_vote (nano::dev::genesis_key, std::vector<nano::block_hash>{ chain.open->hash () });
+	client.vote_cache.insert (vote, nano::dev::constants.genesis_amount);
+
+	// The scan finds the block missing, its account is looked up and pulled
+	ASSERT_TIMELY (5s, client.stats.count (nano::stat::type::hinting, nano::stat::detail::missing_block) >= 1);
+	ASSERT_TIMELY (5s, client.block (chain.open->hash ()) != nullptr);
+	ASSERT_GE (client.stats.count (nano::stat::type::bootstrap_lookup, nano::stat::detail::resolved), 1);
+}
+
+/*
+ * A pruned block is missing from the ledger too, but the node had it once, so votes for it start no lookup.
+ */
+TEST (bootstrap_lookup, pruned_block_not_looked_up)
+{
+	nano::test::system system;
+	system.add_node (server_config (system));
+	nano::node_flags flags;
+	flags.enable_pruning = true;
+	flags.disable_topo_index = true; // Topo index is incompatible with pruning
+	auto config = client_config (system);
+	config.enable_voting = false; // A pruning node refuses to start with voting enabled
+	auto & client = *system.add_node (config, flags);
+	test_chain chain{ system };
+
+	// The send is confirmed and pruned behind a block that follows it
+	ASSERT_EQ (nano::block_status::progress, client.process (chain.genesis_send));
+	nano::state_block_builder builder;
+	auto const successor = builder.make_block ()
+						   .account (nano::dev::genesis_key.pub)
+						   .previous (chain.genesis_send->hash ())
+						   .representative (nano::dev::genesis_key.pub)
+						   .link (chain.key.pub)
+						   .balance (nano::dev::constants.genesis_amount - 200)
+						   .sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+						   .work (*system.work.generate (chain.genesis_send->hash ()))
+						   .build ();
+	ASSERT_EQ (nano::block_status::progress, client.process (successor));
+	nano::test::confirm (client.ledger, successor);
+	{
+		auto transaction = client.ledger.tx_begin_write ();
+		ASSERT_EQ (1, client.ledger.pruning_action (transaction, chain.genesis_send->hash (), 1));
+	}
+
+	// Votes for the pruned block reach the vote cache
+	auto const vote = nano::test::make_final_vote (nano::dev::genesis_key, std::vector<nano::block_hash>{ chain.genesis_send->hash () });
+	client.vote_cache.insert (vote, nano::dev::constants.genesis_amount);
+
+	// The scan finds it missing from the ledger but does not have it looked up
+	ASSERT_TIMELY (5s, client.stats.count (nano::stat::type::hinting, nano::stat::detail::missing_block) >= 1);
+	ASSERT_ALWAYS_EQ (500ms, 0, client.stats.count (nano::stat::type::bootstrap_lookup_insert, nano::stat::detail::inserted));
 }

@@ -937,8 +937,8 @@ void nano::node::bootstrap_block (const nano::block_hash & hash)
 	// If we are running pruning node check if block was not already pruned
 	if (!ledger.flags.pruning || !store.pruned.exists (store.tx_begin_read (), hash))
 	{
-		// We don't have the block, try to bootstrap it
-		// TODO: Use ascending bootstrapper to bootstrap block hash
+		// We don't have the block, look up its account so that bootstrap pulls it
+		bootstrap.lookup (hash);
 	}
 }
 

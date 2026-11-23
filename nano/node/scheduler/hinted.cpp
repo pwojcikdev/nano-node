@@ -122,7 +122,8 @@ void nano::scheduler::hinted::activate (secure::read_transaction & transaction, 
 		{
 			stats.inc (nano::stat::type::hinting, nano::stat::detail::missing_block);
 
-			// TODO: Block is missing, bootstrap it
+			// The network votes for a block this node lacks, so bootstrap fetches it
+			node.bootstrap_block (current_hash);
 		}
 	}
 }
