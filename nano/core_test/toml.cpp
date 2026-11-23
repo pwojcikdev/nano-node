@@ -97,6 +97,7 @@ TEST (toml_config, daemon_config_deserialize_defaults)
 	[node.backlog_scan]
 	[node.bounded_backlog]
 	[node.bootstrap]
+	[node.bootstrap.lookup]
 	[node.bootstrap_server]
 	[node.block_processor]
 	[node.diagnostics.txn_tracking]
@@ -264,6 +265,11 @@ TEST (toml_config, daemon_config_deserialize_defaults)
 	ASSERT_EQ (conf.node.bootstrap->throttle_wait, defaults.node.bootstrap->throttle_wait);
 	ASSERT_EQ (conf.node.bootstrap->block_processor_threshold, defaults.node.bootstrap->block_processor_threshold);
 	ASSERT_EQ (conf.node.bootstrap->max_requests, defaults.node.bootstrap->max_requests);
+
+	ASSERT_EQ (conf.node.bootstrap->lookup.max_blocks, defaults.node.bootstrap->lookup.max_blocks);
+	ASSERT_EQ (conf.node.bootstrap->lookup.max_retries, defaults.node.bootstrap->lookup.max_retries);
+	ASSERT_EQ (conf.node.bootstrap->lookup.retry_delay, defaults.node.bootstrap->lookup.retry_delay);
+	ASSERT_EQ (conf.node.bootstrap->lookup.retry_backoff, defaults.node.bootstrap->lookup.retry_backoff);
 
 	ASSERT_EQ (conf.node.bootstrap_server->channel_limit, defaults.node.bootstrap_server->channel_limit);
 	ASSERT_EQ (conf.node.bootstrap_server->threads, defaults.node.bootstrap_server->threads);
@@ -500,6 +506,12 @@ TEST (toml_config, daemon_config_deserialize_no_defaults)
 	block_processor_threshold = 999
 	max_requests = 999
 
+	[node.bootstrap.lookup]
+	max_blocks = 999
+	max_retries = 999
+	retry_delay = 999
+	retry_backoff = 999
+
 	[node.bootstrap_server]
 	channel_limit = 999
 	threads = 999
@@ -704,6 +716,11 @@ TEST (toml_config, daemon_config_deserialize_no_defaults)
 	ASSERT_NE (conf.node.bootstrap->throttle_wait, defaults.node.bootstrap->throttle_wait);
 	ASSERT_NE (conf.node.bootstrap->block_processor_threshold, defaults.node.bootstrap->block_processor_threshold);
 	ASSERT_NE (conf.node.bootstrap->max_requests, defaults.node.bootstrap->max_requests);
+
+	ASSERT_NE (conf.node.bootstrap->lookup.max_blocks, defaults.node.bootstrap->lookup.max_blocks);
+	ASSERT_NE (conf.node.bootstrap->lookup.max_retries, defaults.node.bootstrap->lookup.max_retries);
+	ASSERT_NE (conf.node.bootstrap->lookup.retry_delay, defaults.node.bootstrap->lookup.retry_delay);
+	ASSERT_NE (conf.node.bootstrap->lookup.retry_backoff, defaults.node.bootstrap->lookup.retry_backoff);
 
 	ASSERT_NE (conf.node.bootstrap_server->channel_limit, defaults.node.bootstrap_server->channel_limit);
 	ASSERT_NE (conf.node.bootstrap_server->threads, defaults.node.bootstrap_server->threads);

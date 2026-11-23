@@ -66,6 +66,19 @@ public:
 	std::chrono::milliseconds gap_ttl{ 10min }; // Evict a stuck gap after this long so a permanently-missing dependency cannot wedge the spearhead
 };
 
+class lookup_config final
+{
+public:
+	nano::error deserialize (nano::tomlconfig & toml);
+	nano::error serialize (nano::tomlconfig & toml) const;
+
+public:
+	std::size_t max_blocks{ 1000 * 10 }; // Cap on missing blocks whose account is being looked up; further blocks are refused until one leaves
+	unsigned max_retries{ 3 }; // Lookups after the first one for a block that the peers asked did not know
+	std::chrono::milliseconds retry_delay{ 500 }; // Wait before the first retry
+	unsigned retry_backoff{ 2 }; // Every further retry waits this many times longer than the one before; 1 keeps the wait constant
+};
+
 class bootstrap_config final
 {
 public:
@@ -103,5 +116,6 @@ public:
 	account_sets_config account_sets;
 	frontier_scan_config frontier_scan;
 	topo_scan_config topo_scan;
+	lookup_config lookup;
 };
 }

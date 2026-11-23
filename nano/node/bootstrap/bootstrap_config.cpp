@@ -104,6 +104,30 @@ nano::error nano::topo_scan_config::serialize (nano::tomlconfig & toml) const
 }
 
 /*
+ * lookup_config
+ */
+
+nano::error nano::lookup_config::deserialize (nano::tomlconfig & toml)
+{
+	toml.get ("max_blocks", max_blocks);
+	toml.get ("max_retries", max_retries);
+	toml.get_duration ("retry_delay", retry_delay);
+	toml.get ("retry_backoff", retry_backoff);
+
+	return toml.get_error ();
+}
+
+nano::error nano::lookup_config::serialize (nano::tomlconfig & toml) const
+{
+	toml.put ("max_blocks", max_blocks, "Maximum number of missing blocks, known from votes, whose account is being looked up so that the account can be pulled. Further blocks are refused until one leaves.\ntype:uint64");
+	toml.put ("max_retries", max_retries, "Number of lookups after the first one for a block that the peers asked did not know. Each retry goes to a peer that has not been asked yet.\ntype:uint64");
+	toml.put ("retry_delay", retry_delay.count (), "Wait before the first retry of a lookup.\ntype:milliseconds");
+	toml.put ("retry_backoff", retry_backoff, "Factor by which every further retry waits longer than the one before. 1 keeps the wait constant.\ntype:uint64");
+
+	return toml.get_error ();
+}
+
+/*
  * bootstrap_config
  */
 
@@ -150,6 +174,12 @@ nano::error nano::bootstrap_config::deserialize (nano::tomlconfig & toml)
 		topo_scan.deserialize (config_l);
 	}
 
+	if (toml.has_key ("lookup"))
+	{
+		auto config_l = toml.get_required_child ("lookup");
+		lookup.deserialize (config_l);
+	}
+
 	return toml.get_error ();
 }
 
@@ -189,6 +219,10 @@ nano::error nano::bootstrap_config::serialize (nano::tomlconfig & toml) const
 	nano::tomlconfig topo_scan_l;
 	topo_scan.serialize (topo_scan_l);
 	toml.put_child ("topo_scan", topo_scan_l);
+
+	nano::tomlconfig lookup_l;
+	lookup.serialize (lookup_l);
+	toml.put_child ("lookup", lookup_l);
 
 	return toml.get_error ();
 }
