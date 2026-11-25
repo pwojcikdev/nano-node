@@ -37,6 +37,8 @@
 
 #include <gtest/gtest.h>
 
+#include <boost/property_tree/ptree.hpp>
+
 #include <cstdlib>
 #include <fstream>
 #include <unordered_set>
@@ -1578,6 +1580,40 @@ TEST (block_store, reset_renew_existing_transaction)
 	// Block should exist now
 	auto block_existing (store->block.get (read_transaction, hash1));
 	ASSERT_NE (nullptr, block_existing);
+}
+
+TEST (block_store, rocksdb_global_memory_stats)
+{
+	if (nano::default_database_backend () != nano::database_backend::rocksdb)
+	{
+		GTEST_SKIP ();
+	}
+	auto store = nano::test::make_store ();
+	auto memory_stats = [&] {
+		boost::property_tree::ptree stats;
+		store->backend.collect_memory_stats (stats);
+		return stats;
+	};
+	auto const before = nano::seconds_since_epoch ();
+	{
+		auto first = store->tx_begin_read ();
+		auto const stats = memory_stats ();
+		EXPECT_EQ (1, stats.get<uint64_t> ("num_snapshots"));
+		auto const oldest = stats.get<uint64_t> ("oldest_snapshot_time");
+		EXPECT_GE (oldest, before);
+		EXPECT_LE (oldest, nano::seconds_since_epoch ());
+		{
+			auto second = store->tx_begin_read ();
+			auto const both = memory_stats ();
+			EXPECT_EQ (2, both.get<uint64_t> ("num_snapshots"));
+			EXPECT_EQ (oldest, both.get<uint64_t> ("oldest_snapshot_time"));
+		}
+		EXPECT_EQ (1, memory_stats ().get<uint64_t> ("num_snapshots"));
+	}
+	auto const released = memory_stats ();
+	EXPECT_EQ (1, released.get<uint64_t> ("is_file_deletions_enabled"));
+	EXPECT_EQ (0, released.get<uint64_t> ("num_snapshots"));
+	EXPECT_EQ (0, released.get<uint64_t> ("oldest_snapshot_time"));
 }
 
 TEST (block_store, default_database_backend)

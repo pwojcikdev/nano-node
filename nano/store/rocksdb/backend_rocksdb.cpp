@@ -710,19 +710,19 @@ void backend_rocksdb::collect_memory_stats (boost::property_tree::ptree & ptree)
 	ptree.put ("mem_table_flush_pending", val);
 
 	// Number of currently running flushes
-	db->GetAggregatedIntProperty (::rocksdb::DB::Properties::kNumRunningFlushes, &val);
+	db->GetIntProperty (::rocksdb::DB::Properties::kNumRunningFlushes, &val);
 	ptree.put ("num_running_flushes", val);
 
 	// Number of currently running compactions
-	db->GetAggregatedIntProperty (::rocksdb::DB::Properties::kNumRunningCompactions, &val);
+	db->GetIntProperty (::rocksdb::DB::Properties::kNumRunningCompactions, &val);
 	ptree.put ("num_running_compactions", val);
 
 	// Returns 1 if writes are currently stopped; otherwise, returns 0
-	db->GetAggregatedIntProperty (::rocksdb::DB::Properties::kIsWriteStopped, &val);
+	db->GetIntProperty (::rocksdb::DB::Properties::kIsWriteStopped, &val);
 	ptree.put ("is_write_stopped", val);
 
 	// Current delayed write rate (bytes/sec); 0 means no delay
-	db->GetAggregatedIntProperty (::rocksdb::DB::Properties::kActualDelayedWriteRate, &val);
+	db->GetIntProperty (::rocksdb::DB::Properties::kActualDelayedWriteRate, &val);
 	ptree.put ("actual_delayed_write_rate", val);
 
 	// Total size (bytes) of all live SST files
@@ -758,11 +758,11 @@ void backend_rocksdb::collect_memory_stats (boost::property_tree::ptree & ptree)
 	ptree.put ("num_deletes_imm_mem_tables", val);
 
 	// Number of unreleased snapshots
-	db->GetAggregatedIntProperty (::rocksdb::DB::Properties::kNumSnapshots, &val);
+	db->GetIntProperty (::rocksdb::DB::Properties::kNumSnapshots, &val);
 	ptree.put ("num_snapshots", val);
 
 	// Unix timestamp of the oldest unreleased snapshot
-	db->GetAggregatedIntProperty (::rocksdb::DB::Properties::kOldestSnapshotTime, &val);
+	db->GetIntProperty (::rocksdb::DB::Properties::kOldestSnapshotTime, &val);
 	ptree.put ("oldest_snapshot_time", val);
 
 	// Number of live versions
@@ -774,15 +774,15 @@ void backend_rocksdb::collect_memory_stats (boost::property_tree::ptree & ptree)
 	ptree.put ("background_errors", val);
 
 	// Returns 1 if obsolete file deletions are enabled; otherwise, returns 0
-	db->GetAggregatedIntProperty (::rocksdb::DB::Properties::kIsFileDeletionsEnabled, &val);
+	db->GetIntProperty (::rocksdb::DB::Properties::kIsFileDeletionsEnabled, &val);
 	ptree.put ("is_file_deletions_enabled", val);
 
 	// Minimum log number to keep
-	db->GetAggregatedIntProperty (::rocksdb::DB::Properties::kMinLogNumberToKeep, &val);
+	db->GetIntProperty (::rocksdb::DB::Properties::kMinLogNumberToKeep, &val);
 	ptree.put ("min_log_number_to_keep", val);
 
 	// Minimum obsolete SST number to keep
-	db->GetAggregatedIntProperty (::rocksdb::DB::Properties::kMinObsoleteSstNumberToKeep, &val);
+	db->GetIntProperty (::rocksdb::DB::Properties::kMinObsoleteSstNumberToKeep, &val);
 	ptree.put ("min_obsolete_sst_number_to_keep", val);
 
 	// Per-level file counts
