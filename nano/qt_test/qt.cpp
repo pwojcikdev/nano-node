@@ -383,6 +383,49 @@ TEST (qt_wallet, send_draft_keeps_value_when_unit_changes)
 	ASSERT_EQ (7, node.ledger.account_receivable (node.ledger.tx_begin_read (), recipient.pub));
 }
 
+TEST (qt_wallet, send_preserves_next_draft)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.background_threads = 1;
+	auto & node = *system.add_node (config);
+	auto store = system.wallet (0);
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (store->insert_adhoc (genesis.prv, false));
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, node, store, genesis.pub);
+	wallet->start ();
+	QTest::mouseClick (wallet->send_blocks, Qt::LeftButton);
+
+	nano::keypair first, second;
+	QTest::keyClicks (wallet->send_account, first.pub.to_account ().c_str ());
+	QTest::keyClicks (wallet->send_count, "1");
+	// Hold the background sender while the user enters the next payment.
+	std::promise<void> resume;
+	node.workers.post ([gate = resume.get_future ().share ()] { gate.wait_for (10s); });
+	QTest::mouseClick (wallet->send_blocks_send, Qt::LeftButton);
+	EXPECT_FALSE (wallet->send_blocks_send->isEnabled ());
+	wallet->send_account->selectAll ();
+	QTest::keyClicks (wallet->send_account, second.pub.to_account ().c_str ());
+	wallet->send_count->selectAll ();
+	QTest::keyClicks (wallet->send_count, "2");
+	resume.set_value ();
+	auto completed = [&] {
+		test_application->processEvents ();
+		return wallet->send_blocks_send->isEnabled ();
+	};
+	ASSERT_TIMELY (5s, completed ());
+	EXPECT_EQ (nano::nano_ratio, node.ledger.account_receivable (node.ledger.tx_begin_read (), first.pub));
+	EXPECT_EQ ("2", wallet->send_count->text ().toStdString ());
+	ASSERT_EQ (second.pub.to_account (), wallet->send_account->text ().toStdString ());
+
+	QTest::mouseClick (wallet->send_blocks_send, Qt::LeftButton);
+	ASSERT_TIMELY (5s, completed ());
+	EXPECT_EQ (2 * nano::nano_ratio, node.ledger.account_receivable (node.ledger.tx_begin_read (), second.pub));
+	EXPECT_TRUE (wallet->send_count->text ().isEmpty ());
+	EXPECT_TRUE (wallet->send_account->text ().isEmpty ());
+}
+
 TEST (qt_wallet, send_locked)
 {
 	nano_qt::eventloop_processor processor;

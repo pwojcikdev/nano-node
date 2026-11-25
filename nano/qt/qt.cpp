@@ -1347,6 +1347,9 @@ nano_qt::wallet::wallet (QApplication & application_a, nano_qt::eventloop_proces
 	client_window->setStyleSheet ("\
 		QLineEdit { padding: 3px; } \
 	");
+	auto draft_edited = [this] { send_draft_edited = true; };
+	QObject::connect (send_account, &QLineEdit::textEdited, draft_edited);
+	QObject::connect (send_count, &QLineEdit::textEdited, draft_edited);
 	QObject::connect (send_account, &QLineEdit::textChanged, [this] (const QString & value) {
 		auto pos = send_account->cursorPosition ();
 		send_account->setText (value.trimmed ());
@@ -1435,6 +1438,7 @@ void nano_qt::wallet::start ()
 					{
 						if (!this_l->wallet_m->is_locked ())
 						{
+							this_l->send_draft_edited = false;
 							this_l->send_blocks_send->setEnabled (false);
 							// Taken now, as another wallet or account may be shown by the time the worker runs
 							this_l->node.workers.post ([this_w, wallet_l = this_l->wallet_m, source = this_l->account, account_l, actual] () {
@@ -1450,8 +1454,11 @@ void nano_qt::wallet::start ()
 													this_l->send_blocks_send->setEnabled (true);
 													if (succeeded)
 													{
-														this_l->send_count->clear ();
-														this_l->send_account->clear ();
+														if (!this_l->send_draft_edited)
+														{
+															this_l->send_count->clear ();
+															this_l->send_account->clear ();
+														}
 														this_l->accounts.refresh ();
 													}
 													else

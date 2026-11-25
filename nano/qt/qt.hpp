@@ -394,6 +394,9 @@ public:
 	std::function<void (nano::wallet_id const &, nano::account const &)> selection_observer{ [] (nano::wallet_id const &, nano::account const &) {} };
 
 private:
+	// The user can edit the fields while the Send button is disabled for the submitted payment.
+	bool send_draft_edited{ false };
+
 	// Only the newest balance request may update the GUI. A user can select the same account again.
 	uint64_t balance_refresh_id{ 0 };
 	void refresh_balance ();
