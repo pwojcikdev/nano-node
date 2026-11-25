@@ -1650,10 +1650,22 @@ TEST (rpc, history_pruning)
 
 	// second array element
 	entry = (*(++history_node.begin ())).second;
-	ASSERT_EQ ("unknown", entry.get<std::string> ("type"));
-	ASSERT_EQ ("N/A", entry.get<std::string> ("account", "N/A"));
+	ASSERT_EQ ("send", entry.get<std::string> ("type"));
+	ASSERT_EQ (nano::dev::genesis_key.pub.to_account (), entry.get<std::string> ("account", "N/A"));
 	ASSERT_EQ ("N/A", entry.get<std::string> ("amount", "N/A"));
 	ASSERT_EQ (usend->hash ().to_string (), entry.get<std::string> ("hash"));
+	// After pruning the predecessor of the change, it still appears only in raw history.
+	{
+		auto tx = node0->ledger.tx_begin_write ();
+		ASSERT_EQ (2, node0->ledger.pruning_action (tx, ureceive->hash (), 2));
+	}
+	response = wait_response (system, rpc_ctx, request3);
+	EXPECT_TRUE (response.get_child ("history").empty ());
+	request3.put ("raw", true);
+	response = wait_response (system, rpc_ctx, request3);
+	auto const & raw = response.get_child ("history");
+	ASSERT_EQ (1, raw.size ());
+	EXPECT_EQ ("change", raw.front ().second.get<std::string> ("subtype"));
 }
 
 TEST (rpc, account_history_state_open)
