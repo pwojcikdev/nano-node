@@ -2570,6 +2570,13 @@ TEST (rpc, nano_to_raw)
 	request1.put ("amount", "1");
 	auto response1 (wait_response (system, rpc_ctx, request1));
 	ASSERT_EQ (nano::nano_ratio.convert_to<std::string> (), response1.get<std::string> ("amount"));
+
+	request1.put ("amount", "0");
+	EXPECT_EQ ("0", wait_response (system, rpc_ctx, request1).get<std::string> ("amount", ""));
+	request1.put ("amount", "340282366");
+	EXPECT_EQ ("340282366000000000000000000000000000000", wait_response (system, rpc_ctx, request1).get<std::string> ("amount", ""));
+	request1.put ("amount", "340282367");
+	EXPECT_EQ (std::error_code (nano::error_common::invalid_amount_big).message (), wait_response (system, rpc_ctx, request1).get<std::string> ("error", ""));
 }
 
 TEST (rpc, raw_to_nano)

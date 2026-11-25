@@ -3240,9 +3240,10 @@ void nano::json_handler::nano_to_raw ()
 	auto amount (amount_impl ());
 	if (!ec)
 	{
-		auto result (amount.number () * nano::nano_ratio);
-		if (result > amount.number ())
+		auto const value = amount.number ();
+		if (value <= std::numeric_limits<nano::uint128_t>::max () / nano::nano_ratio)
 		{
+			auto const result = value * nano::nano_ratio;
 			response_l.put ("amount", result.convert_to<std::string> ());
 		}
 		else
