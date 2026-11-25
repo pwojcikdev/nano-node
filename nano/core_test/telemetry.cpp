@@ -1,4 +1,5 @@
 #include <nano/lib/node_capabilities.hpp>
+#include <nano/lib/rocksdbconfig.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/messages/telemetry.hpp>
 #include <nano/node/network.hpp>
@@ -446,6 +447,17 @@ TEST (telemetry, maker_peering)
 	// A peering-only node advertises the peering maker and the no_ledger capability
 	ASSERT_EQ (nano::messages::telemetry_maker::nf_peering_node, node.local_telemetry ().maker);
 	ASSERT_TRUE (node.get_capabilities ().test (nano::node_capabilities::no_ledger));
+}
+
+TEST (telemetry, legacy_rocksdb_backend)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.database_backend = nano::database_backend::lmdb;
+	config.rocksdb_config->enable = true;
+	auto & node = *system.add_node (config);
+
+	ASSERT_EQ (nano::messages::telemetry_database_backend::rocksdb, node.local_telemetry ().database_backend);
 }
 
 TEST (telemetry, invalid_signature)

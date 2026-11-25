@@ -984,7 +984,7 @@ nano::messages::telemetry_data nano::node::local_telemetry () const
 	: (ledger.flags.pruning ? nano::messages::telemetry_maker::nf_pruned_node : nano::messages::telemetry_maker::nf_node);
 	telemetry_data.timestamp = std::chrono::system_clock::now ();
 	telemetry_data.active_difficulty = default_difficulty (nano::work_version::work_1);
-	telemetry_data.database_backend = nano::messages::to_telemetry_database_backend (config.database_backend);
+	telemetry_data.database_backend = nano::messages::to_telemetry_database_backend (config.get_database_backend ());
 	auto conf_latency = active.recently_confirmed.latency_percentiles ();
 	telemetry_data.confirmation_latency_ms_p50 = conf_latency.p50;
 	telemetry_data.confirmation_latency_ms_p90 = conf_latency.p90;
