@@ -11,6 +11,7 @@
 #include <boost/format.hpp>
 #include <boost/property_tree/json_parser.hpp>
 
+#include <algorithm>
 #include <ctime>
 #include <fstream>
 #include <optional>
@@ -333,8 +334,14 @@ void nano::stats::run ()
 		log_sample.emplace (config.log_samples_filename);
 	}
 
+	auto next_writeout = [&] {
+		auto next_count = log_count ? log_last_count_writeout + config.log_counters_interval : nano::clock::time_point::max ();
+		auto next_sample = log_sample ? log_last_sample_writeout + config.log_samples_interval : nano::clock::time_point::max ();
+		return std::min (next_count, next_sample);
+	};
+
 	std::unique_lock lock{ mutex };
-	while (!condition.wait_for (lock, 1s, [this] { return stopped; }))
+	while (!condition.wait_until (lock, next_writeout (), [this] { return stopped; }))
 	{
 		std::time_t time = std::chrono::system_clock::to_time_t (std::chrono::system_clock::now ());
 		tm local_tm = *localtime (&time);

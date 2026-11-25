@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <ostream>
@@ -120,4 +121,26 @@ TEST (stats, file_logging_respects_configured_streams)
 		ASSERT_TIMELY (5s, contents (samples.log_samples_filename).find (",active_election_duration,17") != std::string::npos);
 	}
 	ASSERT_FALSE (std::filesystem::exists (samples.log_counters_filename));
+}
+
+TEST (stats, file_logging_subsecond_intervals)
+{
+	nano::test::system system;
+	auto const path = nano::unique_path ();
+	nano::stats_config config;
+	config.log_counters_filename = (path / "counters.stat").string ();
+	config.log_samples_filename = (path / "samples.stat").string ();
+	config.log_counters_interval = 100ms;
+	config.log_samples_interval = 250ms;
+
+	// With no counters or samples each writeout produces a single header line.
+	auto writeouts = [] (std::string const & filename) {
+		std::ifstream stream{ filename };
+		return std::count (std::istreambuf_iterator<char>{ stream }, {}, '\n');
+	};
+	nano::stats stats{ system.logger, config };
+	START (stats);
+	ASSERT_TIMELY (3s, writeouts (config.log_samples_filename) >= 4);
+	auto const samples = writeouts (config.log_samples_filename);
+	EXPECT_GE (writeouts (config.log_counters_filename), samples + 2);
 }
