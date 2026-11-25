@@ -45,6 +45,33 @@
 
 using namespace std::chrono_literals;
 
+TEST (toml_config, legacy_network_threads)
+{
+	nano::node_config defaults;
+	nano::node_config config;
+	nano::tomlconfig legacy;
+	ASSERT_FALSE (legacy.apply_override ("network_threads=1"));
+	ASSERT_FALSE (legacy.apply_override ("message_processor.max_queue=32"));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	ASSERT_EQ (1, config.message_processor->threads);
+	ASSERT_EQ (32, config.message_processor->max_queue);
+
+	nano::tomlconfig serialized, baseline;
+	config.serialize_toml (serialized);
+	defaults.serialize_toml (baseline);
+	ASSERT_FALSE (serialized.has_key ("network_threads"));
+	std::stringstream updated{ nano::render_config_update (serialized, baseline) };
+	nano::tomlconfig parsed;
+	ASSERT_FALSE (parsed.read (updated));
+	nano::node_config reloaded;
+	ASSERT_FALSE (reloaded.deserialize_toml (parsed));
+	ASSERT_EQ (1, reloaded.message_processor->threads);
+
+	ASSERT_FALSE (legacy.apply_override ("message_processor.threads=" + std::to_string (defaults.message_processor->threads)));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	ASSERT_EQ (defaults.message_processor->threads, config.message_processor->threads);
+}
+
 TEST (toml_config, daemon_config_update_array)
 {
 	nano::tomlconfig t;
@@ -153,7 +180,6 @@ TEST (toml_config, daemon_config_deserialize_defaults)
 	ASSERT_EQ (conf.node.external_port, defaults.node.external_port);
 	ASSERT_EQ (conf.node.io_threads, defaults.node.io_threads);
 	ASSERT_EQ (conf.node.max_work_generate_multiplier, defaults.node.max_work_generate_multiplier);
-	ASSERT_EQ (conf.node.network_threads, defaults.node.network_threads);
 	ASSERT_EQ (conf.node.background_threads, defaults.node.background_threads);
 	ASSERT_EQ (conf.node.secondary_work_peers, defaults.node.secondary_work_peers);
 	ASSERT_EQ (conf.node.online_weight_minimum, defaults.node.online_weight_minimum);
@@ -590,7 +616,6 @@ TEST (toml_config, daemon_config_deserialize_no_defaults)
 	ASSERT_NE (conf.node.max_work_generate_multiplier, defaults.node.max_work_generate_multiplier);
 	ASSERT_NE (conf.node.max_unchecked_blocks, defaults.node.max_unchecked_blocks);
 	ASSERT_NE (conf.node.max_backlog, defaults.node.max_backlog);
-	ASSERT_NE (conf.node.network_threads, defaults.node.network_threads);
 	ASSERT_NE (conf.node.background_threads, defaults.node.background_threads);
 	ASSERT_NE (conf.node.secondary_work_peers, defaults.node.secondary_work_peers);
 	ASSERT_NE (conf.node.max_pruning_age, defaults.node.max_pruning_age);

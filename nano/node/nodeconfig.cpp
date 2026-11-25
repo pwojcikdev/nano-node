@@ -163,7 +163,6 @@ nano::error nano::node_config::serialize_toml (nano::tomlconfig & toml) const
 	toml.put ("representative_vote_weight_minimum", representative_vote_weight_minimum.to_string_dec (), "Minimum vote weight that a representative must have for its vote to be counted.\nAll representatives above this weight will be kept in memory!\ntype:string,amount,raw");
 	toml.put ("password_fanout", password_fanout, "Password fanout factor.\ntype:uint64");
 	toml.put ("io_threads", io_threads, "Number of threads dedicated to I/O operations. Defaults to the number of CPU threads, and at least 4.\ntype:uint64");
-	toml.put ("network_threads", network_threads, "Number of threads dedicated to processing network messages. Defaults to the number of CPU threads, and at least 4.\ntype:uint64");
 	toml.put ("work_threads", work_threads, "Number of threads dedicated to CPU generated work. Defaults to all available CPU threads.\ntype:uint64");
 	toml.put ("background_threads", background_threads, "Number of threads dedicated to background node work, including handling of RPC requests. Defaults to all available CPU threads.\ntype:uint64");
 	toml.put ("wallet_threads", wallet_threads, "Number of threads dedicated to wallet background work.\ntype:uint64");
@@ -502,6 +501,8 @@ nano::error nano::node_config::deserialize_toml (nano::tomlconfig & toml)
 			vote_replier->deserialize (config_l);
 		}
 
+		// Older configurations set the message processing thread count directly under [node].
+		toml.get ("network_threads", message_processor->threads);
 		if (toml.has_key ("message_processor"))
 		{
 			auto config_l = toml.get_required_child ("message_processor");
@@ -653,7 +654,6 @@ nano::error nano::node_config::deserialize_toml (nano::tomlconfig & toml)
 		toml.get<unsigned> ("password_fanout", password_fanout);
 		toml.get<unsigned> ("io_threads", io_threads);
 		toml.get<unsigned> ("work_threads", work_threads);
-		toml.get<unsigned> ("network_threads", network_threads);
 		toml.get<unsigned> ("background_threads", background_threads);
 		toml.get<unsigned> ("wallet_threads", wallet_threads);
 		toml.get<unsigned> ("bootstrap_connections", bootstrap_connections);
