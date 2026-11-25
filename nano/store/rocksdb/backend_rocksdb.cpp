@@ -217,6 +217,8 @@ void backend_rocksdb::open_db (std::filesystem::path const & path, nano::store::
 	db_options.OptimizeLevelStyleCompaction ();
 	db_options.IncreaseParallelism (config.io_threads);
 	db_options.compression = ::rocksdb::kNoCompression;
+	// Trigger flushes when memtables across all column families reach the configured write cache.
+	db_options.db_write_buffer_size = config.write_cache * 1024 * 1024;
 
 	db_options.keep_log_file_num = config.max_log_files;
 

@@ -42,6 +42,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include <rocksdb/utilities/options_util.h>
+
 using namespace std::chrono_literals;
 
 TEST (block_store, construction)
@@ -1629,6 +1631,31 @@ TEST (block_store, rocksdb_bad_path)
 		std::ofstream stream (db_path.c_str ());
 	}
 	ASSERT_THROW (nano::test::make_store (path), std::runtime_error);
+}
+
+TEST (block_store, rocksdb_shared_write_cache)
+{
+	if (nano::default_database_backend () != nano::database_backend::rocksdb)
+	{
+		GTEST_SKIP ();
+	}
+
+	auto const path = nano::unique_path () / "rocksdb";
+	nano::logger logger;
+	nano::rocksdb_config config;
+	// Open the same database first with the default setting, then with a different budget.
+	for (auto megabytes : { config.write_cache, 3L })
+	{
+		config.write_cache = megabytes;
+		nano::store::rocksdb::backend_rocksdb backend{ path, config, logger };
+		backend.open (nano::store::ledger_store::schema_current, nano::store::open_mode::read_write);
+
+		::rocksdb::DBOptions options;
+		std::vector<::rocksdb::ColumnFamilyDescriptor> families;
+		auto const status = ::rocksdb::LoadLatestOptions ({}, path.string (), &options, &families);
+		ASSERT_TRUE (status.ok ()) << status.ToString ();
+		EXPECT_EQ (megabytes * 1024 * 1024, options.db_write_buffer_size);
+	}
 }
 
 // This test ensures the tombstone_count is increased when there is a delete.
