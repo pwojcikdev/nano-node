@@ -7,6 +7,8 @@
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/wallet.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/store/ledger/extended/account_delegator_by_weight.hpp>
+#include <nano/store/ledger/topology.hpp>
 #include <nano/test_common/ledger_context.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -251,6 +253,34 @@ TEST (cli, wallet_seed_and_key)
 	nano::keypair const adhoc;
 	ASSERT_FALSE (run_cli_command (cli_options ({ { "wallet_add_adhoc", "" }, { "wallet", id->to_string () }, { "key", adhoc.prv.to_string () }, { "data_path", path } })).error);
 	ASSERT_NE (std::string::npos, decrypt (*id).find ("Pub: " + adhoc.pub.to_account () + " Prv: " + adhoc.prv.to_string () + "\n"));
+}
+
+TEST (cli, drop_interrupted_ledger_indices)
+{
+	std::filesystem::path data_path;
+	{
+		auto context = nano::test::ledger_empty ({ .enable_topo_index = false });
+		auto & store = context.store ();
+		data_path = store.get_database_path ().parent_path ();
+		// These rows have been committed, but the population has not enabled either index yet.
+		store.extended.account_delegator_by_weight.create ();
+		auto txn = store.tx_begin_write ();
+		auto const & genesis = nano::dev::genesis_key.pub;
+		store.extended.account_delegator_by_weight.put (txn, { genesis, nano::dev::constants.genesis_amount, genesis });
+		store.topology.put (txn, { 1, nano::dev::genesis->hash () });
+	}
+
+	auto const topo = run_cli_command (cli_options ({ { "drop_topo_index", "" }, { "data_path", data_path.string () } }));
+	ASSERT_FALSE (topo.error);
+	ASSERT_NE (std::string::npos, topo.output.find ("Topology index dropped"));
+	auto const extended = run_cli_command (cli_options ({ { "drop_extended_ledger_indices", "" }, { "data_path", data_path.string () } }));
+	ASSERT_FALSE (extended.error);
+	ASSERT_NE (std::string::npos, extended.output.find ("Extended ledger indices dropped"));
+
+	nano::inactive_node node{ data_path, nano::inactive_node_flag_defaults () };
+	auto & store = node.node->store;
+	ASSERT_EQ (0, store.topology.count (store.tx_begin_read ()));
+	ASSERT_FALSE (store.extended.account_delegator_by_weight.present ());
 }
 
 TEST (cli, confirmation_height_clear_genesis)

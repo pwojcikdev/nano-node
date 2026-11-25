@@ -712,7 +712,8 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 				// Skip cache generation and load-time consistency checks so a corrupted store can still be recovered
 				nano::ledger ledger{ *store, network_params, stats, logger, nano::ledger_options{ .generate_cache = nano::generate_cache_flags::all_disabled () } };
 
-				if (!ledger.flags.topo_index)
+				// An interrupted population or drop can leave index rows with the flag disabled.
+				if (!ledger.flags.topo_index && store->backend.empty (store->tx_begin_read (), nano::store::table::topology))
 				{
 					std::cout << "Topology index is not enabled" << std::endl;
 				}
@@ -789,7 +790,13 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 				// Skip cache generation and load-time consistency checks so corrupted index state can still be dropped
 				nano::ledger ledger{ *store, network_params, stats, logger, nano::ledger_options{ .generate_cache = nano::generate_cache_flags::all_disabled () } };
 
-				if (ledger.flags.any_extended_ledger_index_enabled ())
+				// The flags are committed separately from creating and dropping the physical tables.
+				auto const & backend = store->backend;
+				if (ledger.flags.any_extended_ledger_index_enabled ()
+				|| backend.table_open (nano::store::table::account_delegator_by_weight)
+				|| backend.table_open (nano::store::table::account_receivable_by_amount)
+				|| backend.table_open (nano::store::table::receive_block_by_send_block)
+				|| backend.table_open (nano::store::table::account_block_by_height))
 				{
 					ledger.drop_extended_ledger_indices ();
 					std::cout << "Extended ledger indices dropped" << std::endl;

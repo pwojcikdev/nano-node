@@ -259,7 +259,7 @@ void nano::ledger::populate_topo_index ()
 
 void nano::ledger::drop_topo_index ()
 {
-	release_assert (flags.topo_index, "drop_topo_index called when topo_index is not enabled");
+	release_assert (store.get_mode () != nano::store::open_mode::read_only, "topology index cannot be dropped while the backend is opened in read-only mode");
 
 	logger.info (nano::log::type::ledger_upgrade, "Dropping topology index...");
 
