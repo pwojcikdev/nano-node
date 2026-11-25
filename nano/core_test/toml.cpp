@@ -100,7 +100,6 @@ TEST (toml_config, daemon_config_update_array)
 	ASSERT_EQ (c.node.preconfigured_peers[0], "dev-peer.org");
 }
 
-/** Empty rpc config file should match a default config object */
 TEST (toml_config, migrate_request_aggregator_settings)
 {
 	nano::node_config defaults;
@@ -134,6 +133,31 @@ TEST (toml_config, migrate_request_aggregator_settings)
 	ASSERT_EQ (11, reloaded.vote_replier->batch_size);
 }
 
+TEST (toml_config, bootstrap_server_legacy_queue_limit)
+{
+	nano::bootstrap_server_config config;
+	nano::tomlconfig legacy;
+	ASSERT_FALSE (legacy.apply_override ("max_queue=2"));
+	ASSERT_FALSE (config.deserialize (legacy));
+	ASSERT_EQ (2, config.channel_limit);
+
+	nano::tomlconfig serialized;
+	config.serialize (serialized);
+	ASSERT_FALSE (serialized.has_key ("max_queue"));
+	std::stringstream rendered{ nano::render_config_template (serialized, false) };
+	nano::tomlconfig parsed;
+	ASSERT_FALSE (parsed.read (rendered));
+	nano::bootstrap_server_config reloaded;
+	ASSERT_FALSE (reloaded.deserialize (parsed));
+	ASSERT_EQ (2, reloaded.channel_limit);
+
+	auto const default_limit = nano::bootstrap_server_config{}.channel_limit;
+	ASSERT_FALSE (legacy.apply_override ("channel_limit=" + std::to_string (default_limit)));
+	ASSERT_FALSE (config.deserialize (legacy));
+	ASSERT_EQ (default_limit, config.channel_limit);
+}
+
+/** Empty rpc config file should match a default config object */
 TEST (toml_config, rpc_config_deserialize_defaults)
 {
 	std::stringstream ss;
