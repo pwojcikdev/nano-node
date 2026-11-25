@@ -511,6 +511,35 @@ TEST (wallet_store, import_json)
 	ASSERT_TRUE (wallet2->exists (key1.pub));
 }
 
+TEST (wallet_store, import_json_watch_only)
+{
+	nano::test::system system (1);
+	auto source = system.wallet (0);
+	auto destination = system.nodes[0]->wallets.create (nano::random_wallet_id ());
+	ASSERT_NE (nullptr, destination);
+
+	nano::keypair watched, already_owned;
+	ASSERT_FALSE (source->insert_watch (watched.pub));
+	ASSERT_FALSE (source->insert_watch (already_owned.pub));
+	ASSERT_TRUE (destination->insert_adhoc (already_owned.prv, false));
+	// This signing key has zero plaintext but a nonzero encrypted entry in the backup.
+	nano::raw_key zero{ 0 };
+	auto owned = source->insert_adhoc (zero, false);
+	ASSERT_TRUE (owned);
+	std::string json;
+	source->serialize_json (json);
+
+	EXPECT_FALSE (destination->import (json, ""));
+	EXPECT_TRUE (destination->exists (watched.pub));
+	EXPECT_FALSE (destination->fetch_prv (watched.pub));
+	auto retained = destination->fetch_prv (already_owned.pub);
+	ASSERT_TRUE (retained);
+	EXPECT_EQ (already_owned.prv, retained.value ());
+	auto imported = destination->fetch_prv (owned.value ());
+	ASSERT_TRUE (imported);
+	EXPECT_EQ (zero, imported.value ());
+}
+
 TEST (wallet_store, import_locked)
 {
 	nano::wallet::lmdb::wallets_backend_lmdb backend (nano::unique_path () / "wallet.ldb");
