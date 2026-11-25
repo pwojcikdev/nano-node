@@ -121,6 +121,28 @@ TEST (ledger, process_modifies_sideband)
 	ASSERT_EQ (send1->sideband ().timestamp, ledger.any.block_get (ledger.tx_begin_read (), send1->hash ())->sideband ().timestamp);
 }
 
+TEST (ledger, account_receivable_maximum_destination)
+{
+	auto context = nano::test::ledger_empty ();
+	auto & ledger = context.ledger ();
+	nano::account const destination{ std::numeric_limits<nano::uint256_t>::max () };
+	auto const & genesis = nano::dev::genesis_key;
+	auto send = nano::send_block_builder ()
+				.previous (nano::dev::genesis->hash ())
+				.destination (destination)
+				.balance (nano::dev::constants.genesis_amount - 7)
+				.sign (genesis.prv, genesis.pub)
+				.work (*context.pool ().generate (nano::dev::genesis->hash ()))
+				.build ();
+
+	auto txn = ledger.tx_begin_write ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send));
+	ASSERT_EQ (7, ledger.account_receivable (txn, destination));
+	ASSERT_EQ (0, ledger.account_receivable (txn, destination, true));
+	ledger.cement (txn, send->hash ());
+	ASSERT_EQ (7, ledger.account_receivable (txn, destination, true));
+}
+
 // Create a send block and publish it.
 TEST (ledger, process_send)
 {

@@ -369,8 +369,7 @@ bool nano::ledger::block_uncemented (secure::transaction const & transaction, na
 nano::uint128_t nano::ledger::account_receivable (secure::transaction const & transaction_a, nano::account const & account_a, bool only_confirmed_a) const
 {
 	nano::uint128_t result (0);
-	nano::account end (account_a.number () + 1);
-	for (auto i (store.pending.begin (transaction_a, nano::pending_key (account_a, 0))), n (store.pending.begin (transaction_a, nano::pending_key (end, 0))); i != n; ++i)
+	for (auto i = store.pending.begin (transaction_a, { account_a, 0 }), n = store.pending.end (transaction_a); i != n && i->first.account == account_a; ++i)
 	{
 		nano::pending_info const & info (i->second);
 		if (only_confirmed_a)
