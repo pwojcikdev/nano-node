@@ -788,6 +788,67 @@ TEST (websocket, confirmation_options_update)
 	ASSERT_TIMELY_EQ (5s, future.wait_for (0s), std::future_status::ready);
 }
 
+TEST (websocket, update_default_confirmation_subscription)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.websocket_config->enabled = true;
+	config.websocket_config->port = 0;
+	config.enable_voting = false;
+	auto node = system.add_node (config);
+	auto wallet = system.wallet (0);
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (wallet->insert_adhoc (genesis.prv, false));
+	nano::keypair recipient;
+	auto first = wallet->send_action (genesis.pub, genesis.pub, 1);
+	auto second = wallet->send_action (genesis.pub, recipient.pub, 1);
+	ASSERT_NE (nullptr, first);
+	ASSERT_NE (nullptr, second);
+
+	fake_websocket_client client (node->websocket.server->listening_port ());
+	client.send_message (R"({"action":"subscribe","topic":"confirmation","ack":true})");
+	client.await_ack ();
+	client.send_message (boost::str (boost::format (R"({"action":"update","topic":"confirmation","options":{"accounts_add":["%1%"]}})") % recipient.pub.to_account ()));
+	client.send_message (R"({"action":"ping"})");
+	client.await_ack (); // The server has processed the preceding update.
+
+	for (auto const & block : { first, second })
+	{
+		node->websocket.server->broadcast_confirmation ({ .status = { .winner = block }, .type = nano::confirmation_type::inactive_confirmation_height, .account = genesis.pub }, "send");
+	}
+	auto response = client.get_response ();
+	ASSERT_TRUE (response);
+	std::stringstream stream{ *response };
+	boost::property_tree::ptree event;
+	boost::property_tree::read_json (stream, event);
+	ASSERT_EQ (second->hash ().to_string (), event.get<std::string> ("message.hash"));
+}
+
+TEST (websocket, default_vote_subscription_filters_replays_and_indeterminate)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.websocket_config->enabled = true;
+	config.websocket_config->port = 0;
+	auto node = system.add_node (config);
+	fake_websocket_client client (node->websocket.server->listening_port ());
+	client.send_message (R"({"action":"subscribe","topic":"vote","ack":true})");
+	client.await_ack ();
+
+	auto vote = nano::test::make_vote (nano::dev::genesis_key, { nano::dev::genesis });
+	nano::websocket::message_builder builder{ node->ledger };
+	for (auto code : { nano::vote_code::replay, nano::vote_code::indeterminate, nano::vote_code::vote })
+	{
+		node->websocket.server->broadcast (builder.vote_received (vote, code));
+	}
+	auto response = client.get_response ();
+	ASSERT_TRUE (response);
+	std::stringstream stream{ *response };
+	boost::property_tree::ptree event;
+	boost::property_tree::read_json (stream, event);
+	ASSERT_EQ ("vote", event.get<std::string> ("message.type"));
+}
+
 // Subscribes to votes, sends a block and awaits websocket notification of a vote arrival
 TEST (websocket, vote)
 {

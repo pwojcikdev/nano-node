@@ -505,16 +505,17 @@ void nano::websocket::session::handle_message (boost::property_tree::ptree const
 	auto action_succeeded (false);
 	if (action == "subscribe" && topic_l != nano::websocket::topic::invalid)
 	{
-		auto options_text_l (message_a.get_child_optional ("options"));
+		boost::property_tree::ptree const empty_options;
+		auto const & options_text_l = message_a.get_child ("options", empty_options);
 		nano::lock_guard<nano::mutex> lk (subscriptions_mutex);
 		std::unique_ptr<nano::websocket::options> options_l{ nullptr };
-		if (options_text_l && topic_l == nano::websocket::topic::confirmation)
+		if (topic_l == nano::websocket::topic::confirmation)
 		{
-			options_l = std::make_unique<nano::websocket::confirmation_options> (options_text_l.value (), ws_listener.get_wallets (), logger);
+			options_l = std::make_unique<nano::websocket::confirmation_options> (options_text_l, ws_listener.get_wallets (), logger);
 		}
-		else if (options_text_l && topic_l == nano::websocket::topic::vote)
+		else if (topic_l == nano::websocket::topic::vote)
 		{
-			options_l = std::make_unique<nano::websocket::vote_options> (options_text_l.value (), logger);
+			options_l = std::make_unique<nano::websocket::vote_options> (options_text_l, logger);
 		}
 		else
 		{
@@ -672,14 +673,8 @@ void nano::websocket::listener::broadcast_confirmation (nano::block_confirmation
 			auto subscription (session_ptr->subscriptions.find (nano::websocket::topic::confirmation));
 			if (subscription != session_ptr->subscriptions.end ())
 			{
-				nano::websocket::confirmation_options default_options (wallets, logger);
-				auto conf_options (dynamic_cast<nano::websocket::confirmation_options *> (subscription->second.get ()));
-				if (conf_options == nullptr)
-				{
-					conf_options = &default_options;
-				}
-
-				auto message = builder.block_confirmed (confirmation, subtype, *conf_options);
+				auto const & conf_options = static_cast<nano::websocket::confirmation_options const &> (*subscription->second);
+				auto message = builder.block_confirmed (confirmation, subtype, conf_options);
 				session_ptr->write_locked (message);
 			}
 		}
