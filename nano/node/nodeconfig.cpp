@@ -463,6 +463,8 @@ nano::error nano::node_config::deserialize_toml (nano::tomlconfig & toml)
 			block_processor->deserialize (config_l);
 		}
 
+		// Older node configurations stored the vote bundling delay at the top level.
+		toml.get_duration ("vote_generator_delay", vote_generator->delay);
 		if (toml.has_key ("vote_generator"))
 		{
 			auto config_l = toml.get_required_child ("vote_generator");

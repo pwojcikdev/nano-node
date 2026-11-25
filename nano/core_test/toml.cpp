@@ -157,6 +157,31 @@ TEST (toml_config, bootstrap_server_legacy_queue_limit)
 	ASSERT_EQ (default_limit, config.channel_limit);
 }
 
+TEST (toml_config, migrate_vote_generator_delay)
+{
+	nano::node_config config, defaults;
+	nano::tomlconfig legacy;
+	ASSERT_FALSE (legacy.apply_overrides ({ "vote_generator_delay=275", "vote_generator.batch_size=8" }));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	ASSERT_EQ (275ms, config.vote_generator->delay);
+	ASSERT_EQ (8, config.vote_generator->batch_size);
+
+	nano::tomlconfig current, baseline;
+	config.serialize_toml (current);
+	defaults.serialize_toml (baseline);
+	ASSERT_FALSE (current.has_key ("vote_generator_delay"));
+	std::stringstream updated{ nano::render_config_update (current, baseline) };
+	nano::tomlconfig parsed;
+	ASSERT_FALSE (parsed.read (updated));
+	nano::node_config reloaded;
+	ASSERT_FALSE (reloaded.deserialize_toml (parsed));
+	ASSERT_EQ (275ms, reloaded.vote_generator->delay);
+
+	ASSERT_FALSE (legacy.apply_override ("vote_generator.delay=100"));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	ASSERT_EQ (100ms, config.vote_generator->delay);
+}
+
 /** Empty rpc config file should match a default config object */
 TEST (toml_config, rpc_config_deserialize_defaults)
 {
