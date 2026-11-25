@@ -159,7 +159,7 @@ public:
 
 						logger.debug (nano::log::type::daemon, "Spawning RPC process with command: {}", config.rpc.child_process.rpc_path);
 
-						rpc_process = std::make_unique<nano::rpc_process> (config.rpc, data_path, node->network_params.network.get_current_network_as_string (), logger);
+						rpc_process = std::make_unique<nano::rpc_process> (config.rpc, data_path, node->network_params.network.get_current_network_as_string (), logger, flags.rpc_config_overrides);
 					}
 				}
 				QObject::connect (&application, &QApplication::aboutToQuit, [&] () {

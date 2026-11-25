@@ -21,19 +21,21 @@ NANO_RPC_EXE="$(cd "$(dirname "$NANO_RPC_EXE")" && pwd)/$(basename "$NANO_RPC_EX
 DATADIR=$(new_datadir)
 RUNTIME_INFO="$DATADIR/runtime_info.json"
 
-# The child reads its ports from the RPC config file, so they cannot be ephemeral
+# The child must reach the node over IPC and listen on the last RPC port override.
 RPC_PORT=$((20000 + RANDOM % 20000))
 IPC_PORT=$((40000 + RANDOM % 20000))
-cat > "$DATADIR/config-rpc.toml" <<TOML
+cat > "$DATADIR/config-rpc.toml" <<'TOML'
 enable_control = true
-port = $RPC_PORT
+port = 0
 [process]
-ipc_port = $IPC_PORT
+ipc_port = 0
 TOML
 
 $NANO_NODE_EXE --daemon --network dev --data_path "$DATADIR" \
     --enable_rpc \
     --runtime_info_file "$RUNTIME_INFO" \
+    --rpcconfig port=0 --rpcconfig port=$RPC_PORT \
+    --rpcconfig process.ipc_port=$IPC_PORT \
     --config rpc.child_process.enable=true \
     --config "rpc.child_process.rpc_path=$NANO_RPC_EXE" \
     --config node.ipc.tcp.enable=true \
@@ -48,7 +50,10 @@ wait_for_file "$RUNTIME_INFO" $NODE_PID
 RESPONSE=""
 for i in {1..60}; do
     RESPONSE=$(curl -g -s -m 2 -d '{ "action": "version" }' "[::1]:$RPC_PORT" || true)
-    [ -n "$RESPONSE" ] && break
+    if [ -n "$RESPONSE" ] && jq -e '.rpc_version' <<< "$RESPONSE" > /dev/null; then
+        break
+    fi
+    RESPONSE=""
     sleep 0.5
 done
 if [ -z "$RESPONSE" ]; then

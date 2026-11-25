@@ -8,7 +8,7 @@
 
 using namespace std::chrono_literals;
 
-nano::rpc_process::rpc_process (nano::node_rpc_config const & config, std::filesystem::path const & data_path, std::string_view network, nano::logger & logger_a) :
+nano::rpc_process::rpc_process (nano::node_rpc_config const & config, std::filesystem::path const & data_path, std::string_view network, nano::logger & logger_a, std::vector<std::string> const & config_overrides) :
 	logger{ logger_a }
 {
 	auto const & path = config.child_process.rpc_path;
@@ -17,7 +17,13 @@ nano::rpc_process::rpc_process (nano::node_rpc_config const & config, std::files
 		throw std::runtime_error ("RPC is configured to spawn a new process however the file cannot be found at: " + path);
 	}
 
-	child = boost::process::child (path, "--daemon", "--data_path", data_path.string (), "--network", std::string (network));
+	std::vector<std::string> args{ "--daemon", "--data_path", data_path.string (), "--network", std::string{ network } };
+	if (!config_overrides.empty ())
+	{
+		args.emplace_back ("--config");
+		args.insert (args.end (), config_overrides.begin (), config_overrides.end ());
+	}
+	child = boost::process::child (path, args);
 }
 
 void nano::rpc_process::stop ()

@@ -5,7 +5,9 @@
 
 #include <chrono>
 #include <filesystem>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace nano
 {
@@ -23,7 +25,7 @@ public:
 
 public:
 	// Spawns the child, throws `std::runtime_error` when the configured executable does not exist
-	rpc_process (nano::node_rpc_config const &, std::filesystem::path const & data_path, std::string_view network, nano::logger &);
+	rpc_process (nano::node_rpc_config const &, std::filesystem::path const & data_path, std::string_view network, nano::logger &, std::vector<std::string> const & config_overrides = {});
 
 	// Waits up to `grace_period` for the child to exit on its own, then terminates it
 	void stop ();
