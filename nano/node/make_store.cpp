@@ -55,9 +55,18 @@ std::unique_ptr<nano::store::backend> nano::make_backend (nano::logger & logger,
 
 std::unique_ptr<nano::store::ledger_store> nano::make_store (nano::logger & logger, nano::stats & stats, std::filesystem::path const & path, nano::ledger_constants & constants, bool read_only, bool add_db_postfix, nano::node_config const & node_config)
 {
+	return make_store (logger, stats, path, constants, read_only, add_db_postfix, node_config, false);
+}
+
+std::unique_ptr<nano::store::ledger_store> nano::make_store (nano::logger & logger, nano::stats & stats, std::filesystem::path const & path, nano::ledger_constants & constants, bool read_only, bool add_db_postfix, nano::node_config const & node_config, bool for_backup)
+{
 	auto backend = nano::make_backend (logger, path, add_db_postfix, node_config);
 
-	nano::store::open_mode const mode = read_only ? nano::store::open_mode::read_only : nano::store::open_mode::read_write;
+	auto mode = nano::store::open_mode::read_write;
+	if (read_only)
+	{
+		mode = for_backup ? nano::store::open_mode::read_only_backup : nano::store::open_mode::read_only;
+	}
 
 	nano::store::ledger_store_params params;
 	params.backup_before_upgrade = node_config.backup_before_upgrade;

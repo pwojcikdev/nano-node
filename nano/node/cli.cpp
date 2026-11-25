@@ -73,8 +73,8 @@ void nano::add_node_options (boost::program_options::options_description & descr
 	("account_create", "Insert next deterministic key in to <wallet>")
 	("account_get", "Get account number for the <key>")
 	("account_key", "Get the public key for <account>")
-	("vacuum", "Compact database. If data_path is missing, the database in data directory is compacted.")
-	("snapshot", "Compact database and create snapshot, functions similar to vacuum but does not replace the existing database")
+	("vacuum", "Compact the database in data_path or the default data directory. Stop the node before vacuuming RocksDB.")
+	("snapshot", "Write a compact copy of the database. Stop the node before snapshotting RocksDB.")
 	("data_path", boost::program_options::value<std::string> (), "Use the supplied path as the data directory")
 	("network", boost::program_options::value<std::string> (), "Use the supplied network (live, test, beta or dev)")
 	("clear_send_ids", "Remove all send IDs from the database (dangerous: not intended for production use)")
@@ -260,6 +260,7 @@ void copy_database (std::filesystem::path const & data_path, boost::program_opti
 
 	auto node_flags = nano::inactive_node_flag_defaults ();
 	node_flags.read_only = !needs_to_write;
+	node_flags.backup_database = true;
 	nano::update_flags (node_flags, vm);
 
 	nano::inactive_node node (data_path, node_flags);
@@ -411,11 +412,6 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 					source_path = data_path / "rocksdb";
 					backup_path = source_path / "backup";
 					vacuum_path = backup_path / "vacuumed";
-					if (!std::filesystem::exists (vacuum_path))
-					{
-						std::filesystem::create_directories (vacuum_path);
-					}
-
 					std::cout << source_path << "\n";
 				}
 				else

@@ -81,7 +81,7 @@ void backend_rocksdb::close_impl ()
 void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mode)
 {
 	// Create database directory if needed
-	if (mode != nano::store::open_mode::read_only)
+	if (mode == open_mode::read_write || mode == open_mode::create)
 	{
 		boost::system::error_code error_mkdir, error_chmod;
 		std::filesystem::create_directories (database_path, error_mkdir);
@@ -104,6 +104,10 @@ void backend_rocksdb::open_impl (column_schema schema, nano::store::open_mode mo
 	{
 		if (is_not_found (list_status))
 		{
+			if (mode == open_mode::read_only_backup)
+			{
+				throw nano::error (nano::error_backend::db_not_found);
+			}
 			debug_assert (existing_cf_names.empty ());
 		}
 		else
@@ -178,6 +182,7 @@ void backend_rocksdb::open_db (std::filesystem::path const & path, nano::store::
 	}
 	else
 	{
+		// A physical backup needs a primary handle to enumerate committed WALs. Creation stays disabled in backup mode.
 		s = ::rocksdb::TransactionDB::Open (options, ::rocksdb::TransactionDBOptions{}, path.string (), column_families, &handles_l, &transaction_db_l);
 		db_l = transaction_db_l;
 	}
@@ -205,8 +210,9 @@ void backend_rocksdb::open_db (std::filesystem::path const & path, nano::store::
 {
 	::rocksdb::Options db_options;
 
-	db_options.create_if_missing = (mode != nano::store::open_mode::read_only);
-	db_options.create_missing_column_families = (mode != nano::store::open_mode::read_only);
+	bool const allow_creation = mode == open_mode::read_write || mode == open_mode::create;
+	db_options.create_if_missing = allow_creation;
+	db_options.create_missing_column_families = allow_creation;
 
 	db_options.OptimizeLevelStyleCompaction ();
 	db_options.IncreaseParallelism (config.io_threads);
@@ -544,13 +550,16 @@ nano::store::read_transaction backend_rocksdb::tx_begin_read () const
 
 nano::store::write_transaction backend_rocksdb::tx_begin_write ()
 {
-	release_assert (transaction_db != nullptr);
+	release_assert (transaction_db != nullptr && get_mode () != open_mode::read_only);
 	return store::write_transaction{ std::make_unique<nano::store::rocksdb::write_transaction_impl> (transaction_db, txn_tracking_callbacks ()) };
 }
 
 void backend_rocksdb::backup ()
 {
-	release_assert (db != nullptr, "database must be open to perform backup");
+	if (!transaction_db)
+	{
+		throw std::runtime_error ("RocksDB backup requires a primary database handle to include committed WAL records");
+	}
 
 	std::unique_ptr<::rocksdb::BackupEngine> backup_engine;
 	::rocksdb::BackupEngine * backup_engine_raw;
@@ -575,6 +584,13 @@ void backend_rocksdb::backup ()
 
 void backend_rocksdb::copy_with_compaction (std::filesystem::path const & destination_path)
 {
+	if (!transaction_db)
+	{
+		throw std::runtime_error ("RocksDB backup requires a primary database handle to include committed WAL records");
+	}
+
+	std::filesystem::create_directories (destination_path);
+
 	std::unique_ptr<::rocksdb::BackupEngine> backup_engine;
 	{
 		::rocksdb::BackupEngine * backup_engine_raw;
@@ -609,38 +625,24 @@ void backend_rocksdb::copy_with_compaction (std::filesystem::path const & destin
 		}
 	}
 
+	// First remove all files (not directories) in the destination
+	for (auto const & path : std::filesystem::directory_iterator (destination_path))
 	{
-		std::unique_ptr<::rocksdb::BackupEngineReadOnly> backup_engine_read;
+		if (std::filesystem::is_regular_file (path))
 		{
-			::rocksdb::BackupEngineReadOnly * backup_engine_read_raw;
-			status = ::rocksdb::BackupEngineReadOnly::Open (::rocksdb::Env::Default (), ::rocksdb::BackupEngineOptions (destination_path.string ()), &backup_engine_read_raw);
+			std::filesystem::remove (path);
 		}
-		if (!status.ok ())
-		{
-			throw std::runtime_error ("Failed to open backup engine for restore: " + status.ToString ());
-		}
-
-		// First remove all files (not directories) in the destination
-		for (auto const & path : std::filesystem::directory_iterator (destination_path))
-		{
-			if (std::filesystem::is_regular_file (path))
-			{
-				std::filesystem::remove (path);
-			}
-		}
-
-		// Now generate the relevant files from the backup
-		status = backup_engine->RestoreDBFromLatestBackup (destination_path.string (), destination_path.string ());
 	}
 
+	status = backup_engine->RestoreDBFromLatestBackup (destination_path.string (), destination_path.string ());
 	if (!status.ok ())
 	{
 		throw std::runtime_error ("Failed to restore database from backup: " + status.ToString ());
 	}
 
-	// Open it so that it flushes all WAL files
-	backend_rocksdb temp_backend (destination_path, config, nano::default_logger ());
-	// Opening a database causes WAL to be flushed
+	// Recover the restored WALs before the caller installs the database files.
+	backend_rocksdb restored (destination_path, config, nano::default_logger ());
+	restored.open (get_schema (), open_mode::read_only_backup);
 }
 
 std::string backend_rocksdb::get_vendor () const

@@ -44,15 +44,14 @@ void backend_lmdb::open_impl (column_schema schema, nano::store::open_mode mode)
 	release_assert (table_handles.empty ());
 
 	// Create environment with appropriate options
+	bool const read_only = mode == open_mode::read_only || mode == open_mode::read_only_backup;
 	auto options = nano::store::lmdb::env::options::make ()
 				   .set_config (config)
 				   .set_use_no_mem_init (true)
-				   .set_read_only (mode == nano::store::open_mode::read_only);
+				   .set_read_only (read_only);
 
 	// Kept local until every table opens, so a failed open leaves the backend closed and retryable
 	auto environment = std::make_unique<nano::store::lmdb::env> (database_path, options);
-
-	bool const read_only = (mode == nano::store::open_mode::read_only);
 
 	MDB_txn * mdb_txn{ nullptr };
 	auto status = mdb_txn_begin (*environment, nullptr, read_only ? MDB_RDONLY : 0, &mdb_txn);

@@ -176,6 +176,7 @@ public:
 	std::size_t vote_processor_capacity{ 144 * 1024 };
 	std::size_t bootstrap_interval{ 0 };
 	std::optional<nano::node_capabilities_flags> capabilities_override;
+	bool backup_database{ false };
 };
 
 // Returns a copy of `config` with flag overrides applied

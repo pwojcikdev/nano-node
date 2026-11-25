@@ -120,7 +120,7 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 	logger{ *logger_impl },
 	stats_impl{ std::make_unique<nano::stats> (logger, config.stats_config) },
 	stats{ *stats_impl },
-	store_impl{ nano::make_store (logger, stats, application_path_a, network_params.ledger, flags.read_only, true, config) },
+	store_impl{ nano::make_store (logger, stats, application_path_a, network_params.ledger, flags.read_only, true, config, flags.backup_database) },
 	store{ *store_impl },
 	wallets_backend_impl{ std::make_unique<nano::wallet::lmdb::wallets_backend_lmdb> (application_path_a / "wallets.ldb", config.lmdb_config) },
 	wallets_backend{ *wallets_backend_impl },

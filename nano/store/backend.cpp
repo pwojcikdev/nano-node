@@ -38,7 +38,7 @@ void backend::open (column_schema schema, nano::store::open_mode mode)
 	open_impl (schema, mode);
 
 	is_open = true;
-	current_mode = mode;
+	current_mode = mode == open_mode::read_only_backup ? open_mode::read_only : mode;
 	current_schema = schema;
 
 	load_meta ();
@@ -77,12 +77,12 @@ void backend::close ()
 	current_schema.clear ();
 }
 
-auto backend::fetch_meta () -> std::optional<backend_meta>
+auto backend::fetch_meta (open_mode mode) -> std::optional<backend_meta>
 {
 	// Attempt to open just the meta table to check if database exists
 	try
 	{
-		open (schema_meta, nano::store::open_mode::read_only);
+		open (schema_meta, mode);
 	}
 	catch (nano::error const & error)
 	{

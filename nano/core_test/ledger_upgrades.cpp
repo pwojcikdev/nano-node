@@ -28,6 +28,8 @@
 
 #include <gtest/gtest.h>
 
+#include <rocksdb/utilities/backup_engine.h>
+
 #include <filesystem>
 
 using namespace std::chrono_literals;
@@ -1129,8 +1131,8 @@ TEST (ledger_upgrades, upgrade_backup)
 
 	// Create a v21 database (requires upgrade to current)
 	{
-		auto backend = nano::test::make_backend (path);
-		backend->create (schema_v21, 21);
+		legacy_database_v21 legacy{ path };
+		legacy.add_unchecked (42, 99);
 	}
 
 	// Verify no backup exists yet
@@ -1153,4 +1155,23 @@ TEST (ledger_upgrades, upgrade_backup)
 
 	// Verify backup was created
 	ASSERT_TRUE (backup_exists ());
+
+	if (is_rocksdb)
+	{
+		auto restore_path = nano::unique_path ();
+		auto db_path = nano::database_path_for_backend (restore_path, nano::database_backend::rocksdb);
+		rocksdb::BackupEngineReadOnly * raw{ nullptr };
+		auto status = rocksdb::BackupEngineReadOnly::Open (rocksdb::BackupEngineOptions{ (path / "backup").string () }, rocksdb::Env::Default (), &raw);
+		ASSERT_TRUE (status.ok ()) << status.ToString ();
+		std::unique_ptr<rocksdb::BackupEngineReadOnly> backup{ raw };
+		status = backup->RestoreDBFromLatestBackup (db_path.string (), db_path.string ());
+		ASSERT_TRUE (status.ok ()) << status.ToString ();
+
+		auto restored = nano::test::make_backend (restore_path);
+		restored->open (schema_v21, nano::store::open_mode::read_only);
+		auto read = restored->tx_begin_read ();
+		ASSERT_EQ (21, restored->get_version (read));
+		uint64_t key{ 42 };
+		ASSERT_TRUE (restored->exists (read, nano::store::table::unchecked, { sizeof (key), &key }));
+	}
 }

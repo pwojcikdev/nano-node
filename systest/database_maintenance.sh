@@ -1,0 +1,53 @@
+#!/bin/bash
+set -eu
+
+source "$(dirname "$0")/lib/common.sh"
+datadir=$(new_datadir)
+
+node() {
+    "$NANO_NODE_EXE" --data_path "$datadir" --network dev "$@"
+}
+
+printf '[node.rocksdb]\nenable = true\n' > "$datadir/config-node.toml"
+node --initialize
+# The first RocksDB vacuum must create its nested destination even without a prior snapshot.
+node --vacuum
+node --debug_block_count | grep -q 'Block count: 1'
+node --snapshot
+test -f "$datadir/rocksdb/backup/CURRENT"
+
+snapshot_dir=$(new_datadir)
+cp "$datadir/config-node.toml" "$snapshot_dir/"
+cp -R "$datadir/rocksdb/backup" "$snapshot_dir/rocksdb"
+"$NANO_NODE_EXE" --network dev --data_path "$snapshot_dir" --debug_block_count | grep -q 'Block count: 1'
+
+node --vacuum
+test -f "$datadir/rocksdb/CURRENT"
+test -f "$datadir/rocksdb/backup/CURRENT"
+node --debug_block_count | grep -q 'Block count: 1'
+
+# Hold the primary lock with a running dev node; both maintenance commands must preserve the completed backup.
+reference_dir=$(new_datadir)
+cp -R "$datadir/rocksdb/backup" "$reference_dir/backup"
+ready="$datadir/maintenance-ready.json"
+"$NANO_NODE_EXE" --daemon --network dev --data_path "$datadir" --runtime_info_file "$ready" \
+    --config node.peering_port=0 > "$datadir/daemon.log" 2>&1 &
+daemon_pid=$!
+register_pid "$daemon_pid"
+wait_for_file "$ready" "$daemon_pid"
+for option in --snapshot --vacuum; do
+    if node "$option"; then
+        exit 1
+    fi
+    diff -r "$reference_dir/backup" "$datadir/rocksdb/backup"
+done
+interrupt_process "$daemon_pid"
+wait "$daemon_pid"
+node --debug_block_count | grep -q 'Block count: 1'
+
+missing_dir=$(new_datadir)
+cp "$datadir/config-node.toml" "$missing_dir/"
+if "$NANO_NODE_EXE" --network dev --data_path "$missing_dir" --vacuum; then
+    exit 1
+fi
+test ! -e "$missing_dir/rocksdb"

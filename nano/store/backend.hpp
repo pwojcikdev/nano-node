@@ -86,7 +86,7 @@ public:
 	backend (nano::logger &, nano::store::txn_tracking_config const &);
 	virtual ~backend ();
 
-	std::optional<backend_meta> fetch_meta ();
+	std::optional<backend_meta> fetch_meta (open_mode mode = open_mode::read_only);
 
 	void open (column_schema, nano::store::open_mode mode);
 	void create (column_schema, nano::store::backend_version_t version);

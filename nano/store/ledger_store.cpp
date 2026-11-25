@@ -103,7 +103,8 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	bool fresh_db = false;
 	backend_meta db_meta{};
 
-	if (auto meta_opt = backend.fetch_meta ())
+	bool const for_backup = mode == open_mode::read_only_backup;
+	if (auto meta_opt = backend.fetch_meta (for_backup ? mode : open_mode::read_only))
 	{
 		db_meta = *meta_opt;
 
@@ -143,7 +144,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 
 	if (needs_upgrade || fresh_db)
 	{
-		if (mode == nano::store::open_mode::read_only)
+		if (mode == nano::store::open_mode::read_only || for_backup)
 		{
 			throw std::runtime_error ("Database requires upgrade but was opened in read-only mode");
 		}
@@ -155,7 +156,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 		{
 			logger.info (nano::log::type::ledger_store, "Creating ledger backup before upgrade...");
 
-			backend.open (backend::schema_meta, nano::store::open_mode::read_only);
+			backend.open (backend::schema_meta, open_mode::read_only_backup);
 			backend.backup ();
 			backend.close ();
 
