@@ -3,11 +3,13 @@
 #include <nano/lib/files.hpp>
 #include <nano/node/cli.hpp>
 #include <nano/node/inactive_node.hpp>
+#include <nano/node/make_store.hpp>
 #include <nano/node/node.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/wallet.hpp>
 #include <nano/store/ledger/confirmation_height.hpp>
 #include <nano/store/ledger/extended/account_delegator_by_weight.hpp>
+#include <nano/store/ledger/final_vote.hpp>
 #include <nano/store/ledger/topology.hpp>
 #include <nano/test_common/ledger_context.hpp>
 #include <nano/test_common/testutil.hpp>
@@ -307,6 +309,87 @@ TEST (cli, confirmation_height_clear_genesis)
 	ASSERT_EQ (1, info->height);
 	ASSERT_EQ (nano::dev::genesis->hash (), info->frontier);
 	ASSERT_FALSE (node.node->block_confirmed (previous_frontier));
+}
+
+TEST (cli, compact_copy_respects_clear_selectors)
+{
+	nano::logger logger;
+	nano::stats stats{ logger };
+	nano::node_config config;
+	for (std::string const command : { "snapshot", "vacuum" })
+	{
+		SCOPED_TRACE (command);
+		std::filesystem::path ledger_path;
+		std::shared_ptr<nano::block> selected;
+		std::shared_ptr<nano::block> retained;
+		{
+			auto context = nano::test::ledger_diamond (1);
+			auto & store = context.store ();
+			ledger_path = store.get_database_path ();
+			selected = context.blocks ().back ();
+			retained = context.blocks ().front ();
+			nano::test::confirm (context.ledger (), selected->hash ());
+			auto txn = store.tx_begin_write ();
+			ASSERT_EQ (2, store.confirmation_height.get (txn, selected->account ()).value ().height);
+			ASSERT_EQ (3, store.confirmation_height.get (txn, retained->account ()).value ().height);
+			ASSERT_TRUE (store.final_vote.put (txn, selected->qualified_root (), selected->hash ()));
+			ASSERT_TRUE (store.final_vote.put (txn, retained->qualified_root (), retained->hash ()));
+		}
+		auto data_path = ledger_path.parent_path ();
+		auto result = run_cli_command (cli_options ({ { command, "" }, { "data_path", data_path.string () },
+		{ "confirmation_height_clear", "" }, { "account", selected->account ().to_account () },
+		{ "final_vote_clear", "" }, { "root", selected->qualified_root ().to_string () } }));
+		ASSERT_FALSE (result.error);
+		std::vector<std::filesystem::path> paths{ ledger_path };
+		if (command == "snapshot")
+		{
+			paths.push_back (config.get_database_backend () == nano::database_backend::rocksdb ? ledger_path / "backup" : data_path / "snapshot.ldb");
+		}
+		for (auto const & path : paths)
+		{
+			SCOPED_TRACE (path);
+			auto store = nano::make_store (logger, stats, path, nano::dev::constants, true, false, config);
+			auto txn = store->tx_begin_read ();
+			EXPECT_EQ (3, store->confirmation_height.get (txn, retained->account ()).value ().height);
+			EXPECT_EQ (retained->hash (), store->final_vote.get (txn, retained->qualified_root ()));
+			if (command == "vacuum" || path != ledger_path)
+			{
+				EXPECT_FALSE (store->confirmation_height.get (txn, selected->account ()));
+				EXPECT_FALSE (store->final_vote.get (txn, selected->qualified_root ()));
+			}
+		}
+	}
+}
+
+TEST (cli, compact_copy_rejects_missing_clear_targets)
+{
+	std::filesystem::path ledger_path;
+	std::shared_ptr<nano::block> block;
+	{
+		auto context = nano::test::ledger_send_receive ();
+		auto & store = context.store ();
+		ledger_path = store.get_database_path ();
+		block = context.blocks ().back ();
+		nano::test::confirm (context.ledger (), block->hash ());
+		ASSERT_TRUE (store.final_vote.put (store.tx_begin_write (), block->qualified_root (), block->hash ()));
+	}
+	auto data_path = ledger_path.parent_path ();
+	auto snapshot = [&] (nano::account const & account, nano::qualified_root const & root) {
+		return run_cli_command (cli_options ({ { "snapshot", "" }, { "data_path", data_path.string () },
+		{ "confirmation_height_clear", "" }, { "account", account.to_account () }, { "final_vote_clear", "" }, { "root", root.to_string () } }));
+	};
+	auto const missing_account = nano::keypair{}.pub;
+	EXPECT_TRUE (snapshot (missing_account, block->qualified_root ()).error);
+	EXPECT_TRUE (snapshot (block->account (), nano::qualified_root{}).error);
+
+	nano::node_config config;
+	EXPECT_FALSE (std::filesystem::exists (config.get_database_backend () == nano::database_backend::rocksdb ? ledger_path / "backup" : data_path / "snapshot.ldb"));
+	nano::logger logger;
+	nano::stats stats{ logger };
+	auto store = nano::make_store (logger, stats, ledger_path, nano::dev::constants, true, false, config);
+	auto txn = store->tx_begin_read ();
+	EXPECT_EQ (block->hash (), store->confirmation_height.get (txn, block->account ()).value ().frontier);
+	EXPECT_EQ (block->hash (), store->final_vote.get (txn, block->qualified_root ()));
 }
 
 /*

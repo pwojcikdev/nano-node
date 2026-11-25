@@ -36,7 +36,6 @@
 
 namespace
 {
-void reset_confirmation_heights (nano::ledger_constants & constants, nano::store::ledger_store & store);
 bool is_using_rocksdb (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::error_code & ec);
 }
 
@@ -254,7 +253,72 @@ void database_write_lock_error (std::error_code & ec)
 	ec = nano::error_cli::database_write_error;
 }
 
-void copy_database (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::filesystem::path const & output_path)
+std::error_code clear_confirmation_heights (nano::node & node, std::string const & account_str)
+{
+	auto & store = node.store;
+	auto const & genesis = node.network_params.ledger.genesis;
+	if (account_str == "all")
+	{
+		store.confirmation_height.clear ();
+		store.confirmation_height.put (store.tx_begin_write (), genesis->account (), { 1, genesis->hash () });
+		std::cout << "Confirmation heights of all accounts (except genesis which is set to 1) are set to 0" << std::endl;
+		return {};
+	}
+
+	nano::account account;
+	if (account.decode_account (account_str))
+	{
+		std::cerr << "Specify either valid account id or 'all'\n";
+		return nano::error_cli::invalid_arguments;
+	}
+	auto txn = store.tx_begin_write ();
+	if (!store.confirmation_height.get (txn, account))
+	{
+		std::cerr << "Could not find account" << std::endl;
+		return nano::error_cli::generic;
+	}
+	uint64_t reset_height{ 0 };
+	if (account == genesis->account ())
+	{
+		reset_height = 1;
+		store.confirmation_height.put (txn, account, { reset_height, genesis->hash () });
+	}
+	else
+	{
+		store.confirmation_height.del (txn, account);
+	}
+	std::cout << "Confirmation height of account " << account_str << " is set to " << reset_height << std::endl;
+	return {};
+}
+
+std::error_code read_final_vote_root (boost::program_options::variables_map const & vm, std::optional<nano::qualified_root> & root)
+{
+	if (auto it = vm.find ("root"); it != vm.end ())
+	{
+		if (root.emplace ().decode_hex (it->second.as<std::string> ()))
+		{
+			std::cerr << "Invalid root" << std::endl;
+			return nano::error_cli::invalid_arguments;
+		}
+	}
+	return {};
+}
+
+void clear_final_votes (nano::store::ledger_store & store, std::optional<nano::qualified_root> const & root)
+{
+	if (root)
+	{
+		store.final_vote.del (store.tx_begin_write (), *root);
+		std::cout << "Successfully cleared final votes" << std::endl;
+	}
+	else
+	{
+		store.final_vote.clear ();
+		std::cout << "All final votes are cleared" << std::endl;
+	}
+}
+
+std::error_code copy_database (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::filesystem::path const & output_path)
 {
 	bool needs_to_write = vm.count ("unchecked_clear") || vm.count ("clear_send_ids") || vm.count ("online_weight_clear") || vm.count ("peer_clear") || vm.count ("confirmation_height_clear") || vm.count ("final_vote_clear");
 
@@ -265,7 +329,31 @@ void copy_database (std::filesystem::path const & data_path, boost::program_opti
 
 	nano::inactive_node node (data_path, node_flags);
 
-	auto & store (node.node->store);
+	std::optional<nano::qualified_root> root;
+	if (vm.count ("final_vote_clear"))
+	{
+		if (auto ec = read_final_vote_root (vm, root))
+		{
+			return ec;
+		}
+		auto & store = node.node->store;
+		if (root && !store.final_vote.get (store.tx_begin_read (), *root))
+		{
+			std::cerr << "Could not find final vote for root" << std::endl;
+			return nano::error_cli::generic;
+		}
+	}
+	if (vm.count ("confirmation_height_clear"))
+	{
+		if (auto ec = clear_confirmation_heights (*node.node, vm.count ("account") ? vm["account"].as<std::string> () : "all"))
+		{
+			return ec;
+		}
+	}
+	if (vm.count ("final_vote_clear"))
+	{
+		clear_final_votes (node.node->store, root);
+	}
 	if (vm.count ("unchecked_clear"))
 	{
 		node.node->unchecked.clear ();
@@ -282,16 +370,8 @@ void copy_database (std::filesystem::path const & data_path, boost::program_opti
 	{
 		node.node->store.peer.clear ();
 	}
-	if (vm.count ("confirmation_height_clear"))
-	{
-		reset_confirmation_heights (node.node->network_params.ledger, store);
-	}
-	if (vm.count ("final_vote_clear"))
-	{
-		node.node->store.final_vote.clear ();
-	}
-
 	node.node->copy_with_compaction (output_path);
+	return {};
 }
 }
 
@@ -423,7 +503,10 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 				}
 				std::cout << "This may take a while..." << std::endl;
 
-				copy_database (data_path, vm, vacuum_path);
+				if (auto error = copy_database (data_path, vm, vacuum_path))
+				{
+					return error;
+				}
 
 				// Note that these throw on failure
 				std::cout << "Finalizing" << std::endl;
@@ -486,7 +569,10 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 				std::cout << "Database snapshot of " << source_path << " to " << snapshot_path << " in progress" << std::endl;
 				std::cout << "This may take a while..." << std::endl;
 
-				copy_database (data_path, vm, snapshot_path);
+				if (auto error = copy_database (data_path, vm, snapshot_path))
+				{
+					return error;
+				}
 				std::cout << "Snapshot completed, This can be found at " << snapshot_path << std::endl;
 			}
 			else
@@ -958,42 +1044,7 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 			nano::inactive_node node (data_path, node_flags);
 			if (vm.count ("account") == 1)
 			{
-				auto account_str = vm["account"].as<std::string> ();
-				nano::account account;
-				if (!account.decode_account (account_str))
-				{
-					auto transaction = node.node->store.tx_begin_write ();
-					if (node.node->store.confirmation_height.get (transaction, account))
-					{
-						uint64_t reset_height{ 0 };
-						if (account == node.node->network_params.ledger.genesis->account ())
-						{
-							reset_height = 1;
-							node.node->store.confirmation_height.put (transaction, account, { reset_height, node.node->network_params.ledger.genesis->hash () });
-						}
-						else
-						{
-							node.node->store.confirmation_height.del (transaction, account);
-						}
-
-						std::cout << "Confirmation height of account " << account_str << " is set to " << reset_height << std::endl;
-					}
-					else
-					{
-						std::cerr << "Could not find account" << std::endl;
-						ec = nano::error_cli::generic;
-					}
-				}
-				else if (account_str == "all")
-				{
-					reset_confirmation_heights (node.node->network_params.ledger, node.node->store);
-					std::cout << "Confirmation heights of all accounts (except genesis which is set to 1) are set to 0" << std::endl;
-				}
-				else
-				{
-					std::cerr << "Specify either valid account id or 'all'\n";
-					ec = nano::error_cli::invalid_arguments;
-				}
+				ec = clear_confirmation_heights (*node.node, vm["account"].as<std::string> ());
 			}
 			else
 			{
@@ -1015,26 +1066,14 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 		try
 		{
 			nano::inactive_node node (data_path, node_flags);
-			if (auto root_it = vm.find ("root"); root_it != vm.cend ())
+			if (vm.count ("root") || vm.count ("all"))
 			{
-				auto root_str = root_it->second.as<std::string> ();
-				auto transaction (node.node->store.tx_begin_write ());
-				nano::qualified_root root;
-				if (!root.decode_hex (root_str))
+				std::optional<nano::qualified_root> root;
+				ec = read_final_vote_root (vm, root);
+				if (!ec)
 				{
-					node.node->store.final_vote.del (transaction, root);
-					std::cout << "Successfully cleared final votes" << std::endl;
+					clear_final_votes (node.node->store, root);
 				}
-				else
-				{
-					std::cerr << "Invalid root" << std::endl;
-					ec = nano::error_cli::invalid_arguments;
-				}
-			}
-			else if (vm.count ("all"))
-			{
-				node.node->store.final_vote.clear ();
-				std::cout << "All final votes are cleared" << std::endl;
 			}
 			else
 			{
@@ -1741,16 +1780,6 @@ std::unique_ptr<nano::inactive_node> nano::default_inactive_node (std::filesyste
 
 namespace
 {
-void reset_confirmation_heights (nano::ledger_constants & constants, nano::store::ledger_store & store)
-{
-	// First do a clean sweep
-	store.confirmation_height.clear ();
-
-	// Then make sure the confirmation height of the genesis account open block is 1
-	auto transaction = store.tx_begin_write ();
-	store.confirmation_height.put (transaction, constants.genesis->account (), { 1, constants.genesis->hash () });
-}
-
 bool is_using_rocksdb (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::error_code & ec)
 {
 	nano::network_params network_params{ nano::get_active_network () };
