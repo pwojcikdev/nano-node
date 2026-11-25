@@ -1153,10 +1153,14 @@ TEST (toml_config, daemon_config_template_update)
 	[node.bootstrap]
 	 block_processor_threshold = 33333
 	 old_entry = 34
+	[node.rocksdb]
+	 enable = true
 	)toml";
 
 	nano::tomlconfig file_toml;
 	file_toml.read (ss);
+	// A legacy configuration selects RocksDB even when LMDB is the default.
+	current_config.node.database_backend = nano::database_backend::lmdb;
 	ASSERT_FALSE (current_config.deserialize_toml (file_toml));
 
 	nano::tomlconfig current_toml;
@@ -1175,4 +1179,6 @@ TEST (toml_config, daemon_config_template_update)
 	ASSERT_EQ (merged_config.node.active_elections->size, 999);
 	ASSERT_EQ (merged_config.node.background_threads, default_config.node.background_threads);
 	ASSERT_EQ (merged_config.node.bootstrap->block_processor_threshold, 33333);
+	ASSERT_EQ (merged_config.node.database_backend, nano::database_backend::rocksdb);
+	ASSERT_FALSE (merged_config.node.rocksdb_config->enable);
 }

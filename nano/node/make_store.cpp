@@ -20,16 +20,11 @@ std::filesystem::path nano::database_path_for_backend (std::filesystem::path con
 
 std::unique_ptr<nano::store::backend> nano::make_backend (nano::logger & logger, std::filesystem::path const & path, bool add_db_postfix, nano::node_config const & node_config)
 {
-	auto decide_backend = [&] () -> nano::database_backend {
-		if (node_config.rocksdb_config->enable && node_config.database_backend == nano::database_backend::lmdb)
-		{
-			logger.warn (nano::log::type::config, "Use of deprecated `[node.rocksdb].enable` setting detected in config file, defaulting to RocksDB backend.\nPlease edit config-node.toml and use the new '[node].database_backend' for future compatibility.");
-			return nano::database_backend::rocksdb;
-		}
-		return node_config.database_backend;
-	};
-
-	auto backend_type = decide_backend ();
+	auto const backend_type = node_config.get_database_backend ();
+	if (backend_type != node_config.database_backend)
+	{
+		logger.warn (nano::log::type::config, "Use of deprecated `[node.rocksdb].enable` setting detected in config file, defaulting to RocksDB backend.\nPlease edit config-node.toml and use the new '[node].database_backend' for future compatibility.");
+	}
 	std::unique_ptr<nano::store::backend> backend;
 
 	switch (backend_type)

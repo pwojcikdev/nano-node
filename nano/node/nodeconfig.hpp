@@ -33,6 +33,7 @@ public:
 	nano::error deserialize_toml (nano::tomlconfig &);
 
 	nano::account random_representative () const;
+	nano::database_backend get_database_backend () const;
 
 public:
 	nano::network_params network_params;
