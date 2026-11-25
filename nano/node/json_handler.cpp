@@ -2189,8 +2189,8 @@ void nano::json_handler::confirmation_history ()
 				election.put ("voters", std::to_string (status.voter_count));
 				election.put ("request_count", std::to_string (status.confirmation_request_count));
 				elections.push_back (std::make_pair ("", election));
+				running_total += status.election_duration;
 			}
-			running_total += status.election_duration;
 		}
 	}
 	confirmation_stats.put ("count", elections.size ());

@@ -6328,11 +6328,12 @@ TEST (rpc, confirmation_history_hash)
 	auto response (wait_response (system, rpc_ctx, request));
 	auto representatives (response.get_child ("confirmations"));
 	ASSERT_EQ (representatives.size (), 1);
+	ASSERT_EQ (1, response.get<unsigned> ("confirmation_stats.count"));
 	auto item (representatives.begin ());
 	ASSERT_NE (representatives.end (), item);
 	auto hash (item->second.get<std::string> ("hash"));
 	auto tally (item->second.get<std::string> ("tally"));
-	ASSERT_FALSE (item->second.get<std::string> ("duration", "").empty ());
+	ASSERT_EQ (item->second.get<uint64_t> ("duration"), response.get<uint64_t> ("confirmation_stats.average"));
 	ASSERT_FALSE (item->second.get<std::string> ("time", "").empty ());
 	ASSERT_EQ (send2->hash ().to_string (), hash);
 	nano::amount tally_num;
