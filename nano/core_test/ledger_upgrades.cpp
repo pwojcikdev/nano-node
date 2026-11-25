@@ -14,6 +14,7 @@
 #include <nano/store/db_val_templ.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
+#include <nano/store/ledger/peer.hpp>
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
@@ -649,6 +650,34 @@ public:
 	std::filesystem::path path;
 	std::unique_ptr<nano::store::backend> backend;
 };
+}
+
+TEST (ledger_upgrades, cached_peers_without_timestamps)
+{
+	auto const path = nano::unique_path ();
+	auto const address = boost::asio::ip::address_v6::loopback ().to_bytes ();
+	nano::endpoint_key const legacy{ address, 7000 };
+	nano::endpoint_key const timestamped{ address, 7001 };
+	{
+		legacy_database_v24 old{ path };
+		auto txn = old.backend->tx_begin_write ();
+		// Older v24 nodes persisted just the endpoint. Later v24 nodes also recorded the timestamp.
+		old.backend->release_assert_success (old.backend->put (txn, nano::store::table::peers, legacy, nullptr));
+		nano::store::ledger::peer_view{ *old.backend }.put (txn, timestamped, 1234);
+	}
+
+	auto store = nano::test::make_store (path);
+	auto txn = store->tx_begin_read ();
+	ASSERT_EQ (0, store->peer.get (txn, legacy));
+	auto it = store->peer.begin (txn);
+	ASSERT_NE (it, store->peer.end (txn));
+	EXPECT_EQ (legacy.endpoint (), it->first.endpoint ());
+	EXPECT_EQ (0, it->second);
+	++it;
+	ASSERT_NE (it, store->peer.end (txn));
+	EXPECT_EQ (timestamped.endpoint (), it->first.endpoint ());
+	EXPECT_EQ (1234, it->second);
+	EXPECT_EQ (++it, store->peer.end (txn));
 }
 
 /*

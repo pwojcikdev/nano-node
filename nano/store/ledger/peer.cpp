@@ -1,5 +1,31 @@
 #include <nano/store/ledger/peer.hpp>
 
+namespace
+{
+nano::millis_t peer_timestamp (nano::store::db_val const & value)
+{
+	// Older ledgers store only the endpoint, without a last-seen timestamp.
+	return value.size () == 0 ? 0 : static_cast<nano::millis_t> (value);
+}
+}
+
+namespace nano::store
+{
+template <>
+void typed_iterator<nano::endpoint_key, nano::millis_t>::update ()
+{
+	if (iter.is_end ())
+	{
+		current = std::monostate{};
+	}
+	else
+	{
+		auto const & [key, value] = *iter;
+		current = std::make_pair (static_cast<nano::endpoint_key> (db_val{ key }), peer_timestamp (db_val{ value }));
+	}
+}
+}
+
 namespace nano::store::ledger
 {
 peer_view::peer_view (nano::store::backend & backend_a) :
@@ -19,9 +45,9 @@ nano::millis_t peer_view::get (nano::store::transaction const & txn, nano::endpo
 	nano::store::db_val value;
 	auto status = backend.get (txn, nano::store::table::peers, endpoint, value);
 	release_assert (backend.success (status) || backend.not_found (status), backend.error_string (status));
-	if (backend.success (status) && value.size () > 0)
+	if (backend.success (status))
 	{
-		result = static_cast<nano::millis_t> (value);
+		result = peer_timestamp (value);
 	}
 	return result;
 }

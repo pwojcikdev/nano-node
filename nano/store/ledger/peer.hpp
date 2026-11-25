@@ -6,6 +6,12 @@
 #include <nano/store/typed_iterator.hpp>
 #include <nano/store/typed_iterator_templ.hpp>
 
+namespace nano::store
+{
+template <>
+void typed_iterator<nano::endpoint_key, nano::millis_t>::update ();
+}
+
 namespace nano::store::ledger
 {
 class peer_view
