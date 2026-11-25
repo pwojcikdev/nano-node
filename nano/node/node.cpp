@@ -982,7 +982,7 @@ nano::messages::telemetry_data nano::node::local_telemetry () const
 	telemetry_data.confirmation_latency_ms_p90 = conf_latency.p90;
 	telemetry_data.confirmation_latency_ms_p99 = conf_latency.p99;
 	auto bs = bootstrap.status ();
-	telemetry_data.bootstrap_status = bs.priorities == 0
+	telemetry_data.bootstrap_status = bs.priorities == 0 && bs.blocking == 0
 	? nano::messages::telemetry_bootstrap_status::synced
 	: nano::messages::telemetry_bootstrap_status::syncing;
 	// Make sure this is the final operation!

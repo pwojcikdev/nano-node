@@ -2,6 +2,8 @@
 #include <nano/lib/rocksdbconfig.hpp>
 #include <nano/lib/stream.hpp>
 #include <nano/messages/telemetry.hpp>
+#include <nano/node/block_processor.hpp>
+#include <nano/node/bootstrap/bootstrap_service.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/telemetry.hpp>
@@ -458,6 +460,34 @@ TEST (telemetry, legacy_rocksdb_backend)
 	auto & node = *system.add_node (config);
 
 	ASSERT_EQ (nano::messages::telemetry_database_backend::rocksdb, node.local_telemetry ().database_backend);
+}
+
+TEST (telemetry, bootstrap_waiting_for_send)
+{
+	nano::test::system system;
+	auto & node = *system.add_node ();
+	auto const & genesis = nano::dev::genesis_key;
+	auto const previous = nano::dev::genesis->hash ();
+	nano::keypair destination;
+	auto send = std::make_shared<nano::state_block> (genesis.pub, previous, genesis.pub, nano::dev::constants.genesis_amount - 1, destination.pub, genesis.prv, genesis.pub, *system.work.generate (previous));
+	auto open = std::make_shared<nano::state_block> (destination.pub, 0, destination.pub, 1, send->hash (), destination.prv, destination.pub, *system.work.generate (destination.pub));
+
+	node.bootstrap.reset ();
+	ASSERT_EQ (nano::messages::telemetry_bootstrap_status::synced, node.local_telemetry ().bootstrap_status);
+
+	// The open reaches bootstrap first. The only prioritized account now waits for its send.
+	node.bootstrap.prioritize (destination.pub);
+	node.block_processor.add (open, nano::block_source::bootstrap);
+	ASSERT_TIMELY (5s, node.bootstrap.blocked (destination.pub));
+	ASSERT_EQ (0, node.bootstrap.priority_size ());
+	EXPECT_EQ (nano::messages::telemetry_bootstrap_status::syncing, node.local_telemetry ().bootstrap_status);
+
+	// The send lets the ledger process the open and bootstrap resume checking the destination.
+	node.block_processor.add (send, nano::block_source::bootstrap);
+	ASSERT_TIMELY (5s, node.block (open->hash ()) != nullptr);
+	ASSERT_TIMELY (5s, node.bootstrap.prioritized (destination.pub));
+	ASSERT_FALSE (node.bootstrap.blocked (destination.pub));
+	ASSERT_EQ (nano::messages::telemetry_bootstrap_status::syncing, node.local_telemetry ().bootstrap_status);
 }
 
 TEST (telemetry, invalid_signature)
