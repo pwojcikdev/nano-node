@@ -1004,7 +1004,7 @@ nano::websocket::message nano::websocket::message_builder::new_block_arrived (na
 
 	boost::property_tree::ptree block_l;
 	block_a.serialize_json (block_l);
-	auto subtype (nano::state_subtype (block_a.sideband ().details));
+	auto const subtype = block_a.type () == nano::block_type::state ? nano::state_subtype (block_a.sideband ().details) : std::string{ nano::to_string (block_a.type ()) };
 	block_l.put ("subtype", subtype);
 
 	message_l.contents.put ("hash", block_a.hash ().to_string ());

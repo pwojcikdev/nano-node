@@ -1229,6 +1229,31 @@ TEST (websocket, new_unconfirmed_block)
 	ASSERT_EQ ("send", message_contents.get<std::string> ("subtype"));
 }
 
+TEST (websocket, new_unconfirmed_legacy_send_subtype)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.websocket_config->enabled = true;
+	config.websocket_config->port = 0;
+	auto node = system.add_node (config);
+	fake_websocket_client client (node->websocket.server->listening_port ());
+	client.send_message (R"({"action":"subscribe","topic":"new_unconfirmed_block","ack":true})");
+	client.await_ack ();
+
+	auto const & genesis = nano::dev::genesis_key;
+	auto previous = nano::dev::genesis->hash ();
+	auto send = std::make_shared<nano::send_block> (previous, genesis.pub, nano::dev::constants.genesis_amount - 1, genesis.prv, genesis.pub, *system.work.generate (previous));
+	ASSERT_EQ (nano::block_status::progress, node->process_local (send).value ());
+	auto response = client.get_response ();
+	ASSERT_TRUE (response);
+	std::stringstream stream{ *response };
+	boost::property_tree::ptree event;
+	boost::property_tree::read_json (stream, event);
+	ASSERT_EQ (send->hash ().to_string (), event.get<std::string> ("hash"));
+	ASSERT_EQ ("send", event.get<std::string> ("message.type"));
+	ASSERT_EQ ("send", event.get<std::string> ("message.subtype"));
+}
+
 // Test verifying that multiple subscribers with different options receive messages with their correct
 // individual settings applied (specifically targeting the bug that was fixed)
 TEST (websocket, confirmation_options_independent)
