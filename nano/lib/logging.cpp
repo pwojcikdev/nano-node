@@ -1,3 +1,4 @@
+#include <nano/boost/process/process.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/config_file.hpp>
 #include <nano/lib/enum_util.hpp>
@@ -173,7 +174,8 @@ void nano::logger::initialize_common (nano::log_config const & config, std::opti
 		auto now = std::chrono::system_clock::now ();
 		auto time = std::chrono::system_clock::to_time_t (now);
 
-		auto filename = fmt::format ("log_{:%Y-%m-%d_%H-%M}-{:%S}", fmt::localtime (time), now.time_since_epoch ());
+		// The node and its RPC child can start in the same clock tick and share this directory.
+		auto filename = fmt::format ("log_{:%Y-%m-%d_%H-%M}-{:%S}_{}", fmt::localtime (time), now.time_since_epoch (), boost::this_process::get_id ());
 		std::replace (filename.begin (), filename.end (), '.', '_'); // Replace millisecond dot separator with underscore
 
 		std::filesystem::path log_path{ data_path.value () / "log" / (filename + ".log") };

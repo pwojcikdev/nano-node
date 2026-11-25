@@ -25,14 +25,14 @@ namespace
 {
 int run (std::filesystem::path const & data_path, std::vector<std::string> const & config_overrides)
 {
-	nano::logger logger{ "rpc_daemon" };
-
-	logger.info (nano::log::type::daemon_rpc, "Daemon started (RPC)");
-
 	std::filesystem::create_directories (data_path);
 
 	boost::system::error_code error_chmod;
 	nano::set_secure_perm_directory (data_path, error_chmod);
+
+	nano::logger::initialize (nano::log_config::daemon_default (), data_path);
+	nano::logger logger{ "rpc_daemon" };
+	logger.info (nano::log::type::daemon_rpc, "Daemon started (RPC)");
 
 	nano::network_params network_params{ nano::get_active_network () };
 	nano::rpc_config rpc_config{ network_params.network };

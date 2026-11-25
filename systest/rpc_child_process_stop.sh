@@ -13,6 +13,13 @@ RUNTIME_INFO="$DATADIR/runtime_info.json"
 RPC_PORT=$((20000 + RANDOM % 20000))
 IPC_PORT=$((40000 + RANDOM % 20000))
 
+cat > "$DATADIR/config-log.toml" <<'TOML'
+[log]
+flush_level = "debug"
+[log.levels]
+rpc_request = "debug"
+TOML
+
 request() {
     curl --noproxy '*' -gfs --max-time 2 -d "{\"action\":\"$1\"}" "http://[::1]:$RPC_PORT"
 }
@@ -62,3 +69,9 @@ TOML
     wait "$NODE_PID"
     [ ! -e "$RUNTIME_INFO" ]
 done
+
+# The separate RPC process uses the same logging configuration as the node.
+if ! grep -q '\[rpc_request\] \[debug\] Request .*version' "$DATADIR"/log/log_*.log; then
+    echo "FAIL: the RPC child did not log the version request at the configured level"
+    exit 1
+fi
