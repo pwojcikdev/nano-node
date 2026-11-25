@@ -295,42 +295,24 @@ TEST (socket, DISABLED_concurrent_writes)
 	}
 }
 
-/**
- * Check that the socket correctly handles a tcp_io_timeout during tcp connect
- * Steps:
- *   set timeout to one second
- *   do a tcp connect that will block for at least a few seconds at the tcp level
- *   check that the connect returns error and that the correct counters have been incremented
- *
- *   NOTE: it is possible that the O/S has tried to access the IP address 10.255.254.253 before
- *   and has it marked in the routing table as unroutable. In that case this test case will fail.
- *   If this test is run repeatedly the tests fails for this reason because the connection fails
- *   with "No route to host" error instead of a timeout.
+/*
+ * A socket that is not connected by the connect timeout is closed and counted as a connect timeout.
+ * The timeout runs from the socket's creation, so a socket that never starts connecting shows it without depending on any network
  */
 TEST (socket_timeout, connect)
 {
-	// create one node and set timeout to 1 second
-	nano::test::system system (1);
-	std::shared_ptr<nano::node> node = system.nodes[0];
-	node->config.tcp->io_timeout = 1s;
+	nano::test::system system;
+	nano::node_config config = system.default_config ();
+	config.tcp->connect_timeout = 1s;
+	auto & node = *system.add_node (config);
 
-	// try to connect to an IP address that most likely does not exist and will not reply
-	// we want the tcp stack to not receive a negative reply, we want it to see silence and to keep trying
-	// I use the un-routable IP address 10.255.254.253, which is likely to not exist
-	boost::asio::ip::tcp::endpoint endpoint (boost::asio::ip::make_address_v6 ("::ffff:10.255.254.253"), 1234);
+	// A client socket that never connects
+	auto const socket = std::make_shared<nano::transport::tcp_socket> (node);
 
-	// create a client socket and try to connect to the IP address that will not respond
-	auto socket = std::make_shared<nano::transport::tcp_socket> (*node);
-	std::atomic<bool> done = false;
-	boost::system::error_code ec;
-	socket->async_connect (endpoint, [&ec, &done] (boost::system::error_code const & ec_a) {
-		ec = ec_a;
-		done = true;
-	});
-
-	// Sometimes the connect will be aborted but there will be no error, just check that the callback was called due to the timeout
-	ASSERT_TIMELY_EQ (6s, done, true);
+	// The checkup closes it once the connect timeout has passed
+	ASSERT_TIMELY (5s, !socket->alive ());
 	ASSERT_TRUE (socket->has_timed_out ());
+	ASSERT_EQ (1, node.stats.count (nano::stat::type::tcp_socket_timeout, nano::stat::detail::timeout_connect));
 }
 
 TEST (socket_timeout, read)
