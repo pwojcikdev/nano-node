@@ -27,11 +27,14 @@ void atexit_handler ()
 void nano::runtime_files::create (std::filesystem::path const & path, std::string const & contents)
 {
 	// Create parent directories
-	std::error_code ec;
-	std::filesystem::create_directories (path.parent_path (), ec);
-	if (ec)
+	if (auto parent = path.parent_path (); !parent.empty ())
 	{
-		throw std::runtime_error ("Unable to create runtime file directory: " + ec.message ());
+		std::error_code ec;
+		std::filesystem::create_directories (parent, ec);
+		if (ec)
+		{
+			throw std::runtime_error ("Unable to create runtime file directory: " + ec.message ());
+		}
 	}
 
 	// Write file

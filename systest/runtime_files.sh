@@ -7,17 +7,20 @@ set -eux
 source "$(dirname "$0")/lib/common.sh"
 
 DATADIR=$(new_datadir)
-PID_FILE="$DATADIR/node.pid"
-RUNTIME_INFO="$DATADIR/runtime_info.json"
+RUNDIR=$(new_datadir)
+PID_FILE="$RUNDIR/nano_node.pid"
+RUNTIME_INFO="$RUNDIR/runtime_info.json"
+NANO_NODE_EXE="$(cd "$(dirname "$NANO_NODE_EXE")" && pwd)/$(basename "$NANO_NODE_EXE")"
 
-# Start the node with both --pid_file and --runtime_info_file using ephemeral ports
-$NANO_NODE_EXE --daemon --network dev --data_path "$DATADIR" \
-    --enable_rpc \
-    --pid_file "$PID_FILE" \
-    --runtime_info_file "$RUNTIME_INFO" \
-    --config node.peering_port=0 \
-    --rpcconfig port=0 \
-    --rpcconfig enable_control=true &
+# Omitting both paths must create the default filenames in the working directory.
+(
+    cd "$RUNDIR"
+    exec "$NANO_NODE_EXE" --daemon --network dev --data_path "$DATADIR" \
+        --enable_rpc --pid_file --runtime_info_file \
+        --config node.peering_port=0 \
+        --rpcconfig port=0 \
+        --rpcconfig enable_control=true
+) &
 NODE_PID=$!
 register_pid $NODE_PID
 
