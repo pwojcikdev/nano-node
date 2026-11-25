@@ -135,6 +135,9 @@ public:
 				bool const rpc_enabled = config.rpc_enable || flags.enable_rpc;
 				if (rpc_enabled)
 				{
+					auto stop_wallet = [&application] {
+						QMetaObject::invokeMethod (&application, "quit", Qt::QueuedConnection);
+					};
 					if (!config.rpc.child_process.enable)
 					{
 						// Launch rpc in-process
@@ -151,7 +154,7 @@ public:
 						logger.debug (nano::log::type::daemon, "Starting in-process RPC server on port {}", rpc_config.port);
 
 						rpc = std::make_unique<nano::rpc_host> (rpc_config);
-						rpc->start (std::make_unique<nano::inprocess_rpc_handler> (*node, ipc, config.rpc));
+						rpc->start (std::make_unique<nano::inprocess_rpc_handler> (*node, ipc, config.rpc, stop_wallet));
 					}
 					else
 					{
@@ -159,9 +162,7 @@ public:
 
 						logger.debug (nano::log::type::daemon, "Spawning RPC process with command: {}", config.rpc.child_process.rpc_path);
 
-						rpc_process = std::make_unique<nano::rpc_process> (config.rpc, data_path, node->network_params.network.get_current_network_as_string (), logger, flags.rpc_config_overrides, node->io_ctx, [&application] {
-							QMetaObject::invokeMethod (&application, "quit", Qt::QueuedConnection);
-						});
+						rpc_process = std::make_unique<nano::rpc_process> (config.rpc, data_path, node->network_params.network.get_current_network_as_string (), logger, flags.rpc_config_overrides, node->io_ctx, stop_wallet);
 					}
 				}
 				QObject::connect (&application, &QApplication::aboutToQuit, [&] () {
