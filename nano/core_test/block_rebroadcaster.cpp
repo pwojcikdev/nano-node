@@ -137,6 +137,23 @@ TEST (block_rebroadcaster_index, fifo_eviction)
 	ASSERT_TRUE (index.contains (hash3));
 }
 
+TEST (block_rebroadcaster_index, evicts_least_recently_broadcast)
+{
+	nano::block_rebroadcaster_config config;
+	config.max_history = 2;
+	config.rebroadcast_cooldown = 100ms;
+	nano::block_rebroadcaster_index index{ config };
+	auto const now = std::chrono::steady_clock::now ();
+	nano::block_hash const first{ 1 }, second{ 2 }, third{ 3 };
+	ASSERT_TRUE (index.check_and_record (first, now));
+	ASSERT_TRUE (index.check_and_record (second, now));
+	ASSERT_TRUE (index.check_and_record (first, now + 100ms));
+	ASSERT_TRUE (index.check_and_record (third, now + 101ms));
+
+	ASSERT_FALSE (index.check_and_record (first, now + 102ms));
+	ASSERT_FALSE (index.contains (second));
+}
+
 TEST (block_rebroadcaster_index, cleanup)
 {
 	nano::block_rebroadcaster_config config;

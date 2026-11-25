@@ -261,6 +261,7 @@ bool nano::block_rebroadcaster_index::check_and_record (nano::block_hash const &
 		history.get<tag_hash> ().modify (it, [&] (auto & entry) {
 			entry.timestamp = now;
 		});
+		history.relocate (history.end (), history.project<tag_sequenced> (it));
 	}
 	else
 	{
