@@ -21,6 +21,8 @@ rpc() {
 wallet=$(rpc '{"action":"wallet_create"}' | jq -er '.wallet')
 dev_genesis_key=34F0A37AAD20F4A260F0A5B3CB3D7FB50673212263E58A380BC10474BB039CE4
 genesis=$(rpc "{\"action\":\"wallet_add\",\"wallet\":\"$wallet\",\"key\":\"$dev_genesis_key\"}" | jq -er '.account')
+genesis_hash=$(rpc "{\"action\":\"account_info\",\"account\":\"$genesis\"}" | jq -er '.open_block')
+genesis_json=$(rpc "{\"action\":\"block_info\",\"hash\":\"$genesis_hash\",\"json_block\":\"true\"}" | jq -cer '.contents')
 recipient=$(rpc "{\"action\":\"account_create\",\"wallet\":\"$wallet\"}" | jq -er '.account')
 send=$(rpc "{\"action\":\"send\",\"wallet\":\"$wallet\",\"source\":\"$genesis\",\"destination\":\"$recipient\",\"amount\":\"1\"}" | jq -er '.block')
 recipient_open=$(rpc "{\"action\":\"receive\",\"wallet\":\"$wallet\",\"account\":\"$recipient\",\"block\":\"$send\"}" | jq -er '.block')
@@ -49,6 +51,15 @@ wait "$pid"
 
 "$NANO_NODE_EXE" --network dev --data_path "$datadir" --validate_blocks > "$datadir/report"
 grep -Fq 'Validation status: Ok' "$datadir/report"
+
+# Check the same ledger against stricter test-network work thresholds.
+status=0
+NANO_TEST_GENESIS_BLOCK="$genesis_json" NANO_TEST_GENESIS_PUB="$(jq -r '.source' <<< "$genesis_json")" \
+    NANO_TEST_EPOCH_1=ffffffffffffffff "$NANO_NODE_EXE" --network test --data_path "$datadir" \
+    --validate_blocks > "$datadir/strict-report" 2>&1 || status=$?
+grep -Fq "Invalid work for block $recipient_open" "$datadir/strict-report"
+grep -Fq 'Validation status: Failed' "$datadir/strict-report"
+test "$status" = 1
 
 # The recipient's epoch block remains after pruning its nonzero-balance predecessor.
 "$NANO_NODE_EXE" --network dev --data_path "$datadir" --debug_prune --enable_pruning \

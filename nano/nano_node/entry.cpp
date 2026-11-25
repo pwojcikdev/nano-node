@@ -1786,6 +1786,7 @@ int main (int argc, char * const * argv)
 			else
 			{
 				std::cout << boost::str (boost::format ("Validation status: Failed\n%1% errors found\n") % errors);
+				result = 1;
 			}
 		}
 		else if (vm.count ("debug_profile_bootstrap"))
