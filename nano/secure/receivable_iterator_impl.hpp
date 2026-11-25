@@ -3,7 +3,8 @@
 #include <nano/secure/receivable_iterator.hpp>
 
 template <typename Set>
-nano::receivable_iterator<Set>::receivable_iterator ()
+nano::receivable_iterator<Set>::receivable_iterator () :
+	transaction{ nullptr }
 {
 }
 
@@ -30,11 +31,7 @@ bool nano::receivable_iterator<Set>::operator== (receivable_iterator const & oth
 template <typename Set>
 auto nano::receivable_iterator<Set>::operator++ () -> receivable_iterator<Set> &
 {
-	item = set->receivable_lower_bound (*transaction, item.value ().first.account, item.value ().first.hash.number () + 1);
-	if (item && item.value ().first.account != account)
-	{
-		item = std::nullopt;
-	}
+	*this = set->receivable_upper_bound (*transaction, account, item.value ().first.hash);
 	return *this;
 }
 

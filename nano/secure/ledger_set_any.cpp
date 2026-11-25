@@ -1,6 +1,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
+#include <nano/store/crawler.hpp>
 #include <nano/store/ledger/account.hpp>
 #include <nano/store/ledger/block.hpp>
 #include <nano/store/ledger/pending.hpp>
@@ -77,7 +78,8 @@ auto nano::ledger_set_any::account_lower_bound (secure::transaction const & tran
 
 auto nano::ledger_set_any::account_upper_bound (secure::transaction const & transaction, nano::account const & account) const -> account_iterator
 {
-	return account_lower_bound (transaction, account.number () + 1);
+	auto next = nano::store::next_key (account);
+	return next ? account_lower_bound (transaction, *next) : account_end ();
 }
 
 std::optional<nano::account> nano::ledger_set_any::block_account (secure::transaction const & transaction, nano::block_hash const & hash) const
@@ -217,17 +219,24 @@ bool nano::ledger_set_any::receivable_exists (secure::transaction const & transa
 
 auto nano::ledger_set_any::receivable_upper_bound (secure::transaction const & transaction, nano::account const & account) const -> receivable_iterator
 {
-	return receivable_iterator{ transaction, *this, receivable_lower_bound (transaction, account.number () + 1, 0) };
+	if (auto next = nano::store::next_key (account))
+	{
+		return receivable_iterator{ transaction, *this, receivable_lower_bound (transaction, *next, 0) };
+	}
+	return receivable_end ();
 }
 
 auto nano::ledger_set_any::receivable_upper_bound (secure::transaction const & transaction, nano::account const & account, nano::block_hash const & hash) const -> receivable_iterator
 {
-	auto result = receivable_lower_bound (transaction, account, hash.number () + 1);
-	if (!result || result.value ().first.account != account)
+	if (auto next = nano::store::next_key (hash))
 	{
-		return receivable_iterator{ transaction, *this, std::nullopt };
+		auto result = receivable_lower_bound (transaction, account, *next);
+		if (result && result->first.account == account)
+		{
+			return receivable_iterator{ transaction, *this, result };
+		}
 	}
-	return receivable_iterator{ transaction, *this, result };
+	return receivable_end ();
 }
 
 std::optional<nano::block_hash> nano::ledger_set_any::block_successor (secure::transaction const & transaction, nano::block_hash const & hash) const

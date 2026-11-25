@@ -7478,6 +7478,47 @@ TEST (ledger_receivable, upper_bound_account_none)
 	ASSERT_EQ (ctx.ledger ().any.receivable_end (), ctx.ledger ().any.receivable_upper_bound (ctx.ledger ().tx_begin_read (), 0));
 }
 
+TEST (ledger_receivable, upper_bounds_at_key_limit)
+{
+	auto ctx = nano::test::ledger_empty ();
+	auto & ledger = ctx.ledger ();
+	auto const & genesis = nano::dev::genesis_key;
+	nano::account const last_account{ std::numeric_limits<nano::uint256_t>::max () };
+	nano::block_hash const last_hash{ std::numeric_limits<nano::uint256_t>::max () };
+	auto previous = nano::dev::genesis->hash ();
+	auto send = std::make_shared<nano::send_block> (previous, last_account, nano::dev::constants.genesis_amount - 1, genesis.prv, genesis.pub, *ctx.pool ().generate (previous));
+	auto txn = ledger.tx_begin_write ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send));
+	ledger.cement (txn, send->hash ());
+
+	// An unopened destination with a receivable can be opened by an epoch block.
+	auto open = nano::state_block_builder ()
+				.account (last_account)
+				.previous (0)
+				.representative (0)
+				.balance (0)
+				.link (ledger.epoch_link (nano::epoch::epoch_1))
+				.sign (genesis.prv, genesis.pub)
+				.work (*ctx.pool ().generate (last_account))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, ledger.process (txn, open));
+	auto account_it = ledger.any.account_upper_bound (txn, genesis.pub);
+	ASSERT_NE (ledger.any.account_end (), account_it);
+	EXPECT_EQ (last_account, account_it->first);
+	EXPECT_EQ (ledger.any.account_end (), ++account_it);
+	EXPECT_EQ (ledger.any.account_end (), ledger.any.account_upper_bound (txn, last_account));
+	auto check_receivables = [&] (auto const & view) {
+		auto it = view.receivable_upper_bound (txn, genesis.pub);
+		ASSERT_NE (view.receivable_end (), it);
+		EXPECT_EQ (last_account, it->first.account);
+		EXPECT_EQ (view.receivable_end (), ++it);
+		EXPECT_EQ (view.receivable_end (), view.receivable_upper_bound (txn, last_account));
+		EXPECT_EQ (view.receivable_end (), view.receivable_upper_bound (txn, last_account, last_hash));
+	};
+	check_receivables (ledger.any);
+	check_receivables (ledger.cemented);
+}
+
 // Test behavior of ledger::receivable_upper_bound when there are receivable entries for multiple accounts
 TEST (ledger_receivable, upper_bound_account_key)
 {

@@ -3,7 +3,8 @@
 #include <nano/secure/account_iterator.hpp>
 
 template <typename Set>
-nano::account_iterator<Set>::account_iterator ()
+nano::account_iterator<Set>::account_iterator () :
+	transaction{ nullptr }
 {
 }
 
@@ -22,20 +23,10 @@ bool nano::account_iterator<Set>::operator== (account_iterator const & other) co
 	return item == other.item;
 }
 
-// Iteration is performed by calling set->account_lower_bound (tx, next) where next is one higher than the current iterator
 template <typename Set>
 auto nano::account_iterator<Set>::operator++ () -> account_iterator<Set> &
 {
-	auto next = item.value ().first.number () + 1;
-	if (next != 0)
-	{
-		*this = set->account_lower_bound (*transaction, next);
-	}
-	else
-	{
-		// Convert to and end iterator if there are no more items
-		*this = account_iterator<Set>{};
-	}
+	*this = set->account_upper_bound (*transaction, item.value ().first);
 	return *this;
 }
 
