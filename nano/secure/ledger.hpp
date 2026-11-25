@@ -16,6 +16,7 @@
 #include <nano/weights/bootstrap_weights.hpp>
 
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <span>
@@ -122,6 +123,8 @@ public:
 	std::deque<std::shared_ptr<nano::block>> random_blocks (secure::transaction const &, size_t count) const;
 	std::optional<nano::pending_info> pending_info (secure::transaction const &, nano::pending_key const & key) const;
 	std::deque<std::shared_ptr<nano::block>> cement (secure::write_transaction &, nano::block_hash const & hash, size_t max_blocks = 1024 * 128);
+	/// Calls on_cemented with the write transaction still held for each newly cemented block and returns their count.
+	size_t cement (secure::write_transaction &, nano::block_hash const & hash, size_t max_blocks, std::function<void (std::shared_ptr<nano::block> const &)> const & on_cemented);
 	/// Processes a block into the ledger, reusing an upfront verdict when it covers exactly the signature the ledger would check
 	nano::block_status process (secure::write_transaction const &, std::shared_ptr<nano::block> block, std::optional<nano::signature_verification> const & verification = std::nullopt);
 	bool rollback (secure::write_transaction const &, nano::block_hash const &, std::deque<std::shared_ptr<nano::block>> & rollback_list, size_t depth = 0, size_t max_depth = nano::ledger_max_rollback_depth ());

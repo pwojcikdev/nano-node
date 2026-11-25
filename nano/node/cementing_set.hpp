@@ -20,6 +20,7 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <unordered_set>
 
@@ -76,6 +77,7 @@ public: // Events
 		std::shared_ptr<nano::block> block;
 		nano::block_hash confirmation_root;
 		std::shared_ptr<nano::election> election;
+		std::optional<nano::amount> amount; // Captured under the ledger writer on pruning nodes.
 	};
 
 	nano::observer_set<std::deque<context> const &> batch_cemented;

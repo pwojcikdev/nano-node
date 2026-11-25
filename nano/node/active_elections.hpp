@@ -21,6 +21,7 @@
 #include <condition_variable>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <unordered_map>
 
@@ -142,10 +143,11 @@ private:
 		nano::election_status status;
 		nano::confirmation_type type;
 		std::vector<nano::vote_with_weight_info> votes;
+		std::optional<nano::amount> amount;
 	};
 
-	block_cemented_result block_cemented (std::shared_ptr<nano::block> const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election);
-	void notify_observers (nano::secure::transaction const &, nano::election_status const & status, nano::confirmation_type type, std::vector<nano::vote_with_weight_info> const & votes) const;
+	block_cemented_result block_cemented (std::shared_ptr<nano::block> const & block, nano::block_hash const & confirmation_root, std::shared_ptr<nano::election> const & source_election, std::optional<nano::amount> const & amount);
+	void notify_observers (nano::secure::transaction const &, block_cemented_result const &) const;
 
 	std::shared_ptr<nano::election> election_impl (nano::qualified_root const &) const;
 	std::vector<std::shared_ptr<nano::election>> list_active_impl (std::size_t max_count = std::numeric_limits<std::size_t>::max ()) const;

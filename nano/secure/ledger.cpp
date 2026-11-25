@@ -382,12 +382,19 @@ nano::uint128_t nano::ledger::account_receivable (secure::transaction const & tr
 	return result;
 }
 
-// Both stack and result set are bounded to limit maximum memory usage
-// Due to the max_blocks limit, the target block may not be cemented in a single call. Callers should call this function multiple times until the target is cemented.
 std::deque<std::shared_ptr<nano::block>> nano::ledger::cement (secure::write_transaction & transaction, nano::block_hash const & target_hash, size_t max_blocks)
 {
 	std::deque<std::shared_ptr<nano::block>> result;
+	cement (transaction, target_hash, max_blocks, [&result] (auto const & block) {
+		result.push_back (block);
+	});
+	return result;
+}
 
+// Both the walk and the number of cemented blocks are bounded. Callers can resume until the target is cemented.
+size_t nano::ledger::cement (secure::write_transaction & transaction, nano::block_hash const & target_hash, size_t max_blocks, std::function<void (std::shared_ptr<nano::block> const &)> const & on_cemented)
+{
+	size_t count{ 0 };
 	auto start_block = any.block_get (transaction, target_hash);
 	release_assert (start_block, "attempting to cement a non-existent block", target_hash.to_string ());
 
@@ -428,7 +435,8 @@ std::deque<std::shared_ptr<nano::block>> nano::ledger::cement (secure::write_tra
 		debug_assert (dependencies_cemented (transaction, *block));
 		cement_one (transaction, *block);
 
-		result.push_back (block);
+		++count;
+		on_cemented (block);
 
 		// Refresh the transaction to avoid long-running transactions
 		// Ensure that the block wasn't rolled back during the refresh
@@ -442,17 +450,17 @@ std::deque<std::shared_ptr<nano::block>> nano::ledger::cement (secure::write_tra
 		}
 
 		// Early return might leave parts of the dependency tree uncemented
-		return result.size () < max_blocks;
+		return count < max_blocks;
 	};
 
-	// Walk the dependency tree depth-first, cementing blocks bottom-up, newly cemented blocks are collected in result
+	// Walk the dependency tree depth-first, cementing blocks bottom-up
 	auto dfs_result = nano::bounded_dfs (start_block, max_blocks, is_resolved, get_dependencies, resolve);
-	debug_assert (dfs_result.resolved == result.size ());
+	debug_assert (dfs_result.resolved == count);
 
 	stats.inc (nano::stat::type::ledger, dfs_result.overflow ? nano::stat::detail::cementing_overflow : nano::stat::detail::cementing);
 	stats.inc (nano::stat::type::ledger, nano::stat::detail::cemented, dfs_result.resolved);
 
-	return result;
+	return count;
 }
 
 void nano::ledger::cement_one (secure::write_transaction & transaction, nano::block const & block)

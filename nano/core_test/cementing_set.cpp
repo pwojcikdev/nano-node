@@ -9,7 +9,9 @@
 #include <nano/node/cementing_set.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/ledger_notifications.hpp>
+#include <nano/node/node_observers.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/node/pruning.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/secure/ledger_set_cemented.hpp>
@@ -769,6 +771,47 @@ TEST (confirmation_callback, observer_callbacks)
 
 	ASSERT_EQ (2, node->stats.count (nano::stat::type::confirmation_height, nano::stat::detail::blocks_cemented));
 	ASSERT_EQ (3, node->ledger.cemented_count ());
+}
+
+TEST (confirmation_callback, amount_survives_pruning)
+{
+	std::promise<nano::amount> observed;
+	auto result = observed.get_future ();
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.backlog_scan->enable = false;
+	config.enable_voting = false;
+	config.max_pruning_depth = 1;
+	nano::node_flags flags;
+	flags.enable_pruning = true;
+	flags.disable_topo_index = true;
+	auto & node = *system.add_node (config, flags);
+
+	auto blocks = make_chain (system, 2);
+	process (node, blocks);
+	nano::test::confirm (node.ledger, blocks.front ());
+	auto const target = blocks.back ()->hash ();
+
+	// Run the ordinary pruning pass after cementing commits and before the confirmation is delivered.
+	node.cementing_set.cemented_observers.add ([&node, target] (auto const & block) {
+		if (block->hash () == target)
+		{
+			node.pruning.ledger_pruning (32, true);
+		}
+	});
+	node.observers.block_confirmed.add ([&observed, target] (auto const & confirmation) {
+		if (confirmation.status.winner->hash () == target)
+		{
+			observed.set_value (confirmation.amount);
+		}
+	});
+	auto election = nano::test::start_election (system, node, target);
+	ASSERT_NE (nullptr, election);
+	election->force_confirm ();
+
+	ASSERT_EQ (std::future_status::ready, result.wait_for (5s));
+	ASSERT_TRUE (node.ledger.any.block_pruned (node.ledger.tx_begin_read (), blocks.front ()->hash ()));
+	ASSERT_EQ (1, result.get ().number ());
 }
 
 /*

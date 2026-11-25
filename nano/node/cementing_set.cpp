@@ -257,16 +257,16 @@ void nano::cementing_set::run_batch (std::unique_lock<std::mutex> & lock)
 					break;
 				}
 
-				auto added = ledger.cement (transaction, hash, config.max_blocks);
-				if (!added.empty ())
+				auto const added = ledger.cement (transaction, hash, config.max_blocks, [&] (auto const & block) {
+					// Pruning can remove the predecessor as soon as the writer is released.
+					auto const amount = ledger.flags.pruning ? ledger.any.block_amount (transaction, block) : std::nullopt;
+					cemented.push_back ({ block, hash, election, amount });
+				});
+				if (added > 0)
 				{
 					// Confirming this block may implicitly confirm more
-					stats.add (nano::stat::type::cementing_set, nano::stat::detail::cemented, added.size ());
-					for (auto & block : added)
-					{
-						cemented.push_back ({ block, hash, election });
-					}
-					cemented_count += added.size ();
+					stats.add (nano::stat::type::cementing_set, nano::stat::detail::cemented, added);
+					cemented_count += added;
 				}
 				else if (ledger.cemented.block_exists (transaction, hash))
 				{
