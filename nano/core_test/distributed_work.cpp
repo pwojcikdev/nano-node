@@ -1,5 +1,6 @@
 #include <nano/core_test/fakes/work_peer.hpp>
 #include <nano/lib/work_version.hpp>
+#include <nano/node/distributed_work.hpp>
 #include <nano/node/distributed_work_factory.hpp>
 #include <nano/node/node_observers.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -176,6 +177,50 @@ TEST (distributed_work, unavailable_peer_falls_back_to_local_work)
 	ASSERT_GE (node.network_params.work.difficulty (nano::work_version::work_1, root, *work), difficulty);
 	node.stop ();
 	ASSERT_EQ (1, completions.value ());
+}
+
+TEST (distributed_work, cancel_during_retry_backoff)
+{
+	nano::test::system system;
+	auto peer = std::make_shared<fake_work_peer> (system.work, *system.io_ctx, system.get_available_port (), fake_work_peer_type::unavailable);
+	peer->start ();
+	auto config = system.default_config ();
+	config.work_peers = { { "::ffff:127.0.0.1", peer->port () } };
+	auto & node = *system.add_node (config);
+	nano::root const root{ 1 };
+	nano::test::shared_result<std::optional<uint64_t>> result;
+	nano::test::shared_counter completions;
+	node.work_generate (nano::work_version::work_1, root, node.network_params.work.base, [&node, result, completions] (auto work) {
+		EXPECT_EQ (0, node.distributed_work.size ());
+		completions.inc ();
+		result.set (work);
+	});
+	ASSERT_TIMELY (5s, node.unresponsive_work_peers);
+	node.observers.work_cancel.notify (root);
+	ASSERT_TIMELY (5s, result.is_set ());
+	auto const [work] = result.get ();
+	EXPECT_FALSE (work.has_value ());
+	ASSERT_ALWAYS (1500ms, peer->generations_bad == 1);
+	EXPECT_EQ (1, completions.value ());
+}
+
+TEST (distributed_work, stop_during_retry_backoff)
+{
+	nano::test::system system;
+	auto peer = std::make_shared<fake_work_peer> (system.work, *system.io_ctx, system.get_available_port (), fake_work_peer_type::unavailable);
+	peer->start ();
+	auto config = system.default_config ();
+	config.work_threads = 0;
+	config.work_peers = { { "::ffff:127.0.0.1", peer->port () } };
+	auto & node = *system.add_node (config);
+	nano::test::shared_result<std::optional<uint64_t>> result;
+	nano::work_request request{ nano::work_version::work_1, nano::root{ 1 }, node.network_params.work.base, {}, [result] (auto work) { result.set (work); }, config.work_peers };
+	ASSERT_FALSE (node.distributed_work.make (60s, request));
+	ASSERT_TIMELY (5s, node.unresponsive_work_peers);
+	node.stop ();
+	ASSERT_TRUE (result.is_set ());
+	auto const [work] = result.get ();
+	EXPECT_FALSE (work.has_value ());
 }
 
 // This fails intermittently, the observed behavior is different than what is expected. Disabling because `fake_work_peer` class is not actually used in production.

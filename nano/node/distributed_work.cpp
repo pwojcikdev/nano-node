@@ -1,7 +1,6 @@
 #include <nano/boost/asio/bind_executor.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/lib/network_formatting.hpp>
-#include <nano/lib/thread_pool.hpp>
 #include <nano/node/distributed_work.hpp>
 #include <nano/node/distributed_work_factory.hpp>
 #include <nano/node/network.hpp>
@@ -66,6 +65,10 @@ nano::distributed_work::~distributed_work ()
 
 void nano::distributed_work::start ()
 {
+	if (finished)
+	{
+		return;
+	}
 	// Start work generation if peers are not acting correctly, or if there are no peers configured
 	if ((need_resolve.empty () || node.unresponsive_work_peers) && node.local_work_generation_enabled ())
 	{
@@ -114,11 +117,24 @@ void nano::distributed_work::start ()
 	}
 }
 
+void nano::distributed_work::start_after (std::chrono::seconds delay)
+{
+	nano::lock_guard<nano::mutex> guard{ mutex };
+	if (!finished)
+	{
+		retry_timer = std::make_unique<boost::asio::steady_timer> (strand, delay);
+		retry_timer->async_wait ([self = shared_from_this ()] (boost::system::error_code const & ec) {
+			if (!ec)
+			{
+				self->start ();
+			}
+		});
+	}
+}
+
 void nano::distributed_work::start_local ()
 {
-	auto this_l (shared_from_this ());
-	local_generation_started = true;
-	node.work.generate (request.version, request.root, request.difficulty, [this_l] (std::optional<uint64_t> const & work_a) {
+	auto callback = [this_l = shared_from_this ()] (std::optional<uint64_t> const & work_a) {
 		if (work_a.has_value ())
 		{
 			this_l->set_once (*work_a);
@@ -132,7 +148,20 @@ void nano::distributed_work::start_local ()
 			}
 		}
 		this_l->stop_once (false);
-	});
+	};
+	{
+		nano::lock_guard<nano::mutex> guard{ mutex };
+		if (finished)
+		{
+			return;
+		}
+		local_generation_started = true;
+		if (node.work.try_enqueue (request.version, request.root, request.difficulty, callback))
+		{
+			return;
+		}
+	}
+	callback (std::nullopt);
 }
 
 void nano::distributed_work::do_request (nano::tcp_endpoint const & endpoint_a)
@@ -141,6 +170,10 @@ void nano::distributed_work::do_request (nano::tcp_endpoint const & endpoint_a)
 	auto connection (std::make_shared<peer_request> (node.io_ctx, endpoint_a));
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
+		if (stopped)
+		{
+			return;
+		}
 		connections.emplace_back (connection);
 	}
 	connection->socket.async_connect (connection->endpoint,
@@ -301,12 +334,16 @@ void nano::distributed_work::stop_once (bool const local_stop_a)
 {
 	if (!stopped.exchange (true))
 	{
-		nano::lock_guard<nano::mutex> guard{ mutex };
-		if (local_stop_a && node.local_work_generation_enabled ())
+		nano::unique_lock<nano::mutex> lock{ mutex };
+		retry_timer.reset (); // Cancels any outstanding wait.
+		auto connections_l = std::move (connections);
+		bool const cancel_local = local_stop_a && local_generation_started;
+		lock.unlock ();
+		if (cancel_local)
 		{
 			node.work.cancel (request.root);
 		}
-		for (auto & connection_w : connections)
+		for (auto & connection_w : connections_l)
 		{
 			if (auto connection_l = connection_w.lock ())
 			{
@@ -336,7 +373,6 @@ void nano::distributed_work::stop_once (bool const local_stop_a)
 				}));
 			}
 		}
-		connections.clear ();
 	}
 }
 
@@ -373,11 +409,11 @@ void nano::distributed_work::cancel ()
 		elapsed.value ().count ());
 
 		status = work_generation_status::cancelled;
+		stop_once (true);
 		if (request.callback)
 		{
 			request.callback (std::nullopt);
 		}
-		stop_once (true);
 	}
 }
 
@@ -402,19 +438,14 @@ void nano::distributed_work::handle_failure ()
 
 			status = work_generation_status::failure_peers;
 
-			std::weak_ptr<nano::node> node_weak (node.shared ());
-			auto next_backoff (std::min (backoff * 2, std::chrono::seconds (5 * 60)));
-			node.workers.post_delayed (std::chrono::seconds (backoff), [node_weak, request_l = request, next_backoff] {
-				bool error_l{ true };
-				if (auto node_l = node_weak.lock ())
-				{
-					error_l = node_l->distributed_work.make (next_backoff, request_l);
-				}
-				if (error_l && request_l.callback)
-				{
-					request_l.callback (std::nullopt);
-				}
-			});
+			if (auto owner = node_w.lock ())
+			{
+				owner->distributed_work.retry (shared_from_this (), backoff, request);
+			}
+			else if (request.callback)
+			{
+				request.callback (std::nullopt);
+			}
 		}
 		else
 		{

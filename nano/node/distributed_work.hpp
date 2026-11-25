@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nano/boost/asio/ip/tcp.hpp>
+#include <nano/boost/asio/steady_timer.hpp>
 #include <nano/boost/asio/strand.hpp>
 #include <nano/boost/beast/core/flat_buffer.hpp>
 #include <nano/boost/beast/http/string_body.hpp>
@@ -68,6 +69,7 @@ public:
 	distributed_work (nano::node &, nano::work_request const &, std::chrono::seconds const &);
 	~distributed_work ();
 	void start ();
+	void start_after (std::chrono::seconds delay);
 	void cancel ();
 
 private:
@@ -94,6 +96,7 @@ private:
 	boost::asio::strand<boost::asio::io_context::executor_type> strand;
 	std::vector<std::pair<std::string, uint16_t>> const need_resolve;
 	std::vector<std::weak_ptr<peer_request>> connections; // protected by the mutex
+	std::unique_ptr<boost::asio::steady_timer> retry_timer; // protected by the mutex
 
 	work_generation_status status{ work_generation_status::ongoing };
 	uint64_t work_result{ 0 };

@@ -199,19 +199,24 @@ void nano::work_pool::stop ()
 	notify_cancelled (cancelled);
 }
 
-void nano::work_pool::generate (nano::work_version const version_a, nano::root const & root_a, uint64_t difficulty_a, std::function<void (std::optional<uint64_t> const &)> callback_a)
+bool nano::work_pool::try_enqueue (nano::work_version version_a, nano::root const & root_a, uint64_t difficulty_a, std::function<void (std::optional<uint64_t> const &)> const & callback_a)
 {
 	debug_assert (!root_a.is_zero ());
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
-		if (!done && !threads.empty ())
+		if (done || threads.empty ())
 		{
-			pending.emplace_back (version_a, root_a, difficulty_a, callback_a);
-			producer_condition.notify_all ();
-			return;
+			return false;
 		}
+		pending.emplace_back (version_a, root_a, difficulty_a, callback_a);
 	}
-	if (callback_a)
+	producer_condition.notify_all ();
+	return true;
+}
+
+void nano::work_pool::generate (nano::work_version const version_a, nano::root const & root_a, uint64_t difficulty_a, std::function<void (std::optional<uint64_t> const &)> callback_a)
+{
+	if (!try_enqueue (version_a, root_a, difficulty_a, callback_a) && callback_a)
 	{
 		callback_a (std::nullopt);
 	}

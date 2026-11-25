@@ -46,6 +46,8 @@ public:
 	void loop (uint64_t);
 	void stop ();
 	void cancel (nano::root const &);
+	/** Returns whether the pool accepted the job. A rejected job does not invoke its callback. */
+	bool try_enqueue (nano::work_version, nano::root const &, uint64_t, std::function<void (std::optional<uint64_t> const &)> const &);
 	void generate (nano::work_version const, nano::root const &, uint64_t, std::function<void (std::optional<uint64_t> const &)>);
 	std::optional<uint64_t> generate (nano::work_version const, nano::root const &, uint64_t);
 	// For tests only
