@@ -114,7 +114,11 @@ void nano::scheduler::hinted::activate (secure::read_transaction & transaction, 
 				}
 			}
 
-			// Try to insert it into AEC as hinted election
+			// A single hint can lead to several independently eligible dependencies.
+			if (!predicate ())
+			{
+				return;
+			}
 			auto result = node.active.insert (block, nano::election_behavior::hinted);
 			stats.inc (nano::stat::type::hinting, result.inserted ? nano::stat::detail::insert : nano::stat::detail::insert_failed);
 		}

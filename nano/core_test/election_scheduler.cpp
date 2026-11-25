@@ -12,6 +12,7 @@
 #include <nano/node/wallet.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/test_common/chains.hpp>
+#include <nano/test_common/ledger_context.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -147,6 +148,35 @@ TEST (election_scheduler, activate_one)
 	node.scheduler.priority.activate (node.ledger.tx_begin_read (), nano::dev::genesis_key.pub);
 	ASSERT_TIMELY (5s, node.scheduler.priority.empty ());
 	ASSERT_TIMELY (5s, node.active.election (send1->qualified_root ()));
+}
+
+TEST (election_scheduler, hinted_dependencies_respect_vacancy)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.backlog_scan->enable = false;
+	config.priority_scheduler->enable = false;
+	config.optimistic_scheduler->enable = false;
+	config.enable_voting = false;
+	config.active_elections->size = 1;
+	config.active_elections->hinted_limit_percentage = 100;
+
+	// The final receive depends on two branches. Cement their funding sends so that both opens can start.
+	auto diamond = nano::test::ledger_diamond (1);
+	system.set_initialization_blocks (diamond.blocks ());
+	auto & node = *system.add_node (config);
+	nano::test::confirm (node.ledger, node.latest (nano::dev::genesis_key.pub));
+
+	node.process_active (nano::test::make_vote (nano::dev::genesis_key, { diamond.blocks ().back () }));
+	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::hinting, nano::stat::detail::insert) >= 1);
+	ASSERT_ALWAYS_EQ (200ms, 1, node.active.size (nano::election_behavior::hinted));
+
+	// Once the first dependency is cemented, another can take its slot from the original hint.
+	auto elections = node.active.list_active ();
+	ASSERT_EQ (1, elections.size ());
+	elections.front ()->force_confirm ();
+	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::hinting, nano::stat::detail::insert) >= 2);
+	ASSERT_EQ (1, node.active.size (nano::election_behavior::hinted));
 }
 
 /*
