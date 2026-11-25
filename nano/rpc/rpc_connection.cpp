@@ -117,11 +117,15 @@ void nano::rpc_connection::parse_request (STREAM_TYPE & stream, std::shared_ptr<
 				std::stringstream ss;
 				ss << std::hex << std::showbase << reinterpret_cast<uintptr_t> (this_l.get ());
 				auto request_id = ss.str ();
-				auto response_handler ([this_l, version, start, request_id, &stream] (std::string const & tree_a) {
+				auto response_handler ([this_l, version, start, request_id, &stream] (std::string const & tree_a, std::function<void ()> on_written = {}) {
 					auto body = tree_a;
 					this_l->write_result (body, version);
-					boost::beast::http::async_write (stream, this_l->res, boost::asio::bind_executor (this_l->strand, [this_l] (boost::system::error_code const & ec, size_t bytes_transferred) {
+					boost::beast::http::async_write (stream, this_l->res, boost::asio::bind_executor (this_l->strand, [this_l, on_written = std::move (on_written)] (boost::system::error_code const & ec, size_t bytes_transferred) {
 						this_l->write_completion_handler (this_l);
+						if (on_written)
+						{
+							on_written ();
+						}
 					}));
 
 					// Bump logging level if RPC request logging is enabled

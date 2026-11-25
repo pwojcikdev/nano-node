@@ -198,6 +198,14 @@ public:
 	void process_request (std::string const &, std::string const & body_a, std::function<void (std::string const &)> response_a) override;
 	void process_request_v2 (rpc_handler_request_params const & params_a, std::string const & body_a, std::function<void (std::shared_ptr<std::string> const &)> response_a) override;
 
+	std::function<void ()> stop_handler () override
+	{
+		return [this] {
+			stop ();
+			stop_callback ();
+		};
+	}
+
 	void stop () override
 	{
 		if (rpc)

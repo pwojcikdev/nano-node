@@ -127,12 +127,11 @@ void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flag
 			config.node.peering_port = network_params.network.default_node_port;
 		}
 
+		std::atomic stopped{ false }; // Outlives stop callbacks on the node's IO threads
 		// Use a scope guard to ensure node->stop() is called while we still hold a shared_ptr (even in case of exceptions)
 		nano::node_scope_guard node{ std::make_shared<nano::node> (data_path, config.node, opencl_work, flags) };
 
 		node->start ();
-
-		std::atomic stopped{ false };
 
 		std::unique_ptr<nano::ipc::ipc_server> ipc_server = std::make_unique<nano::ipc::ipc_server> (*node, config.rpc);
 		std::unique_ptr<nano::rpc_process> rpc_process;
@@ -141,15 +140,14 @@ void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flag
 		bool const rpc_enabled = config.rpc_enable || flags.enable_rpc;
 		if (rpc_enabled)
 		{
+			auto stop_callback = [this, &stopped] () {
+				logger.warn (nano::log::type::daemon, "RPC stop request received, stopping...");
+				stopped = true;
+				stopped.notify_all ();
+			};
 			// In process RPC
 			if (!config.rpc.child_process.enable)
 			{
-				auto stop_callback = [this, &stopped] () {
-					logger.warn (nano::log::type::daemon, "RPC stop request received, stopping...");
-					stopped = true;
-					stopped.notify_all ();
-				};
-
 				// Launch rpc in-process
 				nano::rpc_config rpc_config{ config.node.network_params.network };
 				if (auto error = nano::read_rpc_config_toml (data_path, rpc_config, flags.rpc_config_overrides))
@@ -169,7 +167,7 @@ void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flag
 
 				logger.debug (nano::log::type::daemon, "Spawning RPC process with command: {}", config.rpc.child_process.rpc_path);
 
-				rpc_process = std::make_unique<nano::rpc_process> (config.rpc, data_path, node->network_params.network.get_current_network_as_string (), logger, flags.rpc_config_overrides);
+				rpc_process = std::make_unique<nano::rpc_process> (config.rpc, data_path, node->network_params.network.get_current_network_as_string (), logger, flags.rpc_config_overrides, node->io_ctx, stop_callback);
 			}
 			debug_assert (rpc || rpc_process);
 		}

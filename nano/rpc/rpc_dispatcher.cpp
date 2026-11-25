@@ -18,10 +18,10 @@ std::unordered_set<std::string> rpc_control_impl_set = create_rpc_control_impls 
 std::string filter_request (boost::property_tree::ptree tree_a);
 }
 
-nano::rpc_dispatcher::rpc_dispatcher (nano::rpc_config const & rpc_config, std::string const & body_a, std::string const & request_id_a, std::function<void (std::string const &)> const & response_a, nano::rpc_handler_interface & rpc_handler_interface_a, nano::logger & logger) :
+nano::rpc_dispatcher::rpc_dispatcher (nano::rpc_config const & rpc_config, std::string const & body_a, std::string const & request_id_a, response_callback const & response_a, nano::rpc_handler_interface & rpc_handler_interface_a, nano::logger & logger) :
 	body (body_a),
 	request_id (request_id_a),
-	response (response_a),
+	send_response (response_a),
 	rpc_config (rpc_config),
 	rpc_handler_interface (rpc_handler_interface_a),
 	logger (logger)
@@ -30,6 +30,7 @@ nano::rpc_dispatcher::rpc_dispatcher (nano::rpc_config const & rpc_config, std::
 
 void nano::rpc_dispatcher::process_request (nano::rpc_handler_request_params const & request_params)
 {
+	auto response = [send_response = send_response] (std::string const & body) { send_response (body, {}); };
 	try
 	{
 		auto max_depth_exceeded (false);
@@ -112,7 +113,15 @@ void nano::rpc_dispatcher::process_request (nano::rpc_handler_request_params con
 
 				if (!error)
 				{
-					rpc_handler_interface.process_request (action, body, this->response);
+					if (action == "stop")
+					{
+						if (auto stop = rpc_handler_interface.stop_handler ())
+						{
+							send_response (R"({"success":""})", std::move (stop));
+							return;
+						}
+					}
+					rpc_handler_interface.process_request (action, body, response);
 				}
 			}
 			else if (request_params.rpc_version == 2)

@@ -1,3 +1,4 @@
+#include <nano/boost/process/process.hpp>
 #include <nano/lib/logging.hpp>
 #include <nano/node/node_rpc_config.hpp>
 #include <nano/node/rpc_process.hpp>
@@ -8,7 +9,7 @@
 
 using namespace std::chrono_literals;
 
-nano::rpc_process::rpc_process (nano::node_rpc_config const & config, std::filesystem::path const & data_path, std::string_view network, nano::logger & logger_a, std::vector<std::string> const & config_overrides) :
+nano::rpc_process::rpc_process (nano::node_rpc_config const & config, std::filesystem::path const & data_path, std::string_view network, nano::logger & logger_a, std::vector<std::string> const & config_overrides, boost::asio::io_context & io_ctx, std::function<void ()> stop_owner) :
 	logger{ logger_a }
 {
 	auto const & path = config.child_process.rpc_path;
@@ -23,7 +24,13 @@ nano::rpc_process::rpc_process (nano::node_rpc_config const & config, std::files
 		args.emplace_back ("--config");
 		args.insert (args.end (), config_overrides.begin (), config_overrides.end ());
 	}
-	child = boost::process::child (path, args);
+	child = boost::process::child (
+	path, args, boost::process::env[managed_env] = "1", io_ctx, boost::process::on_exit = [stop_owner = std::move (stop_owner)] (int status, std::error_code const & ec) {
+		if (!ec && status == node_stop_exit_code)
+		{
+			stop_owner ();
+		}
+	});
 }
 
 void nano::rpc_process::stop ()

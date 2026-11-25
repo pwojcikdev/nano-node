@@ -1,10 +1,12 @@
 #pragma once
 
+#include <nano/boost/asio/fwd.hpp>
 #include <nano/boost/process/child.hpp>
 #include <nano/node/fwd.hpp>
 
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -22,10 +24,13 @@ class rpc_process final
 public:
 	// How long `stop` waits for the child to exit on its own before terminating it
 	static constexpr std::chrono::seconds grace_period{ 5 };
+	// A managed child uses this exit status only after replying to an authorized stop request.
+	static constexpr char managed_env[] = "NANO_RPC_NODE_CHILD";
+	static constexpr int node_stop_exit_code = 200;
 
 public:
 	// Spawns the child, throws `std::runtime_error` when the configured executable does not exist
-	rpc_process (nano::node_rpc_config const &, std::filesystem::path const & data_path, std::string_view network, nano::logger &, std::vector<std::string> const & config_overrides = {});
+	rpc_process (nano::node_rpc_config const &, std::filesystem::path const & data_path, std::string_view network, nano::logger &, std::vector<std::string> const & config_overrides, boost::asio::io_context &, std::function<void ()> stop_owner);
 
 	// Waits up to `grace_period` for the child to exit on its own, then terminates it
 	void stop ();

@@ -26,7 +26,8 @@ RPC_PORT=$(jq -r '.rpc_port' "$RUNTIME_INFO")
 [ "$RPC_PORT" != "0" ] && [ -n "$RPC_PORT" ] && [ "$RPC_PORT" != "null" ] || { echo "FAIL: invalid rpc_port"; exit 1; }
 
 # Send the stop rpc command
-curl -g -d '{ "action": "stop" }' "[::1]:$RPC_PORT"
+RESPONSE=$(curl --noproxy '*' -gfs --max-time 5 -d '{ "action": "stop" }' "[::1]:$RPC_PORT")
+jq -e '.success == ""' <<< "$RESPONSE"
 
 # Check if the process has stopped using a timeout to avoid infinite waiting
 if wait $NODE_PID; then

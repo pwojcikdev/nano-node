@@ -1,4 +1,5 @@
 #include <nano/lib/cli.hpp>
+#include <nano/lib/env.hpp>
 #include <nano/lib/errors.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/logging.hpp>
@@ -10,12 +11,13 @@
 #include <nano/node/cli.hpp>
 #include <nano/node/ipc/ipc_server.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/node/rpc_process.hpp>
 #include <nano/rpc/rpc_host.hpp>
 #include <nano/rpc/rpc_request_processor.hpp>
 
 #include <boost/program_options.hpp>
 
-#include <latch>
+#include <atomic>
 
 using namespace nano;
 
@@ -35,16 +37,19 @@ int run (std::filesystem::path const & data_path, std::vector<std::string> const
 	nano::network_params network_params{ nano::get_active_network () };
 	nano::rpc_config rpc_config{ network_params.network };
 	auto error = nano::read_rpc_config_toml (data_path, rpc_config, config_overrides);
+	std::atomic<int> exit_status{ -1 };
 	if (!error)
 	{
 		try
 		{
-			std::atomic stopped{ false };
-
-			auto signal_handler = [&stopped, &logger] (int signum) {
+			auto finish = [&exit_status] (int status) {
+				int running = -1;
+				exit_status.compare_exchange_strong (running, status);
+				exit_status.notify_all ();
+			};
+			auto signal_handler = [&finish, &logger] (int signum) {
 				logger.warn (nano::log::type::daemon_rpc, "Interrupt signal received ({}), stopping...", nano::to_signal_name (signum));
-				stopped = true;
-				stopped.notify_all ();
+				finish (0);
 			};
 
 			nano::signal_manager sigman;
@@ -52,10 +57,14 @@ int run (std::filesystem::path const & data_path, std::vector<std::string> const
 			sigman.register_signal_handler (SIGTERM, signal_handler, false);
 
 			auto rpc = std::make_unique<nano::rpc_host> (rpc_config);
-			rpc->start (std::make_unique<nano::ipc_rpc_processor> (rpc->io_context (), rpc_config));
+			std::function<void ()> stop_owner;
+			if (nano::env::get (nano::rpc_process::managed_env) == "1")
+			{
+				stop_owner = [&finish] { finish (nano::rpc_process::node_stop_exit_code); };
+			}
+			rpc->start (std::make_unique<nano::ipc_rpc_processor> (rpc->io_context (), rpc_config, std::move (stop_owner)));
 
-			// Keep running until stopped flag is set
-			stopped.wait (false);
+			exit_status.wait (-1);
 
 			logger.info (nano::log::type::daemon_rpc, "Stopping...");
 
@@ -74,7 +83,7 @@ int run (std::filesystem::path const & data_path, std::vector<std::string> const
 	}
 
 	logger.info (nano::log::type::daemon_rpc, "Stopped");
-	return 0;
+	return exit_status.load ();
 }
 }
 
