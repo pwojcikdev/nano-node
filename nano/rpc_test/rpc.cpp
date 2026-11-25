@@ -6608,6 +6608,42 @@ TEST (rpc, wallet_history)
 	ASSERT_EQ (nano::dev::genesis_key.pub.to_account (), std::get<4> (history_l[3]));
 }
 
+TEST (rpc, wallet_history_pruning)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	nano::node_flags flags;
+	flags.enable_pruning = true;
+	flags.disable_topo_index = true;
+	auto node = add_ipc_enabled_node (system, config, flags);
+	nano::keypair recipient;
+	auto [funding, open] = nano::test::setup_new_account (system, *node, 1, nano::dev::genesis_key, recipient, recipient.pub, true);
+	auto frontier = nano::test::setup_chain (system, *node, 1, nano::dev::genesis_key, true).front ();
+	{
+		auto tx = node->ledger.tx_begin_write ();
+		ASSERT_EQ (1, node->ledger.pruning_action (tx, funding->hash (), 1));
+	}
+	auto wallet = system.wallet (0);
+	ASSERT_TRUE (wallet->insert_adhoc (nano::dev::genesis_key.prv, false));
+	ASSERT_TRUE (wallet->insert_adhoc (recipient.prv, false));
+
+	auto const rpc_ctx = add_rpc (system, node);
+	boost::property_tree::ptree request;
+	request.put ("action", "wallet_history");
+	request.put ("wallet", node->wallets.wallet_ids ().front ().to_string ());
+	auto response = wait_response (system, rpc_ctx, request);
+	auto const & history = response.get_child ("history");
+	ASSERT_EQ (2, history.size ());
+	std::set<std::string> hashes;
+	for (auto const & entry : history)
+	{
+		hashes.insert (entry.second.get<std::string> ("hash"));
+	}
+	ASSERT_TRUE (hashes.contains (frontier->hash ().to_string ()));
+	ASSERT_TRUE (hashes.contains (open->hash ().to_string ()));
+}
+
 TEST (rpc, sign_hash)
 {
 	nano::test::system system;
