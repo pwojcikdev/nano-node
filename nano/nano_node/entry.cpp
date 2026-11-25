@@ -1511,32 +1511,21 @@ int main (int argc, char * const * argv)
 					{
 						print_error_message (boost::str (boost::format ("Invalid data inside block %1% calculated hash: %2%\n") % hash.to_string () % calculated_hash.to_string ()));
 					}
-					// Check if block signature is correct
-					if (validate_message (account, hash, block->block_signature ()))
+					// Epoch blocks are signed by the epoch signer, including after their predecessor is pruned.
+					auto signer = account;
+					if (auto const * state = dynamic_cast<nano::state_block const *> (block.get ()); state && node->ledger.is_epoch_link (state->hashables.link))
 					{
-						bool invalid (true);
-						// Epoch blocks
-						if (block->type () == nano::block_type::state)
+						auto const previous = state->previous ();
+						auto const previous_balance = previous.is_zero () ? std::optional<nano::amount>{ 0 } : node->ledger.any.block_balance (transaction, previous);
+						bool const is_epoch = previous_balance ? state->balance () == *previous_balance : sideband.details.is_epoch && node->ledger.any.block_pruned (transaction, previous);
+						if (is_epoch)
 						{
-							auto & state_block (static_cast<nano::state_block &> (*block.get ()));
-							nano::amount prev_balance (0);
-							bool error_or_pruned (false);
-							if (!state_block.hashables.previous.is_zero ())
-							{
-								prev_balance = node->ledger.any.block_balance (transaction, state_block.hashables.previous).value_or (0);
-							}
-							if (node->ledger.is_epoch_link (state_block.hashables.link))
-							{
-								if ((state_block.hashables.balance == prev_balance && !error_or_pruned) || (node->ledger.flags.pruning && error_or_pruned && block->sideband ().details.is_epoch))
-								{
-									invalid = validate_message (node->ledger.epoch_signer (block->link_field ().value ()), hash, block->block_signature ());
-								}
-							}
+							signer = node->ledger.epoch_signer (state->hashables.link);
 						}
-						if (invalid)
-						{
-							print_error_message (boost::str (boost::format ("Invalid signature for block %1%\n") % hash.to_string ()));
-						}
+					}
+					if (validate_message (signer, hash, block->block_signature ()))
+					{
+						print_error_message (boost::str (boost::format ("Invalid signature for block %1%\n") % hash.to_string ()));
 					}
 					// Validate block details set in the sideband
 					bool block_details_error = false;
