@@ -138,8 +138,6 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 	observers{ *observers_impl },
 	workers_impl{ std::make_unique<nano::thread_pool> (config.background_threads, nano::thread_role::name::worker, /* start immediately */ true) },
 	workers{ *workers_impl },
-	bootstrap_workers_impl{ std::make_unique<nano::thread_pool> (config.bootstrap_serving_threads, nano::thread_role::name::bootstrap_worker, /* start immediately */ true) },
-	bootstrap_workers{ *bootstrap_workers_impl },
 	wallet_workers_impl{ std::make_unique<nano::thread_pool> (1, nano::thread_role::name::wallet_worker, /* start immediately */ true) },
 	wallet_workers{ *wallet_workers_impl },
 	election_workers_impl{ std::make_unique<nano::thread_pool> (1, nano::thread_role::name::election_worker, /* start immediately */ true) },
@@ -658,7 +656,6 @@ void nano::node::stop ()
 	vote_rebroadcaster.stop ();
 	block_rebroadcaster.stop ();
 
-	bootstrap_workers.stop ();
 	wallet_workers.stop ();
 	election_workers.stop ();
 	workers.stop ();
@@ -1015,7 +1012,6 @@ nano::container_info nano::node::container_info () const
 	info.add ("peer_blocklist", peer_blocklist.container_info ());
 	info.add ("telemetry", telemetry.container_info ());
 	info.add ("workers", workers.container_info ());
-	info.add ("bootstrap_workers", bootstrap_workers.container_info ());
 	info.add ("wallet_workers", wallet_workers.container_info ());
 	info.add ("election_workers", election_workers.container_info ());
 	info.add ("observers", observers.container_info ());

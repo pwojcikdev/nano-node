@@ -72,6 +72,23 @@ TEST (toml_config, legacy_network_threads)
 	ASSERT_EQ (defaults.message_processor->threads, config.message_processor->threads);
 }
 
+TEST (toml_config, obsolete_bootstrap_serving_threads)
+{
+	nano::node_config config;
+	nano::tomlconfig legacy;
+	ASSERT_FALSE (legacy.apply_override ("bootstrap_serving_threads=0"));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	ASSERT_EQ (nano::bootstrap_server_config{}.threads, config.bootstrap_server->threads);
+
+	ASSERT_FALSE (legacy.apply_override ("bootstrap_server.threads=2"));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	ASSERT_EQ (2, config.bootstrap_server->threads);
+
+	nano::tomlconfig serialized;
+	config.serialize_toml (serialized);
+	ASSERT_FALSE (serialized.has_key ("bootstrap_serving_threads"));
+}
+
 TEST (toml_config, daemon_config_update_array)
 {
 	nano::tomlconfig t;
@@ -205,7 +222,6 @@ TEST (toml_config, daemon_config_deserialize_defaults)
 	ASSERT_EQ (conf.node.bootstrap_connections, defaults.node.bootstrap_connections);
 	ASSERT_EQ (conf.node.bootstrap_connections_max, defaults.node.bootstrap_connections_max);
 	ASSERT_EQ (conf.node.bootstrap_initiator_threads, defaults.node.bootstrap_initiator_threads);
-	ASSERT_EQ (conf.node.bootstrap_serving_threads, defaults.node.bootstrap_serving_threads);
 	ASSERT_EQ (conf.node.bootstrap_frontier_request_count, defaults.node.bootstrap_frontier_request_count);
 	ASSERT_EQ (conf.node.bootstrap_fraction_numerator, defaults.node.bootstrap_fraction_numerator);
 	ASSERT_EQ (conf.node.enable_voting, defaults.node.enable_voting);
@@ -370,7 +386,6 @@ TEST (toml_config, daemon_config_deserialize_no_defaults)
 	bootstrap_connections = 999
 	bootstrap_connections_max = 999
 	bootstrap_initiator_threads = 999
-	bootstrap_serving_threads = 999
 	bootstrap_frontier_request_count = 9999
 	bootstrap_fraction_numerator = 999
 	enable_voting = false
@@ -638,7 +653,6 @@ TEST (toml_config, daemon_config_deserialize_no_defaults)
 	ASSERT_NE (conf.node.bootstrap_connections, defaults.node.bootstrap_connections);
 	ASSERT_NE (conf.node.bootstrap_connections_max, defaults.node.bootstrap_connections_max);
 	ASSERT_NE (conf.node.bootstrap_initiator_threads, defaults.node.bootstrap_initiator_threads);
-	ASSERT_NE (conf.node.bootstrap_serving_threads, defaults.node.bootstrap_serving_threads);
 	ASSERT_NE (conf.node.bootstrap_frontier_request_count, defaults.node.bootstrap_frontier_request_count);
 	ASSERT_NE (conf.node.bootstrap_fraction_numerator, defaults.node.bootstrap_fraction_numerator);
 	ASSERT_NE (conf.node.enable_voting, defaults.node.enable_voting);
