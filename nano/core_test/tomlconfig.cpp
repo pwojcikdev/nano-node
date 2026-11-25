@@ -246,6 +246,25 @@ TEST (tomlconfig, override_creates_tables)
 	ASSERT_EQ (items, (std::vector<std::string>{ "a", "b" }));
 }
 
+TEST (tomlconfig, required_array_type)
+{
+	for (auto entry : { "items=\"seed.example\"", "items=[[\"seed.example\"]]" })
+	{
+		nano::tomlconfig config;
+		ASSERT_FALSE (config.apply_override (entry));
+		config.array_entries_required<std::string> ("items", [] (auto const &) { ADD_FAILURE (); });
+		ASSERT_EQ (config.get_error (), nano::error_config::invalid_value);
+		ASSERT_NE (config.get_error ().get_message ().find ("items"), std::string::npos);
+	}
+
+	nano::tomlconfig config;
+	ASSERT_FALSE (config.apply_override ("items=[]"));
+	config.array_entries_required<std::string> ("items", [] (auto const &) { ADD_FAILURE (); });
+	ASSERT_FALSE (config.get_error ());
+	config.array_entries_required<std::string> ("missing", [] (auto const &) { ADD_FAILURE (); });
+	ASSERT_EQ (config.get_error (), nano::error_config::missing_value);
+}
+
 /** A malformed override is reported with the offending entry and leaves the document untouched */
 TEST (tomlconfig, override_invalid)
 {

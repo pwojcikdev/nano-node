@@ -98,6 +98,11 @@ public:
 		if (tree->contains_qualified (key))
 		{
 			auto items = tree->get_qualified_array_of<T> (key);
+			if (!items)
+			{
+				set_error_once (nano::error_config::invalid_value, "Invalid configuration array: " + key);
+				return *this;
+			}
 			for (auto & item : *items)
 			{
 				callback (item);
