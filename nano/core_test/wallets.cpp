@@ -1031,6 +1031,48 @@ TEST (wallets, rep_keys_cache_watch_only_representative)
 	ASSERT_TRUE (accounts.empty ());
 }
 
+TEST (wallets, representative_in_multiple_wallets)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	node.wallets.stop ();
+	auto wallets = make_wallets (node); // Only the explicit refresh below runs a representative scan.
+	auto primary = wallets.all_wallets ().begin ()->second;
+	auto secondary = wallets.create (nano::random_wallet_id ());
+	ASSERT_NE (nullptr, secondary);
+	auto const & rep = nano::dev::genesis_key;
+	auto sign = wallets.signer ();
+	auto signer_count = [&] () {
+		unsigned count = 0;
+		sign ([&] (nano::public_key const & pub, nano::raw_key const & prv) {
+			EXPECT_EQ (rep.pub, pub);
+			EXPECT_EQ (pub, nano::pub_key (prv));
+			++count;
+		});
+		return count;
+	};
+
+	ASSERT_FALSE (primary->insert_watch (rep.pub));
+	wallets.refresh_reps ();
+	EXPECT_EQ (0, signer_count ());
+	ASSERT_TRUE (secondary->insert_adhoc (rep.prv, false));
+	EXPECT_EQ (1, signer_count ());
+
+	ASSERT_TRUE (primary->insert_adhoc (rep.prv, false));
+	wallets.refresh_reps ();
+	EXPECT_EQ (1, wallets.reps ().voting);
+	EXPECT_EQ (1, signer_count ());
+
+	ASSERT_FALSE (primary->rekey ("primary"));
+	ASSERT_FALSE (secondary->rekey ("secondary"));
+	primary->lock ();
+	EXPECT_EQ (1, signer_count ());
+	secondary->lock ();
+	EXPECT_EQ (0, signer_count ());
+	ASSERT_FALSE (primary->enter_password ("primary"));
+	EXPECT_EQ (1, signer_count ());
+}
+
 /*
  * A failed password attempt overwrites the live password and locks the wallet,
  * so cached representative keys must be cleared instead of surviving the failure
