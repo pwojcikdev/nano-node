@@ -803,6 +803,10 @@ TEST (ledger, weights_zero_representative)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, block1));
 	ASSERT_EQ (0, ledger.rep_weights.get (nano::dev::genesis_key.pub));
 	ASSERT_EQ (0, ledger.rep_weights.get (0));
+	EXPECT_FALSE (ledger.rep_weights_snapshot ().contains (nano::account{ 0 }));
+	EXPECT_EQ (0, ledger.weight_exact (transaction, 0));
+	// The ledger still accounts for the full balance so it can be reassigned.
+	EXPECT_EQ (nano::dev::constants.genesis_amount, ledger.rep_weights.get_weight_committed ());
 
 	// Delegating back to genesis restores its weight, the zero account still reads zero
 	auto block2 = builder.state ()
@@ -817,6 +821,7 @@ TEST (ledger, weights_zero_representative)
 	ASSERT_EQ (nano::block_status::progress, ledger.process (transaction, block2));
 	ASSERT_EQ (nano::dev::constants.genesis_amount, ledger.rep_weights.get (nano::dev::genesis_key.pub));
 	ASSERT_EQ (0, ledger.rep_weights.get (0));
+	ASSERT_EQ (nano::dev::constants.genesis_amount, ledger.weight_exact (transaction, nano::dev::genesis_key.pub));
 }
 
 /*

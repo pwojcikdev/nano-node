@@ -166,7 +166,7 @@ void nano::rep_weights::put_cache (nano::account const & rep, nano::uint128_unio
 	debug_assert (!mutex.try_lock ());
 
 	auto it = rep_amounts.find (rep);
-	if (weight < min_weight || weight.is_zero ())
+	if (rep.is_zero () || weight < min_weight || weight.is_zero ())
 	{
 		if (it != rep_amounts.end ())
 		{
@@ -205,11 +205,6 @@ void nano::rep_weights::put_store (store::write_transaction const & txn, nano::a
 
 nano::uint128_t nano::rep_weights::get_impl (nano::account const & rep) const
 {
-	if (rep.is_zero ())
-	{
-		return 0; // Zero account always has zero weight
-	}
-
 	auto it = rep_amounts.find (rep);
 	if (it != rep_amounts.end ())
 	{

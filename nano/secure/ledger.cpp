@@ -612,7 +612,8 @@ void nano::ledger::weights (std::span<nano::account const> reps, std::span<nano:
 
 nano::uint128_t nano::ledger::weight_exact (secure::transaction const & txn_a, nano::account const & representative_a) const
 {
-	return store.rep_weight.get (txn_a, representative_a);
+	// Delegations to the zero account are stored for balance accounting but carry no voting weight.
+	return representative_a.is_zero () ? 0 : store.rep_weight.get (txn_a, representative_a);
 }
 
 // Rollback blocks until `block_a' doesn't exist or it tries to penetrate the confirmation height
