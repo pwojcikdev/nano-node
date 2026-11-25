@@ -78,7 +78,18 @@ void nano::pruning::ledger_pruning (uint64_t const batch_size_a, bool bootstrap_
 	stats.inc (nano::stat::type::pruning, nano::stat::detail::ledger_pruning);
 
 	uint64_t const max_depth (config.max_pruning_depth != 0 ? config.max_pruning_depth : std::numeric_limits<uint64_t>::max ());
-	uint64_t const cutoff_time (bootstrap_weight_reached_a ? nano::seconds_since_epoch () - config.max_pruning_age.count () : std::numeric_limits<uint64_t>::max ());
+	auto const now = nano::seconds_since_epoch ();
+	auto const max_age = static_cast<uint64_t> (std::max (config.max_pruning_age, std::chrono::seconds::zero ()).count ());
+	// If the cutoff predates the Unix epoch, only the depth limit can prune a block.
+	std::optional<uint64_t> cutoff_time;
+	if (!bootstrap_weight_reached_a)
+	{
+		cutoff_time = std::numeric_limits<uint64_t>::max ();
+	}
+	else if (max_age <= now)
+	{
+		cutoff_time = now - max_age;
+	}
 	uint64_t pruned_count (0);
 	uint64_t transaction_write_count (0);
 	nano::account last_account (1); // 0 Burn account is never opened. So it can be used to break loop
@@ -117,7 +128,7 @@ void nano::pruning::ledger_pruning (uint64_t const batch_size_a, bool bootstrap_
 	logger.info (nano::log::type::pruning, "Recently pruned blocks: {}", pruned_count);
 }
 
-bool nano::pruning::collect_ledger_pruning_targets (std::deque<nano::block_hash> & pruning_targets_a, nano::account & last_account_a, uint64_t const batch_read_size_a, uint64_t const max_depth_a, uint64_t const cutoff_time_a)
+bool nano::pruning::collect_ledger_pruning_targets (std::deque<nano::block_hash> & pruning_targets_a, nano::account & last_account_a, uint64_t const batch_read_size_a, uint64_t const max_depth_a, std::optional<uint64_t> const cutoff_time_a)
 {
 	uint64_t read_operations (0);
 	bool finish_transaction (false);
@@ -133,14 +144,11 @@ bool nano::pruning::collect_ledger_pruning_targets (std::deque<nano::block_hash>
 			auto block = ledger.any.block_get (transaction, hash);
 			if (block != nullptr)
 			{
-				if (block->sideband ().timestamp > cutoff_time_a || depth == 0)
-				{
-					hash = block->previous ();
-				}
-				else
+				if (depth != 0 && cutoff_time_a && block->sideband ().timestamp <= *cutoff_time_a)
 				{
 					break;
 				}
+				hash = block->previous ();
 			}
 			else
 			{

@@ -6,6 +6,7 @@
 
 #include <condition_variable>
 #include <deque>
+#include <optional>
 #include <thread>
 
 namespace nano
@@ -22,7 +23,7 @@ public:
 	nano::container_info container_info () const;
 
 	void ledger_pruning (uint64_t batch_size, bool bootstrap_weight_reached);
-	bool collect_ledger_pruning_targets (std::deque<nano::block_hash> & pruning_targets_out, nano::account & last_account_out, uint64_t batch_read_size, uint64_t max_depth, uint64_t cutoff_time);
+	bool collect_ledger_pruning_targets (std::deque<nano::block_hash> & pruning_targets_out, nano::account & last_account_out, uint64_t batch_read_size, uint64_t max_depth, std::optional<uint64_t> cutoff_time);
 
 private: // Dependencies
 	nano::node_config const & config;

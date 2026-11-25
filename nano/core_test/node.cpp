@@ -3628,6 +3628,8 @@ TEST (node, pruning_depth)
 
 	nano::node_config node_config;
 	node_config.peering_port = system.get_available_port ();
+	// A retention period reaching before the Unix epoch leaves only depth-based pruning active.
+	node_config.max_pruning_age = std::chrono::seconds{ nano::seconds_since_epoch () } + 24h;
 	// TODO: remove after allowing pruned voting
 	node_config.enable_voting = false;
 
