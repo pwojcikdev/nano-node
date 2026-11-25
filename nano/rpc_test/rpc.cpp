@@ -1421,6 +1421,59 @@ TEST (rpc, history_count)
 	ASSERT_EQ (1, history_node.size ());
 }
 
+TEST (rpc, account_history_pruned_offset)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	config.max_pruning_depth = 2;
+	nano::node_flags flags;
+	flags.enable_pruning = true;
+	flags.disable_topo_index = true;
+	auto node = add_ipc_enabled_node (system, config, flags);
+	auto const [account, blocks] = nano::test::setup_chains (system, *node, 1, 3).front ();
+	node->pruning.ledger_pruning (64, true);
+	auto const & first_retained = blocks[2]->hash ();
+	auto const & last = blocks[3]->hash ();
+	ASSERT_FALSE (node->block (blocks[0]->hash ()));
+	ASSERT_FALSE (node->block (blocks[1]->hash ()));
+	ASSERT_NE (nullptr, node->block (first_retained));
+
+	auto const rpc_ctx = add_rpc (system, node);
+	boost::property_tree::ptree request;
+	request.put ("action", "account_history");
+	request.put ("account", account.to_account ());
+	request.put ("raw", true);
+	request.put ("count", 2);
+	auto response = wait_response (system, rpc_ctx, request);
+	EXPECT_EQ (2, response.get_child ("history").size ());
+	EXPECT_FALSE (response.get_optional<std::string> ("previous"));
+
+	request.put ("count", 1);
+	request.put ("reverse", true);
+	request.put ("offset", 2);
+	response = wait_response (system, rpc_ctx, request);
+	ASSERT_FALSE (response.get_optional<std::string> ("error"));
+	auto const & history = response.get_child ("history");
+	ASSERT_EQ (1, history.size ());
+	ASSERT_EQ (first_retained.to_string (), history.front ().second.get<std::string> ("hash"));
+	ASSERT_EQ (last.to_string (), response.get<std::string> ("next"));
+
+	request.put ("head", response.get<std::string> ("next"));
+	request.erase ("offset");
+	response = wait_response (system, rpc_ctx, request);
+	auto const & last_page = response.get_child ("history");
+	ASSERT_EQ (1, last_page.size ());
+	EXPECT_EQ (last.to_string (), last_page.front ().second.get<std::string> ("hash"));
+	EXPECT_FALSE (response.get_optional<std::string> ("next"));
+
+	request.erase ("head");
+	request.put ("offset", blocks.size ());
+	response = wait_response (system, rpc_ctx, request);
+	EXPECT_TRUE (response.get_child ("history").empty ());
+	EXPECT_FALSE (response.get_optional<std::string> ("next"));
+}
+
 TEST (rpc, history_pruning)
 {
 	nano::test::system system;

@@ -2920,6 +2920,7 @@ void nano::json_handler::account_history ()
 	}
 	nano::account account;
 	nano::block_hash hash;
+	uint64_t height{ 0 };
 	bool reverse (request.get_optional<bool> ("reverse") == true);
 	auto head_str (request.get_optional<std::string> ("head"));
 	auto transaction = node.ledger.tx_begin_read ();
@@ -2929,9 +2930,10 @@ void nano::json_handler::account_history ()
 	{
 		if (!hash.decode_hex (*head_str))
 		{
-			if (node.ledger.any.block_exists (transaction, hash))
+			if (auto block = node.ledger.any.block_get (transaction, hash))
 			{
-				account = node.ledger.any.block_account (transaction, hash).value ();
+				account = block->account ();
+				height = block->sideband ().height;
 			}
 			else
 			{
@@ -2954,42 +2956,21 @@ void nano::json_handler::account_history ()
 				if (reverse)
 				{
 					hash = info.open_block;
+					height = 1;
 				}
 				else
 				{
 					hash = info.head;
+					height = info.block_count;
 				}
 			}
 		}
 	}
 	if (!ec && offset > 0)
 	{
-		auto block = node.ledger.any.block_get (transaction, hash);
-		if (block)
-		{
-			// Saturate on client-supplied offsets; height 0 and heights past the frontier resolve to no block, yielding an empty history
-			uint64_t start_height;
-			if (reverse)
-			{
-				start_height = nano::add_sat (block->sideband ().height, offset);
-			}
-			else
-			{
-				start_height = nano::sub_sat (block->sideband ().height, offset);
-			}
-			if (auto start_hash = node.ledger.find_block_hash_by_height (transaction, account, start_height))
-			{
-				hash = start_hash.value ();
-			}
-			else
-			{
-				hash = nano::block_hash (0);
-			}
-		}
-		else
-		{
-			ec = nano::error_blocks::not_found;
-		}
+		// The account record supplies the starting height even when its open block has been pruned.
+		auto const start_height = reverse ? nano::add_sat (height, offset) : nano::sub_sat (height, offset);
+		hash = node.ledger.find_block_hash_by_height (transaction, account, start_height).value_or (0);
 	}
 	if (!ec)
 	{
@@ -3038,7 +3019,7 @@ void nano::json_handler::account_history ()
 			block = node.ledger.any.block_get (transaction, hash);
 		}
 		response_l.add_child ("history", history);
-		if (!hash.is_zero ())
+		if (block)
 		{
 			response_l.put (reverse ? "next" : "previous", hash.to_string ());
 		}
