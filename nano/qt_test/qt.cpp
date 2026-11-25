@@ -342,10 +342,10 @@ TEST (qt_wallet, send)
 	QTest::mouseClick (wallet->advanced.ledger_refresh, Qt::LeftButton);
 	ASSERT_EQ (2, wallet->advanced.ledger_model->rowCount ());
 	ASSERT_EQ (3, wallet->advanced.ledger_model->columnCount ());
-	auto item (wallet->advanced.ledger_model->itemFromIndex (wallet->advanced.ledger_model->index (0, 1)));
-	auto other_item (wallet->advanced.ledger_model->itemFromIndex (wallet->advanced.ledger_model->index (1, 1)));
-	// this seems somewhat random
-	ASSERT_TRUE (("2" == item->text ()) || ("2" == other_item->text ()));
+	auto const recipients = wallet->advanced.ledger_model->findItems (QString::fromStdString (key1.to_account ()));
+	ASSERT_EQ (1, recipients.size ());
+	auto const balance_item = wallet->advanced.ledger_model->item (recipients.front ()->row (), 1);
+	ASSERT_EQ ("2.03 nano", balance_item->text ().toStdString ());
 }
 
 TEST (qt_wallet, send_locked)

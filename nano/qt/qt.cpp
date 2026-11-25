@@ -2244,7 +2244,7 @@ void nano_qt::advanced_actions::refresh_ledger ()
 		QList<QStandardItem *> items;
 		items.push_back (new QStandardItem (QString (i->first.to_account ().c_str ())));
 		nano::account_info const & info (i->second);
-		std::string balance = nano::amount (info.balance.number () / wallet.rendering_ratio).to_string_dec ();
+		std::string balance = wallet.format_balance (info.balance.number ());
 		items.push_back (new QStandardItem (QString (balance.c_str ())));
 		std::string block_hash = info.head.to_string ();
 		items.push_back (new QStandardItem (QString (block_hash.c_str ())));
