@@ -8,7 +8,17 @@ node() {
     "$NANO_NODE_EXE" --data_path "$datadir" --network dev "$@"
 }
 
-printf '[node.rocksdb]\nenable = true\n' > "$datadir/config-node.toml"
+# Leave a real LMDB ledger in place, as on a node that has switched backends.
+printf '[node]\ndatabase_backend = "lmdb"\n' > "$datadir/config-node.toml"
+node --initialize
+node --snapshot
+test -f "$datadir/snapshot.ldb"
+node --vacuum
+test -f "$datadir/backup.vacuum.ldb"
+node --debug_block_count | grep -q 'Block count: 1'
+cp "$datadir/data.ldb" "$datadir/reference.ldb"
+
+printf '[node]\ndatabase_backend = "rocksdb"\n' > "$datadir/config-node.toml"
 node --initialize
 # The first RocksDB vacuum must create its nested destination even without a prior snapshot.
 node --vacuum
@@ -25,6 +35,7 @@ node --vacuum
 test -f "$datadir/rocksdb/CURRENT"
 test -f "$datadir/rocksdb/backup/CURRENT"
 node --debug_block_count | grep -q 'Block count: 1'
+cmp "$datadir/reference.ldb" "$datadir/data.ldb"
 
 # Hold the primary lock with a running dev node; both maintenance commands must preserve the completed backup.
 reference_dir=$(new_datadir)
