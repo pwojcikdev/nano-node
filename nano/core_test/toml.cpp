@@ -84,6 +84,39 @@ TEST (toml_config, daemon_config_update_array)
 }
 
 /** Empty rpc config file should match a default config object */
+TEST (toml_config, migrate_request_aggregator_settings)
+{
+	nano::node_config defaults;
+	nano::node_config config;
+	nano::tomlconfig legacy;
+	ASSERT_FALSE (legacy.apply_override ("max_queued_requests=2"));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	ASSERT_EQ (2, config.vote_replier->channel_limit);
+
+	ASSERT_FALSE (legacy.apply_overrides ({ "request_aggregator.max_queue=3", "request_aggregator.threads=7", "request_aggregator.batch_size=11" }));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	ASSERT_EQ (3, config.vote_replier->channel_limit);
+	ASSERT_EQ (7, config.vote_replier->threads);
+	ASSERT_EQ (11, config.vote_replier->batch_size);
+
+	// A modern override for one field must retain the other two from the old section.
+	ASSERT_FALSE (legacy.apply_override ("vote_replier.channel_limit=" + std::to_string (defaults.vote_replier->channel_limit)));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	nano::tomlconfig serialized, baseline;
+	config.serialize_toml (serialized);
+	defaults.serialize_toml (baseline);
+	ASSERT_FALSE (serialized.has_key ("max_queued_requests"));
+	ASSERT_FALSE (serialized.has_key ("request_aggregator"));
+	std::stringstream updated{ nano::render_config_update (serialized, baseline) };
+	nano::tomlconfig parsed;
+	ASSERT_FALSE (parsed.read (updated));
+	nano::node_config reloaded;
+	ASSERT_FALSE (reloaded.deserialize_toml (parsed));
+	ASSERT_EQ (defaults.vote_replier->channel_limit, reloaded.vote_replier->channel_limit);
+	ASSERT_EQ (7, reloaded.vote_replier->threads);
+	ASSERT_EQ (11, reloaded.vote_replier->batch_size);
+}
+
 TEST (toml_config, rpc_config_deserialize_defaults)
 {
 	std::stringstream ss;
@@ -197,7 +230,6 @@ TEST (toml_config, daemon_config_deserialize_defaults)
 	ASSERT_EQ (conf.node.vote_minimum, defaults.node.vote_minimum);
 	ASSERT_EQ (conf.node.work_peers, defaults.node.work_peers);
 	ASSERT_EQ (conf.node.work_threads, defaults.node.work_threads);
-	ASSERT_EQ (conf.node.max_queued_requests, defaults.node.max_queued_requests);
 	ASSERT_EQ (conf.node.max_unchecked_blocks, defaults.node.max_unchecked_blocks);
 	ASSERT_EQ (conf.node.max_backlog, defaults.node.max_backlog);
 	ASSERT_EQ (conf.node.enable_upnp, defaults.node.enable_upnp);
@@ -635,7 +667,6 @@ TEST (toml_config, daemon_config_deserialize_no_defaults)
 	ASSERT_NE (conf.node.vote_minimum, defaults.node.vote_minimum);
 	ASSERT_NE (conf.node.work_peers, defaults.node.work_peers);
 	ASSERT_NE (conf.node.work_threads, defaults.node.work_threads);
-	ASSERT_NE (conf.node.max_queued_requests, defaults.node.max_queued_requests);
 	ASSERT_NE (conf.node.enable_upnp, defaults.node.enable_upnp);
 
 	ASSERT_NE (conf.node.backlog_scan->enable, defaults.node.backlog_scan->enable);
