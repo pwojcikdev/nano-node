@@ -22,6 +22,12 @@ expect_failure --key_expand
 expect_failure --key_expand --key invalid
 expect_failure --generate_config invalid
 
+account=nano_1111111111111111111111111111111111111111111111111113b8661hfk
+key=$(printf '%064x' 1)
+[ "$("$NANO_NODE_EXE" --account_key --account "$account" --data_path "$DATADIR")" = "Hex: $key" ]
+expect_failure --account_key --account "${account%?}1" > "$DATADIR/account_key.out"
+[ ! -s "$DATADIR/account_key.out" ]
+
 # a node config that cannot be parsed fails the commands that read it
 echo "[node" > $DATADIR/config-node.toml
 expect_failure --database_info

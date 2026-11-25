@@ -467,8 +467,15 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 		if (vm.count ("account") == 1)
 		{
 			nano::account account;
-			account.decode_account (vm["account"].as<std::string> ());
-			std::cout << "Hex: " << account.to_string () << std::endl;
+			if (!account.decode_account (vm["account"].as<std::string> ()))
+			{
+				std::cout << "Hex: " << account.to_string () << std::endl;
+			}
+			else
+			{
+				std::cerr << "Invalid account\n";
+				ec = nano::error_cli::invalid_arguments;
+			}
 		}
 		else
 		{
