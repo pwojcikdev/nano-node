@@ -547,6 +547,45 @@ TEST (qt_wallet, history_short_text)
 	ASSERT_EQ (4, history.model->rowCount ());
 }
 
+TEST (qt_wallet, history_keeps_pruned_sources_unknown)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	config.receive_minimum = 1;
+	nano::node_flags flags;
+	flags.enable_pruning = true;
+	flags.disable_topo_index = true;
+	auto & node = *system.add_node (config, flags);
+	auto wallet = system.wallet (0);
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (wallet->insert_adhoc (genesis.prv, false));
+	nano::keypair recipient;
+
+	auto source = wallet->send_action (genesis.pub, genesis.pub, 7);
+	ASSERT_NE (nullptr, source);
+	ASSERT_NE (nullptr, wallet->send_action (genesis.pub, recipient.pub, 1));
+	ASSERT_NE (nullptr, wallet->receive_action (source->hash (), genesis.pub, 7, genesis.pub));
+	auto head = wallet->send_action (genesis.pub, recipient.pub, 1);
+	ASSERT_NE (nullptr, head);
+	{
+		auto txn = node.ledger.tx_begin_write ();
+		node.ledger.cement (txn, head->hash ());
+		ASSERT_EQ (1, node.ledger.pruning_action (txn, source->hash (), 1));
+	}
+
+	auto view = std::make_shared<nano_qt::wallet> (*test_application, processor, node, wallet, genesis.pub);
+	view->rendering_ratio = nano::raw_ratio;
+	view->history.refresh ();
+	auto const & model = *view->history.model;
+	ASSERT_EQ (3, model.rowCount ());
+	EXPECT_EQ (recipient.pub.to_account (), model.item (0, 1)->text ().toStdString ());
+	EXPECT_EQ ("Receive (pruned source)", model.item (1, 0)->text ().toStdString ());
+	EXPECT_EQ (nano::account{}.to_account (), model.item (1, 1)->text ().toStdString ());
+	EXPECT_EQ ("7 raw", model.item (1, 2)->text ().toStdString ());
+}
+
 TEST (qt_wallet, history_pruned_source)
 {
 	if (nano::default_database_backend () == nano::database_backend::rocksdb)

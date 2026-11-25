@@ -876,23 +876,25 @@ void nano_qt::history::refresh ()
 	auto transaction = ledger.tx_begin_read ();
 	model->removeRows (0, model->rowCount ());
 	auto hash (ledger.any.account_head (transaction, account));
-	short_text_visitor visitor (transaction, ledger);
 	for (auto i (0), n (tx_count->value ()); i < n && !hash.is_zero (); ++i)
 	{
-		QList<QStandardItem *> items;
 		auto block (ledger.any.block_get (transaction, hash));
-		if (block != nullptr)
+		if (!block)
 		{
-			block->visit (visitor);
-			items.push_back (new QStandardItem (QString (visitor.type.c_str ())));
-			items.push_back (new QStandardItem (QString (visitor.account.to_account ().c_str ())));
-			auto balanceItem = new QStandardItem (QString (wallet.format_balance (visitor.amount).c_str ()));
-			balanceItem->setData (Qt::AlignRight, Qt::TextAlignmentRole);
-			items.push_back (balanceItem);
-			items.push_back (new QStandardItem (QString (hash.to_string ().c_str ())));
-			hash = block->previous ();
-			model->appendRow (items);
+			break;
 		}
+
+		short_text_visitor visitor (transaction, ledger);
+		block->visit (visitor);
+		QList<QStandardItem *> items;
+		items.push_back (new QStandardItem (QString (visitor.type.c_str ())));
+		items.push_back (new QStandardItem (QString (visitor.account.to_account ().c_str ())));
+		auto balanceItem = new QStandardItem (QString (wallet.format_balance (visitor.amount).c_str ()));
+		balanceItem->setData (Qt::AlignRight, Qt::TextAlignmentRole);
+		items.push_back (balanceItem);
+		items.push_back (new QStandardItem (QString (hash.to_string ().c_str ())));
+		hash = block->previous ();
+		model->appendRow (items);
 	}
 }
 
