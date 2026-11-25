@@ -387,13 +387,17 @@ public:
 	void pop_main_stack ();
 	void push_main_stack (QWidget *);
 	void ongoing_refresh ();
-	std::atomic<bool> needs_balance_refresh;
+	bool needs_balance_refresh{ true };
 	std::atomic<bool> needs_deterministic_restore;
 
 	// Called with the wallet id and account each time the user picks an account
 	std::function<void (nano::wallet_id const &, nano::account const &)> selection_observer{ [] (nano::wallet_id const &, nano::account const &) {} };
 
 private:
+	// Only the newest balance request may update the GUI. A user can select the same account again.
+	uint64_t balance_refresh_id{ 0 };
+	void refresh_balance ();
+
 	// Id of the shown wallet, none once the wallet is destroyed
 	std::optional<nano::wallet_id> find_wallet_id () const;
 

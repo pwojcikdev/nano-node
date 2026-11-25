@@ -1362,34 +1362,32 @@ nano_qt::wallet::wallet (QApplication & application_a, nano_qt::eventloop_proces
 	refresh ();
 }
 
+void nano_qt::wallet::refresh_balance ()
+{
+	needs_balance_refresh = false;
+	auto const request = ++balance_refresh_id;
+	node.workers.post ([wallet_w = weak_from_this (), account_l = account, request] {
+		if (auto wallet_l = wallet_w.lock ())
+		{
+			auto balance = wallet_l->node.balance_pending (account_l, false);
+			wallet_l->application.postEvent (&wallet_l->processor, new eventloop_event ([wallet_w, request, balance] {
+				if (auto view = wallet_w.lock (); view && view->balance_refresh_id == request)
+				{
+					view->self.set_balance_text (balance);
+				}
+			}));
+		}
+	});
+}
+
 void nano_qt::wallet::ongoing_refresh ()
 {
-	std::weak_ptr<nano_qt::wallet> wallet_w (shared_from_this ());
-
-	// Update balance if needed. This happens on an alarm thread, which posts back to the UI
-	// to do the actual rendering. This avoid UI lockups as balance_pending may take several
-	// seconds if there's a lot of pending transactions.
 	if (needs_balance_refresh)
 	{
-		needs_balance_refresh = false;
-		auto balance_l (node.balance_pending (account, false));
-		application.postEvent (&processor, new eventloop_event ([wallet_w, balance_l] () {
-			if (auto this_l = wallet_w.lock ())
-			{
-				this_l->self.set_balance_text (balance_l);
-			}
-		}));
+		refresh_balance ();
 	}
-
-	// Updates the status line periodically with bootstrap status and block counts.
-	application.postEvent (&processor, new eventloop_event ([wallet_w] () {
-		if (auto this_l = wallet_w.lock ())
-		{
-			this_l->active_status.set_text ();
-		}
-	}));
-
-	node.workers.post_delayed (std::chrono::seconds (5), [wallet_w] () {
+	active_status.set_text ();
+	QTimer::singleShot (std::chrono::seconds (5), &application, [wallet_w = weak_from_this ()] {
 		if (auto wallet_l = wallet_w.lock ())
 		{
 			wallet_l->ongoing_refresh ();
@@ -1575,10 +1573,15 @@ void nano_qt::wallet::start ()
 			}));
 		}
 	});
-	node.observers.account_balance.add ([this_w] (nano::account const & account_a, bool is_pending) {
+	node.observers.account_balance.add ([this_w] (nano::account const & account_a, bool) {
 		if (auto this_l = this_w.lock ())
 		{
-			this_l->needs_balance_refresh = this_l->needs_balance_refresh || account_a == this_l->account;
+			this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w, account_a] {
+				if (auto view = this_w.lock (); view && view->account == account_a)
+				{
+					view->needs_balance_refresh = true;
+				}
+			}));
 		}
 	});
 	node.observers.wallet.add ([this_w] (bool active_a) {
@@ -1680,7 +1683,9 @@ void nano_qt::wallet::refresh ()
 void nano_qt::wallet::select_account (nano::account const & account_a)
 {
 	account = account_a;
+	self.balance_label->clear ();
 	refresh ();
+	refresh_balance ();
 	// A wallet destroyed over RPC has no id left to report
 	if (auto id = find_wallet_id ())
 	{
@@ -1776,9 +1781,8 @@ void nano_qt::wallet::change_rendering_ratio (nano::uint128_t const & rendering_
 		}
 		this->rendering_ratio = rendering_ratio_a;
 		send_count_label->setText (rendering_ratio == nano::raw_ratio ? "Amount (raw):" : "Amount (nano):");
-		auto balance_l (this->node.balance_pending (account, false));
-		this->self.set_balance_text (balance_l);
 		this->refresh ();
+		this->refresh_balance ();
 	}));
 }
 

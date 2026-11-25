@@ -3,6 +3,7 @@
 #include <nano/lib/work_version.hpp>
 #include <nano/node/bootstrap/bootstrap_config.hpp>
 #include <nano/node/network.hpp>
+#include <nano/node/node_observers.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/scheduler/hinted.hpp>
 #include <nano/node/scheduler/optimistic.hpp>
@@ -21,6 +22,7 @@
 #include <boost/property_tree/json_parser.hpp>
 
 #include <algorithm>
+#include <future>
 #include <nano/qt_test/QTest>
 #include <thread>
 
@@ -170,8 +172,11 @@ TEST (qt_wallet, startup_balance)
 	auto wallet (std::make_shared<nano_qt::wallet> (*test_application, processor, *system.nodes[0], wallet_l, key.pub));
 	wallet->needs_balance_refresh = true;
 	wallet->start ();
-	wallet->application.processEvents (QEventLoop::AllEvents);
-	ASSERT_EQ ("Balance: 0 nano", wallet->self.balance_label->text ().toStdString ());
+	auto balance_shown = [&] {
+		wallet->application.processEvents ();
+		return wallet->self.balance_label->text () == "Balance: 0 nano";
+	};
+	ASSERT_TIMELY (2s, balance_shown ());
 }
 
 TEST (qt_wallet, select_account)
@@ -1285,6 +1290,77 @@ TEST (qt_wallet, refresh_wallet_balance)
 	// The button refreshes the label right away
 	QTest::mouseClick (wallet->advanced.wallet_refresh, Qt::LeftButton);
 	ASSERT_EQ ("Balance: " + wallet->format_balance (nano::dev::constants.genesis_amount), wallet->accounts.wallet_balance_label->text ().toStdString ());
+}
+
+TEST (qt_wallet, selected_account_balance)
+{
+	// Keep the GUI callbacks from a completed balance read for delivery after a newer one.
+	struct deferred_events final : nano_qt::eventloop_processor
+	{
+		bool hold{ false };
+		std::vector<std::function<void ()>> pending;
+
+		bool event (QEvent * event) override
+		{
+			if (!hold)
+			{
+				return eventloop_processor::event (event);
+			}
+			pending.push_back (std::move (static_cast<nano_qt::eventloop_event *> (event)->action));
+			return true;
+		}
+	} processor;
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.background_threads = 1;
+	config.enable_voting = false;
+	auto & node = *system.add_node (config);
+	auto store = system.wallet (0);
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (store->insert_adhoc (genesis.prv, false));
+	auto const empty = store->deterministic_insert (false).value ();
+	auto view = std::make_shared<nano_qt::wallet> (*test_application, processor, node, store, genesis.pub);
+	view->start ();
+
+	use_account (*view, empty);
+	ASSERT_EQ (empty, view->account);
+	QCoreApplication::sendPostedEvents (&processor);
+	EXPECT_NE ("Balance: " + view->format_balance (nano::dev::constants.genesis_amount), view->self.balance_label->text ().toStdString ());
+	auto shows_balance = [&] (nano::uint128_t const & amount) {
+		test_application->processEvents ();
+		return view->self.balance_label->text ().toStdString () == "Balance: " + view->format_balance (amount);
+	};
+	ASSERT_TIMELY (2s, shows_balance (0));
+
+	processor.hold = true;
+	use_account (*view, genesis.pub);
+	// The single worker finishes the genesis read before this barrier.
+	auto barrier = std::make_shared<std::promise<void>> ();
+	auto ready = barrier->get_future ();
+	node.workers.post ([barrier] { barrier->set_value (); });
+	ASSERT_EQ (std::future_status::ready, ready.wait_for (5s));
+	QCoreApplication::sendPostedEvents (&processor);
+	processor.hold = false;
+	ASSERT_FALSE (processor.pending.empty ());
+
+	ASSERT_NE (nullptr, store->send_action (genesis.pub, nano::keypair{}.pub, nano::nano_ratio, 0, false));
+	use_account (*view, empty);
+	use_account (*view, genesis.pub);
+	auto const remaining = nano::dev::constants.genesis_amount - nano::nano_ratio;
+	ASSERT_TIMELY (2s, shows_balance (remaining));
+	for (auto const & delayed : processor.pending)
+	{
+		delayed ();
+	}
+	EXPECT_TRUE (shows_balance (remaining));
+
+	view->needs_balance_refresh = false;
+	node.observers.account_balance.notify (empty, false);
+	QCoreApplication::sendPostedEvents (&processor);
+	EXPECT_FALSE (view->needs_balance_refresh);
+	node.observers.account_balance.notify (genesis.pub, true);
+	QCoreApplication::sendPostedEvents (&processor);
+	EXPECT_TRUE (view->needs_balance_refresh);
 }
 
 /*
