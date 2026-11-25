@@ -24,6 +24,17 @@ genesis=$(rpc "{\"action\":\"wallet_add\",\"wallet\":\"$wallet\",\"key\":\"$dev_
 recipient=$(rpc "{\"action\":\"account_create\",\"wallet\":\"$wallet\"}" | jq -er '.account')
 send=$(rpc "{\"action\":\"send\",\"wallet\":\"$wallet\",\"source\":\"$genesis\",\"destination\":\"$recipient\",\"amount\":\"1\"}" | jq -er '.block')
 rpc "{\"action\":\"receive\",\"wallet\":\"$wallet\",\"account\":\"$recipient\",\"block\":\"$send\"}" | jq -er '.block' > /dev/null
+
+# A receive after an epoch upgrade retains the epoch of its earlier send.
+send=$(rpc "{\"action\":\"send\",\"wallet\":\"$wallet\",\"source\":\"$genesis\",\"destination\":\"$genesis\",\"amount\":\"1\"}" | jq -er '.block')
+rpc "{\"action\":\"epoch_upgrade\",\"epoch\":\"1\",\"key\":\"$dev_genesis_key\"}" | jq -e '.started == "1"' > /dev/null
+for i in {1..60}; do
+    version=$(rpc "{\"action\":\"account_info\",\"account\":\"$genesis\"}" | jq -er '.account_version')
+    [ "$version" = 1 ] && break
+    sleep 0.2
+done
+test "$version" = 1
+rpc "{\"action\":\"receive\",\"wallet\":\"$wallet\",\"account\":\"$genesis\",\"block\":\"$send\"}" | jq -er '.block' > /dev/null
 interrupt_process "$pid"
 wait "$pid"
 
