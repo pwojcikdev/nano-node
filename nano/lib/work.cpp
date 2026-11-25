@@ -11,6 +11,20 @@
 
 #include <future>
 
+namespace
+{
+void notify_cancelled (std::list<nano::work_item> const & items)
+{
+	for (auto const & item : items)
+	{
+		if (item.callback)
+		{
+			item.callback (std::nullopt);
+		}
+	}
+}
+}
+
 std::string nano::to_string (nano::work_version const version_a)
 {
 	std::string result ("invalid");
@@ -149,29 +163,23 @@ void nano::work_pool::loop (uint64_t thread)
 
 void nano::work_pool::cancel (nano::root const & root_a)
 {
-	nano::lock_guard<nano::mutex> lock{ mutex };
-	if (!done)
+	std::list<nano::work_item> cancelled;
 	{
-		if (!pending.empty ())
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		if (!pending.empty () && pending.front ().item == root_a)
 		{
-			if (pending.front ().item == root_a)
+			++ticket;
+		}
+		for (auto it = pending.begin (); it != pending.end ();)
+		{
+			auto current = it++;
+			if (current->item == root_a)
 			{
-				++ticket;
+				cancelled.splice (cancelled.end (), pending, current);
 			}
 		}
-		pending.remove_if ([&root_a] (decltype (pending)::value_type const & item_a) {
-			bool result{ false };
-			if (item_a.item == root_a)
-			{
-				if (item_a.callback)
-				{
-					item_a.callback (std::nullopt);
-				}
-				result = true;
-			}
-			return result;
-		});
 	}
+	notify_cancelled (cancelled);
 }
 
 void nano::work_pool::stop ()
@@ -188,13 +196,7 @@ void nano::work_pool::stop ()
 		cancelled.swap (pending);
 	}
 	producer_condition.notify_all ();
-	for (auto const & item : cancelled)
-	{
-		if (item.callback)
-		{
-			item.callback (std::nullopt);
-		}
-	}
+	notify_cancelled (cancelled);
 }
 
 void nano::work_pool::generate (nano::work_version const version_a, nano::root const & root_a, uint64_t difficulty_a, std::function<void (std::optional<uint64_t> const &)> callback_a)

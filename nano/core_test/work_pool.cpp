@@ -96,6 +96,20 @@ TEST (work, cancel_one_out_of_many)
 	pool.cancel (key1);
 }
 
+TEST (work, cancellation_callback_can_submit_work)
+{
+	nano::work_pool pool{ nano::dev::network_params.network, 1 };
+	std::future<std::optional<uint64_t>> replacement;
+	nano::root const root{ 1 };
+	pool.generate (nano::work_version::work_1, root, std::numeric_limits<uint64_t>::max (), [&] (auto const & result) {
+		EXPECT_FALSE (result.has_value ());
+		replacement = std::async (std::launch::async, [&] { return pool.generate (nano::root{ 2 }); });
+		EXPECT_EQ (std::future_status::ready, replacement.wait_for (std::chrono::seconds{ 5 }));
+	});
+	pool.cancel (root);
+	ASSERT_TRUE (replacement.get ().has_value ());
+}
+
 TEST (work, cancel_blocking_generation)
 {
 	std::latch started{ 1 };
