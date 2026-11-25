@@ -1546,8 +1546,10 @@ int main (int argc, char * const * argv)
 					}
 					else
 					{
-						auto prev_balance = node->ledger.any.block_balance (transaction, block->previous ());
-						if (!node->ledger.flags.pruning || prev_balance)
+						auto const previous = block->previous ();
+						// Opening an account starts with a zero balance and has no predecessor to look up.
+						auto const prev_balance = previous.is_zero () ? std::optional<nano::amount>{ 0 } : node->ledger.any.block_balance (transaction, previous);
+						if (prev_balance)
 						{
 							if (block->balance () < prev_balance.value ())
 							{
@@ -1574,9 +1576,9 @@ int main (int argc, char * const * argv)
 								}
 							}
 						}
-						else if (!node->store.pruned.exists (transaction, block->previous ()))
+						else if (!node->ledger.flags.pruning || !node->store.pruned.exists (transaction, previous))
 						{
-							print_error_message (boost::str (boost::format ("Previous pruned block does not exist %1%\n") % block->previous ().to_string ()));
+							print_error_message (boost::str (boost::format ("Previous block does not exist %1%\n") % previous.to_string ()));
 						}
 					}
 					if (block_details_error)
