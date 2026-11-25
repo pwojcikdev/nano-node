@@ -1,7 +1,9 @@
 #include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/stats.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/backlog_scan.hpp>
+#include <nano/node/bounded_backlog.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/test_common/chains.hpp>
@@ -80,4 +82,28 @@ TEST (backlog, election_activation)
 		ASSERT_EQ (nano::block_status::progress, node.ledger.process (transaction, send));
 	}
 	ASSERT_TIMELY_EQ (5s, node.active.size (), 1);
+}
+
+TEST (backlog, idle_bounded_backlog_scan)
+{
+	for (auto scan_rate : { 1u, 0u })
+	{
+		SCOPED_TRACE (scan_rate);
+		nano::test::system system;
+		auto config = system.default_config ();
+		config.bounded_backlog->scan_rate = scan_rate;
+		config.backlog_scan->enable = false;
+		auto & node = *system.add_node (config);
+
+		// Waiting for the first entry must release the index lock even when the limiter is disabled.
+		ASSERT_ALWAYS_EQ (250ms, 0, node.stats.count (nano::stat::type::bounded_backlog, nano::stat::detail::loop_scan));
+
+		auto const blocks = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false);
+		node.backlog_scan.trigger ();
+		ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::bounded_backlog, nano::stat::detail::scanned) > 0);
+
+		nano::test::confirm (node.ledger, blocks);
+		node.backlog_scan.trigger ();
+		ASSERT_TIMELY_EQ (5s, node.backlog.index_size (), 0);
+	}
 }

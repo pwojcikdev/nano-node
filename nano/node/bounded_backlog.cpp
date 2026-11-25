@@ -194,7 +194,12 @@ bool nano::bounded_backlog::insert (nano::secure::transaction const & transactio
 
 	nano::lock_guard<nano::mutex> guard{ mutex };
 
-	return index.insert (block, bucket_index, priority_timestamp);
+	bool const inserted = index.insert (block, bucket_index, priority_timestamp);
+	if (inserted && index.size () == 1)
+	{
+		condition.notify_all (); // Wake the scanner when the index first has work
+	}
+	return inserted;
 }
 
 bool nano::bounded_backlog::predicate () const
@@ -400,6 +405,10 @@ void nano::bounded_backlog::run_scan ()
 	std::unique_lock<nano::mutex> lock{ mutex };
 	while (!stopped)
 	{
+		condition.wait (lock, [this] {
+			return stopped || index.size () > 0;
+		});
+
 		auto wait = [&] (auto count) {
 			for (auto result = scan_limiter.consume (count); !result; result = scan_limiter.consume (count))
 			{
