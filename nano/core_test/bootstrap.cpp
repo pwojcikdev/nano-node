@@ -4,6 +4,7 @@
 #include <nano/lib/stats.hpp>
 #include <nano/lib/tomlconfig.hpp>
 #include <nano/messages/asc_pull.hpp>
+#include <nano/messages/publish.hpp>
 #include <nano/node/backlog_scan.hpp>
 #include <nano/node/bootstrap/bootstrap_config.hpp>
 #include <nano/node/bootstrap/bootstrap_server.hpp>
@@ -19,6 +20,7 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/test_common/chains.hpp>
+#include <nano/test_common/ledger_context.hpp>
 #include <nano/test_common/peer.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
@@ -176,6 +178,28 @@ TEST (bootstrap, priority_filters_known_blocks)
 	// frontier. The response is [genesis, send1]: genesis is the echoed cursor and send1 is
 	// already in node1's ledger, so the early filter drops it instead of submitting it.
 	ASSERT_TIMELY (10s, node1.stats.count (nano::stat::type::bootstrap, nano::stat::detail::filtered_blocks) >= 3);
+}
+
+TEST (bootstrap, originator_publishes_prioritize_only_missing_predecessors)
+{
+	nano::test::system system{ 1 };
+	auto & node = *system.nodes.front ();
+	auto const channel = nano::test::fake_channel (node);
+	auto const chain = nano::test::ledger_single_chain (4);
+	auto const & account = nano::dev::genesis_key.pub;
+
+	node.bootstrap.reset ();
+	node.inbound (nano::messages::publish{ node.network_params.network, chain.blocks ()[0], true }, channel);
+	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::block_processor, nano::stat::detail::notify_processed), 1);
+	ASSERT_TRUE (node.block (chain.blocks ()[0]->hash ()));
+	EXPECT_FALSE (node.bootstrap.prioritized (account));
+
+	// The originator's third block arrives before its second, so bootstrap must fetch the missing predecessor.
+	node.bootstrap.reset ();
+	node.inbound (nano::messages::publish{ node.network_params.network, chain.blocks ()[2], true }, channel);
+	ASSERT_TIMELY_EQ (5s, node.stats.count (nano::stat::type::block_processor, nano::stat::detail::notify_processed), 2);
+	ASSERT_EQ (1, node.stats.count (nano::stat::type::block_processor_result, nano::stat::detail::gap_previous));
+	ASSERT_TRUE (node.bootstrap.prioritized (account));
 }
 
 TEST (bootstrap, frontier_scan_wraps_after_empty_peer_replies)

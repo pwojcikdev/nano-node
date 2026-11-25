@@ -568,6 +568,7 @@ void bootstrap_context::inspect (secure::transaction const & tx, nano::block_sta
 	auto const & block = *context.block;
 	auto const & source = context.source;
 	auto const & hash = block.hash ();
+	bool const live = source == nano::block_source::live || source == nano::block_source::live_originator;
 
 	auto const tag_source = [&context] {
 		if (auto const * tag_source = std::any_cast<strategy> (&context.tag))
@@ -582,7 +583,7 @@ void bootstrap_context::inspect (secure::transaction const & tx, nano::block_sta
 		case nano::block_status::progress:
 		{
 			// Progress blocks from live traffic don't need further bootstrapping
-			if (source != nano::block_source::live)
+			if (!live)
 			{
 				const auto account = block.account ();
 
@@ -618,7 +619,7 @@ void bootstrap_context::inspect (secure::transaction const & tx, nano::block_sta
 		case nano::block_status::gap_previous:
 		{
 			// Prevent live traffic from evicting accounts from the priority list
-			if (source == nano::block_source::live && !accounts.priority_half_full () && !accounts.blocked_half_full ())
+			if (live && !accounts.priority_half_full () && !accounts.blocked_half_full ())
 			{
 				if (block.type () == block_type::state)
 				{
