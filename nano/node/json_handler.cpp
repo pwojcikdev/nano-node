@@ -3958,29 +3958,20 @@ void nano::json_handler::republish ()
 					{
 						if (!node.ledger.any.pending_get (transaction, nano::pending_key{ destination, hash }))
 						{
-							nano::block_hash previous (node.ledger.any.account_head (transaction, destination));
-							auto block_d = node.ledger.any.block_get (transaction, previous);
-							nano::block_hash source;
-							std::vector<nano::block_hash> hashes;
-							while (block_d != nullptr && hash != source)
+							auto block_d = node.ledger.any.block_get (transaction, node.ledger.any.account_head (transaction, destination));
+							while (block_d && !(block_d->is_receive () && block_d->source () == hash))
 							{
-								hashes.push_back (previous);
-								source = block_d->source_field ().value_or (block_d->is_send () ? 0 : block_d->link_field ().value_or (0).as_block_hash ());
-								previous = block_d->previous ();
-								block_d = node.ledger.any.block_get (transaction, previous);
+								block_d = node.ledger.any.block_get (transaction, block_d->previous ());
 							}
-							std::reverse (hashes.begin (), hashes.end ());
-							if (hashes.size () > destinations)
+							for (uint64_t j = 0; block_d && j < destinations; ++j)
 							{
-								hashes.resize (destinations);
-							}
-							for (auto & hash_l : hashes)
-							{
-								block_d = node.ledger.any.block_get (transaction, hash_l);
+								auto const destination_hash = block_d->hash ();
 								republish_bundle.push_back (std::move (block_d));
 								boost::property_tree::ptree entry_l;
-								entry_l.put ("", hash_l.to_string ());
+								entry_l.put ("", destination_hash.to_string ());
 								blocks.push_back (std::make_pair ("", entry_l));
+								auto successor = node.ledger.any.block_successor (transaction, destination_hash);
+								block_d = successor ? node.ledger.any.block_get (transaction, *successor) : nullptr;
 							}
 						}
 					}

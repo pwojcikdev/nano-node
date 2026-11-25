@@ -3398,6 +3398,40 @@ TEST (rpc, republish)
 	ASSERT_EQ (open->hash (), blocks[1]);
 }
 
+TEST (rpc, republish_pruned_destination_receive)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	nano::node_flags flags;
+	flags.enable_pruning = true;
+	flags.disable_topo_index = true;
+	auto node = add_ipc_enabled_node (system, config, flags);
+	auto const chain = nano::test::setup_chains (system, *node, 1, 2).front ().second;
+	auto const send = node->latest (nano::dev::genesis_key.pub);
+	auto const rpc_ctx = add_rpc (system, node);
+	boost::property_tree::ptree request;
+	request.put ("action", "republish");
+	request.put ("hash", send.to_string ());
+	request.put ("count", 1);
+	request.put ("destinations", 2);
+	auto list = [&] {
+		auto response = wait_response (system, rpc_ctx, request);
+		std::vector<std::string> result;
+		for (auto const & entry : response.get_child ("blocks"))
+		{
+			result.push_back (entry.second.get_value<std::string> ());
+		}
+		return result;
+	};
+	ASSERT_EQ ((std::vector{ send.to_string (), chain[0]->hash ().to_string (), chain[1]->hash ().to_string () }), list ());
+	{
+		auto tx = node->ledger.tx_begin_write ();
+		ASSERT_EQ (1, node->ledger.pruning_action (tx, chain[0]->hash (), 1));
+	}
+	ASSERT_EQ ((std::vector{ send.to_string () }), list ());
+}
+
 TEST (rpc, deterministic_key)
 {
 	nano::test::system system0;
