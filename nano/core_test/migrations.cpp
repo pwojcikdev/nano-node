@@ -1,3 +1,4 @@
+#include <nano/lib/block_sideband.hpp>
 #include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/files.hpp>
@@ -19,6 +20,7 @@
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
 #include <nano/store/ledger_store.hpp>
+#include <nano/store/lmdb/backend_lmdb.hpp>
 #include <nano/store/rocksdb/backend_rocksdb.hpp>
 #include <nano/test_common/make_store.hpp>
 #include <nano/test_common/testutil.hpp>
@@ -307,6 +309,78 @@ TEST (migrations, lmdb_to_rocksdb)
 	for (auto const & [key, expected_version] : expected.peers)
 	{
 		ASSERT_TRUE (rocksdb_store.peer.exists (txn, key)) << "Peer missing";
+	}
+}
+
+TEST (migrations, historical_ledger_upgrades_after_migration)
+{
+	nano::logger logger;
+	nano::stats stats{ logger };
+	auto const data_path = nano::unique_path ();
+	auto const lmdb_path = nano::database_path_for_backend (data_path, nano::database_backend::lmdb);
+	nano::store::lmdb::backend_lmdb source{ lmdb_path, {}, logger };
+	source.create (nano::store::ledger_store::schema_v21, 21);
+	source.open (nano::store::ledger_store::schema_v21, nano::store::open_mode::read_write);
+	auto const & genesis = *nano::dev::genesis;
+	{
+		auto txn = source.tx_begin_write ();
+		nano::account_info_v22 account{};
+		account.head = genesis.hash ();
+		account.open_block = genesis.hash ();
+		account.representative = genesis.account ();
+		account.balance = nano::dev::constants.genesis_amount;
+		account.modified = genesis.sideband ().timestamp;
+		account.block_count = 1;
+		source.release_assert_success (source.put (txn, nano::store::table::accounts, genesis.account (), account));
+		source.release_assert_success (source.put (txn, nano::store::table::frontiers, genesis.hash (), genesis.account ()));
+		nano::store::ledger::confirmation_height_view{ source }.put (txn, genesis.account (), { 1, genesis.hash () });
+
+		nano::block_sideband_v25 sideband;
+		sideband.balance = account.balance;
+		sideband.timestamp = genesis.sideband ().timestamp;
+		std::vector<uint8_t> bytes;
+		{
+			nano::vectorstream stream{ bytes };
+			nano::serialize_block (stream, genesis);
+			sideband.serialize (stream, genesis.type ());
+		}
+		source.release_assert_success (source.put (txn, nano::store::table::blocks, genesis.hash (), nano::store::db_val{ bytes.size (), bytes.data () }));
+	}
+	source.close ();
+	ASSERT_NO_THROW (nano::migrate_lmdb_to_rocksdb (data_path));
+	ASSERT_EQ (21, source.fetch_meta ().value ().version);
+
+	auto const rocksdb_path = nano::database_path_for_backend (data_path, nano::database_backend::rocksdb);
+	auto destination = std::make_unique<nano::store::rocksdb::backend_rocksdb> (rocksdb_path, nano::rocksdb_config{}, logger);
+	ASSERT_EQ (21, destination->fetch_meta ().value ().version);
+	nano::store::ledger_store store{ std::move (destination), nano::store::open_mode::read_write, stats, logger };
+	ASSERT_EQ (nano::store::ledger_store::version_current, store.get_version ());
+	auto txn = store.tx_begin_read ();
+	auto block = store.block.get (txn, genesis.hash ());
+	ASSERT_NE (nullptr, block);
+	ASSERT_EQ (genesis, *block);
+	ASSERT_EQ (nano::dev::constants.genesis_amount, block->balance ());
+	ASSERT_EQ (genesis.hash (), store.account.get (txn, genesis.account ()).value ().head);
+	ASSERT_EQ (genesis.hash (), store.confirmation_height.get (txn, genesis.account ()).value ().frontier);
+	ASSERT_EQ (nano::dev::constants.genesis_amount, store.rep_weight.get (txn, genesis.account ()));
+}
+
+TEST (migrations, unsupported_version_leaves_destination_absent)
+{
+	nano::logger logger;
+	auto schema = nano::store::ledger_store::schema_current;
+	schema.insert ({ nano::store::table::frontiers, "extra_table" });
+	for (auto version : { nano::store::ledger_store::version_minimum - 1, nano::store::ledger_store::version_current + 1 })
+	{
+		auto const data_path = nano::unique_path ();
+		auto const lmdb_path = nano::database_path_for_backend (data_path, nano::database_backend::lmdb);
+		nano::store::lmdb::backend_lmdb source{ lmdb_path, {}, logger };
+		source.create (schema, version);
+		source.open (schema, nano::store::open_mode::read_write);
+		source.release_assert_success (source.put (source.tx_begin_write (), nano::store::table::frontiers, nano::dev::genesis->hash (), nano::dev::genesis->account ()));
+		source.close ();
+		EXPECT_THROW (nano::migrate_lmdb_to_rocksdb (data_path), std::runtime_error);
+		EXPECT_FALSE (std::filesystem::exists (nano::database_path_for_backend (data_path, nano::database_backend::rocksdb)));
 	}
 }
 

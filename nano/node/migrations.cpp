@@ -7,6 +7,8 @@
 #include <nano/store/lmdb/backend_lmdb.hpp>
 #include <nano/store/rocksdb/backend_rocksdb.hpp>
 
+#include <array>
+
 void nano::migrate_lmdb_to_rocksdb (
 std::filesystem::path const & data_path,
 nano::lmdb_config const & lmdb_config,
@@ -44,13 +46,25 @@ nano::rocksdb_config const & rocksdb_config)
 	boost::system::error_code error_chmod;
 	nano::set_secure_perm_directory (data_path, error_chmod);
 
-	// Create and open source LMDB backend (read-only)
+	// Copy the source format verbatim. The first writable RocksDB open performs any ledger upgrades.
 	auto lmdb_backend = std::make_unique<nano::store::lmdb::backend_lmdb> (lmdb_path, lmdb_config, nano::default_logger ());
-	lmdb_backend->open (nano::store::ledger_store::schema_current, nano::store::open_mode::read_only);
+	auto const meta = lmdb_backend->fetch_meta ();
+	using ledger_store = nano::store::ledger_store;
+	static constexpr std::array schemas{
+		&ledger_store::schema_v21, &ledger_store::schema_v22, &ledger_store::schema_v23, &ledger_store::schema_v24,
+		&ledger_store::schema_v25, &ledger_store::schema_v26, &ledger_store::schema_current
+	};
+	static_assert (schemas.size () == ledger_store::version_current - ledger_store::version_minimum + 1);
+	if (!meta || meta->version < ledger_store::version_minimum || meta->version > ledger_store::version_current)
+	{
+		throw std::runtime_error ("Cannot migrate unsupported LMDB ledger version " + (meta ? std::to_string (meta->version) : "unknown"));
+	}
+	auto const & schema = *schemas[meta->version - ledger_store::version_minimum];
+	lmdb_backend->open (schema, nano::store::open_mode::read_only);
 
 	// Create and open destination RocksDB backend (read-write)
 	auto rocksdb_backend = std::make_unique<nano::store::rocksdb::backend_rocksdb> (rocksdb_path, rocksdb_config, nano::default_logger ());
-	rocksdb_backend->open (nano::store::ledger_store::schema_current, nano::store::open_mode::read_write);
+	rocksdb_backend->open (schema, nano::store::open_mode::read_write);
 
 	auto progress_cb = [] (nano::store::copy_progress const & p) {
 		auto pct = p.total_entries > 0 ? p.entries_copied * 100 / p.total_entries : 100;
