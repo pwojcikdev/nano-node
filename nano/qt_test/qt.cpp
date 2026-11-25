@@ -524,6 +524,46 @@ TEST (qt_wallet, create_open_receive)
 	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (receive));
 }
 
+TEST (qt_wallet, change_representative)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	auto store = system.wallet (0);
+	auto & node = *system.nodes.front ();
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_FALSE (store->insert_watch (genesis.pub));
+	store->set_representative (genesis.pub);
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, node, store, genesis.pub);
+	wallet->start ();
+	QTest::mouseClick (wallet->settings_button, Qt::LeftButton);
+
+	nano::keypair delegate;
+	auto & settings = wallet->settings;
+	settings.new_representative->setText (QString::fromStdString (delegate.pub.to_account ()));
+	QTest::mouseClick (settings.change_rep, Qt::LeftButton);
+	EXPECT_EQ (nano::dev::genesis->hash (), node.latest (genesis.pub));
+	EXPECT_EQ (genesis.pub, store->get_representative ());
+	EXPECT_EQ (genesis.pub.to_account (), settings.current_representative->text ().toStdString ());
+	EXPECT_EQ (delegate.pub.to_account (), settings.new_representative->text ().toStdString ());
+	EXPECT_EQ ("Unable to change representative", settings.change_rep->text ().toStdString ());
+
+	// With the signing key, the same request changes both the account and the wallet default.
+	ASSERT_TRUE (store->insert_adhoc (genesis.prv, false));
+	settings.new_representative->setText (QString::fromStdString (delegate.pub.to_account ()));
+	QTest::mouseClick (settings.change_rep, Qt::LeftButton);
+	ASSERT_NE (nano::dev::genesis->hash (), node.latest (genesis.pub));
+	ASSERT_EQ (delegate.pub, node.ledger.any.account_get (node.ledger.tx_begin_read (), genesis.pub).value ().representative);
+	ASSERT_EQ (delegate.pub, store->get_representative ());
+	ASSERT_EQ (delegate.pub.to_account (), settings.current_representative->text ().toStdString ());
+
+	auto unopened = store->deterministic_insert (false).value ();
+	wallet->select_account (unopened);
+	settings.new_representative->setText (QString::fromStdString (genesis.pub.to_account ()));
+	QTest::mouseClick (settings.change_rep, Qt::LeftButton);
+	ASSERT_EQ (genesis.pub, store->get_representative ());
+	ASSERT_EQ (genesis.pub.to_account (), settings.current_representative->text ().toStdString ());
+}
+
 TEST (qt_wallet, create_change)
 {
 	nano_qt::eventloop_processor processor;

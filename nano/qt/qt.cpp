@@ -1911,13 +1911,22 @@ nano_qt::settings::settings (nano_qt::wallet & wallet_a) :
 			if (!this->wallet.wallet_m->is_locked ())
 			{
 				change_rep->setEnabled (false);
-				this->wallet.wallet_m->set_representative (representative_l);
-				this->wallet.wallet_m->change_sync (this->wallet.account, representative_l);
+				// An unopened account will use the wallet default when it receives its first block.
+				auto const opened = this->wallet.node.ledger.any.account_exists (this->wallet.node.ledger.tx_begin_read (), this->wallet.account);
+				if (opened && this->wallet.wallet_m->change_sync (this->wallet.account, representative_l))
+				{
+					show_button_error (*change_rep);
+					change_rep->setText ("Unable to change representative");
+				}
+				else
+				{
+					this->wallet.wallet_m->set_representative (representative_l);
+					show_button_success (*change_rep);
+					change_rep->setText ("Representative was changed");
+					new_representative->clear ();
+				}
+				refresh_representative ();
 				change_rep->setEnabled (true);
-				show_button_success (*change_rep);
-				change_rep->setText ("Representative was changed");
-				current_representative->setText (QString (representative_l.to_account ().c_str ()));
-				new_representative->clear ();
 				this->wallet.node.workers.post_delayed (std::chrono::seconds (5), [this] () {
 					this->wallet.application.postEvent (&this->wallet.processor, new eventloop_event ([this] () {
 						show_button_ok (*change_rep);
