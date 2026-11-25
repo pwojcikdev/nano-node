@@ -2,6 +2,7 @@
 #include <nano/lib/files.hpp>
 #include <nano/lib/work_version.hpp>
 #include <nano/node/bootstrap/bootstrap_config.hpp>
+#include <nano/node/cementing_set.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/node_observers.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -1055,6 +1056,43 @@ TEST (qt_wallet, ignore_empty_adhoc)
 	test_application->processEvents ();
 	test_application->processEvents ();
 	ASSERT_EQ (2, wallet->accounts.model->rowCount ());
+}
+
+TEST (qt_wallet, select_adhoc_with_receivable)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	config.receive_minimum = 2;
+	auto & node = *system.add_node (config);
+	auto sender = system.wallet (0);
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (sender->insert_adhoc (genesis.prv, false));
+	auto recipient = node.wallets.create (nano::random_wallet_id ());
+	auto selected = recipient->deterministic_insert (false).value ();
+	nano::keypair imported;
+	ASSERT_TRUE (recipient->insert_adhoc (imported.prv, false));
+	auto view = std::make_shared<nano_qt::wallet> (*test_application, processor, node, recipient, selected);
+	view->start ();
+	test_application->processEvents ();
+	ASSERT_EQ (1, view->accounts.model->rowCount ());
+
+	// The incoming payment is below the automatic receive minimum and leaves the posted balance at zero.
+	auto send = sender->send_action (genesis.pub, imported.pub, 1);
+	ASSERT_NE (nullptr, send);
+	node.cementing_set.add (send->hash ());
+	ASSERT_TIMELY (5s, node.block_confirmed (send->hash ()));
+	auto shows_recipient = [&] {
+		test_application->processEvents ();
+		return view->accounts.model->rowCount () == 2;
+	};
+	ASSERT_TIMELY (5s, shows_recipient ());
+	use_account (*view, imported.pub);
+	EXPECT_EQ (imported.pub, view->account);
+	auto const balance = node.balance_pending (imported.pub, false);
+	EXPECT_EQ (0, balance.first);
+	EXPECT_EQ (1, balance.second);
 }
 
 TEST (qt_wallet, change_seed)

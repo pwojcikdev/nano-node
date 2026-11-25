@@ -332,7 +332,7 @@ void nano_qt::accounts::refresh ()
 			case nano::wallet::key_type::adhoc:
 			{
 				brush.setColor ("red");
-				display = !balance_amount.is_zero ();
+				display = !balance_amount.is_zero () || wallet.node.ledger.any.receivable_exists (block_transaction, key);
 				break;
 			}
 			default:
@@ -1563,10 +1563,12 @@ void nano_qt::wallet::start ()
 	node.observers.block_confirmed.add ([this_w] (nano::block_confirmation_info const & confirmation_a) {
 		if (auto this_l = this_w.lock ())
 		{
-			this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w, account_a = confirmation_a.account] () {
+			auto const & block = confirmation_a.status.winner;
+			auto const destination = block->is_send () ? block->destination () : nano::account{};
+			this_l->application.postEvent (&this_l->processor, new eventloop_event ([this_w, account_a = confirmation_a.account, destination] () {
 				if (auto this_l = this_w.lock ())
 				{
-					if (this_l->wallet_m->exists (account_a))
+					if (this_l->wallet_m->exists (account_a) || (!destination.is_zero () && this_l->wallet_m->exists (destination)))
 					{
 						this_l->accounts.refresh ();
 					}
