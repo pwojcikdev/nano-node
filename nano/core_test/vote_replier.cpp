@@ -36,6 +36,29 @@ TEST (vote_replier, disabled)
 	ASSERT_EQ (0, node.stats.count (nano::stat::type::vote_replier, nano::stat::detail::request));
 }
 
+TEST (vote_replier, enable_voting_flag)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	nano::node_flags flags;
+	flags.enable_voting = true;
+	auto & node = *system.add_node (config, flags);
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv, false));
+	node.wallets.refresh_reps ();
+
+	auto channel = nano::test::test_channel (node);
+	auto response = channel->observe<nano::messages::confirm_ack> ();
+	auto const & genesis = nano::dev::genesis;
+	ASSERT_TRUE (node.vote_replier.request ({ { genesis->hash (), genesis->root () } }, channel));
+	ASSERT_EQ (std::future_status::ready, response.wait_for (5s));
+	auto const vote = response.get ().vote;
+	ASSERT_FALSE (vote->validate ());
+	ASSERT_TRUE (vote->is_final ());
+	ASSERT_EQ (nano::dev::genesis_key.pub, vote->account);
+	ASSERT_EQ (std::vector<nano::block_hash>{ genesis->hash () }, vote->hashes);
+}
+
 /*
  * A request carrying as many pairs as a confirm_req holds is queued, one pair more is refused as oversize before it reaches the queue
  */

@@ -402,11 +402,6 @@ nano::node::node (std::filesystem::path const & application_path_a, nano::node_c
 		}
 	}
 
-	if (flags.enable_voting)
-	{
-		config.enable_voting = true;
-	}
-
 	if (config.enable_voting)
 	{
 		logger.info (nano::log::type::node, "Voting is enabled, more system resources will be used, local representatives: {}", reps.accounts.size ());

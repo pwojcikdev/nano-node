@@ -53,6 +53,10 @@ std::string const default_test_peer_network = nano::env::get ("NANO_DEFAULT_PEER
 
 nano::node_config nano::apply_flag_overrides (nano::node_config config, nano::node_flags const & flags)
 {
+	if (flags.enable_voting)
+	{
+		config.enable_voting = true;
+	}
 	// Disabling elections turns off the automatic election schedulers (priority/hinted/optimistic) and the active elections container itself
 	if (flags.disable_elections)
 	{
