@@ -348,6 +348,39 @@ TEST (qt_wallet, send)
 	ASSERT_EQ ("2.03 nano", balance_item->text ().toStdString ());
 }
 
+TEST (qt_wallet, send_draft_keeps_value_when_unit_changes)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	auto & node = *system.nodes.front ();
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (genesis.prv, false));
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, node, system.wallet (0), genesis.pub);
+	wallet->start ();
+	auto set_unit = [&] (nano::uint128_t const & unit) {
+		wallet->change_rendering_ratio (unit);
+		test_application->processEvents ();
+	};
+
+	set_unit (nano::raw_ratio);
+	wallet->send_count->setText ("0.5"); // A fraction of a raw is not a valid draft.
+	set_unit (nano::nano_ratio);
+	EXPECT_TRUE (wallet->send_count->text ().isEmpty ());
+
+	set_unit (nano::raw_ratio);
+	wallet->send_count->setText ("7");
+	nano::keypair recipient;
+	wallet->send_account->setText (QString::fromStdString (recipient.pub.to_account ()));
+	set_unit (nano::nano_ratio);
+	EXPECT_EQ ("0.000000000000000000000000000007", wallet->send_count->text ().toStdString ());
+	set_unit (nano::raw_ratio);
+	EXPECT_EQ ("7", wallet->send_count->text ().toStdString ());
+	set_unit (nano::nano_ratio);
+	QTest::mouseClick (wallet->send_blocks_send, Qt::LeftButton);
+	ASSERT_TIMELY (10s, node.latest (genesis.pub) != nano::dev::genesis->hash ());
+	ASSERT_EQ (7, node.ledger.account_receivable (node.ledger.tx_begin_read (), recipient.pub));
+}
+
 TEST (qt_wallet, send_locked)
 {
 	nano_qt::eventloop_processor processor;

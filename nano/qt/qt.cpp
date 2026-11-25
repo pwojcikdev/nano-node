@@ -1,3 +1,4 @@
+#include <nano/lib/balance_formatting.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/config.hpp>
 #include <nano/lib/logging.hpp>
@@ -1300,7 +1301,7 @@ nano_qt::wallet::wallet (QApplication & application_a, nano_qt::eventloop_proces
 	send_blocks_layout (new QVBoxLayout),
 	send_account_label (new QLabel ("Destination account:")),
 	send_account (new QLineEdit),
-	send_count_label (new QLabel ("Amount:")),
+	send_count_label (new QLabel ("Amount (nano):")),
 	send_count (new QLineEdit),
 	send_blocks_send (new QPushButton ("Send")),
 	send_blocks_back (new QPushButton ("Back")),
@@ -1766,7 +1767,24 @@ void nano_qt::wallet::empty_password ()
 void nano_qt::wallet::change_rendering_ratio (nano::uint128_t const & rendering_ratio_a)
 {
 	application.postEvent (&processor, new eventloop_event ([this, rendering_ratio_a] () {
+		if (rendering_ratio != rendering_ratio_a && !send_count->text ().isEmpty ())
+		{
+			nano::amount draft;
+			if (draft.decode_dec (send_count->text ().toStdString (), rendering_ratio))
+			{
+				send_count->clear ();
+			}
+			else
+			{
+				// The amount editor parses a decimal point and must preserve every raw.
+				std::ostringstream converted;
+				auto const precision = static_cast<int> (rendering_ratio_a.str ().size () - 1);
+				nano::encode_balance (converted, draft.number (), rendering_ratio_a, precision, false, ',', '.', "");
+				send_count->setText (QString::fromStdString (converted.str ()));
+			}
+		}
 		this->rendering_ratio = rendering_ratio_a;
+		send_count_label->setText (rendering_ratio == nano::raw_ratio ? "Amount (raw):" : "Amount (nano):");
 		auto balance_l (this->node.balance_pending (account, false));
 		this->self.set_balance_text (balance_l);
 		this->refresh ();
