@@ -265,21 +265,18 @@ void nano::epoch_upgrader::upgrade_impl (nano::raw_key const & prv_a, nano::epoc
 							upgrader_process (upgraded_pending, epoch, difficulty, signer, root, account);
 						}
 					}
-					// Move to next pending item
-					current = ledger.any.receivable_upper_bound (ledger.tx_begin_read (), key.account, key.hash);
+					else if (auto next = ledger.any.receivable_upper_bound (ledger.tx_begin_read (), key.account, key.hash); next != end)
+					{
+						// A different send to this account can still belong to an older epoch.
+						current = next;
+						continue;
+					}
 				}
-				else
+				if (key.account.number () == std::numeric_limits<nano::uint256_t>::max ())
 				{
-					// Move to next account if pending account exists or was upgraded
-					if (key.account.number () == std::numeric_limits<nano::uint256_t>::max ())
-					{
-						break;
-					}
-					else
-					{
-						current = ledger.any.receivable_upper_bound (ledger.tx_begin_read (), key.account);
-					}
+					break;
 				}
+				current = ledger.any.receivable_upper_bound (ledger.tx_begin_read (), key.account);
 			}
 			{
 				nano::unique_lock<nano::mutex> lock{ upgrader_mutex };

@@ -7338,6 +7338,32 @@ TEST (rpc, epoch_upgrade_invalid_count)
 	ASSERT_NEVER (1s, node->ledger.block_count () != block_count);
 }
 
+TEST (rpc, epoch_upgrade_scans_later_pending_accounts)
+{
+	nano::test::system system;
+	auto node = add_ipc_enabled_node (system);
+	auto wallet = system.wallet (0);
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (wallet->insert_adhoc (genesis.prv, false));
+	nano::account const current_epoch_recipient{ 1 };
+	nano::account const old_epoch_recipient{ 2 };
+	ASSERT_NE (nullptr, wallet->send_action (genesis.pub, old_epoch_recipient, 1));
+	ASSERT_NE (nullptr, system.upgrade_genesis_epoch (*node, nano::epoch::epoch_1));
+	ASSERT_NE (nullptr, wallet->send_action (genesis.pub, current_epoch_recipient, 1));
+
+	auto const rpc_ctx = add_rpc (system, node);
+	boost::property_tree::ptree request;
+	request.put ("action", "epoch_upgrade");
+	request.put ("epoch", 1);
+	request.put ("key", genesis.prv.to_string ());
+	auto response = wait_response (system, rpc_ctx, request);
+	ASSERT_EQ ("1", response.get<std::string> ("started"));
+	ASSERT_TIMELY (5s, node->store.account.exists (node->store.tx_begin_read (), old_epoch_recipient));
+	auto txn = node->ledger.tx_begin_read ();
+	EXPECT_EQ (nano::epoch::epoch_1, node->ledger.any.account_get (txn, old_epoch_recipient).value ().epoch ());
+	EXPECT_FALSE (node->store.account.exists (txn, current_epoch_recipient));
+}
+
 TEST (rpc, epoch_upgrade)
 {
 	nano::test::system system;
