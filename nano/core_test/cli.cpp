@@ -1,3 +1,4 @@
+#include <nano/lib/blocks.hpp>
 #include <nano/lib/cli.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/node/cli.hpp>
@@ -5,6 +6,8 @@
 #include <nano/node/node.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/wallet.hpp>
+#include <nano/store/ledger/confirmation_height.hpp>
+#include <nano/test_common/ledger_context.hpp>
 #include <nano/test_common/testutil.hpp>
 
 #include <gtest/gtest.h>
@@ -248,6 +251,32 @@ TEST (cli, wallet_seed_and_key)
 	nano::keypair const adhoc;
 	ASSERT_FALSE (run_cli_command (cli_options ({ { "wallet_add_adhoc", "" }, { "wallet", id->to_string () }, { "key", adhoc.prv.to_string () }, { "data_path", path } })).error);
 	ASSERT_NE (std::string::npos, decrypt (*id).find ("Pub: " + adhoc.pub.to_account () + " Prv: " + adhoc.prv.to_string () + "\n"));
+}
+
+TEST (cli, confirmation_height_clear_genesis)
+{
+	auto const & genesis = nano::dev::genesis_key.pub;
+	std::filesystem::path data_path;
+	nano::block_hash previous_frontier;
+	{
+		auto context = nano::test::ledger_send_receive ();
+		auto & store = context.store ();
+		data_path = store.get_database_path ().parent_path ();
+		previous_frontier = context.blocks ().back ()->hash ();
+		nano::test::confirm (context.ledger (), previous_frontier);
+		ASSERT_EQ (3, store.confirmation_height.get (store.tx_begin_read (), genesis).value ().height);
+	}
+
+	auto const result = run_cli_command (cli_options ({ { "confirmation_height_clear", "" }, { "account", genesis.to_account () }, { "data_path", data_path.string () } }));
+	ASSERT_FALSE (result.error);
+
+	nano::inactive_node node{ data_path, nano::inactive_node_flag_defaults () };
+	auto & store = node.node->store;
+	auto info = store.confirmation_height.get (store.tx_begin_read (), genesis);
+	ASSERT_TRUE (info);
+	ASSERT_EQ (1, info->height);
+	ASSERT_EQ (nano::dev::genesis->hash (), info->frontier);
+	ASSERT_FALSE (node.node->block_confirmed (previous_frontier));
 }
 
 /*

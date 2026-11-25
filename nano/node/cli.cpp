@@ -955,22 +955,21 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 				nano::account account;
 				if (!account.decode_account (account_str))
 				{
-					nano::confirmation_height_info confirmation_height_info;
-					if (!node.node->store.confirmation_height.get (node.node->store.tx_begin_read (), account, confirmation_height_info))
+					auto transaction = node.node->store.tx_begin_write ();
+					if (node.node->store.confirmation_height.get (transaction, account))
 					{
-						auto transaction (node.node->store.tx_begin_write ());
-						auto conf_height_reset_num = 0;
+						uint64_t reset_height{ 0 };
 						if (account == node.node->network_params.ledger.genesis->account ())
 						{
-							conf_height_reset_num = 1;
-							node.node->store.confirmation_height.put (transaction, account, { confirmation_height_info.height, node.node->network_params.ledger.genesis->hash () });
+							reset_height = 1;
+							node.node->store.confirmation_height.put (transaction, account, { reset_height, node.node->network_params.ledger.genesis->hash () });
 						}
 						else
 						{
 							node.node->store.confirmation_height.del (transaction, account);
 						}
 
-						std::cout << "Confirmation height of account " << account_str << " is set to " << conf_height_reset_num << std::endl;
+						std::cout << "Confirmation height of account " << account_str << " is set to " << reset_height << std::endl;
 					}
 					else
 					{
