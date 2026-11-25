@@ -277,6 +277,11 @@ void topo_scan::maybe_advance (head & h)
 		});
 		if (furthest_it == h.candidates.rend ())
 		{
+			if (h.exhausted)
+			{
+				// All available peers have replied. Let them report fresh ledger state after cooldown.
+				h.restart (h.cursor);
+			}
 			return;
 		}
 		auto const furthest = furthest_it->first;

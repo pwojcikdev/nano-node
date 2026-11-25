@@ -414,6 +414,48 @@ TEST (bootstrap_topo_scan, spearhead_advances_only_to_supported_boundary)
 	ASSERT_EQ (req->start, c);
 }
 
+TEST (bootstrap_topo_scan, exhausted_disagreement_resamples_peers)
+{
+	nano::topo_scan_config config;
+	config.consideration_count = 3;
+	config.cooldown = 10ms;
+	test_context ctx{ config };
+	auto & scan = ctx.scan;
+	std::deque<nano::bootstrap::topo_scan::page> pages;
+	scan.sink = [&pages] (auto page) { pages.push_back (std::move (page)); };
+
+	auto const now = std::chrono::steady_clock::now ();
+	auto const cursor = make_topo_key (10, 10);
+	auto const next = make_topo_key (11, 20);
+	scan.orient (cursor);
+
+	// Two available peers meet the redundancy floor, but only the first has the new block.
+	auto req = scan.next ({ .include_spearhead = true }, now);
+	ASSERT_TRUE (req);
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 2, nano::account{ 2 }));
+	scan.exhausted (req->head, req->start);
+	scan.process (1, { cursor, next });
+	scan.process (2, { cursor });
+	ASSERT_TRUE (pages.empty ());
+	ASSERT_FALSE (scan.next ({ .include_spearhead = true }, now + 1ms));
+
+	// The same peers now agree. Both must be eligible to report their current ledger.
+	req = scan.next ({ .include_spearhead = true }, now + config.cooldown + 1ms);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, cursor);
+	ASSERT_TRUE (req->exclude.empty ());
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 3, nano::account{ 1 }));
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 4, nano::account{ 2 }));
+	scan.exhausted (req->head, req->start);
+	scan.process (3, { cursor, next });
+	ASSERT_TRUE (pages.empty ());
+	scan.process (4, { cursor, next });
+
+	ASSERT_EQ (pages.size (), 1);
+	ASSERT_EQ (pages.front ().entries, std::deque<nano::topo_key>{ next });
+}
+
 /*
  * After a round makes real progress, the scan clears the pacing timestamp and immediately issues the next
  * cursor. This lets the spearhead chase a discovered frontier without waiting for the per-head cooldown.
