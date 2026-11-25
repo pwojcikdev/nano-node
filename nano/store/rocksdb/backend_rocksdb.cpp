@@ -789,9 +789,17 @@ void backend_rocksdb::collect_memory_stats (boost::property_tree::ptree & ptree)
 	boost::property_tree::ptree levels;
 	for (int level = 0; level < 7; ++level)
 	{
-		std::string property = ::rocksdb::DB::Properties::kNumFilesAtLevelPrefix + std::to_string (level);
-		db->GetAggregatedIntProperty (property, &val);
-		levels.put ("l" + std::to_string (level) + "_num_files", val);
+		auto const property = ::rocksdb::DB::Properties::kNumFilesAtLevelPrefix + std::to_string (level);
+		uint64_t files{ 0 };
+		for (auto const & handle : handles)
+		{
+			std::string count;
+			if (db->GetProperty (handle.get (), property, &count))
+			{
+				files += std::stoull (count);
+			}
+		}
+		levels.put ("l" + std::to_string (level) + "_num_files", files);
 	}
 	ptree.add_child ("levels", levels);
 

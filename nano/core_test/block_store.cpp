@@ -1633,6 +1633,43 @@ TEST (block_store, default_database_backend)
 	}
 }
 
+TEST (block_store, rocksdb_level_file_counts)
+{
+	if (nano::default_database_backend () != nano::database_backend::rocksdb)
+	{
+		GTEST_SKIP ();
+	}
+	auto const path = nano::unique_path ();
+	std::filesystem::create_directories (path);
+	{
+		::rocksdb::Options options;
+		options.create_if_missing = true;
+		std::unique_ptr<::rocksdb::DB> db;
+		ASSERT_TRUE (::rocksdb::DB::Open (options, path.string (), &db).ok ());
+		::rocksdb::ColumnFamilyHandle * raw_meta{ nullptr };
+		ASSERT_TRUE (db->CreateColumnFamily ({}, "meta", &raw_meta).ok ());
+		std::unique_ptr<::rocksdb::ColumnFamilyHandle> meta{ raw_meta };
+
+		// Flush one file in each family, below the level-zero compaction threshold.
+		for (auto * family : { db->DefaultColumnFamily (), meta.get () })
+		{
+			ASSERT_TRUE (db->Put ({}, family, "key", "value").ok ());
+			ASSERT_TRUE (db->Flush ({}, family).ok ());
+		}
+	}
+
+	nano::logger logger;
+	nano::store::rocksdb::backend_rocksdb backend{ path, {}, logger };
+	backend.open (nano::store::backend::schema_meta, nano::store::open_mode::read_only);
+	boost::property_tree::ptree stats;
+	backend.collect_memory_stats (stats);
+	EXPECT_EQ (2, stats.get<uint64_t> ("levels.l0_num_files"));
+	for (int level = 1; level < 7; ++level)
+	{
+		EXPECT_EQ (0, stats.get<uint64_t> ("levels.l" + std::to_string (level) + "_num_files"));
+	}
+}
+
 TEST (block_store, lmdb_bad_path)
 {
 	if (nano::default_database_backend () != nano::database_backend::lmdb)
