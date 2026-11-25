@@ -160,6 +160,25 @@ std::shared_ptr<nano::block> nano::ledger_set_any::block_get (secure::transactio
 	return ledger.store.block.get (transaction, hash);
 }
 
+std::optional<nano::block_hash> nano::ledger_set_any::representative_block (secure::transaction const & transaction, nano::block_hash const & hash) const
+{
+	auto current = hash;
+	while (auto block = block_get (transaction, current))
+	{
+		if (block->representative_field ())
+		{
+			return current;
+		}
+		current = block->previous ();
+		if (ledger.flags.pruning && block->sideband ().height == 2)
+		{
+			// The predecessor is the open block, which always specifies the representative.
+			return current;
+		}
+	}
+	return std::nullopt;
+}
+
 bool nano::ledger_set_any::block_pruned (secure::transaction const & transaction, nano::block_hash const & hash) const
 {
 	return ledger.store.pruned.exists (transaction, hash);

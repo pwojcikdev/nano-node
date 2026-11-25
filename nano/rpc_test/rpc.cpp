@@ -26,6 +26,7 @@
 #include <nano/node/node_rpc_config.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/online_reps.hpp>
+#include <nano/node/pruning.hpp>
 #include <nano/node/scheduler/component.hpp>
 #include <nano/node/scheduler/manual.hpp>
 #include <nano/node/scheduler/priority.hpp>
@@ -4795,6 +4796,83 @@ TEST (rpc, account_info)
 }
 
 /** Make sure we can use json block literals instead of string as input */
+TEST (rpc, pruned_legacy_representative)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	config.max_pruning_depth = 1;
+	nano::node_flags flags;
+	flags.enable_pruning = true;
+	flags.disable_topo_index = true;
+	auto node = add_ipc_enabled_node (system, config, flags);
+	auto const & genesis = nano::dev::genesis_key;
+	nano::keypair recipient;
+	auto change = std::make_shared<nano::change_block> (nano::dev::genesis->hash (), recipient.pub, genesis.prv, genesis.pub, 0);
+	auto funding = std::make_shared<nano::send_block> (change->hash (), recipient.pub, nano::dev::constants.genesis_amount - 10, genesis.prv, genesis.pub, 0);
+	auto open = std::make_shared<nano::open_block> (funding->hash (), genesis.pub, recipient.pub, recipient.prv, recipient.pub, 0);
+	auto spend = std::make_shared<nano::send_block> (open->hash (), nano::account{}, 9, recipient.prv, recipient.pub, 0);
+	std::vector<std::shared_ptr<nano::block>> blocks{ change, funding, open, spend };
+	for (auto const & block : blocks)
+	{
+		ASSERT_TRUE (node->work_generate_blocking (*block));
+		ASSERT_EQ (nano::block_status::progress, node->process (block));
+	}
+	nano::test::confirm (node->ledger, spend);
+	node->pruning.ledger_pruning (64, true);
+	{
+		auto tx = node->ledger.tx_begin_read ();
+		ASSERT_TRUE (node->ledger.any.block_pruned (tx, change->hash ()));
+		ASSERT_TRUE (node->ledger.any.block_pruned (tx, open->hash ()));
+	}
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (genesis.prv, false));
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (recipient.prv, false));
+
+	auto const rpc_ctx = add_rpc (system, node);
+	boost::property_tree::ptree request;
+	request.put ("representative", true);
+	request.put ("action", "account_info");
+	request.put ("include_confirmed", true);
+	auto check_account = [] (boost::property_tree::ptree const & info, nano::block_hash const & rep_block, nano::account const & rep) {
+		EXPECT_EQ (rep_block.to_string (), info.get<std::string> ("representative_block"));
+		EXPECT_EQ (rep.to_account (), info.get<std::string> ("representative"));
+	};
+	request.put ("account", genesis.pub.to_account ());
+	auto info = wait_response (system, rpc_ctx, request);
+	check_account (info, 0, recipient.pub);
+	EXPECT_EQ (recipient.pub.to_account (), info.get<std::string> ("confirmed_representative"));
+	request.put ("account", recipient.pub.to_account ());
+	info = wait_response (system, rpc_ctx, request);
+	check_account (info, open->hash (), genesis.pub);
+	EXPECT_EQ (genesis.pub.to_account (), info.get<std::string> ("confirmed_representative"));
+
+	auto check_ledger = [&] {
+		auto response = wait_response (system, rpc_ctx, request);
+		auto const & accounts = response.get_child ("accounts");
+		check_account (accounts.get_child (genesis.pub.to_account ()), 0, recipient.pub);
+		check_account (accounts.get_child (recipient.pub.to_account ()), open->hash (), genesis.pub);
+	};
+	request.erase ("account");
+	request.put ("action", "ledger");
+	check_ledger ();
+	request.put ("sorting", true);
+	check_ledger ();
+	request.put ("action", "wallet_ledger");
+	request.put ("wallet", node->wallets.wallet_ids ().front ().to_string ());
+	check_ledger ();
+
+	// An unconfirmed change prevents the current representative from identifying a pruned, older one.
+	auto new_change = std::make_shared<nano::change_block> (funding->hash (), genesis.pub, genesis.prv, genesis.pub, 0);
+	ASSERT_TRUE (node->work_generate_blocking (*new_change));
+	ASSERT_EQ (nano::block_status::progress, node->process (new_change));
+	request.put ("action", "account_info");
+	request.put ("account", genesis.pub.to_account ());
+	info = wait_response (system, rpc_ctx, request);
+	check_account (info, new_change->hash (), genesis.pub);
+	EXPECT_EQ (funding->hash ().to_string (), info.get<std::string> ("confirmed_frontier"));
+	EXPECT_EQ (nano::account{}.to_account (), info.get<std::string> ("confirmed_representative"));
+}
+
 TEST (rpc, json_block_input)
 {
 	nano::test::system system;

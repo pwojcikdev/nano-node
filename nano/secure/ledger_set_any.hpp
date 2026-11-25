@@ -42,6 +42,8 @@ public: // Operations on blocks
 	std::shared_ptr<nano::block> block_get (nano::secure::transaction const &, nano::block_hash const &) const;
 	bool block_pruned (nano::secure::transaction const &, nano::block_hash const &) const;
 	uint64_t block_height (nano::secure::transaction const &, nano::block_hash const &) const;
+	/** Most recent block specifying the representative, if its history is available. */
+	std::optional<nano::block_hash> representative_block (nano::secure::transaction const &, nano::block_hash const &) const;
 	std::optional<nano::block_hash> block_successor (nano::secure::transaction const &, nano::block_hash const &) const;
 	std::optional<nano::block_hash> block_successor (nano::secure::transaction const &, nano::qualified_root const &) const;
 

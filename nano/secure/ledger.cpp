@@ -491,64 +491,11 @@ nano::block_status nano::ledger::process (secure::write_transaction const & tran
 	return processor.result;
 }
 
-namespace
-{
-class representative_block_visitor final : public nano::block_visitor
-{
-public:
-	representative_block_visitor (nano::secure::transaction const & transaction, nano::ledger & ledger) :
-		transaction{ transaction },
-		ledger{ ledger }
-	{
-	}
-
-	void compute (nano::block_hash const & hash)
-	{
-		current = hash;
-		while (result.is_zero ())
-		{
-			auto block = ledger.any.block_get (transaction, current);
-			release_assert (block != nullptr);
-			block->visit (*this);
-		}
-	}
-
-	void send_block (nano::send_block const & block) override
-	{
-		current = block.previous ();
-	}
-	void receive_block (nano::receive_block const & block) override
-	{
-		current = block.previous ();
-	}
-	void open_block (nano::open_block const & block) override
-	{
-		result = block.hash ();
-	}
-	void change_block (nano::change_block const & block) override
-	{
-		result = block.hash ();
-	}
-	void state_block (nano::state_block const & block) override
-	{
-		result = block.hash ();
-	}
-
-	nano::secure::transaction const & transaction;
-	nano::ledger & ledger;
-
-	nano::block_hash current{ 0 };
-	nano::block_hash result{ 0 };
-};
-}
-
 nano::block_hash nano::ledger::representative_block (secure::transaction const & transaction, nano::block_hash const & hash)
 {
-	representative_block_visitor visitor{ transaction, *this };
-	visitor.compute (hash);
-	auto result = visitor.result;
-	debug_assert (result.is_zero () || any.block_exists (transaction, result));
-	return result;
+	auto result = any.representative_block (transaction, hash);
+	release_assert (result && (!flags.pruning || any.block_exists (transaction, *result)));
+	return *result;
 }
 
 std::string nano::ledger::block_text (char const * hash_a)

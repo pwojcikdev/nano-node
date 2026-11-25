@@ -644,7 +644,8 @@ void nano::json_handler::account_info ()
 		{
 			response_l.put ("frontier", info.head.to_string ());
 			response_l.put ("open_block", info.open_block.to_string ());
-			response_l.put ("representative_block", node.ledger.representative_block (transaction, info.head).to_string ());
+			auto const representative_block = node.ledger.any.representative_block (transaction, info.head);
+			response_l.put ("representative_block", representative_block.value_or (0).to_string ());
 			nano::amount balance_l (info.balance);
 			std::string balance = balance_l.to_string_dec ();
 
@@ -682,24 +683,23 @@ void nano::json_handler::account_info ()
 				response_l.put ("confirmation_height_frontier", confirmed_frontier);
 			}
 
-			std::shared_ptr<nano::block> confirmed_frontier_block;
-			if (include_confirmed && confirmation_height_info.height > 0)
-			{
-				confirmed_frontier_block = node.ledger.any.block_get (transaction, confirmation_height_info.frontier);
-			}
-
 			if (representative)
 			{
 				response_l.put ("representative", info.representative.to_account ());
 				if (include_confirmed)
 				{
 					nano::account confirmed_representative{};
-					if (confirmed_frontier_block)
+					if (confirmation_height_info.height > 0)
 					{
-						confirmed_representative = confirmed_frontier_block->representative_field ().value_or (0);
-						if (confirmed_representative.is_zero ())
+						auto const confirmed_rep_block = info.head == confirmation_height_info.frontier ? representative_block : node.ledger.any.representative_block (transaction, confirmation_height_info.frontier);
+						if (confirmed_rep_block == representative_block)
 						{
-							confirmed_representative = node.ledger.any.block_get (transaction, node.ledger.representative_block (transaction, confirmation_height_info.frontier))->representative_field ().value ();
+							// If both lookups reached pruned history, no representative change occurred above the confirmed frontier.
+							confirmed_representative = info.representative;
+						}
+						else if (auto block = node.ledger.any.block_get (transaction, confirmed_rep_block.value_or (0)))
+						{
+							confirmed_representative = block->representative_field ().value ();
 						}
 					}
 
@@ -3143,7 +3143,7 @@ void nano::json_handler::ledger ()
 					}
 					response_a.put ("frontier", info.head.to_string ());
 					response_a.put ("open_block", info.open_block.to_string ());
-					response_a.put ("representative_block", node.ledger.representative_block (transaction, info.head).to_string ());
+					response_a.put ("representative_block", node.ledger.any.representative_block (transaction, info.head).value_or (0).to_string ());
 					std::string balance = nano::uint128_union (info.balance).to_string_dec ();
 					response_a.put ("balance", balance);
 					response_a.put ("modified_timestamp", std::to_string (info.modified));
@@ -3195,7 +3195,7 @@ void nano::json_handler::ledger ()
 					}
 					response_a.put ("frontier", info.head.to_string ());
 					response_a.put ("open_block", info.open_block.to_string ());
-					response_a.put ("representative_block", node.ledger.representative_block (transaction, info.head).to_string ());
+					response_a.put ("representative_block", node.ledger.any.representative_block (transaction, info.head).value_or (0).to_string ());
 					std::string balance = (i->first).to_string_dec ();
 					response_a.put ("balance", balance);
 					response_a.put ("modified_timestamp", std::to_string (info.modified));
@@ -5028,7 +5028,7 @@ void nano::json_handler::wallet_ledger ()
 					boost::property_tree::ptree entry;
 					entry.put ("frontier", info->head.to_string ());
 					entry.put ("open_block", info->open_block.to_string ());
-					entry.put ("representative_block", node.ledger.representative_block (block_transaction, info->head).to_string ());
+					entry.put ("representative_block", node.ledger.any.representative_block (block_transaction, info->head).value_or (0).to_string ());
 					std::string balance = nano::uint128_union (info->balance).to_string_dec ();
 					entry.put ("balance", balance);
 					entry.put ("modified_timestamp", std::to_string (info->modified));
