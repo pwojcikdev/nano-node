@@ -192,6 +192,7 @@ public:
 	nano::result<nano::public_key> deterministic_insert (uint32_t index, bool generate_work = true);
 	nano::result<nano::public_key> deterministic_insert (bool generate_work = true);
 	bool insert_watch (nano::public_key const & pub);
+	std::error_code insert_watch_accounts (std::vector<nano::account> const & accounts);
 	void remove_account (nano::account const & account);
 	std::vector<nano::account> accounts () const;
 	bool exists (nano::public_key const & pub);
@@ -260,8 +261,6 @@ private: // Internal implementation methods (accept transactions for batching sc
 	send_result send_action_impl (nano::account const & source, nano::account const & destination, nano::uint128_t const & amount, uint64_t work, bool generate_work, std::optional<std::string> const & id);
 	// Attempts to unlock with the password and queues a receivable search on success, returns true if the password was wrong
 	bool enter_password_impl (nano::store::transaction const &, std::string const & password);
-	// Adds a watch-only account, returns true if the key is not a valid public key
-	bool insert_watch_impl (nano::store::write_transaction const &, nano::public_key const & pub);
 	// Inserts the account at the stored deterministic index and advances it
 	nano::public_key deterministic_insert_impl (nano::store::write_transaction const &, nano::wallet::wallet_cipher const &, bool generate_work = true);
 	// Inserts the account at an explicit index, leaving the stored index untouched
