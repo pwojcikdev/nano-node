@@ -173,6 +173,7 @@ public:
 	uint64_t count_impl ();
 	uint64_t count_optional_impl (uint64_t = std::numeric_limits<uint64_t>::max ());
 	uint64_t offset_optional_impl (uint64_t = 0);
+	uint64_t modified_since_optional_impl ();
 	uint64_t difficulty_optional_impl (nano::work_version const);
 	uint64_t difficulty_ledger (nano::block const &);
 	double multiplier_optional_impl (nano::work_version const, uint64_t &);

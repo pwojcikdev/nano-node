@@ -548,6 +548,17 @@ uint64_t nano::json_handler::offset_optional_impl (uint64_t result)
 	return result;
 }
 
+uint64_t nano::json_handler::modified_since_optional_impl ()
+{
+	uint64_t timestamp{ 0 };
+	auto const text = request.get_optional<std::string> ("modified_since");
+	if (!ec && text && (text->find ('-') != std::string::npos || decode_unsigned (*text, timestamp)))
+	{
+		ec = nano::error_rpc::invalid_timestamp;
+	}
+	return timestamp;
+}
+
 void nano::json_handler::account_balance ()
 {
 	auto account (account_impl ());
@@ -3025,15 +3036,7 @@ void nano::json_handler::ledger ()
 		{
 			start = account_impl (account_text.value ());
 		}
-		uint64_t modified_since (0);
-		auto modified_since_text (request.get_optional<std::string> ("modified_since"));
-		if (modified_since_text.has_value ())
-		{
-			if (decode_unsigned (modified_since_text.value (), modified_since))
-			{
-				ec = nano::error_rpc::invalid_timestamp;
-			}
-		}
+		auto const modified_since = modified_since_optional_impl ();
 		bool const sorting = request.get<bool> ("sorting", false);
 		bool const representative = request.get<bool> ("representative", false);
 		bool const weight = request.get<bool> ("weight", false);
@@ -4841,15 +4844,7 @@ void nano::json_handler::wallet_frontiers ()
 
 void nano::json_handler::wallet_history ()
 {
-	uint64_t modified_since (0);
-	auto modified_since_text (request.get_optional<std::string> ("modified_since"));
-	if (modified_since_text.has_value ())
-	{
-		if (decode_unsigned (modified_since_text.value (), modified_since))
-		{
-			ec = nano::error_rpc::invalid_timestamp;
-		}
-	}
+	auto const modified_since = modified_since_optional_impl ();
 	auto wallet (wallet_impl ());
 	if (!ec)
 	{
@@ -4918,12 +4913,7 @@ void nano::json_handler::wallet_ledger ()
 	bool const weight = request.get<bool> ("weight", false);
 	bool const pending = request.get<bool> ("pending", false);
 	bool const receivable = request.get<bool> ("receivable", pending);
-	uint64_t modified_since (0);
-	auto modified_since_text (request.get_optional<std::string> ("modified_since"));
-	if (modified_since_text.has_value ())
-	{
-		modified_since = strtoul (modified_since_text.value ().c_str (), NULL, 10);
-	}
+	auto const modified_since = modified_since_optional_impl ();
 	auto wallet (wallet_impl ());
 	if (!ec)
 	{

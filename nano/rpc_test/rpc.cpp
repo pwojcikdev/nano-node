@@ -6231,6 +6231,31 @@ TEST (rpc, wallet_create_fail)
 	ASSERT_EQ (std::error_code (nano::error_common::wallet_lmdb_max_dbs).message (), response.get<std::string> ("error"));
 }
 
+TEST (rpc, modified_since_timestamp)
+{
+	nano::test::system system;
+	auto node = add_ipc_enabled_node (system);
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv, false));
+	auto const rpc_ctx = add_rpc (system, node);
+	boost::property_tree::ptree request;
+	request.put ("wallet", node->wallets.wallet_ids ().front ().to_string ());
+	auto const invalid = std::error_code{ nano::error_rpc::invalid_timestamp }.message ();
+	for (std::string const action : { "wallet_ledger", "ledger", "wallet_history" })
+	{
+		request.put ("action", action);
+		auto const field = action == "wallet_history" ? "history" : "accounts";
+		request.put ("modified_since", "0");
+		EXPECT_FALSE (wait_response (system, rpc_ctx, request).get_child (field).empty ());
+		request.put ("modified_since", "18446744073709551615");
+		EXPECT_TRUE (wait_response (system, rpc_ctx, request).get_child (field).empty ());
+		for (auto value : { "2025-01-01", "-1", "18446744073709551616" })
+		{
+			request.put ("modified_since", value);
+			EXPECT_EQ (invalid, wait_response (system, rpc_ctx, request).get<std::string> ("error", "")) << action << " " << value;
+		}
+	}
+}
+
 TEST (rpc, wallet_ledger)
 {
 	nano::test::system system;
