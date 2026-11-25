@@ -700,6 +700,17 @@ TEST (wallet, spend_all_one)
 	ASSERT_EQ (0, node1.balance (nano::dev::genesis_key.pub));
 }
 
+TEST (wallet, watch_only_cannot_sign)
+{
+	nano::test::system system (1);
+	auto wallet = system.wallet (0);
+	auto const & source = nano::dev::genesis_key.pub;
+	ASSERT_FALSE (wallet->insert_watch (source));
+	EXPECT_TRUE (wallet->send_sync (source, nano::account{}, 1).is_zero ());
+	EXPECT_TRUE (wallet->change_sync (source, nano::account{}));
+	EXPECT_EQ (nano::dev::genesis->hash (), system.nodes[0]->latest (source));
+}
+
 TEST (wallet, send_async)
 {
 	nano::test::system system (1);
