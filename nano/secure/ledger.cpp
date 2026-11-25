@@ -758,46 +758,45 @@ std::optional<nano::block_hash> nano::ledger::find_block_hash_by_height (secure:
 	if (height - 1 <= info->block_count - height)
 	{
 		auto hash = info->open_block;
-		while (!hash.is_zero ())
+		// Successor rows survive pruning, so intermediate block bodies need not be present.
+		for (uint64_t current_height = 1; !hash.is_zero (); ++current_height)
 		{
-			auto block = any.block_get (transaction, hash);
-			if (!block)
+			if (current_height == height)
 			{
+				auto block = any.block_get (transaction, hash);
+				if (block && block->sideband ().height == height)
+				{
+					return hash;
+				}
 				return std::nullopt;
-			}
-			auto const block_height = block->sideband ().height;
-			if (block_height == height)
-			{
-				return hash;
-			}
-			if (block_height > height)
-			{
-				break;
 			}
 			hash = any.block_successor (transaction, hash).value_or (0);
 		}
-	}
-	else
-	{
-		auto hash = info->head;
-		while (!hash.is_zero ())
+		// The v25 upgrade could only backfill successors for blocks that had not already been pruned.
+		if (!flags.pruning)
 		{
-			auto block = any.block_get (transaction, hash);
-			if (!block)
-			{
-				return std::nullopt;
-			}
-			auto const block_height = block->sideband ().height;
-			if (block_height == height)
-			{
-				return hash;
-			}
-			if (block_height < height)
-			{
-				break;
-			}
-			hash = block->previous ();
+			return std::nullopt;
 		}
+	}
+
+	auto hash = info->head;
+	while (!hash.is_zero ())
+	{
+		auto block = any.block_get (transaction, hash);
+		if (!block)
+		{
+			break;
+		}
+		auto const block_height = block->sideband ().height;
+		if (block_height == height)
+		{
+			return hash;
+		}
+		if (block_height < height)
+		{
+			break;
+		}
+		hash = block->previous ();
 	}
 	return std::nullopt;
 }

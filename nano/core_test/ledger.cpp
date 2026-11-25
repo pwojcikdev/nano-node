@@ -28,6 +28,7 @@
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/rep_weight.hpp>
+#include <nano/store/ledger/successor.hpp>
 #include <nano/store/ledger/topology.hpp>
 #include <nano/store/ledger/version.hpp>
 #include <nano/store/lmdb/backend_lmdb.hpp>
@@ -6766,6 +6767,27 @@ TEST (ledger, pruning_large_chain)
 	ASSERT_EQ (store->block.count (transaction), ledger.block_count () - ledger.pruned_count ());
 	ASSERT_EQ (send_receive_pairs * 2, store->pruned.count (transaction));
 	ASSERT_EQ (1, store->block.count (transaction)); // Genesis
+}
+
+TEST (ledger, find_block_hash_by_height_across_pruned_prefix)
+{
+	auto ctx = nano::test::ledger_single_chain (8);
+	auto & ledger = ctx.ledger ();
+	ledger.drop_topo_index ();
+	ledger.enable_pruning ();
+	auto txn = ledger.tx_begin_write ();
+	auto const & blocks = ctx.blocks ();
+	ledger.cement (txn, blocks.back ()->hash ());
+	ASSERT_EQ (1, ledger.pruning_action (txn, blocks.front ()->hash (), 1));
+
+	auto const & account = nano::dev::genesis_key.pub;
+	ASSERT_EQ (nano::dev::genesis->hash (), ledger.find_block_hash_by_height (txn, account, 1));
+	ASSERT_FALSE (ledger.find_block_hash_by_height (txn, account, 2));
+	ASSERT_EQ (blocks[1]->hash (), ledger.find_block_hash_by_height (txn, account, 3));
+
+	// A ledger pruned before the successor table was introduced has no row for the pruned block.
+	ledger.store.successor.del (txn, blocks.front ()->hash ());
+	ASSERT_EQ (blocks[1]->hash (), ledger.find_block_hash_by_height (txn, account, 3));
 }
 
 TEST (ledger, pruning_source_rollback)
