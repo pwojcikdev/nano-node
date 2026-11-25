@@ -1309,8 +1309,7 @@ nano_qt::wallet::wallet (QApplication & application_a, nano_qt::eventloop_proces
 	needs_deterministic_restore (false)
 {
 	update_connected ();
-	empty_password ();
-	settings.update_locked (true, true);
+	settings.update_locked (wallet_m->is_locked (), wallet_m->unlocked_with_empty_password ());
 	send_blocks_layout->addWidget (send_account_label);
 	send_account->setPlaceholderText (node.network_params.ledger.zero_key.pub.to_account ().c_str ());
 	send_blocks_layout->addWidget (send_account);
@@ -1754,14 +1753,6 @@ void nano_qt::wallet::update_connected ()
 	{
 		active_status.erase (nano_qt::status_types::disconnected);
 	}
-}
-
-void nano_qt::wallet::empty_password ()
-{
-	// Taken now, as another wallet may be shown by the time the delay runs out
-	this->node.workers.post_delayed (std::chrono::seconds (3), [wallet_l = wallet_m] () {
-		wallet_l->enter_password (std::string (""));
-	});
 }
 
 void nano_qt::wallet::change_rendering_ratio (nano::uint128_t const & rendering_ratio_a)

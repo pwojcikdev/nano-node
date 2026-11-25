@@ -293,12 +293,8 @@ TEST (qt_wallet, enter_password)
 	ASSERT_NE (-1, wallet->settings.layout->indexOf (wallet->settings.password));
 	ASSERT_NE (-1, wallet->settings.layout->indexOf (wallet->settings.lock_toggle));
 	ASSERT_NE (-1, wallet->settings.layout->indexOf (wallet->settings.back));
-	// The wallet UI always starts as locked, so we lock it then unlock it again to update the UI.
-	// This should never be a problem in actual use, as in reality, the wallet does start locked.
-	QTest::mouseClick (wallet->settings.lock_toggle, Qt::LeftButton);
-	QTest::mouseClick (wallet->settings.lock_toggle, Qt::LeftButton);
 	test_application->processEvents ();
-	ASSERT_NE (wallet->status->text ().toStdString ().rfind ("Status: Wallet password empty", 0), std::string::npos);
+	EXPECT_NE (wallet->status->text ().toStdString ().rfind ("Status: Wallet password empty", 0), std::string::npos);
 	ASSERT_FALSE (system.wallet (0)->rekey ("abc"));
 	QTest::mouseClick (wallet->settings_button, Qt::LeftButton);
 	QTest::mouseClick (wallet->settings.lock_toggle, Qt::LeftButton);
@@ -313,6 +309,7 @@ TEST (qt_wallet, enter_password)
 	};
 	ASSERT_TIMELY (5s, is_running_status ());
 	ASSERT_EQ ("", wallet->settings.password->text ());
+	ASSERT_ALWAYS (4s, !system.wallet (0)->is_locked ());
 }
 
 TEST (qt_wallet, send)

@@ -338,7 +338,6 @@ public:
 	nano::error select_wallet (nano::wallet_id const &);
 
 	void update_connected ();
-	void empty_password ();
 	void change_rendering_ratio (nano::uint128_t const &);
 	std::string format_balance (nano::uint128_t const &) const;
 	nano::uint128_t rendering_ratio;
