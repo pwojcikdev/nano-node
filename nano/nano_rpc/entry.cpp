@@ -21,7 +21,7 @@ using namespace nano;
 
 namespace
 {
-void run (std::filesystem::path const & data_path, std::vector<std::string> const & config_overrides)
+int run (std::filesystem::path const & data_path, std::vector<std::string> const & config_overrides)
 {
 	nano::logger logger{ "rpc_daemon" };
 
@@ -39,9 +39,6 @@ void run (std::filesystem::path const & data_path, std::vector<std::string> cons
 	{
 		try
 		{
-			auto rpc = std::make_unique<nano::rpc_host> (rpc_config);
-			rpc->start (std::make_unique<nano::ipc_rpc_processor> (rpc->io_context (), rpc_config));
-
 			std::atomic stopped{ false };
 
 			auto signal_handler = [&stopped, &logger] (int signum) {
@@ -54,6 +51,9 @@ void run (std::filesystem::path const & data_path, std::vector<std::string> cons
 			sigman.register_signal_handler (SIGINT, signal_handler, true);
 			sigman.register_signal_handler (SIGTERM, signal_handler, false);
 
+			auto rpc = std::make_unique<nano::rpc_host> (rpc_config);
+			rpc->start (std::make_unique<nano::ipc_rpc_processor> (rpc->io_context (), rpc_config));
+
 			// Keep running until stopped flag is set
 			stopped.wait (false);
 
@@ -64,14 +64,17 @@ void run (std::filesystem::path const & data_path, std::vector<std::string> cons
 		catch (std::runtime_error const & e)
 		{
 			logger.critical (nano::log::type::daemon_rpc, "Error while running RPC: {}", e.what ());
+			return 1;
 		}
 	}
 	else
 	{
 		logger.critical (nano::log::type::daemon_rpc, "Error deserializing config: {}", error.get_message ());
+		return 1;
 	}
 
 	logger.info (nano::log::type::daemon_rpc, "Stopped");
+	return 0;
 }
 }
 
@@ -121,12 +124,13 @@ int main (int argc, char * const * argv)
 	std::filesystem::path data_path ((data_path_it != vm.end ()) ? std::filesystem::path (data_path_it->second.as<std::string> ()) : nano::working_path ());
 	if (vm.count ("daemon") > 0)
 	{
-		run (data_path, nano::config_overrides (vm));
+		return run (data_path, nano::config_overrides (vm));
 	}
 	else if (vm.count ("version"))
 	{
 		std::cout << "Version " << NANO_VERSION_STRING << "\n"
 				  << "Build Info " << BUILD_INFO << std::endl;
+		return 0;
 	}
 	else
 	{
@@ -137,5 +141,5 @@ int main (int argc, char * const * argv)
 		std::cout << sorted_description << std::endl;
 	}
 
-	return 1;
+	return vm.count ("help") ? 0 : 1;
 }
