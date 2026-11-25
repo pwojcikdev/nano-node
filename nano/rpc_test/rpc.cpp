@@ -744,14 +744,39 @@ TEST (rpc, wallet_destroy)
 {
 	nano::test::system system;
 	auto node = add_ipc_enabled_node (system);
-	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
+	auto wallet_id = node->wallets.wallet_ids ().front ();
+	auto const & rep = nano::dev::genesis_key;
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (rep.prv, false));
+	auto const second_id = nano::random_wallet_id ();
+	auto second = node->wallets.create (second_id);
+	ASSERT_NE (nullptr, second);
+	ASSERT_TRUE (second->insert_adhoc (rep.prv, false));
+	auto signer_count = [&] () {
+		unsigned count = 0;
+		node->wallets.foreach_representative ([&] (auto const & pub, auto const & prv) {
+			EXPECT_EQ (rep.pub, pub);
+			EXPECT_EQ (pub, nano::pub_key (prv));
+			++count;
+		});
+		return count;
+	};
+	ASSERT_EQ (1, signer_count ());
+
 	auto const rpc_ctx = add_rpc (system, node);
-	auto wallet_id (node->wallets.wallet_ids ().front ());
 	boost::property_tree::ptree request;
 	request.put ("action", "wallet_destroy");
 	request.put ("wallet", wallet_id.to_string ());
 	auto response (wait_response (system, rpc_ctx, request));
+	ASSERT_EQ ("1", response.get<std::string> ("destroyed"));
 	ASSERT_EQ (nullptr, node->wallets.open (wallet_id));
+	EXPECT_EQ (1, signer_count ());
+
+	request.put ("wallet", second_id.to_string ());
+	response = wait_response (system, rpc_ctx, request);
+	ASSERT_EQ ("1", response.get<std::string> ("destroyed"));
+	ASSERT_EQ (nullptr, node->wallets.open (second_id));
+	EXPECT_EQ (0, signer_count ());
+	EXPECT_FALSE (node->wallets.have_voting_reps ());
 }
 
 TEST (rpc, account_move)
