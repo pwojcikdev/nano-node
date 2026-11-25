@@ -1327,7 +1327,8 @@ TEST (rpc, account_history)
 		request.put ("count", 100);
 		auto response (wait_response (system, rpc_ctx, request));
 		auto history_node (response.get_child ("history"));
-		ASSERT_EQ (history_node.size (), 2);
+		ASSERT_EQ (1, history_node.size ());
+		ASSERT_EQ (send2->hash ().to_string (), history_node.front ().second.get<std::string> ("hash"));
 	}
 	// Test filter for receive state blocks
 	{
@@ -1343,6 +1344,53 @@ TEST (rpc, account_history)
 		auto response (wait_response (system, rpc_ctx, request));
 		auto history_node (response.get_child ("history"));
 		ASSERT_EQ (history_node.size (), 1);
+		ASSERT_EQ (receive2->hash ().to_string (), history_node.front ().second.get<std::string> ("hash"));
+	}
+}
+
+TEST (rpc, account_history_filter_legacy_transfers)
+{
+	nano::test::system system;
+	auto node = add_ipc_enabled_node (system);
+	auto const & genesis = nano::dev::genesis_key;
+	nano::keypair recipient;
+
+	auto funding = std::make_shared<nano::send_block> (nano::dev::genesis->hash (), recipient.pub, nano::dev::constants.genesis_amount - 10, genesis.prv, genesis.pub, 0);
+	auto open = std::make_shared<nano::open_block> (funding->hash (), recipient.pub, recipient.pub, recipient.prv, recipient.pub, 0);
+	auto self_send = std::make_shared<nano::send_block> (open->hash (), recipient.pub, 9, recipient.prv, recipient.pub, 0);
+	auto self_receive = std::make_shared<nano::receive_block> (self_send->hash (), self_send->hash (), recipient.prv, recipient.pub, 0);
+	auto change = std::make_shared<nano::state_block> (recipient.pub, self_receive->hash (), genesis.pub, 10, 0, recipient.prv, recipient.pub, 0);
+	std::vector<std::shared_ptr<nano::block>> blocks{ funding, open, self_send, self_receive, change };
+	for (auto const & block : blocks)
+	{
+		ASSERT_TRUE (node->work_generate_blocking (*block));
+		ASSERT_EQ (nano::block_status::progress, node->process (block));
+	}
+
+	auto const rpc_ctx = add_rpc (system, node);
+	auto history = [&] (nano::public_key const & counterparty, unsigned count, bool raw) {
+		boost::property_tree::ptree request, filter, account;
+		account.put ("", counterparty.to_account ());
+		filter.push_back ({ "", account });
+		request.put ("action", "account_history");
+		request.put ("account", recipient.pub.to_account ());
+		request.add_child ("account_filter", filter);
+		request.put ("count", count);
+		request.put ("raw", raw);
+		return wait_response (system, rpc_ctx, request).get_child ("history");
+	};
+	for (bool raw : { false, true })
+	{
+		// The two newer self-transfers and representative change must leave the one slot for the funding transfer.
+		auto from_genesis = history (genesis.pub, 1, raw);
+		ASSERT_EQ (1, from_genesis.size ());
+		ASSERT_EQ (open->hash ().to_string (), from_genesis.front ().second.get<std::string> ("hash"));
+		ASSERT_EQ (genesis.pub.to_account (), from_genesis.front ().second.get<std::string> ("account"));
+
+		auto self_transfers = history (recipient.pub, 10, raw);
+		ASSERT_EQ (2, self_transfers.size ());
+		ASSERT_EQ (self_receive->hash ().to_string (), self_transfers.front ().second.get<std::string> ("hash"));
+		ASSERT_EQ (self_send->hash ().to_string (), self_transfers.back ().second.get<std::string> ("hash"));
 	}
 }
 
