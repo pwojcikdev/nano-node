@@ -1347,23 +1347,13 @@ void nano::json_handler::block_confirm ()
 				node.active.recently_cemented.put (status);
 				// Trigger callback for confirmed block
 				auto amount = node.ledger.any.block_amount (transaction, hash);
-				bool is_state_send (false);
-				bool is_state_epoch (false);
-				if (amount)
-				{
-					if (auto state = dynamic_cast<nano::state_block *> (block_l.get ()))
-					{
-						is_state_send = state->is_send ();
-						is_state_epoch = amount.value () == 0 && node.ledger.is_epoch_link (state->link_field ().value ());
-					}
-				}
 				nano::block_confirmation_info confirmation{
 					.status = status,
 					.type = nano::confirmation_type::active_confirmation_height,
 					.account = block_l->account (),
 					.amount = amount.value_or (0),
-					.is_state_send = is_state_send,
-					.is_state_epoch = is_state_epoch,
+					.is_state_send = block_l->type () == nano::block_type::state && block_l->is_send (),
+					.is_state_epoch = block_l->is_epoch (),
 				};
 				node.observers.block_confirmed.notify (confirmation);
 			}

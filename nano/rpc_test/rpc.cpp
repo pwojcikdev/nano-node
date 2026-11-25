@@ -23,6 +23,7 @@
 #include <nano/node/ipc/ipc_server.hpp>
 #include <nano/node/json_handler.hpp>
 #include <nano/node/network.hpp>
+#include <nano/node/node_observers.hpp>
 #include <nano/node/node_rpc_config.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/node/online_reps.hpp>
@@ -6520,6 +6521,52 @@ TEST (rpc, block_confirm_confirmed)
 	// Callback result is error because callback target port isn't listening
 	// Check for error count greater than zero as the address goes through DNS resolution and may make multiple attempts for multiple IPs per DNS
 	ASSERT_TIMELY (5s, node->stats.count (nano::stat::type::http_callbacks_ec) != 0);
+}
+
+TEST (rpc, block_confirm_pruned_predecessor_subtype)
+{
+	std::atomic<int> observed_send{ -1 };
+	std::atomic<int> observed_epoch{ -1 };
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	nano::node_flags flags;
+	flags.enable_pruning = true;
+	flags.disable_topo_index = true;
+	auto node = add_ipc_enabled_node (system, config, flags);
+	auto const sends = nano::test::setup_chain (system, *node, 2);
+	auto const epoch = system.upgrade_genesis_epoch (*node, nano::epoch::epoch_1);
+	ASSERT_NE (nullptr, epoch);
+	{
+		auto tx = node->ledger.tx_begin_write ();
+		node->ledger.cement (tx, epoch->hash ());
+		ASSERT_EQ (1, node->ledger.pruning_action (tx, sends.front ()->hash (), 1));
+	}
+	node->observers.block_confirmed.add ([send_hash = sends.back ()->hash (), epoch_hash = epoch->hash (), &observed_send, &observed_epoch] (nano::block_confirmation_info const & confirmation) {
+		auto const hash = confirmation.status.winner->hash ();
+		if (hash == send_hash)
+		{
+			observed_send = confirmation.is_state_send;
+		}
+		if (hash == epoch_hash)
+		{
+			observed_epoch = confirmation.is_state_epoch;
+		}
+	});
+	auto const rpc_ctx = add_rpc (system, node);
+	boost::property_tree::ptree request;
+	request.put ("action", "block_confirm");
+	request.put ("hash", sends.back ()->hash ().to_string ());
+	ASSERT_EQ ("1", wait_response (system, rpc_ctx, request).get<std::string> ("started"));
+	{
+		auto tx = node->ledger.tx_begin_write ();
+		ASSERT_EQ (1, node->ledger.pruning_action (tx, sends.back ()->hash (), 1));
+	}
+	request.put ("hash", epoch->hash ().to_string ());
+	ASSERT_EQ ("1", wait_response (system, rpc_ctx, request).get<std::string> ("started"));
+	ASSERT_TIMELY (5s, observed_send.load () >= 0 && observed_epoch.load () >= 0);
+	EXPECT_EQ (1, observed_send.load ());
+	EXPECT_EQ (1, observed_epoch.load ());
 }
 
 TEST (rpc, node_id)
