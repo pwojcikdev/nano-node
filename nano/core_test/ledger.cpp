@@ -7572,6 +7572,36 @@ TEST (ledger_receivable, any_none)
 	ASSERT_FALSE (ctx.ledger ().any.receivable_exists (ctx.ledger ().tx_begin_read (), nano::dev::genesis_key.pub));
 }
 
+TEST (ledger_receivable, cemented_includes_pruned_sends)
+{
+	auto ctx = nano::test::ledger_empty ({ .enable_pruning = true, .enable_topo_index = false });
+	auto & ledger = ctx.ledger ();
+	auto const & genesis = nano::dev::genesis_key;
+	nano::keypair destination;
+	auto previous = nano::dev::genesis->hash ();
+	auto balance = nano::dev::constants.genesis_amount;
+	std::vector<nano::block_hash> hashes;
+	auto txn = ledger.tx_begin_write ();
+	for (unsigned i = 0; i < 3; ++i)
+	{
+		auto send = std::make_shared<nano::send_block> (previous, destination.pub, --balance, genesis.prv, genesis.pub, *ctx.pool ().generate (previous));
+		ASSERT_EQ (nano::block_status::progress, ledger.process (txn, send));
+		previous = send->hash ();
+		hashes.push_back (previous);
+	}
+	ledger.cement (txn, hashes[1]);
+	ASSERT_EQ (1, ledger.pruning_action (txn, hashes[0], 2));
+	ASSERT_EQ (2, ledger.account_receivable (txn, destination.pub, true));
+
+	std::map<nano::block_hash, nano::amount> confirmed;
+	for (auto it = ledger.cemented.receivable_upper_bound (txn, destination.pub, 0); it != ledger.cemented.receivable_end (); ++it)
+	{
+		confirmed.emplace (it->first.hash, it->second.amount);
+	}
+	std::map<nano::block_hash, nano::amount> const expected{ { hashes[0], 1 }, { hashes[1], 1 } };
+	EXPECT_EQ (expected, confirmed);
+}
+
 TEST (ledger_receivable, any_one)
 {
 	auto ctx = nano::test::ledger_empty ();
