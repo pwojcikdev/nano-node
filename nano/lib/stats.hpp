@@ -180,7 +180,6 @@ private:
 
 private:
 	void run ();
-	void run_one (std::unique_lock<std::shared_mutex> & lock);
 	bool should_run () const;
 
 	/** Unlocked implementation of log_counters() to avoid using recursive locking */

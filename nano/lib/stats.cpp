@@ -13,6 +13,7 @@
 
 #include <ctime>
 #include <fstream>
+#include <optional>
 #include <sstream>
 
 #include <magic_enum.hpp>
@@ -321,47 +322,29 @@ bool nano::stats::should_run () const
 
 void nano::stats::run ()
 {
-	std::unique_lock lock{ mutex };
-	while (!stopped)
-	{
-		condition.wait_for (lock, 1s, [this] {
-			return stopped;
-		});
-		if (!stopped)
-		{
-			run_one (lock);
-			debug_assert (lock.owns_lock ());
-		}
-	}
-}
-
-void nano::stats::run_one (std::unique_lock<std::shared_mutex> & lock)
-{
-	static stat_file_writer log_count{ config.log_counters_filename };
-	static stat_file_writer log_sample{ config.log_samples_filename };
-
-	debug_assert (!mutex.try_lock ());
-	debug_assert (lock.owns_lock ());
-
-	// TODO: Replace with a proper std::chrono time
-	std::time_t time = std::chrono::system_clock::to_time_t (std::chrono::system_clock::now ());
-	tm local_tm = *localtime (&time);
-
-	// Counters
+	std::optional<stat_file_writer> log_count;
 	if (config.log_counters_interval.count () > 0)
 	{
-		if (nano::elapse (log_last_count_writeout, config.log_counters_interval))
-		{
-			log_counters_impl (log_count, local_tm);
-		}
+		log_count.emplace (config.log_counters_filename);
 	}
-
-	// Samples
+	std::optional<stat_file_writer> log_sample;
 	if (config.log_samples_interval.count () > 0)
 	{
-		if (nano::elapse (log_last_sample_writeout, config.log_samples_interval))
+		log_sample.emplace (config.log_samples_filename);
+	}
+
+	std::unique_lock lock{ mutex };
+	while (!condition.wait_for (lock, 1s, [this] { return stopped; }))
+	{
+		std::time_t time = std::chrono::system_clock::to_time_t (std::chrono::system_clock::now ());
+		tm local_tm = *localtime (&time);
+		if (log_count && nano::elapse (log_last_count_writeout, config.log_counters_interval))
 		{
-			log_samples_impl (log_sample, local_tm);
+			log_counters_impl (*log_count, local_tm);
+		}
+		if (log_sample && nano::elapse (log_last_sample_writeout, config.log_samples_interval))
+		{
+			log_samples_impl (*log_sample, local_tm);
 		}
 	}
 }

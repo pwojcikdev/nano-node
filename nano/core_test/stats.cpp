@@ -1,8 +1,12 @@
+#include <nano/lib/files.hpp>
+#include <nano/test_common/scoped_start.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
 #include <gtest/gtest.h>
 
+#include <fstream>
+#include <iterator>
 #include <ostream>
 
 // Test stat counting at both type and detail levels
@@ -81,4 +85,39 @@ TEST (stats, samples)
 	auto samples4 = node.stats.samples (nano::stat::sample::bootstrap_tag_duration);
 	ASSERT_EQ (1, samples4.size ());
 	ASSERT_EQ (2137, samples4[0]);
+}
+
+TEST (stats, file_logging_respects_configured_streams)
+{
+	nano::test::system system;
+	auto const path = nano::unique_path ();
+	auto contents = [] (std::string const & filename) {
+		std::ifstream stream{ filename };
+		return std::string{ std::istreambuf_iterator<char>{ stream }, {} };
+	};
+
+	nano::stats_config counters;
+	counters.log_counters_filename = (path / "counters.stat").string ();
+	counters.log_samples_filename = (path / "disabled-samples.stat").string ();
+	counters.log_counters_interval = 100ms;
+	std::ofstream{ counters.log_samples_filename } << "earlier samples";
+	{
+		nano::stats stats{ system.logger, counters };
+		stats.add (nano::stat::type::ledger, nano::stat::detail::test, 7);
+		START (stats);
+		ASSERT_TIMELY (5s, contents (counters.log_counters_filename).find (",ledger,test,in,7") != std::string::npos);
+	}
+	EXPECT_EQ ("earlier samples", contents (counters.log_samples_filename));
+
+	nano::stats_config samples;
+	samples.log_counters_filename = (path / "disabled-counters.stat").string ();
+	samples.log_samples_filename = (path / "samples.stat").string ();
+	samples.log_samples_interval = 100ms;
+	{
+		nano::stats stats{ system.logger, samples };
+		stats.sample (nano::stat::sample::active_election_duration, 17);
+		START (stats);
+		ASSERT_TIMELY (5s, contents (samples.log_samples_filename).find (",active_election_duration,17") != std::string::npos);
+	}
+	ASSERT_FALSE (std::filesystem::exists (samples.log_counters_filename));
 }
