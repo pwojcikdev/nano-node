@@ -3382,13 +3382,16 @@ void nano::json_handler::process ()
 			{
 				std::shared_ptr<nano::state_block> block_state (std::static_pointer_cast<nano::state_block> (block));
 				auto transaction = rpc_l->node.ledger.tx_begin_read ();
-				if (!block_state->hashables.previous.is_zero () && !rpc_l->node.ledger.any.block_exists (transaction, block_state->hashables.previous))
+				auto const previous = block_state->previous ();
+				auto const previous_balance = previous.is_zero () ? std::optional<nano::amount>{ 0 } : rpc_l->node.ledger.any.block_balance (transaction, previous);
+				if (!previous_balance)
 				{
-					rpc_l->ec = nano::error_process::gap_previous;
+					// Pruning can remove the predecessor of a block already accepted by this node.
+					rpc_l->ec = rpc_l->node.ledger.any.block_exists_or_pruned (transaction, block_state->hash ()) ? nano::error_process::old : nano::error_process::gap_previous;
 				}
 				else
 				{
-					auto balance (rpc_l->node.ledger.any.account_balance (transaction, block_state->hashables.account).value_or (0).number ());
+					auto const balance = previous_balance->number ();
 					if (subtype_text == "send")
 					{
 						if (balance <= block_state->hashables.balance.number ())

@@ -1903,6 +1903,34 @@ TEST (rpc, process_subtype_send)
 	ASSERT_TIMELY_EQ (10s, system.nodes[1]->latest (nano::dev::genesis_key.pub), send->hash ());
 }
 
+TEST (rpc, process_subtype_resubmitted_send)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false;
+	nano::node_flags flags;
+	flags.enable_pruning = true;
+	flags.disable_topo_index = true;
+	auto node = add_ipc_enabled_node (system, config, flags);
+	auto const sends = nano::test::setup_chain (system, *node, 3);
+	auto const rpc_ctx = add_rpc (system, node);
+
+	boost::property_tree::ptree request;
+	request.put ("action", "process");
+	request.put ("block", sends[1]->to_json ());
+	auto const old = std::error_code{ nano::error_process::old }.message ();
+	EXPECT_EQ (old, wait_response (system, rpc_ctx, request).get<std::string> ("error"));
+	request.put ("subtype", "send");
+	EXPECT_EQ (old, wait_response (system, rpc_ctx, request).get<std::string> ("error"));
+
+	{
+		auto tx = node->ledger.tx_begin_write ();
+		ASSERT_EQ (1, node->ledger.pruning_action (tx, sends[0]->hash (), 1));
+	}
+	EXPECT_EQ (old, wait_response (system, rpc_ctx, request).get<std::string> ("error"));
+	EXPECT_EQ (sends.back ()->hash (), node->latest (nano::dev::genesis_key.pub));
+}
+
 TEST (rpc, process_subtype_open)
 {
 	nano::test::system system;
