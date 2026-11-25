@@ -913,12 +913,14 @@ TEST (qt_wallet, import)
 	ASSERT_TRUE (system.wallet (0)->insert_adhoc (key1.prv));
 	system.wallet (0)->serialize_json (json);
 	ASSERT_TRUE (system.wallet (1)->insert_adhoc (key2.prv));
-	auto path{ nano::unique_path () / "wallet.json" };
+	auto const directory = nano::unique_path ();
+	auto const path = directory / "wallet backup.json";
 	{
-		std::ofstream stream;
-		stream.open (path.string ().c_str ());
-		stream << json;
+		std::ofstream backup{ path };
+		backup << json;
 	}
+	// A different backup at the unspaced path must never be chosen while typing the filename.
+	system.wallet (1)->write_backup (directory / "walletbackup.json");
 	auto wallet (std::make_shared<nano_qt::wallet> (*test_application, processor, *system.nodes[1], system.wallet (1), key2.pub));
 	wallet->start ();
 	QTest::mouseClick (wallet->show_advanced, Qt::LeftButton);
@@ -928,10 +930,15 @@ TEST (qt_wallet, import)
 	QTest::mouseClick (wallet->accounts.import_wallet, Qt::LeftButton);
 	ASSERT_EQ (wallet->import.window, wallet->main_stack->currentWidget ());
 	QTest::keyClicks (wallet->import.filename, path.string ().c_str ());
+	EXPECT_EQ (path.string (), wallet->import.filename->text ().toStdString ());
 	QTest::keyClicks (wallet->import.password, "");
 	ASSERT_FALSE (system.wallet (1)->exists (key1.pub));
 	QTest::mouseClick (wallet->import.perform, Qt::LeftButton);
 	ASSERT_TRUE (system.wallet (1)->exists (key1.pub));
+	// Clipboard padding around the same filename still imports successfully.
+	wallet->import.filename->setText ("  " + QString::fromStdString (path.string ()) + "  ");
+	QTest::mouseClick (wallet->import.perform, Qt::LeftButton);
+	ASSERT_TRUE (wallet->import.filename->text ().isEmpty ());
 }
 
 TEST (qt_wallet, republish)

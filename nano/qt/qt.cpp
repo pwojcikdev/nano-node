@@ -22,9 +22,9 @@
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
 
+#include <QFile>
 #include <algorithm>
 #include <cmath>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 
@@ -561,28 +561,31 @@ nano_qt::import::import (nano_qt::wallet & wallet_a) :
 	layout->addWidget (back);
 	window->setLayout (layout);
 	QObject::connect (perform, &QPushButton::released, [this] () {
-		std::ifstream stream;
-		stream.open (filename->text ().toStdString ().c_str ());
-		if (!stream.fail ())
+		auto const path = filename->text ();
+		// Prefer the exact filename, including spaces, and accept padding around pasted paths.
+		QFile file{ QFile::exists (path) ? path : path.trimmed () };
+		if (!file.open (QIODevice::ReadOnly))
 		{
-			show_line_ok (*filename);
-			std::stringstream contents;
-			contents << stream.rdbuf ();
-			if (!this->wallet.wallet_m->import (contents.str (), password->text ().toStdString ().c_str ()))
-			{
-				show_line_ok (*password);
-				this->wallet.accounts.refresh ();
-				password->clear ();
-				filename->clear ();
-			}
-			else
-			{
-				show_line_error (*password);
-			}
+			show_line_error (*filename);
+			return;
+		}
+		auto const contents = file.readAll ();
+		if (file.error () != QFileDevice::NoError)
+		{
+			show_line_error (*filename);
+			return;
+		}
+		show_line_ok (*filename);
+		if (!this->wallet.wallet_m->import (contents.toStdString (), password->text ().toStdString ()))
+		{
+			show_line_ok (*password);
+			this->wallet.accounts.refresh ();
+			password->clear ();
+			filename->clear ();
 		}
 		else
 		{
-			show_line_error (*filename);
+			show_line_error (*password);
 		}
 	});
 	QObject::connect (back, &QPushButton::released, [this] () {
@@ -667,11 +670,6 @@ nano_qt::import::import (nano_qt::wallet & wallet_a) :
 		auto pos = seed->cursorPosition ();
 		seed->setText (value.trimmed ());
 		seed->setCursorPosition (pos);
-	});
-	QObject::connect (filename, &QLineEdit::textChanged, [this] (const QString & value) {
-		auto pos = filename->cursorPosition ();
-		filename->setText (value.trimmed ());
-		filename->setCursorPosition (pos);
 	});
 }
 
