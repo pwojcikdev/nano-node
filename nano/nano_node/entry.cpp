@@ -1462,6 +1462,11 @@ int main (int argc, char * const * argv)
 					}
 					calculated_hash = block->previous ();
 					height = block->sideband ().height - 1;
+					if (pruned_block && account == node->network_params.ledger.genesis->account () && node->ledger.any.block_exists (transaction, info.open_block))
+					{
+						// Pruning preserves genesis even when the retained chain no longer reaches it.
+						++block_count;
+					}
 					if (!node->ledger.any.block_exists_or_pruned (transaction, info.open_block))
 					{
 						print_error_message (boost::str (boost::format ("Open block does not exist %1%\n") % info.open_block.to_string ()));
@@ -1680,10 +1685,6 @@ int main (int argc, char * const * argv)
 
 			// Validate total block count
 			auto ledger_block_count (node->store.block.count (transaction));
-			if (node->ledger.flags.pruning)
-			{
-				block_count += 1; // Add disconnected genesis block
-			}
 			if (block_count != ledger_block_count)
 			{
 				print_error_message (boost::str (boost::format ("Incorrect total block count. Blocks validated %1%. Block count in database: %2%\n") % block_count % ledger_block_count));

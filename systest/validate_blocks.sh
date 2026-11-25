@@ -40,3 +40,10 @@ wait "$pid"
 
 "$NANO_NODE_EXE" --network dev --data_path "$datadir" --validate_blocks > "$datadir/report"
 grep -Fq 'Validation status: Ok' "$datadir/report"
+
+# Enabling pruning on a fresh ledger leaves genesis in the ordinary account chain.
+pruning_dir=$(new_datadir)
+"$NANO_NODE_EXE" --network dev --data_path "$pruning_dir" --initialize \
+    --disable_topo_index --enable_pruning --config node.enable_voting=false
+"$NANO_NODE_EXE" --network dev --data_path "$pruning_dir" --validate_blocks > "$pruning_dir/report"
+grep -Fq 'Validation status: Ok' "$pruning_dir/report"
