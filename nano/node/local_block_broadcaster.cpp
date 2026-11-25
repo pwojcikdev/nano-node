@@ -67,8 +67,20 @@ nano::local_block_broadcaster::local_block_broadcaster (local_block_broadcaster_
 
 	cementing_set.cemented_observers.add ([this] (auto const & block) {
 		nano::lock_guard<nano::mutex> guard{ mutex };
-		auto erased = local_blocks.get<tag_hash> ().erase (block->hash ());
-		stats.add (nano::stat::type::local_block_broadcaster, nano::stat::detail::cemented, erased);
+		auto & by_hash = local_blocks.get<tag_hash> ();
+		if (auto it = by_hash.find (block->hash ()); it != by_hash.end ())
+		{
+			if (it->rebroadcasts == 0)
+			{
+				// Keep a cemented local block until its first broadcast has a token.
+				by_hash.modify (it, [] (auto & entry) { entry.cemented = true; });
+			}
+			else
+			{
+				by_hash.erase (it);
+				stats.inc (nano::stat::type::local_block_broadcaster, nano::stat::detail::cemented);
+			}
+		}
 	});
 }
 
@@ -185,6 +197,12 @@ bool nano::local_block_broadcaster::run_broadcasts (nano::unique_lock<nano::mute
 	{
 		auto it = by_hash.find (entry.hash ());
 		release_assert (it != by_hash.end ());
+		if (entry.cemented)
+		{
+			by_hash.erase (it);
+			stats.inc (nano::stat::type::local_block_broadcaster, nano::stat::detail::cemented);
+			continue;
+		}
 		bool success = by_hash.modify (it, [this, now] (auto & entry) {
 			entry.rebroadcasts += 1;
 			entry.last_broadcast = now;

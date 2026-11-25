@@ -157,6 +157,39 @@ TEST (local_block_broadcaster, cemented_erases_entry)
 	ASSERT_ALWAYS_EQ (2s, count (node, nano::stat::detail::broadcast), broadcasts);
 }
 
+TEST (local_block_broadcaster, cemented_before_first_broadcast)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.bootstrap->enable = false;
+	config.local_block_broadcaster->broadcast_rate_limit = 1;
+	config.local_block_broadcaster->broadcast_rate_burst_ratio = 1;
+	config.local_block_broadcaster->rebroadcast_interval = 60s;
+	config.local_block_broadcaster->cleanup_interval = 60s;
+	auto & sender = *system.add_node (config, quiet_flags ());
+
+	auto receiver_config = system.default_config ();
+	receiver_config.bootstrap->enable = false;
+	auto & receiver = *system.add_node (receiver_config, quiet_flags ());
+
+	auto sends = genesis_sends (system, nano::dev::genesis->hash (), nano::dev::constants.genesis_amount, nano::account{ 1 }, 4);
+	for (auto const & send : sends)
+	{
+		ASSERT_EQ (nano::block_status::progress, sender.process_local (send).value ());
+	}
+	auto const hash = sends.back ()->hash ();
+	ASSERT_TIMELY (5s, sender.local_block_broadcaster.contains (hash));
+	ASSERT_FALSE (receiver.block (hash));
+
+	// Cement the chain while the rate limiter still has its final sends queued.
+	sender.cementing_set.add (hash);
+	ASSERT_TIMELY (5s, sender.block_confirmed (hash));
+	ASSERT_TIMELY (8s, receiver.block (hash));
+	ASSERT_TIMELY_EQ (5s, sender.local_block_broadcaster.size (), 0);
+	ASSERT_EQ (sends.size (), count (sender, nano::stat::detail::broadcast));
+	ASSERT_EQ (sends.size (), count (sender, nano::stat::detail::cemented));
+}
+
 /*
  * Cleanup drops a tracked block once it is confirmed, but only after it has been broadcast at least once
  */

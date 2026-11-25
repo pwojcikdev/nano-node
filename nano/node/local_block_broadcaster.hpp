@@ -98,6 +98,7 @@ private:
 		std::chrono::steady_clock::time_point last_broadcast{};
 		std::chrono::steady_clock::time_point next_broadcast{};
 		unsigned rebroadcasts{ 0 };
+		bool cemented{ false };
 
 		nano::block_hash hash () const
 		{
