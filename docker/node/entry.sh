@@ -77,10 +77,11 @@ ensure_configs() {
 	fi
 }
 
-parse_vacuum_size() {
+set_vacuum_size() {
 	local v="${1:-}"
 	[[ "$v" =~ ^[0-9]+$ ]] || die "Invalid vacuum size '$v'. Expected integer GB."
-	echo "$v"
+	VACUUM_THRESHOLD_GB="$v"
+	log "Vacuum DB if over ${VACUUM_THRESHOLD_GB} GB on startup"
 }
 
 maybe_vacuum() {
@@ -148,14 +149,15 @@ parse_args() {
 			DAEMON_MODE=1
 			CMD+=('--daemon')
 			;;
-		--vacuum-over)
-			shift || die "Option --vacuum-over requires a size in GB"
-			VACUUM_THRESHOLD_GB="$(parse_vacuum_size "${1:-}")"
-			log "Vacuum DB if over ${VACUUM_THRESHOLD_GB} GB on startup"
+		--vacuum-over | -v)
+			shift
+			set_vacuum_size "${1:-}"
 			;;
 		--vacuum-over=*)
-			VACUUM_THRESHOLD_GB="$(parse_vacuum_size "${1#--vacuum-over=}")"
-			log "Vacuum DB if over ${VACUUM_THRESHOLD_GB} GB on startup"
+			set_vacuum_size "${1#--vacuum-over=}"
+			;;
+		-v?*)
+			set_vacuum_size "${1#-v}"
 			;;
 		-l)
 			# Deprecated, retained for backwards compatibility
