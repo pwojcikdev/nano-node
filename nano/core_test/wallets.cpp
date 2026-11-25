@@ -1031,6 +1031,50 @@ TEST (wallets, rep_keys_cache_watch_only_representative)
 	ASSERT_TRUE (accounts.empty ());
 }
 
+TEST (wallets, representative_after_account_changes)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	node.wallets.stop ();
+	auto wallets = make_wallets (node); // Keep periodic scans from refreshing the indexes during the test.
+	auto source = wallets.all_wallets ().begin ()->second;
+	auto destination = wallets.create (nano::random_wallet_id ());
+	ASSERT_NE (nullptr, destination);
+	auto const & rep = nano::dev::genesis_key;
+	auto signer_count = [&] () {
+		unsigned count{ 0 };
+		wallets.signer () ([&] (nano::public_key const & pub, nano::raw_key const &) {
+			EXPECT_EQ (rep.pub, pub);
+			++count;
+		});
+		return count;
+	};
+
+	ASSERT_TRUE (source->insert_adhoc (rep.prv, false));
+	ASSERT_EQ (1, signer_count ());
+	std::string backup;
+	source->serialize_json (backup);
+
+	auto moved = destination->move_accounts (*source, { rep.pub });
+	ASSERT_TRUE (moved);
+	ASSERT_FALSE (moved.value ());
+	EXPECT_FALSE (source->reps ().contains (rep.pub));
+	EXPECT_TRUE (destination->reps ().contains (rep.pub));
+	EXPECT_EQ (1, signer_count ());
+
+	destination->remove_account (rep.pub);
+	EXPECT_FALSE (destination->reps ().contains (rep.pub));
+	EXPECT_FALSE (wallets.reps ().exists (rep.pub));
+	EXPECT_FALSE (wallets.have_voting_reps ());
+	EXPECT_EQ (0, signer_count ());
+
+	ASSERT_FALSE (destination->import (backup, ""));
+	EXPECT_TRUE (destination->reps ().contains (rep.pub));
+	EXPECT_TRUE (wallets.reps ().exists (rep.pub));
+	EXPECT_TRUE (wallets.have_voting_reps ());
+	EXPECT_EQ (1, signer_count ());
+}
+
 TEST (wallets, representative_in_multiple_wallets)
 {
 	nano::test::system system (1);
