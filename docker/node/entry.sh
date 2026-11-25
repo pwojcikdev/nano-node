@@ -71,7 +71,9 @@ ensure_configs() {
 	if [[ ! -f "$target_dir/config-node.toml" && ! -f "$target_dir/config.json" ]]; then
 		log "Config file not found, copying defaults"
 		cp -- "$CONFIG_SRC_DIR/config-node.toml" "$target_dir/config-node.toml"
-		cp -- "$CONFIG_SRC_DIR/config-rpc.toml" "$target_dir/config-rpc.toml"
+		if [[ ! -f "$target_dir/config-rpc.toml" ]]; then
+			cp -- "$CONFIG_SRC_DIR/config-rpc.toml" "$target_dir/config-rpc.toml"
+		fi
 	fi
 }
 
