@@ -141,7 +141,8 @@ std::deque<nano::account> pending_database_scanner::next_batch (nano::store::tra
 {
 	std::deque<nano::account> result;
 
-	auto crawler = ledger.store.pending.crawl (transaction, next);
+	// Sends to the burn account remain receivable forever, but it can never have a chain to pull.
+	auto crawler = ledger.store.pending.crawl (transaction, next.is_zero () ? nano::account{ 1 } : next);
 
 	// Advance group-wise to visit each account once, regardless of its number of pending entries
 	for (; crawler && result.size () < batch_size; crawler.next_group ())

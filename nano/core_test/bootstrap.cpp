@@ -15,6 +15,7 @@
 #include <nano/node/scheduler/hinted.hpp>
 #include <nano/node/scheduler/optimistic.hpp>
 #include <nano/node/scheduler/priority.hpp>
+#include <nano/node/wallet.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/test_common/chains.hpp>
@@ -656,6 +657,28 @@ TEST (bootstrap, database_scan_safe_queries)
 	ASSERT_EQ (key_query.type, nano::bootstrap::query_type::blocks_by_account);
 	ASSERT_EQ (key_query.start.as_account (), key.pub);
 	ASSERT_EQ (key_query.count, 2);
+}
+
+TEST (bootstrap, database_scan_skips_burn_receivables)
+{
+	nano::test::system system{ 1 };
+	auto & node = *system.nodes.front ();
+	auto wallet = system.wallet (0);
+	auto const & genesis = nano::dev::genesis_key;
+	nano::keypair recipient;
+	wallet->insert_adhoc (genesis.prv);
+	ASSERT_NE (nullptr, wallet->send_action (genesis.pub, node.ledger.constants.burn_account, 1));
+	ASSERT_NE (nullptr, wallet->send_action (genesis.pub, recipient.pub, 1));
+
+	nano::bootstrap::database_scan_index scan{ node.ledger };
+	auto const pending_only = [&] (nano::account const & account) { return account != genesis.pub; };
+	// Both initial and subsequent sweeps should discover the unopened recipient.
+	for (int i = 0; i < 2; ++i)
+	{
+		auto query = scan.next (pending_only);
+		ASSERT_TRUE (query);
+		ASSERT_EQ (recipient.pub, query->account);
+	}
 }
 
 /*
