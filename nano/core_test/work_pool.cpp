@@ -15,6 +15,7 @@
 
 #include <future>
 #include <iostream>
+#include <latch>
 
 // produce one proof of work for a block and check that its difficulty is higher than the base difficulty
 TEST (work, one)
@@ -92,6 +93,24 @@ TEST (work, cancel_one_out_of_many)
 	pool.generate (nano::work_version::work_1, key5, nano::dev::network_params.work.base, [] (std::optional<uint64_t>) {});
 	pool.generate (nano::work_version::work_1, key6, nano::dev::network_params.work.base, [] (std::optional<uint64_t>) {});
 	pool.cancel (key1);
+}
+
+TEST (work, cancel_blocking_generation)
+{
+	std::latch started{ 1 };
+	std::latch release_worker{ 1 };
+	auto wait_for_cancel = [&] (auto, auto const &, auto, auto &) -> std::optional<uint64_t> {
+		started.count_down ();
+		release_worker.wait ();
+		return std::nullopt;
+	};
+	nano::work_pool pool{ nano::dev::network_params.network, 0, {}, wait_for_cancel };
+	nano::root const root{ 1 };
+	auto result = std::async (std::launch::async, [&] { return pool.generate (root); });
+	started.wait ();
+	pool.cancel (root);
+	release_worker.count_down ();
+	EXPECT_FALSE (result.get ().has_value ());
 }
 
 // check that opencl hardware offloading works

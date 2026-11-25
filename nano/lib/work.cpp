@@ -223,7 +223,7 @@ std::optional<uint64_t> nano::work_pool::generate (nano::work_version const vers
 		generate (version_a, root_a, difficulty_a, [&work] (std::optional<uint64_t> work_a) {
 			work.set_value (work_a);
 		});
-		result = future.get ().value ();
+		result = future.get ();
 	}
 	return result;
 }
