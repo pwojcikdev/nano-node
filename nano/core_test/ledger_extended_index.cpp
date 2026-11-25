@@ -22,6 +22,7 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <stdexcept>
 
 namespace
 {
@@ -407,6 +408,34 @@ TEST (ledger_extended_index, optional_table_lifecycle)
 	{
 		auto txn = store->tx_begin_read ();
 		ASSERT_TRUE (view.empty (txn));
+	}
+}
+
+TEST (ledger_extended_index, conflicting_options_preserve_archival_ledger)
+{
+	nano::logger logger;
+	nano::stats stats{ logger };
+	auto const path = nano::unique_path ();
+	nano::ledger_options const conflicting{ .enable_pruning = true, .enable_topo_index = false, .enable_extended_ledger_index = true };
+	{
+		auto store = nano::test::make_store (logger, stats, path);
+		ASSERT_THROW (nano::ledger (*store, nano::dev::network_params, stats, logger, conflicting), std::invalid_argument);
+		ASSERT_TRUE (store->empty (store->tx_begin_read ()));
+
+		nano::ledger archival (*store, nano::dev::network_params, stats, logger, nano::ledger_options{ .enable_topo_index = false });
+		ASSERT_FALSE (archival.flags.pruning);
+	}
+	{
+		auto store = nano::test::make_store (logger, stats, path);
+		ASSERT_THROW (nano::ledger (*store, nano::dev::network_params, stats, logger, conflicting), std::invalid_argument);
+		ASSERT_FALSE (store->meta.get_flag (store->tx_begin_read (), nano::store::meta_key::pruning_enabled));
+	}
+	{
+		auto store = nano::test::make_store (logger, stats, path);
+		nano::ledger archival (*store, nano::dev::network_params, stats, logger, nano::ledger_options{ .enable_extended_ledger_index = true });
+		ASSERT_FALSE (archival.flags.pruning);
+		ASSERT_TRUE (archival.flags.all_extended_ledger_indices_enabled ());
+		ASSERT_NO_FATAL_FAILURE (assert_extended_indices_consistent (archival, archival.tx_begin_read ()));
 	}
 }
 

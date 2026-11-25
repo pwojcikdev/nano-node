@@ -37,6 +37,7 @@
 
 #include <algorithm>
 #include <stack>
+#include <stdexcept>
 
 #include <cryptopp/words.h>
 
@@ -118,6 +119,11 @@ void nano::ledger::initialize ()
 	bool is_initialized = false;
 	{
 		auto const transaction = store.tx_begin_read ();
+		// Check before seeding genesis or permanently enabling pruning on an existing ledger.
+		if (options.enable_extended_ledger_index && (options.enable_pruning || store.meta.get_flag (transaction, nano::store::meta_key::pruning_enabled)))
+		{
+			throw std::invalid_argument ("The extended ledger index is incompatible with ledger pruning");
+		}
 		is_initialized = (store.account.begin (transaction) != store.account.end (transaction));
 	}
 	if (!is_initialized && store.get_mode () != nano::store::open_mode::read_only)
