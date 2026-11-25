@@ -1335,12 +1335,8 @@ int main (int argc, char * const * argv)
 		}
 		else if (vm.count ("debug_rpc"))
 		{
-			std::string rpc_input_l;
 			std::ostringstream command_l;
-			while (std::cin >> rpc_input_l)
-			{
-				command_l << rpc_input_l;
-			}
+			command_l << std::cin.rdbuf ();
 
 			auto response_handler_l ([] (std::string const & response_a) {
 				std::cout << response_a;
