@@ -3,6 +3,7 @@
 #include <nano/node/distributed_work_factory.hpp>
 #include <nano/node/node_observers.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/test_common/shared_values.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -147,6 +148,34 @@ TEST (distributed_work, peer)
 	ASSERT_EQ (0, work_peer->generations_bad);
 	ASSERT_NO_ERROR (system.poll ());
 	ASSERT_EQ (0, work_peer->cancels);
+}
+
+TEST (distributed_work, unavailable_peer_falls_back_to_local_work)
+{
+	nano::test::system system;
+	auto peer = std::make_shared<fake_work_peer> (system.work, *system.io_ctx, system.get_available_port (), fake_work_peer_type::unavailable);
+	peer->start ();
+	auto config = system.default_config ();
+	config.work_peers = { { "::ffff:127.0.0.1", peer->port () } };
+	auto & node = *system.add_node (config);
+	ASSERT_TRUE (node.local_work_generation_enabled ());
+
+	nano::root const root{ 1 };
+	auto const difficulty = node.network_params.work.base;
+	nano::test::shared_result<std::optional<uint64_t>> result;
+	nano::test::shared_counter completions;
+	node.work_generate (nano::work_version::work_1, root, difficulty, [result, completions] (auto work) {
+		completions.inc ();
+		result.set (work);
+	});
+
+	ASSERT_TIMELY (5s, result.is_set ());
+	ASSERT_GE (peer->generations_bad.load (), 1);
+	auto const [work] = result.get ();
+	ASSERT_TRUE (work.has_value ());
+	ASSERT_GE (node.network_params.work.difficulty (nano::work_version::work_1, root, *work), difficulty);
+	node.stop ();
+	ASSERT_EQ (1, completions.value ());
 }
 
 // This fails intermittently, the observed behavior is different than what is expected. Disabling because `fake_work_peer` class is not actually used in production.

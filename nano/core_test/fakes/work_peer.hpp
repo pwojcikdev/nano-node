@@ -29,7 +29,8 @@ enum class fake_work_peer_type
 {
 	good,
 	malicious,
-	slow
+	slow,
+	unavailable
 };
 
 class fake_work_peer_connection : public std::enable_shared_from_this<fake_work_peer_connection>
@@ -92,6 +93,8 @@ private:
 
 	void create_response ()
 	{
+		response.version (request.version ());
+		response.keep_alive (false);
 		std::stringstream istream (request.body ());
 		try
 		{
@@ -104,8 +107,6 @@ private:
 			error (generic_error);
 			write_response ();
 		}
-		response.version (request.version ());
-		response.keep_alive (false);
 	}
 
 	void write_response ()
@@ -169,6 +170,12 @@ private:
 		else if (type == fake_work_peer_type::malicious)
 		{
 			// Respond immediately with no work
+			on_generation (false);
+			write_response ();
+		}
+		else if (type == fake_work_peer_type::unavailable)
+		{
+			response.result (http::status::service_unavailable);
 			on_generation (false);
 			write_response ();
 		}

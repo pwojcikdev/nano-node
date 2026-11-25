@@ -176,11 +176,11 @@ void nano::distributed_work::do_request (nano::tcp_endpoint const & endpoint_a)
 							{
 								this_l->success (connection->response.body (), connection->endpoint);
 							}
-							else if (ec)
+							else
 							{
-								this_l->node.logger.error (nano::log::type::distributed_work, "Work peer responded with an error {} ({})",
+								this_l->node.logger.error (nano::log::type::distributed_work, "Work peer {} returned HTTP status {}",
 								connection->endpoint,
-								ec.message ());
+								connection->response.result_int ());
 
 								this_l->add_bad_peer (connection->endpoint);
 								this_l->failure ();
