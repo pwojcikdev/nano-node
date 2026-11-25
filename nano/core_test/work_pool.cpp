@@ -13,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <future>
 #include <iostream>
 #include <latch>
@@ -180,6 +181,26 @@ TEST (work, difficulty)
 		result_difficulty2 = nano::dev::network_params.work.difficulty (nano::work_version::work_1, root, work2);
 	} while (result_difficulty2 > difficulty3);
 	ASSERT_GT (result_difficulty2, difficulty2);
+}
+
+TEST (work, stop_completes_queued_and_later_requests)
+{
+	std::array<unsigned, 3> calls{};
+	nano::work_pool pool{ nano::dev::network_params.network, 1 };
+	auto submit = [&] (unsigned index) {
+		pool.generate (nano::work_version::work_1, nano::root{ index + 1 }, std::numeric_limits<uint64_t>::max (), [&, index] (auto const & result) {
+			EXPECT_FALSE (result.has_value ());
+			++calls[index];
+		});
+	};
+	submit (0);
+	submit (1);
+	pool.stop ();
+	submit (2);
+	pool.stop ();
+
+	EXPECT_EQ (0, pool.size ());
+	EXPECT_EQ ((std::array<unsigned, 3>{ 1, 1, 1 }), calls);
 }
 
 // check that the pow_rate_limiter of work_pool works, this test can fail occasionally

@@ -176,26 +176,40 @@ void nano::work_pool::cancel (nano::root const & root_a)
 
 void nano::work_pool::stop ()
 {
+	std::list<nano::work_item> cancelled;
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
+		if (done)
+		{
+			return;
+		}
 		done = true;
 		++ticket;
+		cancelled.swap (pending);
 	}
 	producer_condition.notify_all ();
+	for (auto const & item : cancelled)
+	{
+		if (item.callback)
+		{
+			item.callback (std::nullopt);
+		}
+	}
 }
 
 void nano::work_pool::generate (nano::work_version const version_a, nano::root const & root_a, uint64_t difficulty_a, std::function<void (std::optional<uint64_t> const &)> callback_a)
 {
 	debug_assert (!root_a.is_zero ());
-	if (!threads.empty ())
 	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		if (!done && !threads.empty ())
 		{
-			nano::lock_guard<nano::mutex> lock{ mutex };
 			pending.emplace_back (version_a, root_a, difficulty_a, callback_a);
+			producer_condition.notify_all ();
+			return;
 		}
-		producer_condition.notify_all ();
 	}
-	else if (callback_a)
+	if (callback_a)
 	{
 		callback_a (std::nullopt);
 	}
