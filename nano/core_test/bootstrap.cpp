@@ -18,6 +18,7 @@
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
 #include <nano/test_common/chains.hpp>
+#include <nano/test_common/peer.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -174,6 +175,62 @@ TEST (bootstrap, priority_filters_known_blocks)
 	// frontier. The response is [genesis, send1]: genesis is the echoed cursor and send1 is
 	// already in node1's ledger, so the early filter drops it instead of submitting it.
 	ASSERT_TIMELY (10s, node1.stats.count (nano::stat::type::bootstrap, nano::stat::detail::filtered_blocks) >= 3);
+}
+
+TEST (bootstrap, frontier_scan_wraps_after_empty_peer_replies)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.bootstrap->enable_priorities = false;
+	config.bootstrap->enable_dependency_walker = false;
+	config.bootstrap->enable_topo_scan = false;
+	config.bootstrap->max_requests = 1;
+	config.bootstrap->request_timeout = 1s;
+	config.bootstrap->frontier_scan.head_parallelism = 1;
+	config.bootstrap->frontier_scan.cooldown = 10ms;
+	auto & node = *system.add_node (config);
+
+	using request_t = nano::messages::asc_pull_req;
+	using response_t = nano::messages::asc_pull_ack;
+	auto reply = [&] (nano::test::peer & peer, unsigned index, nano::account start, response_t::frontiers_payload const & page) {
+		ASSERT_TIMELY (5s, peer.received<request_t> ().size () > index);
+		auto request = peer.received<request_t> ()[index];
+		auto const * query = std::get_if<request_t::frontiers_payload> (&request.payload);
+		ASSERT_NE (query, nullptr);
+		ASSERT_EQ (query->start, start);
+		response_t response{ node.network_params.network };
+		response.id = request.id;
+		response.type = nano::messages::asc_pull_type::frontiers;
+		response.payload = page;
+		response.update_header ();
+		ASSERT_TRUE (peer.send (response));
+	};
+
+	auto const genesis = nano::dev::genesis_key.pub;
+	nano::account const last{ genesis.number () + 1 };
+	auto const samples = config.bootstrap->frontier_scan.consideration_count;
+	{
+		nano::test::peer peer{ node };
+		ASSERT_TRUE (peer.handshake ());
+		response_t::frontiers_payload page{};
+		page.frontiers = { { genesis, nano::dev::genesis->hash () }, { last, nano::block_hash{ 1 } } };
+		for (unsigned i = 0; i < samples; ++i)
+		{
+			ASSERT_NO_FATAL_FAILURE (reply (peer, i, 1, page));
+		}
+		ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::bootstrap_frontier_scan, nano::stat::detail::done) > 0);
+	}
+
+	// The remaining peer has only genesis, below the previous peer's last account.
+	nano::test::peer peer{ node };
+	ASSERT_TRUE (peer.handshake ());
+	for (unsigned i = 0; i < samples * 2; ++i)
+	{
+		ASSERT_NO_FATAL_FAILURE (reply (peer, i, last, {}));
+	}
+	response_t::frontiers_payload genesis_page{};
+	genesis_page.frontiers = { { genesis, nano::dev::genesis->hash () } };
+	ASSERT_NO_FATAL_FAILURE (reply (peer, samples * 2, 1, genesis_page));
 }
 
 /*

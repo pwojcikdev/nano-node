@@ -107,13 +107,7 @@ bool frontier_strategy::process (nano::messages::asc_pull_ack::frontiers_payload
 	auto const & query = std::get<frontiers_query> (tag.query);
 	debug_assert (!query.start.is_zero ());
 
-	if (response.frontiers.empty ())
-	{
-		ctx.stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::frontiers_empty);
-		return true; // OK, but nothing to do
-	}
-
-	ctx.stats.inc (nano::stat::type::bootstrap_process, nano::stat::detail::frontiers);
+	ctx.stats.inc (nano::stat::type::bootstrap_process, response.frontiers.empty () ? nano::stat::detail::frontiers_empty : nano::stat::detail::frontiers);
 
 	auto result = verify (response, query);
 	switch (result)
@@ -141,6 +135,8 @@ bool frontier_strategy::process (nano::messages::asc_pull_ack::frontiers_payload
 		case verify_result::nothing_new:
 		{
 			ctx.stats.inc (nano::stat::type::bootstrap_verify_frontiers, nano::stat::detail::nothing_new);
+			// Empty replies count toward wrapping a scan head that reached the end of the peers' ledgers.
+			ctx.frontiers.process (query.start, response.frontiers);
 		}
 		break;
 		case verify_result::invalid:
