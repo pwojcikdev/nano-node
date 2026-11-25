@@ -7525,6 +7525,34 @@ TEST (rpc, epoch_upgrade)
 	}
 }
 
+TEST (rpc, epoch_upgrade_mixed_epochs)
+{
+	nano::test::system system;
+	auto node = add_ipc_enabled_node (system);
+	auto const & genesis = nano::dev::genesis_key;
+	nano::keypair epoch_zero;
+	auto open = nano::test::setup_new_account (system, *node, 1, genesis, epoch_zero, epoch_zero.pub, true).second;
+	ASSERT_NE (nullptr, open);
+	nano::keypair unopened;
+	auto wallet = system.wallet (0);
+	ASSERT_TRUE (wallet->insert_adhoc (genesis.prv, false));
+	ASSERT_NE (nullptr, wallet->send_action (genesis.pub, unopened.pub, 1));
+	ASSERT_NE (nullptr, system.upgrade_genesis_epoch (*node, nano::epoch::epoch_1));
+
+	auto const rpc_ctx = add_rpc (system, node);
+	boost::property_tree::ptree request;
+	request.put ("action", "epoch_upgrade");
+	request.put ("epoch", 2);
+	request.put ("key", genesis.prv.to_string ());
+	auto response = wait_response (system, rpc_ctx, request);
+	ASSERT_EQ ("1", response.get<std::string> ("started"));
+	ASSERT_TIMELY (5s, node->store.account.exists (node->store.tx_begin_read (), unopened.pub));
+	auto txn = node->ledger.tx_begin_read ();
+	EXPECT_EQ (nano::epoch::epoch_2, node->ledger.any.account_get (txn, genesis.pub).value ().epoch ());
+	EXPECT_EQ (nano::epoch::epoch_2, node->ledger.any.account_get (txn, unopened.pub).value ().epoch ());
+	EXPECT_EQ (open->hash (), node->ledger.any.account_head (txn, epoch_zero.pub));
+}
+
 TEST (rpc, epoch_upgrade_multithreaded)
 {
 	nano::test::system system;

@@ -130,9 +130,8 @@ void nano::epoch_upgrader::upgrade_impl (nano::raw_key const & prv_a, nano::epoc
 				{
 					nano::account const & account (i->first);
 					nano::account_info const & info (i->second);
-					if (info.epoch () < epoch_a)
+					if (nano::epochs::is_sequential (info.epoch (), epoch_a))
 					{
-						release_assert (nano::epochs::is_sequential (info.epoch (), epoch_a));
 						accounts_list.emplace (account_upgrade_item{ account, info.modified });
 					}
 				}
@@ -147,7 +146,7 @@ void nano::epoch_upgrader::upgrade_impl (nano::raw_key const & prv_a, nano::epoc
 			{
 				nano::account const & account (i->account);
 				auto info = ledger.any.account_get (ledger.tx_begin_read (), account);
-				if (info && info->epoch () < epoch_a)
+				if (info && nano::epochs::is_sequential (info->epoch (), epoch_a))
 				{
 					++attempts;
 					auto difficulty (node.network_params.work.threshold (nano::work_version::work_1, nano::block_details (epoch_a, false, false, true)));
@@ -225,10 +224,10 @@ void nano::epoch_upgrader::upgrade_impl (nano::raw_key const & prv_a, nano::epoc
 				auto const & [key, info] = *current;
 				if (!store.account.exists (ledger.tx_begin_read (), key.account))
 				{
+					// An unopened account with an older receivable can enter the target epoch directly.
 					if (info.epoch < epoch_a)
 					{
 						++attempts;
-						release_assert (nano::epochs::is_sequential (info.epoch, epoch_a));
 						auto difficulty (network_params.work.threshold (nano::work_version::work_1, nano::block_details (epoch_a, false, false, true)));
 						nano::root const & root (key.account);
 						nano::account const & account (key.account);
