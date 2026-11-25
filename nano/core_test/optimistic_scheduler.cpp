@@ -3,6 +3,7 @@
 #include <nano/node/backlog_scan.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/node/scheduler/optimistic.hpp>
 #include <nano/node/scheduler/priority.hpp>
 #include <nano/node/vote_router.hpp>
 #include <nano/test_common/chains.hpp>
@@ -92,6 +93,38 @@ TEST (optimistic_scheduler, activate_many)
 		auto election = node.active.election (block->qualified_root ());
 		return election && election->behavior () == nano::election_behavior::optimistic;
 	}));
+}
+
+TEST (optimistic_scheduler, respects_remaining_vacancy)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.backlog_scan->enable = false;
+	config.priority_scheduler->enable = false;
+	config.enable_voting = false;
+	config.active_elections->size = 2;
+	config.active_elections->optimistic_limit_percentage = 100;
+	config.optimistic_scheduler->activation_delay = 25ms;
+	auto & node = *system.add_node (config);
+	auto chains = nano::test::setup_chains (system, node, 2, 1, nano::dev::genesis_key, false);
+	auto const & first = chains[0].second;
+	auto const & second = chains[1].second;
+	auto const optimistic = nano::election_behavior::optimistic;
+
+	// Occupy both slots with the opens while the two account heads become eligible.
+	ASSERT_TRUE (node.active.insert (first.front (), optimistic).inserted);
+	ASSERT_TRUE (node.active.insert (second.front (), optimistic).inserted);
+	node.backlog_scan.trigger ();
+	ASSERT_TIMELY_EQ (5s, 2, node.stats.count (nano::stat::type::optimistic_scheduler, nano::stat::detail::activated));
+	ASSERT_ALWAYS_EQ (100ms, 0, node.stats.count (nano::stat::type::optimistic_scheduler, nano::stat::detail::insert));
+
+	// The next pass sees both candidates, but only one can take the newly available slot.
+	ASSERT_TRUE (node.active.erase (*first.front ()));
+	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::optimistic_scheduler, nano::stat::detail::insert) >= 1);
+	ASSERT_ALWAYS_EQ (100ms, 2, node.active.size (optimistic));
+
+	ASSERT_TRUE (node.active.erase (*second.front ()));
+	ASSERT_TIMELY (5s, node.active.active (*first.back ()) && node.active.active (*second.back ()));
 }
 
 /*

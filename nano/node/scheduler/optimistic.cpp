@@ -174,7 +174,7 @@ void nano::scheduler::optimistic::run_iterative (nano::unique_lock<nano::mutex> 
 
 	for (auto const & candidate : tops)
 	{
-		if (stopped)
+		if (stopped || active.vacancy (nano::election_behavior::optimistic) <= 0)
 		{
 			return;
 		}
