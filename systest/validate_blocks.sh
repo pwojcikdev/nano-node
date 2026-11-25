@@ -75,3 +75,11 @@ pruning_dir=$(new_datadir)
     --disable_topo_index --enable_pruning --config node.enable_voting=false
 "$NANO_NODE_EXE" --network dev --data_path "$pruning_dir" --validate_blocks > "$pruning_dir/report"
 grep -Fq 'Validation status: Ok' "$pruning_dir/report"
+
+# The configured genesis work on beta and test predates their current publish thresholds.
+for network in beta test; do
+    genesis_dir=$(new_datadir)
+    "$NANO_NODE_EXE" --network "$network" --data_path "$genesis_dir" --initialize
+    "$NANO_NODE_EXE" --network "$network" --data_path "$genesis_dir" --validate_blocks > "$genesis_dir/report"
+    grep -Fq 'Validation status: Ok' "$genesis_dir/report"
+done

@@ -1584,7 +1584,9 @@ int main (int argc, char * const * argv)
 						}
 					}
 					// Check if block work value is correct
-					if (node->network_params.work.difficulty (*block) < node->network_params.work.threshold (block->work_version (), block->sideband ().details))
+					auto const & genesis = node->network_params.ledger.genesis;
+					bool const genesis_work = hash == genesis->hash () && block->block_work () == genesis->block_work ();
+					if (!genesis_work && node->network_params.work.difficulty (*block) < node->network_params.work.threshold (block->work_version (), block->sideband ().details))
 					{
 						print_error_message (boost::str (boost::format ("Invalid work for block %1% value: %2%\n") % hash.to_string () % nano::to_string_hex (block->block_work ())));
 					}
