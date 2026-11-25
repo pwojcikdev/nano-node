@@ -1,5 +1,6 @@
 #include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/files.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/election.hpp>
@@ -13,6 +14,7 @@
 #include <nano/node/wallet.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/vote.hpp>
+#include <nano/store/ledger/online_weight.hpp>
 #include <nano/test_common/chains.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
@@ -39,6 +41,24 @@ TEST (online_reps, basic)
 	node1.online_reps.clear ();
 	node1.online_reps.force_sample ();
 	ASSERT_EQ (nano::dev::constants.genesis_amount, node1.online_reps.trended ());
+}
+
+TEST (online_reps, expired_weight_is_excluded_from_sample)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	auto node = std::make_shared<nano::node> (nano::unique_path (), config, system.work, nano::node_flags{});
+	system.register_node (node);
+
+	node->online_reps.observe (nano::dev::genesis_key.pub);
+	ASSERT_EQ (nano::dev::constants.genesis_amount, node->online_reps.online ());
+
+	// Let the observation expire before the first sample so the table must stay empty.
+	std::this_thread::sleep_for (2 * config.network_params.node.weight_interval);
+	node->start ();
+	ASSERT_TIMELY (5s, node->stats.count (nano::stat::type::online_reps, nano::stat::detail::sample_skipped) > 0);
+	ASSERT_EQ (1, node->stats.count (nano::stat::type::online_reps, nano::stat::detail::rep_trim));
+	ASSERT_EQ (0, node->store.online_weight.count (node->store.tx_begin_read ()));
 }
 
 TEST (online_reps, rep_crawler)

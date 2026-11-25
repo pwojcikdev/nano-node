@@ -137,17 +137,18 @@ void nano::online_reps::run ()
 			return;
 		}
 
-		// Always recalculate online weight
-		update_online ();
-
-		// Sample trended weight if the next sample time has been reached
 		auto const now = std::chrono::steady_clock::now ();
 		// Reduce interval if the last sample was skipped
 		auto const interval = sampled ? config.network_params.node.weight_interval : config.network_params.node.weight_interval / 2;
-		auto const next_sample = last_sample + interval;
-		if (now >= next_sample)
+		bool const sample_due = now >= last_sample + interval;
+		if (sample_due)
 		{
 			trim ();
+		}
+		update_online ();
+
+		if (sample_due)
+		{
 			lock.unlock ();
 
 			sampled = sample ();
