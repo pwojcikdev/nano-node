@@ -322,6 +322,5 @@ TEST (election_scheduler, no_vacancy)
 
 	// Election confirmed, next in queue should begin
 	election->force_confirm ();
-	ASSERT_TIMELY (5s, node.active.election (block2->qualified_root ()) != nullptr);
-	ASSERT_TRUE (node.scheduler.priority.empty ());
+	ASSERT_TIMELY (5s, node.active.election (block2->qualified_root ()) != nullptr && node.scheduler.priority.empty ());
 }
