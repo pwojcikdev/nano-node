@@ -9,6 +9,7 @@
 #include <nano/lib/logging.hpp>
 #include <nano/lib/networks.hpp>
 #include <nano/lib/runtime_files.hpp>
+#include <nano/lib/timer.hpp>
 #include <nano/lib/utility.hpp>
 #include <nano/lib/version.hpp>
 #include <nano/lib/work_version.hpp>
@@ -57,6 +58,7 @@
 #include <sstream>
 
 #include <argon2.h>
+#include <fmt/chrono.h>
 
 using namespace nano;
 
@@ -434,11 +436,12 @@ int main (int argc, char * const * argv)
 			std::cout << "Trended Weight " << node->online_reps.trended (transaction) << '\n';
 			for (auto i (node->store.online_weight.begin (transaction)), n (node->store.online_weight.end (transaction)); i != n; ++i)
 			{
-				using time_point = std::chrono::system_clock::time_point;
-				time_point ts (std::chrono::duration_cast<time_point::duration> (std::chrono::nanoseconds (i->first)));
-				std::time_t timestamp = std::chrono::system_clock::to_time_t (ts);
-				std::string weight = i->second.to_string_dec ();
-				std::cout << boost::str (boost::format ("Timestamp %1% Weight %2%\n") % ctime (&timestamp) % weight);
+				using clock = std::chrono::system_clock;
+				auto const key = i->first;
+				// Earlier nodes stored the native system_clock tick count instead of Unix seconds.
+				constexpr auto max_seconds = std::chrono::duration_cast<std::chrono::seconds> (clock::duration::max ()).count ();
+				auto const sampled_at = key <= max_seconds ? nano::from_seconds_since_epoch (key) : clock::time_point{ clock::duration{ key } };
+				std::cout << fmt::format ("Timestamp {:%Y-%m-%d %H:%M:%S} UTC Weight {}\n", fmt::gmtime (clock::to_time_t (sampled_at)), i->second.to_string_dec ());
 			}
 		}
 		else if (vm.count ("debug_dump_representatives"))
