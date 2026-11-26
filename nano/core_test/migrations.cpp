@@ -27,6 +27,8 @@
 
 #include <gtest/gtest.h>
 
+#include <future>
+
 namespace
 {
 struct migration_test_data
@@ -213,15 +215,17 @@ TEST (migrations, lmdb_to_rocksdb)
 		}
 	}
 
-	// Run migration
-	ASSERT_NO_THROW (nano::migrate_lmdb_to_rocksdb (data_path));
-
-	// Open RocksDB store and verify
+	// As soon as the destination appears, readers must be able to open the complete ledger.
 	auto rocksdb_path = nano::database_path_for_backend (data_path, nano::database_backend::rocksdb);
+	auto migration = std::async (std::launch::async, [&] { nano::migrate_lmdb_to_rocksdb (data_path); });
+	while (!std::filesystem::exists (rocksdb_path) && migration.wait_for (std::chrono::milliseconds{ 1 }) != std::future_status::ready)
+	{
+	}
 	auto rocksdb_backend = std::make_unique<nano::store::rocksdb::backend_rocksdb> (rocksdb_path, nano::rocksdb_config{}, logger);
 	nano::store::ledger_store rocksdb_store{ std::move (rocksdb_backend), nano::store::open_mode::read_only, stats, logger };
 
 	auto txn = rocksdb_store.tx_begin_read ();
+	ASSERT_NO_THROW (migration.get ());
 
 	// Verify table presence and exact counts match the source
 	for (auto const & definition : rocksdb_store.backend.get_schema ())
@@ -401,6 +405,36 @@ TEST (migrations, double_migration_fails)
 
 	// Second migration should fail because RocksDB already exists
 	ASSERT_THROW (nano::migrate_lmdb_to_rocksdb (data_path), std::runtime_error);
+}
+
+TEST (migrations, reclaim_interrupted_copy)
+{
+	auto const path = nano::unique_path ();
+	auto const live = nano::database_path_for_backend (path, nano::database_backend::rocksdb);
+	auto const workspace = path / ".lmdb-to-rocksdb";
+	auto const staged = workspace / "ledger";
+	nano::logger logger;
+	nano::store::lmdb::backend_lmdb source{ nano::database_path_for_backend (path, nano::database_backend::lmdb), {}, logger };
+	source.create (nano::store::ledger_store::schema_current, nano::store::ledger_store::version_current);
+
+	// An unmarked directory in the same location belongs to the operator.
+	std::filesystem::create_directories (staged);
+	std::ofstream (staged / "keep") << "keep";
+	EXPECT_THROW (nano::migrate_lmdb_to_rocksdb (path), std::runtime_error);
+	ASSERT_TRUE (std::filesystem::exists (staged / "keep"));
+	ASSERT_FALSE (std::filesystem::exists (live));
+	std::filesystem::rename (workspace, path / "user-files");
+
+	ASSERT_NO_THROW (nano::migrate_lmdb_to_rocksdb (path));
+	// Leave a full database in the marked workspace, as after an interruption before publication.
+	std::filesystem::rename (live, staged);
+	std::ofstream (staged / "old-copy") << "old";
+	std::ofstream (workspace / "keep") << "keep";
+	ASSERT_NO_THROW (nano::migrate_lmdb_to_rocksdb (path));
+	ASSERT_TRUE (std::filesystem::exists (live / "CURRENT"));
+	ASSERT_FALSE (std::filesystem::exists (live / "old-copy"));
+	ASSERT_FALSE (std::filesystem::exists (staged));
+	ASSERT_TRUE (std::filesystem::exists (workspace / "keep"));
 }
 
 TEST (migrations, partial_migration_fails)
