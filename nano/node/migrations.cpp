@@ -11,6 +11,7 @@
 
 #include <array>
 
+#include <lmdb/libraries/liblmdb/lmdb.h>
 #include <rocksdb/env.h>
 
 void nano::migrate_lmdb_to_rocksdb (
@@ -42,21 +43,49 @@ nano::rocksdb_config const & rocksdb_config)
 
 	// Copy the source format verbatim. The first writable RocksDB open performs any ledger upgrades.
 	auto lmdb_backend = std::make_unique<nano::store::lmdb::backend_lmdb> (lmdb_path, lmdb_config, nano::default_logger ());
-	auto const meta = lmdb_backend->fetch_meta ();
+	try
+	{
+		lmdb_backend->open (nano::store::backend::schema_meta, nano::store::open_mode::read_only);
+	}
+	catch (nano::error const & error)
+	{
+		if (error == nano::error_backend::db_not_found)
+		{
+			throw std::runtime_error ("Cannot migrate unsupported LMDB ledger version unknown");
+		}
+		throw;
+	}
+	auto revision = [] (nano::store::read_transaction const & txn) {
+		return mdb_txn_id (static_cast<MDB_txn *> (txn.get_handle ()));
+	};
+	auto const [version, initial_revision] = [&] {
+		auto txn = lmdb_backend->tx_begin_read ();
+		return std::pair{ lmdb_backend->get_version (txn), revision (txn) };
+	}();
+	lmdb_backend->close ();
 	using ledger_store = nano::store::ledger_store;
 	static constexpr std::array schemas{
 		&ledger_store::schema_v21, &ledger_store::schema_v22, &ledger_store::schema_v23, &ledger_store::schema_v24,
 		&ledger_store::schema_v25, &ledger_store::schema_v26, &ledger_store::schema_current
 	};
 	static_assert (schemas.size () == ledger_store::version_current - ledger_store::version_minimum + 1);
-	if (!meta || meta->version < ledger_store::version_minimum || meta->version > ledger_store::version_current)
+	if (version < ledger_store::version_minimum || version > ledger_store::version_current)
 	{
-		throw std::runtime_error ("Cannot migrate unsupported LMDB ledger version " + (meta ? std::to_string (meta->version) : "unknown"));
+		throw std::runtime_error ("Cannot migrate unsupported LMDB ledger version " + std::to_string (version));
 	}
-	auto const & schema = *schemas[meta->version - ledger_store::version_minimum];
+	auto const & schema = *schemas[version - ledger_store::version_minimum];
 	lmdb_backend->open (schema, nano::store::open_mode::read_only);
 
-	auto progress_cb = [] (nano::store::copy_progress const & p) {
+	// Parallel reads use independent snapshots. Publish only if they all saw the same committed revision.
+	auto check_source_revision = [&] {
+		if (revision (lmdb_backend->tx_begin_read ()) != initial_revision)
+		{
+			throw std::runtime_error ("LMDB ledger changed during migration. Stop the node and retry.");
+		}
+	};
+
+	auto progress_cb = [&check_source_revision] (nano::store::copy_progress const & p) {
+		check_source_revision ();
 		auto pct = p.total_entries > 0 ? p.entries_copied * 100 / p.total_entries : 100;
 
 		nano::default_logger ().info (nano::log::type::migration,
@@ -112,6 +141,7 @@ nano::rocksdb_config const & rocksdb_config)
 		nano::store::rocksdb::backend_rocksdb destination{ staging_path, rocksdb_config, nano::default_logger () };
 		destination.open (schema, nano::store::open_mode::read_write);
 		lmdb_backend->copy_to (destination, progress_cb);
+		check_source_revision ();
 		destination.close ();
 
 		if (std::filesystem::exists (rocksdb_path))
@@ -128,6 +158,8 @@ nano::rocksdb_config const & rocksdb_config)
 		{
 			nano::default_logger ().warn (nano::log::type::migration, "Could not remove migration staging directory {}: {}", staging_path.string (), ec.message ());
 		}
+		// A changed source can also cause the parallel copy to report a table count mismatch.
+		check_source_revision ();
 		throw;
 	}
 

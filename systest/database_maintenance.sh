@@ -11,6 +11,40 @@ node() {
 # Leave a real LMDB ledger in place, as on a node that has switched backends.
 printf '[node]\ndatabase_backend = "lmdb"\n' > "$datadir/config-node.toml"
 node --initialize
+# A maintenance write during a migration must force a retry. SIGSTOP lets us control the order.
+if ! is_windows; then
+    (
+        for attempt in 1 2 3; do
+            concurrent=$(new_datadir)
+            cp "$datadir/data.ldb" "$datadir/config-node.toml" "$concurrent/"
+            "$NANO_NODE_EXE" --data_path "$concurrent" --network dev --migrate_database_lmdb_to_rocksdb > "$concurrent/migration.log" 2>&1 &
+            pid=$!
+            trap 'kill -CONT "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+            staged="$concurrent/.lmdb-to-rocksdb/ledger/CURRENT"
+            for i in {1..3000}; do
+                if [ -f "$staged" ] || ! kill -0 "$pid" 2>/dev/null; then break; fi
+                sleep 0.01
+            done
+            if [ -f "$staged" ] && kill -STOP "$pid" 2>/dev/null && [ -f "$staged" ]; then
+                "$NANO_NODE_EXE" --data_path "$concurrent" --network dev --confirmation_height_clear --account all
+                kill -CONT "$pid"
+                if wait "$pid"; then exit 1; fi
+                trap - EXIT
+                grep -Fq 'LMDB ledger changed during migration' "$concurrent/migration.log"
+                test ! -e "$concurrent/rocksdb"
+                "$NANO_NODE_EXE" --data_path "$concurrent" --network dev --migrate_database_lmdb_to_rocksdb
+                "$NANO_NODE_EXE" --data_path "$concurrent" --network dev --config node.database_backend=rocksdb --debug_block_count | grep -q 'Block count: 1'
+                exit 0
+            fi
+            # Try a fresh copy if this small migration completed before we could pause it.
+            kill -CONT "$pid" 2>/dev/null || true
+            wait "$pid"
+            trap - EXIT
+        done
+        echo 'Could not pause the migration to test a concurrent LMDB write' >&2
+        exit 1
+    )
+fi
 node --snapshot
 test -f "$datadir/snapshot.ldb"
 node --vacuum
