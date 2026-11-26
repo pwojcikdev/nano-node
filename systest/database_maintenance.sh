@@ -11,6 +11,13 @@ node() {
 # Leave a real LMDB ledger in place, as on a node that has switched backends.
 printf '[node]\ndatabase_backend = "lmdb"\n' > "$datadir/config-node.toml"
 node --initialize
+# Surface the rejected setting before opening either backend for maintenance.
+for operation in --snapshot --vacuum; do
+    if node "$operation" --config node.rocksdb.write_cache=0 > "$datadir/config-error" 2>&1; then
+        exit 1
+    fi
+    grep -Fq 'write_cache' "$datadir/config-error"
+done
 # A maintenance write during a migration must force a retry. SIGSTOP lets us control the order.
 if ! is_windows; then
     (

@@ -596,10 +596,6 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 				}
 				std::cout << "Vacuum completed" << std::endl;
 			}
-			else
-			{
-				std::cerr << "Vacuum failed. RocksDB is enabled but the node has not been built with RocksDB support" << std::endl;
-			}
 		}
 		catch (std::filesystem::filesystem_error const & ex)
 		{
@@ -645,10 +641,6 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 					return error;
 				}
 				std::cout << "Snapshot completed, This can be found at " << snapshot_path << std::endl;
-			}
-			else
-			{
-				std::cerr << "Snapshot failed. RocksDB is enabled but the node has not been built with RocksDB support" << std::endl;
 			}
 		}
 		catch (std::filesystem::filesystem_error const & ex)
@@ -1861,6 +1853,7 @@ bool is_using_rocksdb (std::filesystem::path const & data_path, boost::program_o
 	}
 	else
 	{
+		std::cerr << "Error reading config: " << error.get_message () << std::endl;
 		ec = nano::error_cli::reading_config;
 	}
 
