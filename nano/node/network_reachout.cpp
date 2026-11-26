@@ -82,18 +82,16 @@ void nano::network_reachout::stop ()
 	join_or_pass (preconfigured_thread);
 }
 
-void nano::network_reachout::run_live ()
+bool nano::network_reachout::wait_until_stopped (std::chrono::milliseconds timeout)
 {
 	nano::unique_lock<nano::mutex> lock{ mutex };
-	while (!stopped)
-	{
-		condition.wait_for (lock, node.network_params.network.merge_period, [this] { return stopped.load (); });
-		if (stopped)
-		{
-			return;
-		}
-		lock.unlock ();
+	return condition.wait_for (lock, timeout, [this] { return stopped.load (); });
+}
 
+void nano::network_reachout::run_live ()
+{
+	while (!wait_until_stopped (node.network_params.network.merge_period))
+	{
 		node.stats.inc (nano::stat::type::network, nano::stat::detail::loop_reachout);
 
 		auto keepalive = node.network.tcp_channels.sample_keepalive ();
@@ -111,26 +109,19 @@ void nano::network_reachout::run_live ()
 				node.network.merge_peer (peer);
 
 				// Throttle reachout attempts
-				std::this_thread::sleep_for (node.network_params.network.merge_period);
+				if (wait_until_stopped (node.config.network->peer_reachout))
+				{
+					return;
+				}
 			}
 		}
-
-		lock.lock ();
 	}
 }
 
 void nano::network_reachout::run_cached ()
 {
-	nano::unique_lock<nano::mutex> lock{ mutex };
-	while (!stopped)
+	while (!wait_until_stopped (node.network_params.network.merge_period))
 	{
-		condition.wait_for (lock, node.network_params.network.merge_period, [this] { return stopped.load (); });
-		if (stopped)
-		{
-			return;
-		}
-		lock.unlock ();
-
 		node.stats.inc (nano::stat::type::network, nano::stat::detail::loop_reachout_cached);
 
 		auto cached_peers = node.peer_history.peers ();
@@ -146,10 +137,11 @@ void nano::network_reachout::run_cached ()
 			node.network.merge_peer (peer);
 
 			// Throttle reachout attempts
-			std::this_thread::sleep_for (node.network_params.network.merge_period);
+			if (wait_until_stopped (node.config.network->cached_peer_reachout))
+			{
+				return;
+			}
 		}
-
-		lock.lock ();
 	}
 }
 

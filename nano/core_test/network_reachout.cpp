@@ -40,6 +40,29 @@ TEST (network_reachout, disabled)
 	ASSERT_EQ (0, node.stats.count (nano::stat::type::network, nano::stat::detail::loop_reachout_preconfigured));
 }
 
+TEST (network_reachout, configured_attempt_intervals)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.network->peer_reachout = 1min;
+	config.network->cached_peer_reachout = 1min;
+	auto & node = *system.add_node (config);
+	system.add_node ();
+
+	auto const attempts = [&node] (nano::stat::detail detail) {
+		return node.stats.count (nano::stat::type::network, detail);
+	};
+	ASSERT_TIMELY (5s, attempts (nano::stat::detail::reachout_live) > 0 && attempts (nano::stat::detail::reachout_cached) > 0);
+	WAIT (250ms);
+	EXPECT_EQ (1, attempts (nano::stat::detail::reachout_live));
+	EXPECT_EQ (1, attempts (nano::stat::detail::reachout_cached));
+
+	// Shutdown interrupts both pacing timers.
+	auto const start = std::chrono::steady_clock::now ();
+	node.network_reachout.stop ();
+	ASSERT_LT (std::chrono::steady_clock::now () - start, 5s);
+}
+
 /*
  * A reachout resolves the address and connects to it, calling back with the endpoint, and a reachout to a peer already connected sends it a keepalive instead
  */

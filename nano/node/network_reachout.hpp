@@ -34,6 +34,7 @@ public:
 	void trigger ();
 
 private:
+	bool wait_until_stopped (std::chrono::milliseconds timeout);
 	void run_live ();
 	void run_cached ();
 	void run_preconfigured ();
