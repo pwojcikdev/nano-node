@@ -65,7 +65,8 @@ void nano::online_reps::stop ()
 
 void nano::online_reps::observe (nano::account const & rep)
 {
-	if (ledger.weight (rep) > config.representative_vote_weight_minimum)
+	auto const weight = ledger.weight (rep);
+	if (weight > 0 && weight >= config.representative_vote_weight_minimum.number ())
 	{
 		nano::lock_guard<nano::mutex> lock{ mutex };
 

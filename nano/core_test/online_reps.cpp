@@ -32,6 +32,9 @@ TEST (online_reps, basic)
 	// 1 sample of minimum weight
 	ASSERT_EQ (node1.config.online_weight_minimum, node1.online_reps.trended ());
 	ASSERT_EQ (0, node1.online_reps.online ());
+	// A zero minimum still requires a representative to have voting weight.
+	node1.online_reps.observe (nano::keypair{}.pub);
+	ASSERT_TRUE (node1.online_reps.list ().empty ());
 	node1.online_reps.observe (nano::dev::genesis_key.pub);
 	ASSERT_EQ (nano::dev::constants.genesis_amount, node1.online_reps.online ());
 	// 1 minimum, 1 maximum
@@ -42,6 +45,26 @@ TEST (online_reps, basic)
 	node1.online_reps.clear ();
 	node1.online_reps.force_sample ();
 	ASSERT_EQ (nano::dev::constants.genesis_amount, node1.online_reps.trended ());
+}
+
+TEST (online_reps, representative_vote_weight_minimum)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.representative_vote_weight_minimum = 10;
+	nano::node_flags flags;
+	flags.disable_rep_crawler = true;
+	auto & node = *system.add_node (config, flags);
+	auto const below = nano::test::setup_rep (system, node, 9);
+	auto const at_minimum = nano::test::setup_rep (system, node, 10);
+	auto const above = nano::test::setup_rep (system, node, 11);
+
+	node.online_reps.observe (below.pub);
+	EXPECT_TRUE (node.online_reps.list ().empty ());
+	node.online_reps.observe (at_minimum.pub);
+	EXPECT_EQ (10, node.online_reps.online ());
+	node.online_reps.observe (above.pub);
+	EXPECT_EQ (21, node.online_reps.online ());
 }
 
 TEST (online_reps, stored_trend)
