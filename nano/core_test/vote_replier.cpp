@@ -134,7 +134,9 @@ TEST (vote_replier, block_not_eligible)
 	config.backlog_scan->enable = false;
 	config.hinted_scheduler->enable = false;
 	config.optimistic_scheduler->enable = false;
-	auto & node = *system.add_node (config);
+	nano::node_flags flags;
+	flags.disable_rep_crawler = true; // A crawler query for genesis would also increment the node-wide reply counters.
+	auto & node = *system.add_node (config, flags);
 	system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
 
 	// Create a block but don't confirm it - voting policy will reject
