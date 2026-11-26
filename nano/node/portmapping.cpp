@@ -16,6 +16,29 @@
 
 #include <fmt/format.h>
 
+namespace
+{
+struct mapping_entry
+{
+	int error{};
+	std::array<char, 16> client{};
+	std::array<char, 6> port{};
+	std::array<char, 16> duration{};
+
+	bool targets (boost::asio::ip::address_v4 const & address, std::string const & internal_port) const
+	{
+		return error == UPNPCOMMAND_SUCCESS && address.to_string () == client.data () && internal_port == port.data ();
+	}
+};
+
+mapping_entry get_mapping (nano::upnp_state const & gateway, std::string const & external_port, char const * protocol)
+{
+	mapping_entry entry;
+	entry.error = UPNP_GetSpecificPortMappingEntry (gateway.urls.controlURL, gateway.data.first.servicetype, external_port.c_str (), protocol, nullptr, entry.client.data (), entry.port.data (), nullptr, nullptr, entry.duration.data ());
+	return entry;
+}
+}
+
 std::string nano::mapping_protocol::to_string ()
 {
 	std::stringstream ss;
@@ -225,24 +248,22 @@ bool nano::port_mapping::check_lost_or_old_mapping ()
 	auto config_port_l (get_config_port (node_port_l));
 	for (auto & protocol : protocols | boost::adaptors::filtered ([] (auto const & p) { return p.enabled; }))
 	{
-		std::array<char, 64> int_client_l;
-		std::array<char, 6> int_port_l;
-		std::array<char, 16> remaining_mapping_duration_l;
-		remaining_mapping_duration_l.fill (0);
-		auto verify_port_mapping_error_l (UPNP_GetSpecificPortMappingEntry (upnp.urls.controlURL, upnp.data.first.servicetype, config_port_l.c_str (), protocol.name, nullptr, int_client_l.data (), int_port_l.data (), nullptr, nullptr, remaining_mapping_duration_l.data ()));
-		auto remaining_from_port_mapping = std::atoi (remaining_mapping_duration_l.data ());
+		auto const entry = get_mapping (upnp, config_port_l, protocol.name);
+		bool const ours = entry.targets (address, node_port_l);
+		protocol.external_port = ours ? static_cast<uint16_t> (std::atoi (config_port_l.c_str ())) : 0;
+		auto remaining_from_port_mapping = std::atoi (entry.duration.data ());
 		auto lease_duration = node.network_params.portmapping.lease_duration.count ();
 		auto lease_duration_divided_by_two = (lease_duration / 2);
 		auto recent_lease = (remaining_from_port_mapping >= lease_duration_divided_by_two);
-		if (verify_port_mapping_error_l != UPNPCOMMAND_SUCCESS)
+		if (entry.error != UPNPCOMMAND_SUCCESS)
 		{
 			result_l = true;
 
 			node.logger.warn (nano::log::type::upnp, "UPnP get specific port mapping failed: {} ({})",
-			verify_port_mapping_error_l,
-			strupnperror (verify_port_mapping_error_l));
+			entry.error,
+			strupnperror (entry.error));
 		}
-		if (!recent_lease)
+		if (ours && !recent_lease)
 		{
 			result_l = true;
 
@@ -258,7 +279,6 @@ bool nano::port_mapping::check_lost_or_old_mapping ()
 		{
 			boost::system::error_code ec;
 			protocol.external_address = boost::asio::ip::make_address_v4 (external_address_l.data (), ec);
-			protocol.external_port = static_cast<uint16_t> (std::atoi (config_port_l.data ()));
 		}
 		else
 		{
@@ -271,11 +291,11 @@ bool nano::port_mapping::check_lost_or_old_mapping ()
 
 		node.logger.debug (nano::log::type::upnp, "UPnP {} mapping verification response: {}, external ip response: {}, external ip: {}, internal ip: {}, remaining lease: {}",
 		protocol.name,
-		verify_port_mapping_error_l,
+		entry.error,
 		external_ip_error_l,
 		external_address_l.data (),
 		address.to_string (),
-		remaining_mapping_duration_l.data ());
+		entry.duration.data ());
 	}
 	return result_l;
 }

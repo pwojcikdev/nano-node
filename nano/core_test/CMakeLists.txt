@@ -69,6 +69,7 @@ add_executable(
   observer_set.cpp
   online_reps.cpp
   optimistic_scheduler.cpp
+  port_mapping.cpp
   processing_queue.cpp
   random.cpp
   random_pool.cpp

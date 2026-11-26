@@ -12,6 +12,11 @@ namespace nano
 {
 class node;
 
+namespace test
+{
+	class port_mapping_fixture;
+}
+
 /** Collected protocol information */
 class mapping_protocol
 {
@@ -44,6 +49,8 @@ public:
 /** UPnP port mapping */
 class port_mapping
 {
+	friend class nano::test::port_mapping_fixture;
+
 public:
 	port_mapping (nano::node &);
 	~port_mapping ();
