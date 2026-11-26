@@ -612,6 +612,43 @@ TEST (bootstrap_topo_scan, empty_response_resets_round_and_keeps_cooldown)
 	ASSERT_TRUE (req->exclude.empty ());
 }
 
+TEST (bootstrap_topo_scan, repair_restarts_sweep_at_peer_tip)
+{
+	test_context ctx{};
+	auto & scan = ctx.scan;
+	auto const now = std::chrono::steady_clock::now ();
+	auto const genesis = make_topo_key (1, 1);
+	auto const send = make_topo_key (2, 2);
+	auto const tip = make_topo_key (3, 4);
+	scan.orient (tip);
+	std::deque<nano::topo_key> discovered;
+	scan.sink = [&discovered] (auto page) { discovered = std::move (page.entries); };
+
+	nano::bootstrap::topo_scan::head_gates const gates{ .include_trailing_repair = true };
+	auto req = scan.next (gates, now);
+	ASSERT_TRUE (req);
+	auto const band_start = req->start;
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 1, nano::account{ 1 }));
+	scan.process (1, { genesis, send, tip });
+	ASSERT_EQ (discovered, (std::deque<nano::topo_key>{ genesis, send, tip }));
+
+	req = scan.next (gates, now);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, tip);
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 2, nano::account{ 1 }));
+	scan.process (2, { tip });
+	EXPECT_FALSE (scan.next (gates, now + ctx.config.cooldown / 2));
+
+	// Another block at the same height sorts before the old tip. Only a new sweep sees it.
+	req = scan.next (gates, now + ctx.config.cooldown + 1ms);
+	ASSERT_TRUE (req);
+	ASSERT_EQ (req->start, band_start);
+	ASSERT_TRUE (scan.dispatch (req->head, req->start, 3, nano::account{ 1 }));
+	auto const later_block = make_topo_key (3, 3);
+	scan.process (3, { genesis, send, later_block, tip });
+	EXPECT_EQ (discovered, (std::deque<nano::topo_key>{ genesis, send, later_block, tip }));
+}
+
 /*
  * If the only sampled peer is cancelled, the head has no active round left. Clearing the timestamp lets the
  * next call retry immediately from the same cursor, with no stale exclusion carried over.

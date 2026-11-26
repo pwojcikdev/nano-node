@@ -263,8 +263,12 @@ void topo_scan::maybe_advance (head & h)
 	{
 		if (h.candidates.empty ())
 		{
-			// Nothing new — tip idle (spearhead) or no gaps in the band right now (repair). Clear the round
-			// while preserving timestamp, so the cooldown paces the next poll from this cursor.
+			// A repair sweep can reach the peer's tip before its exclusive band end.
+			// Start a fresh sweep after cooldown so it can find blocks added below that tip.
+			if (!h.is_spearhead ())
+			{
+				h.disarm ();
+			}
 			h.restart (h.cursor);
 			return;
 		}
