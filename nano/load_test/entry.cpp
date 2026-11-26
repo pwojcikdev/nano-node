@@ -42,10 +42,13 @@ constexpr auto rpc_port_start = 60000;
 constexpr auto peering_port_start = 61000;
 constexpr auto ipc_port_start = 62000;
 
-void write_config_files (std::filesystem::path const & data_path, int index)
+void write_config_files (std::filesystem::path const & data_path, int index, std::string const & rpc_path)
 {
 	nano::network_params network_params{ nano::get_active_network () };
 	nano::daemon_config daemon_config{ data_path, network_params };
+	daemon_config.rpc_enable = true;
+	daemon_config.rpc.child_process.enable = true;
+	daemon_config.rpc.child_process.rpc_path = rpc_path;
 	daemon_config.node.peering_port = peering_port_start + index;
 	daemon_config.node.ipc_config->transport_tcp.enabled = true;
 	daemon_config.node.ipc_config->transport_tcp.port = ipc_port_start + index;
@@ -573,17 +576,15 @@ int main (int argc, char * const * argv)
 	{
 		auto data_path = nano::unique_path ();
 		std::filesystem::create_directory (data_path);
-		write_config_files (data_path, i);
+		write_config_files (data_path, i, rpc_path);
 		data_paths.push_back (std::move (data_path));
 	}
 
 	std::string current_network{ nano::dev::network_params.network.get_current_network_as_string () };
 	std::vector<std::unique_ptr<boost::process::child>> nodes;
-	std::vector<std::unique_ptr<boost::process::child>> rpc_servers;
 	for (auto const & data_path : data_paths)
 	{
 		nodes.emplace_back (std::make_unique<boost::process::child> (node_path, "--daemon", "--data_path", data_path.string (), "--network", current_network));
-		rpc_servers.emplace_back (std::make_unique<boost::process::child> (rpc_path, "--daemon", "--data_path", data_path.string (), "--network", current_network));
 	}
 
 	std::cout << "Waiting for nodes to spin up..." << std::endl;
@@ -723,10 +724,6 @@ int main (int argc, char * const * argv)
 	for (auto & node : nodes)
 	{
 		node->wait ();
-	}
-	for (auto & rpc_server : rpc_servers)
-	{
-		rpc_server->wait ();
 	}
 
 	std::cout << "Done!" << std::endl;
