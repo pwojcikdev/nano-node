@@ -41,8 +41,13 @@ test -f "$datadir/rocksdb/CURRENT"
 
 printf '[node]\ndatabase_backend = "rocksdb"\n' > "$datadir/config-node.toml"
 node --initialize
-# The first RocksDB vacuum must create its nested destination even without a prior snapshot.
+# A vacuum must keep the live RocksDB lock file in place throughout the operation.
+lock_copy="$datadir/rocksdb-lock-reference"
+ln "$datadir/rocksdb/LOCK" "$lock_copy" 2>/dev/null || true
 node --vacuum
+if [ -e "$lock_copy" ]; then
+    test "$lock_copy" -ef "$datadir/rocksdb/LOCK"
+fi
 node --debug_block_count | grep -q 'Block count: 1'
 node --snapshot
 test -f "$datadir/rocksdb/backup/CURRENT"

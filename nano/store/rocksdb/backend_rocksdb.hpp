@@ -50,6 +50,7 @@ public:
 	nano::store::write_transaction tx_begin_write () override;
 
 	void copy_with_compaction (std::filesystem::path const & destination) override;
+	void vacuum (std::filesystem::path const & backup_path);
 	void backup () override;
 
 	void collect_memory_stats (boost::property_tree::ptree &) const override;
@@ -63,6 +64,8 @@ protected:
 	void create_table_impl (nano::store::table, std::string const & name) override;
 
 private:
+	void compact ();
+	void copy_database (std::filesystem::path const & destination, std::filesystem::path const & archive, bool compact_copy);
 	void open_db (std::filesystem::path const & path, nano::store::open_mode mode, ::rocksdb::Options const & options, std::vector<::rocksdb::ColumnFamilyDescriptor> column_families);
 
 	// Resolves the table to its column family handle, release_asserts when the table is not open

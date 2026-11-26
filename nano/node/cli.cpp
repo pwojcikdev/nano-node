@@ -29,6 +29,7 @@
 #include <nano/store/ledger/pruned.hpp>
 #include <nano/store/ledger/topology.hpp>
 #include <nano/store/meta.hpp>
+#include <nano/store/rocksdb/backend_rocksdb.hpp>
 
 #include <boost/format.hpp>
 #include <boost/interprocess/sync/file_lock.hpp>
@@ -329,7 +330,7 @@ void clear_final_votes (nano::store::ledger_store & store, std::optional<nano::q
 	}
 }
 
-std::error_code copy_database (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::filesystem::path const & output_path)
+std::error_code copy_database (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::filesystem::path const & output_path, bool vacuum_rocksdb = false)
 {
 	bool needs_to_write = vm.count ("unchecked_clear") || vm.count ("clear_send_ids") || vm.count ("online_weight_clear") || vm.count ("peer_clear") || vm.count ("confirmation_height_clear") || vm.count ("final_vote_clear");
 
@@ -381,7 +382,15 @@ std::error_code copy_database (std::filesystem::path const & data_path, boost::p
 	{
 		node.node->store.peer.clear ();
 	}
-	node.node->copy_with_compaction (output_path);
+	if (vacuum_rocksdb)
+	{
+		auto & backend = dynamic_cast<nano::store::rocksdb::backend_rocksdb &> (node.node->store.backend);
+		backend.vacuum (output_path);
+	}
+	else
+	{
+		node.node->copy_with_compaction (output_path);
+	}
 	return {};
 }
 
@@ -552,17 +561,10 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 
 				if (using_rocksdb)
 				{
-					auto const backup_path = source_path / "backup";
-					auto const vacuum_path = backup_path / "vacuumed";
-					if (auto error = copy_database (data_path, vm, vacuum_path))
+					if (auto error = copy_database (data_path, vm, source_path / "backup", true))
 					{
 						return error;
 					}
-					std::cout << "Finalizing" << std::endl;
-					nano::remove_all_files_in_dir (backup_path);
-					nano::move_all_files_to_dir (source_path, backup_path);
-					nano::move_all_files_to_dir (vacuum_path, source_path);
-					std::filesystem::remove_all (vacuum_path);
 				}
 				else if (auto error = vacuum_lmdb (data_path, vm))
 				{

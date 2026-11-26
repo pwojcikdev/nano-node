@@ -586,6 +586,44 @@ void backend_rocksdb::backup ()
 
 void backend_rocksdb::copy_with_compaction (std::filesystem::path const & destination_path)
 {
+	copy_database (destination_path, destination_path, true);
+}
+
+void backend_rocksdb::vacuum (std::filesystem::path const & backup_path)
+{
+	// Keep the original backup recoverable until its replacement has been restored and opened.
+	auto const staging = backup_path / "vacuumed";
+	auto const previous = staging / "previous";
+	std::filesystem::create_directories (staging);
+	if (!std::filesystem::exists (previous))
+	{
+		auto const pending = staging / "previous.tmp";
+		std::filesystem::remove_all (pending);
+		std::filesystem::create_directory (pending);
+		for (auto const & entry : std::filesystem::directory_iterator (backup_path))
+		{
+			if (entry.is_regular_file ())
+			{
+				auto const saved = pending / entry.path ().filename ();
+				std::error_code ec;
+				std::filesystem::create_hard_link (entry.path (), saved, ec);
+				if (ec)
+				{
+					std::filesystem::copy_file (entry.path (), saved);
+				}
+			}
+		}
+		std::filesystem::rename (pending, previous);
+	}
+	copy_database (backup_path, staging, false);
+	// Compact under the same primary lock used for the backup. RocksDB publishes each
+	// change to its manifest without ever moving files out of the live database.
+	compact ();
+	std::filesystem::remove_all (staging);
+}
+
+void backend_rocksdb::copy_database (std::filesystem::path const & destination_path, std::filesystem::path const & archive, bool compact_copy)
+{
 	if (!transaction_db)
 	{
 		throw std::runtime_error ("RocksDB backup requires a primary database handle to include committed WAL records");
@@ -596,7 +634,7 @@ void backend_rocksdb::copy_with_compaction (std::filesystem::path const & destin
 	std::unique_ptr<::rocksdb::BackupEngine> backup_engine;
 	{
 		::rocksdb::BackupEngine * backup_engine_raw;
-		::rocksdb::BackupEngineOptions backup_options (destination_path.string ());
+		::rocksdb::BackupEngineOptions backup_options (archive.string ());
 		// Use incremental backups (default)
 		backup_options.share_table_files = true;
 		// Increase number of threads used for copying
@@ -642,18 +680,26 @@ void backend_rocksdb::copy_with_compaction (std::filesystem::path const & destin
 		throw std::runtime_error ("Failed to restore database from backup: " + status.ToString ());
 	}
 
-	// Recover the restored WALs before the caller installs the database files.
+	// Recover the restored WALs before publishing a completed backup.
 	backend_rocksdb restored (destination_path, config, nano::default_logger ());
 	restored.open (get_schema (), open_mode::read_only_backup);
+	if (compact_copy)
+	{
+		restored.compact ();
+	}
+}
+
+void backend_rocksdb::compact ()
+{
 	// A physical backup preserves obsolete values and tombstones in its SST files.
 	::rocksdb::CompactRangeOptions options;
 	options.bottommost_level_compaction = ::rocksdb::BottommostLevelCompaction::kForceOptimized;
-	for (auto const & family : restored.handles)
+	for (auto const & family : handles)
 	{
-		auto const compact_status = restored.db->CompactRange (options, family.get (), nullptr, nullptr);
+		auto const compact_status = db->CompactRange (options, family.get (), nullptr, nullptr);
 		if (!compact_status.ok ())
 		{
-			throw std::runtime_error ("Failed to compact restored column family " + family->GetName () + ": " + compact_status.ToString ());
+			throw std::runtime_error ("Failed to compact column family " + family->GetName () + ": " + compact_status.ToString ());
 		}
 	}
 }
