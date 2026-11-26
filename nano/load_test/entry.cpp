@@ -587,12 +587,32 @@ int main (int argc, char * const * argv)
 		nodes.emplace_back (std::make_unique<boost::process::child> (node_path, "--daemon", "--data_path", data_path.string (), "--network", current_network));
 	}
 
-	std::cout << "Waiting for nodes to spin up..." << std::endl;
-	std::this_thread::sleep_for (std::chrono::seconds (7));
-	std::cout << "Connecting nodes..." << std::endl;
-
 	std::shared_ptr<boost::asio::io_context> ioc_shared = std::make_shared<boost::asio::io_context> ();
 	boost::asio::io_context & ioc{ *ioc_shared };
+
+	std::cout << "Waiting for nodes to spin up..." << std::endl;
+	auto const deadline = std::chrono::steady_clock::now () + std::chrono::minutes (2);
+	for (int i = 0; i < node_count; ++i)
+	{
+		// The node starts its RPC child after the peering and IPC listeners are ready.
+		tcp::endpoint const rpc_endpoint{ net::ip::address_v6::loopback (), static_cast<uint16_t> (rpc_port_start + i) };
+		while (true)
+		{
+			tcp::socket socket{ ioc };
+			socket.connect (rpc_endpoint, err);
+			if (!err)
+			{
+				break;
+			}
+			if (!nodes[i]->running () || std::chrono::steady_clock::now () >= deadline)
+			{
+				std::cerr << "Node RPC did not become ready at " << rpc_endpoint << std::endl;
+				return 1;
+			}
+			std::this_thread::sleep_for (std::chrono::milliseconds (100));
+		}
+	}
+	std::cout << "Connecting nodes..." << std::endl;
 
 	nano::signal_manager sigman;
 
