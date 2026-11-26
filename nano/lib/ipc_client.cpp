@@ -7,6 +7,7 @@
 #include <nano/lib/ipc.hpp>
 #include <nano/lib/ipc_client.hpp>
 
+#include <boost/asio/basic_socket_streambuf.hpp>
 #include <boost/endian/conversion.hpp>
 #include <boost/polymorphic_cast.hpp>
 
@@ -65,6 +66,23 @@ public:
 				callback (ec, boost::asio::ip::tcp::endpoint ());
 			}
 		});
+	}
+
+	nano::error connect ()
+	{
+		// A local client may connect before its io_context starts. The streambuf waits on the socket with a deadline.
+		using protocol = typename SOCKET_TYPE::protocol_type;
+		boost::asio::basic_socket_streambuf<protocol> connection{ std::move (socket) };
+		connection.expires_after (io_timeout);
+		if (!connection.connect (endpoint))
+		{
+			return nano::error{ connection.error () };
+		}
+		// An unfinished connect can still have a zero SO_ERROR when the wait expires.
+		connection.socket ().remote_endpoint ();
+		// Keep the connected socket on its original executor for subsequent async reads and writes.
+		static_cast<boost::asio::basic_socket<protocol> &> (socket) = std::move (connection.socket ());
+		return {};
 	}
 
 	void async_connect (std::function<void (boost::system::error_code const &)> callback_a)
@@ -220,13 +238,19 @@ public:
 
 	nano::error connect (std::string const & path_a)
 	{
-		nano::error err;
 #if defined(BOOST_ASIO_HAS_LOCAL_SOCKETS)
-		domain_client = std::make_shared<socket_client<boost::asio::local::stream_protocol::socket, boost::asio::local::stream_protocol::endpoint>> (io_ctx, boost::asio::local::stream_protocol::endpoint (path_a));
+		try
+		{
+			domain_client = std::make_shared<socket_client<boost::asio::local::stream_protocol::socket, boost::asio::local::stream_protocol::endpoint>> (io_ctx, boost::asio::local::stream_protocol::endpoint (path_a));
+			return domain_client->connect ();
+		}
+		catch (boost::system::system_error const & ex)
+		{
+			return nano::error{ ex.code () };
+		}
 #else
-		err = nano::error ("Domain sockets are not supported by this platform");
+		return nano::error ("Domain sockets are not supported by this platform");
 #endif
-		return err;
 	}
 
 	channel & get_channel ()

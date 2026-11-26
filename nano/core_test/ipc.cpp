@@ -1,6 +1,8 @@
 #include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/files.hpp>
 #include <nano/lib/ipc_client.hpp>
+#include <nano/lib/thread_runner.hpp>
 #include <nano/lib/tomlconfig.hpp>
 #include <nano/node/ipc/ipc_access_config.hpp>
 #include <nano/node/ipc/ipc_broker.hpp>
@@ -92,6 +94,42 @@ TEST (ipc, synchronous)
 	ASSERT_TIMELY (5s, call_completed);
 	ipc.stop ();
 }
+
+#if defined(BOOST_ASIO_HAS_LOCAL_SOCKETS)
+TEST (ipc, domain_socket_connect)
+{
+	nano::test::system system (2);
+	auto & tcp_node = system.node (0);
+	auto & local_node = system.node (1);
+	tcp_node.config.ipc_config->transport_tcp.enabled = true;
+	tcp_node.config.ipc_config->transport_tcp.port = 0;
+	auto & local = local_node.config.ipc_config->transport_domain;
+	local.enabled = true;
+	local.path = nano::random_filename ().string ();
+	nano::node_rpc_config node_rpc_config;
+	nano::ipc::ipc_server tcp_server{ tcp_node, node_rpc_config };
+	nano::ipc::ipc_server local_server{ local_node, node_rpc_config };
+	auto io_ctx = std::make_shared<boost::asio::io_context> ();
+	nano::ipc::ipc_client client{ io_ctx };
+	ASSERT_NO_ERROR (static_cast<std::error_code> (client.connect (local.path)));
+	nano::thread_runner runner{ io_ctx, tcp_node.logger, 1 };
+	auto connected_node_id = [&client] {
+		std::istringstream stream{ nano::ipc::request (nano::ipc::payload_encoding::json_v1, client, R"({"action":"node_id"})") };
+		boost::property_tree::ptree response;
+		boost::property_tree::read_json (stream, response);
+		return response.get<std::string> ("node_id");
+	};
+
+	ASSERT_EQ (local_node.get_node_id ().to_node_id (), connected_node_id ());
+	ASSERT_NO_ERROR (static_cast<std::error_code> (client.connect ("::1", tcp_server.listening_tcp_port ().value ())));
+	ASSERT_EQ (tcp_node.get_node_id ().to_node_id (), connected_node_id ());
+	ASSERT_NO_ERROR (static_cast<std::error_code> (client.connect (local.path)));
+	ASSERT_EQ (local_node.get_node_id ().to_node_id (), connected_node_id ());
+	ASSERT_TRUE (client.connect (local.path + ".missing"));
+	ASSERT_NO_ERROR (static_cast<std::error_code> (client.connect (local.path)));
+	ASSERT_EQ (local_node.get_node_id ().to_node_id (), connected_node_id ());
+}
+#endif
 
 TEST (ipc, permissions_default_user)
 {
