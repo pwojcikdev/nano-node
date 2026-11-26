@@ -1800,7 +1800,11 @@ void nano_qt::wallet::change_rendering_ratio (nano::uint128_t const & rendering_
 				send_count->setText (QString::fromStdString (converted.str ()));
 			}
 		}
-		this->rendering_ratio = rendering_ratio_a;
+		if (rendering_ratio != rendering_ratio_a)
+		{
+			rendering_ratio = rendering_ratio_a;
+			accounts.refresh_wallet_balance ();
+		}
 		send_count_label->setText (rendering_ratio == nano::raw_ratio ? "Amount (raw):" : "Amount (nano):");
 		this->refresh ();
 		this->refresh_balance ();

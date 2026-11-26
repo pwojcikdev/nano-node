@@ -383,6 +383,23 @@ TEST (qt_wallet, reject_zero_send)
 	EXPECT_TRUE (creator.block->toPlainText ().isEmpty ());
 }
 
+TEST (qt_wallet, wallet_total_follows_display_unit)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (genesis.prv, false));
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, *system.nodes[0], system.wallet (0), genesis.pub);
+	wallet->start ();
+
+	for (auto const & unit : { nano::raw_ratio, nano::nano_ratio })
+	{
+		wallet->change_rendering_ratio (unit);
+		QCoreApplication::sendPostedEvents (&processor);
+		EXPECT_EQ ("Balance: " + wallet->format_balance (nano::dev::constants.genesis_amount), wallet->accounts.wallet_balance_label->text ().toStdString ());
+	}
+}
+
 TEST (qt_wallet, send_draft_keeps_value_when_unit_changes)
 {
 	nano_qt::eventloop_processor processor;
