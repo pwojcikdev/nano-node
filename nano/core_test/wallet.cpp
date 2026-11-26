@@ -374,6 +374,39 @@ TEST (wallet_store, serialize_json_empty)
 	ASSERT_EQ (wallet2.end (transaction), wallet2.begin (transaction));
 }
 
+TEST (wallet_store, replace_backup)
+{
+	auto const directory = nano::unique_path ();
+	nano::wallet::lmdb::wallets_backend_lmdb backend{ directory / "wallet.ldb" };
+	auto transaction = backend.tx_begin_write ();
+	nano::kdf kdf{ nano::dev::network_params.kdf_work };
+	nano::wallet::wallet_store wallet{ kdf, transaction, backend, nano::dev::genesis_key.pub, 1, "0" };
+	auto const backup = directory / "backup.json";
+	auto const snapshot = directory / "previous.json";
+	wallet.write_backup (transaction, backup);
+	std::string original;
+	wallet.serialize_json (transaction, original);
+	ASSERT_TRUE (std::filesystem::is_regular_file (backup));
+	std::error_code link_error;
+	std::filesystem::create_hard_link (backup, snapshot, link_error);
+	if (link_error)
+	{
+		GTEST_SKIP () << "Cannot create a hard-linked backup snapshot: " << link_error.message ();
+	}
+
+	ASSERT_FALSE (wallet.insert_watch (transaction, nano::dev::genesis_key.pub));
+	wallet.write_backup (transaction, backup);
+	std::string updated;
+	wallet.serialize_json (transaction, updated);
+	ASSERT_NE (original, updated);
+	auto read = [] (auto const & path) {
+		std::ifstream input{ path };
+		return std::string{ std::istreambuf_iterator<char>{ input }, {} };
+	};
+	ASSERT_EQ (original, read (snapshot));
+	ASSERT_EQ (updated, read (backup));
+}
+
 TEST (wallet_store, serialize_json_one)
 {
 	nano::wallet::lmdb::wallets_backend_lmdb backend (nano::unique_path () / "wallet.ldb");
