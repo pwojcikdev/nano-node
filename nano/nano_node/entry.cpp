@@ -42,6 +42,7 @@
 #include <nano/store/ledger/online_weight.hpp>
 #include <nano/store/ledger/pending.hpp>
 #include <nano/store/ledger/pruned.hpp>
+#include <nano/weights/bootstrap_weights.hpp>
 
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/format.hpp>
@@ -197,7 +198,8 @@ int main (int argc, char * const * argv)
 		}
 		else if (vm.count ("compare_rep_weights"))
 		{
-			if (nano::get_active_network () != nano::network_type::nano_dev_network)
+			auto const bootstrap_weights = nano::get_bootstrap_weights (nano::get_active_network ());
+			if (!bootstrap_weights.representatives.empty ())
 			{
 				auto node_flags = nano::inactive_node_flag_defaults ();
 				nano::update_flags (node_flags, vm);
@@ -205,7 +207,6 @@ int main (int argc, char * const * argv)
 				nano::inactive_node inactive_node (data_path, node_flags);
 				auto node = inactive_node.node;
 
-				auto const bootstrap_weights = node->get_bootstrap_weights ();
 				auto const & hardcoded = bootstrap_weights.representatives;
 				auto const hardcoded_height = bootstrap_weights.max_blocks;
 				auto const ledger_unfiltered = node->ledger.rep_weights.get_all ();
@@ -341,8 +342,8 @@ int main (int argc, char * const * argv)
 			}
 			else
 			{
-				std::cout << "Not available for the dev network" << std::endl;
-				result = -1;
+				std::cerr << "No bootstrap representative weights are available for the " << nano::to_string (nano::get_active_network ()) << " network" << std::endl;
+				result = 1;
 			}
 		}
 		else if (vm.count ("debug_block_dump"))
