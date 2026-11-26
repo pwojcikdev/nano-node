@@ -275,6 +275,7 @@ class account_viewer
 {
 public:
 	account_viewer (nano_qt::wallet &);
+	void refresh_results ();
 	QWidget * window;
 	QVBoxLayout * layout;
 	QLabel * account_label;
@@ -285,7 +286,7 @@ public:
 	QLabel * balance_label;
 	nano_qt::history history;
 	QPushButton * back;
-	nano::account account;
+	std::optional<nano::account> account;
 	nano_qt::wallet & wallet;
 };
 class stats_viewer

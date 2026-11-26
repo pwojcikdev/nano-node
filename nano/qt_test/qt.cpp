@@ -1549,6 +1549,47 @@ TEST (qt_wallet, account_viewer_history)
 	ASSERT_EQ (0, wallet->account_viewer.history.model->rowCount ());
 }
 
+TEST (qt_wallet, account_viewer_refreshes_balance_and_history_together)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (genesis.prv, false));
+	auto wallet = std::make_shared<nano_qt::wallet> (*test_application, processor, *system.nodes[0], system.wallet (0), genesis.pub);
+	wallet->start ();
+	auto & viewer = wallet->account_viewer;
+	auto set_unit = [&] (nano::uint128_t const & unit) {
+		wallet->change_rendering_ratio (unit);
+		QCoreApplication::sendPostedEvents (&processor);
+	};
+	set_unit (nano::nano_ratio);
+	EXPECT_TRUE (viewer.account_line->text ().isEmpty ());
+	EXPECT_EQ (0, viewer.history.model->rowCount ());
+	EXPECT_TRUE (viewer.balance_label->text ().isEmpty ());
+
+	auto const id = nano::random_wallet_id ();
+	auto other = system.nodes[0]->wallets.create (id);
+	ASSERT_TRUE (other->deterministic_insert (false));
+	ASSERT_FALSE (wallet->select_wallet (id));
+	EXPECT_EQ (0, viewer.history.model->rowCount ());
+	EXPECT_TRUE (viewer.balance_label->text ().isEmpty ());
+
+	viewer.account_line->setText (QString::fromStdString (genesis.pub.to_account ()));
+	QTest::mouseClick (viewer.refresh, Qt::LeftButton);
+	set_unit (nano::raw_ratio);
+	auto const amount = wallet->format_balance (nano::dev::constants.genesis_amount);
+	ASSERT_EQ (1, viewer.history.model->rowCount ());
+	EXPECT_EQ (amount, viewer.history.model->item (0, 2)->text ().toStdString ());
+	EXPECT_EQ ("Balance: " + amount, viewer.balance_label->text ().toStdString ());
+
+	viewer.account_line->clear ();
+	QTest::mouseClick (viewer.refresh, Qt::LeftButton);
+	EXPECT_TRUE (viewer.balance_label->text ().isEmpty ());
+	EXPECT_EQ (0, viewer.history.model->rowCount ());
+	set_unit (nano::nano_ratio);
+	EXPECT_EQ (0, viewer.history.model->rowCount ());
+}
+
 /*
  * Picking an account reports it to the selection observer together with the id of its wallet.
  * The wallet executable keeps the pick in its wallet config, so the wallet opens on it again after a restart.

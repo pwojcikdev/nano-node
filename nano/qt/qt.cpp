@@ -1006,9 +1006,8 @@ nano_qt::account_viewer::account_viewer (nano_qt::wallet & wallet_a) :
 	balance_window (new QWidget),
 	balance_layout (new QHBoxLayout),
 	balance_label (new QLabel),
-	history (wallet_a.node.ledger, wallet_a.account, wallet_a),
+	history (wallet_a.node.ledger, {}, wallet_a),
 	back (new QPushButton ("Back")),
-	account (wallet_a.account),
 	wallet (wallet_a)
 {
 	layout->addWidget (account_label);
@@ -1026,31 +1025,45 @@ nano_qt::account_viewer::account_viewer (nano_qt::wallet & wallet_a) :
 		this->wallet.pop_main_stack ();
 	});
 	QObject::connect (refresh, &QPushButton::released, [this] () {
-		account.clear ();
-		if (!account.decode_account (account_line->text ().toStdString ()))
+		nano::account entered;
+		if (!entered.decode_account (account_line->text ().toStdString ()))
 		{
 			show_line_ok (*account_line);
-			this->history.account = account;
-			this->history.refresh ();
-			auto balance (this->wallet.node.balance_pending (account, false));
-			auto final_text (std::string ("Balance (NANO): ") + wallet.format_balance (balance.first));
-			if (!balance.second.is_zero ())
-			{
-				final_text += "\nReady to receive: " + wallet.format_balance (balance.second);
-			}
-			balance_label->setText (QString (final_text.c_str ()));
+			account = entered;
 		}
 		else
 		{
 			show_line_error (*account_line);
-			balance_label->clear ();
+			account.reset ();
 		}
+		refresh_results ();
 	});
 	QObject::connect (account_line, &QLineEdit::textChanged, [this] (const QString & value) {
 		auto pos = account_line->cursorPosition ();
 		account_line->setText (value.trimmed ());
 		account_line->setCursorPosition (pos);
 	});
+}
+
+void nano_qt::account_viewer::refresh_results ()
+{
+	if (account)
+	{
+		history.account = *account;
+		history.refresh ();
+		auto const balance = wallet.node.balance_pending (*account, false);
+		auto text = "Balance: " + wallet.format_balance (balance.first);
+		if (!balance.second.is_zero ())
+		{
+			text += "\nReady to receive: " + wallet.format_balance (balance.second);
+		}
+		balance_label->setText (QString::fromStdString (text));
+	}
+	else
+	{
+		history.model->removeRows (0, history.model->rowCount ());
+		balance_label->clear ();
+	}
 }
 
 nano_qt::stats_viewer::stats_viewer (nano_qt::wallet & wallet_a) :
@@ -1684,7 +1697,7 @@ void nano_qt::wallet::refresh ()
 	// The history keeps its own copy of the account it shows
 	history.account = account;
 	history.refresh ();
-	account_viewer.history.refresh ();
+	account_viewer.refresh_results ();
 	settings.refresh_representative ();
 }
 
