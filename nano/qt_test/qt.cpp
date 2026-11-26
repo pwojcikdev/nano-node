@@ -351,6 +351,38 @@ TEST (qt_wallet, send)
 	ASSERT_EQ ("2.03 nano", balance_item->text ().toStdString ());
 }
 
+TEST (qt_wallet, reject_zero_send)
+{
+	nano_qt::eventloop_processor processor;
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	auto wallet = system.wallet (0);
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (wallet->insert_adhoc (genesis.prv));
+	auto view = std::make_shared<nano_qt::wallet> (*test_application, processor, node, wallet, genesis.pub);
+	view->start ();
+	nano::keypair recipient;
+	auto const destination = QString::fromStdString (recipient.pub.to_account ());
+
+	QTest::mouseClick (view->send_blocks, Qt::LeftButton);
+	view->send_account->setText (destination);
+	view->send_count->setText ("0");
+	QTest::mouseClick (view->send_blocks_send, Qt::LeftButton);
+	EXPECT_TRUE (view->send_blocks_send->isEnabled ());
+	EXPECT_EQ ("Enter a positive amount", view->send_blocks_send->text ().toStdString ());
+
+	QTest::mouseClick (view->send_blocks_back, Qt::LeftButton);
+	QTest::mouseClick (view->show_advanced, Qt::LeftButton);
+	QTest::mouseClick (view->advanced.create_block, Qt::LeftButton);
+	auto & creator = view->block_creation;
+	creator.account->setText (QString::fromStdString (genesis.pub.to_account ()));
+	creator.destination->setText (destination);
+	creator.amount->setText ("0");
+	QTest::mouseClick (creator.create, Qt::LeftButton);
+	EXPECT_EQ ("Enter a positive amount", creator.status->text ().toStdString ());
+	EXPECT_TRUE (creator.block->toPlainText ().isEmpty ());
+}
+
 TEST (qt_wallet, send_draft_keeps_value_when_unit_changes)
 {
 	nano_qt::eventloop_processor processor;

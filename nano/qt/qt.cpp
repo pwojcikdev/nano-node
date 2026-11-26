@@ -1424,7 +1424,8 @@ void nano_qt::wallet::start ()
 			show_line_ok (*this_l->send_count);
 			show_line_ok (*this_l->send_account);
 			nano::amount amount;
-			if (!amount.decode_dec (this_l->send_count->text ().toStdString (), this_l->rendering_ratio))
+			auto const amount_error = amount.decode_dec (this_l->send_count->text ().toStdString (), this_l->rendering_ratio);
+			if (!amount_error && !amount.is_zero ())
 			{
 				nano::uint128_t actual (amount.number ());
 				QString account_text (this_l->send_account->text ());
@@ -1532,7 +1533,7 @@ void nano_qt::wallet::start ()
 			{
 				show_line_error (*this_l->send_count);
 				show_button_error (*this_l->send_blocks_send);
-				this_l->send_blocks_send->setText ("Bad amount number");
+				this_l->send_blocks_send->setText (amount_error ? "Bad amount number" : "Enter a positive amount");
 				this_l->node.workers.post_delayed (std::chrono::seconds (5), [this_w] () {
 					if (auto this_l = this_w.lock ())
 					{
@@ -2528,7 +2529,7 @@ void nano_qt::block_creation::create_send ()
 	{
 		nano::amount amount_l;
 		error = amount_l.decode_dec (amount->text ().toStdString ());
-		if (!error)
+		if (!error && !amount_l.is_zero ())
 		{
 			nano::account destination_l;
 			error = destination_l.decode_account (destination->text ().toStdString ());
@@ -2593,7 +2594,7 @@ void nano_qt::block_creation::create_send ()
 		else
 		{
 			show_label_error (*status);
-			status->setText ("Unable to decode amount");
+			status->setText (error ? "Unable to decode amount" : "Enter a positive amount");
 		}
 	}
 	else
