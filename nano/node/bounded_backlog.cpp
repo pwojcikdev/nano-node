@@ -249,13 +249,14 @@ void nano::bounded_backlog::run ()
 		}
 
 		auto const bucket_threshold = max_backlog / bucketing.size ();
-		auto targets = gather_targets (std::min (target_count, static_cast<uint64_t> (config.bounded_backlog->batch_size)), bucket_threshold);
+		auto const max_rollbacks = std::min (target_count, static_cast<uint64_t> (config.bounded_backlog->batch_size));
+		auto targets = gather_targets (max_rollbacks, bucket_threshold);
 		if (!targets.empty ())
 		{
 			lock.unlock ();
 
 			stats.add (nano::stat::type::bounded_backlog, nano::stat::detail::gathered_targets, targets.size ());
-			auto processed = perform_rollbacks (targets, target_count);
+			auto processed = perform_rollbacks (targets, max_rollbacks);
 
 			lock.lock ();
 
@@ -380,12 +381,15 @@ std::deque<nano::block_hash> nano::bounded_backlog::gather_targets (size_t max_c
 	// Start rolling back from lowest index buckets first
 	for (auto bucket : bucketing.bucket_indices ())
 	{
+		if (targets.size () == max_count)
+		{
+			break;
+		}
+
 		// Only start rolling back if the bucket is over the threshold of unconfirmed blocks
 		if (index.size (bucket) > bucket_threshold)
 		{
-			auto const count = std::min (max_count, config.bounded_backlog->batch_size);
-
-			auto const top = index.top (bucket, count, [this] (auto const & hash) {
+			auto const top = index.top (bucket, max_count - targets.size (), [this] (auto const & hash) {
 				// Only rollback if the block is not being used by the node
 				return should_rollback (hash);
 			});
@@ -584,7 +588,7 @@ nano::container_info nano::backlog_index::container_info () const
 nano::error nano::bounded_backlog_config::serialize (nano::tomlconfig & toml) const
 {
 	toml.put ("enable", enable, "Enable the bounded backlog. \ntype:bool");
-	toml.put ("batch_size", batch_size, "Maximum number of blocks to rollback per iteration. \ntype:uint64");
+	toml.put ("batch_size", batch_size, "Maximum number of blocks to roll back per iteration. Rolling back a block and its dependents is indivisible and can exceed this limit. \ntype:uint64");
 	toml.put ("scan_rate", scan_rate, "Rate limit for refreshing the backlog index. \ntype:uint64");
 
 	return toml.get_error ();

@@ -1,9 +1,11 @@
 #include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
+#include <nano/lib/files.hpp>
 #include <nano/lib/stats.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/backlog_scan.hpp>
 #include <nano/node/bounded_backlog.hpp>
+#include <nano/node/ledger_notifications.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/test_common/chains.hpp>
@@ -106,4 +108,35 @@ TEST (backlog, idle_bounded_backlog_scan)
 		node.backlog_scan.trigger ();
 		ASSERT_TIMELY_EQ (5s, node.backlog.index_size (), 0);
 	}
+}
+
+TEST (backlog, rollback_batch_spans_priority_buckets)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.backlog_scan->enable = false;
+	config.max_backlog = 1;
+	config.bounded_backlog->batch_size = 1;
+	nano::node_flags flags;
+	flags.disable_elections = true;
+	auto node = std::make_shared<nano::node> (nano::unique_path (), config, system.work, flags);
+	system.register_node (node);
+
+	// Leave one independent open in each of three different priority buckets.
+	for (nano::uint128_t const amount : { nano::uint128_t{ 1 }, nano::nano_ratio, nano::Knano_ratio })
+	{
+		nano::keypair destination;
+		nano::test::setup_new_account (system, *node, amount, nano::dev::genesis_key, destination, destination.pub, false);
+	}
+	nano::test::confirm (node->ledger, node->latest (nano::dev::genesis_key.pub));
+	ASSERT_EQ (3, node->ledger.backlog_size ());
+
+	// Start rollbacks after the scanner has indexed all three eligible accounts.
+	node->backlog_scan.start ();
+	node->backlog_scan.trigger ();
+	ASSERT_TIMELY_EQ (5s, 3, node->backlog.index_size ());
+	node->ledger_notifications.start ();
+	node->backlog.start ();
+	ASSERT_TIMELY_EQ (5s, 1, node->ledger.backlog_size ());
+	ASSERT_EQ (2, node->stats.count (nano::stat::type::bounded_backlog, nano::stat::detail::performing_rollbacks));
 }
