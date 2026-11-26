@@ -10,6 +10,7 @@
 #include <nano/node/wallet.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/secure/ledger_set_any.hpp>
+#include <nano/test_common/chains.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 #include <nano/wallet/lmdb/wallets_backend_lmdb.hpp>
@@ -826,6 +827,34 @@ TEST (wallet, work)
 			done = nano::dev::network_params.work.difficulty (nano::dev::genesis->work_version (), nano::dev::genesis->hash (), work_result.value ()) >= system.nodes[0]->default_difficulty (nano::dev::genesis->work_version ());
 		}
 		ASSERT_NO_ERROR (system.poll ());
+	}
+}
+
+TEST (wallet, precache_opened_deterministic_accounts)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes[0];
+	auto wallet = system.wallet (0);
+	nano::raw_key seed{ 1 };
+	auto open = [&] (uint32_t index) {
+		nano::keypair account{ nano::deterministic_key (seed, index) };
+		return nano::test::setup_new_account (system, node, 1, nano::dev::genesis_key, account, account.pub, true).second;
+	};
+
+	auto first = open (0);
+	ASSERT_EQ (first->account (), wallet->change_seed (seed).value ());
+	auto second = open (1);
+	auto third = open (2);
+	ASSERT_EQ (second->account (), wallet->deterministic_insert (true).value ());
+	ASSERT_EQ (third->account (), wallet->deterministic_insert (2u).value ());
+
+	for (auto const & block : { first, second, third })
+	{
+		auto cached = [&] {
+			auto work = wallet->get_work (block->account ());
+			return work && work.value () != 0 && node.network_params.work.difficulty (block->work_version (), block->hash (), work.value ()) >= node.default_difficulty (block->work_version ());
+		};
+		EXPECT_TIMELY (5s, cached ());
 	}
 }
 
