@@ -431,17 +431,11 @@ void nano::network::fill_keepalive_self (std::array<nano::endpoint, 8> & target_
 	}
 	else
 	{
-		auto external_address (node.port_mapping.external_address ());
-		if (external_address.address () != boost::asio::ip::address_v4::any ())
+		target_a[0] = nano::endpoint (boost::asio::ip::address_v6{}, port);
+		auto const external = node.port_mapping.external_address ();
+		if (!external.address ().is_unspecified () && external.port () != 0)
 		{
-			target_a[0] = nano::endpoint (boost::asio::ip::address_v6{}, port);
-			boost::system::error_code ec;
-			auto external_v6 = boost::asio::ip::make_address_v6 (external_address.address ().to_string (), ec);
-			target_a[1] = nano::endpoint (external_v6, external_address.port ());
-		}
-		else
-		{
-			target_a[0] = nano::endpoint (boost::asio::ip::address_v6{}, port);
+			target_a[1] = nano::transport::map_endpoint_to_v6 (external);
 		}
 	}
 }

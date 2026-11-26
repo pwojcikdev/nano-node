@@ -186,4 +186,15 @@ TEST_F (port_mapping_fixture, withdraws_endpoint_when_gateway_disappears)
 	lose_gateway (0); // No gateway discovered after a router restart.
 	EXPECT_EQ (0, node->port_mapping.external_address ().port ());
 }
+
+TEST_F (port_mapping_fixture, keepalive_advertises_mapped_endpoint)
+{
+	auto const port = node->network.endpoint ().port ();
+	set_entry ("127.0.0.1", port);
+	ASSERT_FALSE (check ());
+	std::array<nano::endpoint, 8> peers;
+	node->network.fill_keepalive_self (peers);
+	EXPECT_EQ ((nano::endpoint{ boost::asio::ip::address_v6::any (), port }), peers[0]);
+	EXPECT_EQ ((nano::endpoint{ boost::asio::ip::make_address_v6 ("::ffff:192.0.2.14"), node->config.external_port }), peers[1]);
+}
 }
