@@ -421,6 +421,12 @@ nano::error nano::node_config::deserialize_toml (nano::tomlconfig & toml)
 			hinted_scheduler->deserialize (config_l);
 		}
 
+		// Election limits are still per bucket. The old max_blocks was per bucket too, but the new pool limit is global.
+		if (auto legacy = toml.get_optional_child ("priority_bucket"))
+		{
+			legacy->get ("reserved_elections", priority_scheduler->reserved_elections);
+			legacy->get ("max_elections", priority_scheduler->max_elections);
+		}
 		if (toml.has_key ("priority_scheduler"))
 		{
 			auto config_l = toml.get_required_child ("priority_scheduler");

@@ -157,6 +157,31 @@ TEST (toml_config, bootstrap_server_legacy_queue_limit)
 	ASSERT_EQ (default_limit, config.channel_limit);
 }
 
+TEST (toml_config, migrate_priority_bucket_election_limits)
+{
+	nano::node_config config, defaults;
+	nano::tomlconfig legacy;
+	ASSERT_FALSE (legacy.apply_overrides ({ "priority_bucket.reserved_elections=12", "priority_bucket.max_elections=56", "priority_bucket.max_blocks=900" }));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	ASSERT_EQ (12, config.priority_scheduler->reserved_elections);
+	ASSERT_EQ (56, config.priority_scheduler->max_elections);
+	ASSERT_EQ (defaults.priority_scheduler->max_blocks, config.priority_scheduler->max_blocks);
+
+	ASSERT_FALSE (legacy.apply_override ("priority_scheduler.max_elections=64"));
+	ASSERT_FALSE (config.deserialize_toml (legacy));
+	nano::tomlconfig current, baseline;
+	config.serialize_toml (current);
+	defaults.serialize_toml (baseline);
+	ASSERT_FALSE (current.has_key ("priority_bucket"));
+	std::stringstream updated{ nano::render_config_update (current, baseline) };
+	nano::tomlconfig parsed;
+	ASSERT_FALSE (parsed.read (updated));
+	nano::node_config reloaded;
+	ASSERT_FALSE (reloaded.deserialize_toml (parsed));
+	ASSERT_EQ (12, reloaded.priority_scheduler->reserved_elections);
+	ASSERT_EQ (64, reloaded.priority_scheduler->max_elections);
+}
+
 TEST (toml_config, migrate_vote_generator_delay)
 {
 	nano::node_config config, defaults;
