@@ -104,6 +104,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	backend_meta db_meta{};
 
 	bool const for_backup = mode == open_mode::read_only_backup;
+	bool const require_current_version = params.require_current_version || mode == open_mode::read_only || for_backup;
 	if (auto meta_opt = backend.fetch_meta (for_backup ? mode : open_mode::read_only))
 	{
 		db_meta = *meta_opt;
@@ -136,22 +137,22 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	}
 	else
 	{
+		if (require_current_version)
+		{
+			throw std::runtime_error ("No ledger found at " + backend.get_database_path ());
+		}
 		fresh_db = true;
 
 		logger.info (nano::log::type::ledger_store, "No existing ledger found, a new database will be created.");
 	}
 	release_assert (db_meta.version > 0 || fresh_db);
 
-	if (needs_upgrade || fresh_db)
-	{
-		if (mode == nano::store::open_mode::read_only || for_backup)
-		{
-			throw std::runtime_error ("Database requires upgrade but was opened in read-only mode");
-		}
-	}
-
 	if (needs_upgrade)
 	{
+		if (require_current_version)
+		{
+			throw std::runtime_error ("The ledger must be upgraded before this operation");
+		}
 		if (params.backup_before_upgrade)
 		{
 			logger.info (nano::log::type::ledger_store, "Creating ledger backup before upgrade...");

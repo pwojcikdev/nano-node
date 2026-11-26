@@ -131,9 +131,18 @@ interrupt_process "$daemon_pid"
 wait "$daemon_pid"
 node --debug_block_count | grep -q 'Block count: 1'
 
-missing_dir=$(new_datadir)
-cp "$datadir/config-node.toml" "$missing_dir/"
-if "$NANO_NODE_EXE" --network dev --data_path "$missing_dir" --vacuum; then
-    exit 1
-fi
-test ! -e "$missing_dir/rocksdb"
+# Cleanup options need write access, but backup commands still require an existing ledger.
+for backend in lmdb rocksdb; do
+    missing_dir=$(new_datadir)
+    printf '[node]\ndatabase_backend = "%s"\n' "$backend" > "$missing_dir/config-node.toml"
+    for operation in --snapshot --vacuum; do
+        for cleanup in '' '--peer_clear'; do
+            if "$NANO_NODE_EXE" --network dev --data_path "$missing_dir" "$operation" ${cleanup:+"$cleanup"}; then
+                exit 1
+            fi
+            test ! -e "$missing_dir/data.ldb"
+            test ! -e "$missing_dir/snapshot.ldb"
+            test ! -e "$missing_dir/rocksdb"
+        done
+    done
+done

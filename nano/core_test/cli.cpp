@@ -361,6 +361,23 @@ TEST (cli, compact_copy_respects_clear_selectors)
 	}
 }
 
+TEST (cli, compact_copy_preserves_source_version)
+{
+	nano::logger logger;
+	nano::node_config config;
+	auto const data_path = nano::unique_path ();
+	auto backend = nano::make_backend (logger, data_path, true, config);
+	backend->create (nano::store::ledger_store::schema_v26, 26);
+
+	for (auto const operation : { "snapshot", "vacuum" })
+	{
+		ASSERT_TRUE (run_cli_command (cli_options ({ { operation, "" }, { "data_path", data_path.string () }, { "peer_clear", "" } })).error) << operation;
+		auto meta = backend->fetch_meta ();
+		ASSERT_TRUE (meta);
+		ASSERT_EQ (26, meta->version) << operation;
+	}
+}
+
 TEST (cli, compact_copy_rejects_missing_clear_targets)
 {
 	std::filesystem::path ledger_path;
