@@ -427,44 +427,38 @@ void nano::vote_generator_broadcaster::run ()
 	nano::unique_lock<nano::mutex> lock{ mutex };
 	while (!stopped)
 	{
-		condition.wait_for (lock, delay / 2, [this] () {
-			return stopped || predicate ();
-		});
+		if (index.empty ())
+		{
+			condition.wait (lock);
+			continue;
+		}
+
+		if (!predicate ())
+		{
+			condition.wait_until (lock, last_broadcast + delay);
+			continue;
+		}
+
+		// The capacity check may read this broadcaster, so run it without the queue lock.
+		lock.unlock ();
+		bool const has_capacity = check_capacity ();
+		lock.lock ();
+
 		if (stopped)
 		{
 			return;
 		}
-		if (predicate ())
+		if (!has_capacity)
 		{
-			// Wait for spare network capacity before broadcasting, checked unlocked since the check may read this broadcaster
-			lock.unlock ();
-
-			if (!check_capacity ())
-			{
-				std::this_thread::sleep_for (nano::transport::capacity_wait);
-				lock.lock ();
-				continue;
-			}
-
-			lock.lock ();
-
-			auto batch = index.next_batch (batch_threshold);
-			lock.unlock ();
-
-			bool broadcasted = false;
-			if (!batch.empty ())
-			{
-				broadcast_batch (std::move (batch));
-				broadcasted = true;
-			}
-
-			lock.lock ();
-
-			if (broadcasted)
-			{
-				last_broadcast = std::chrono::steady_clock::now ();
-			}
+			condition.wait_for (lock, nano::transport::capacity_wait, [this] { return stopped; });
+			continue;
 		}
+
+		auto batch = index.next_batch (batch_threshold);
+		lock.unlock ();
+		broadcast_batch (std::move (batch));
+		lock.lock ();
+		last_broadcast = std::chrono::steady_clock::now ();
 	}
 }
 
