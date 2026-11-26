@@ -110,10 +110,14 @@ void nano::port_mapping::shutdown ()
 		if (protocol.external_port != 0)
 		{
 			std::string external_port_str = std::to_string (protocol.external_port);
-			std::string address_str = address.to_string ();
+			auto const entry = get_mapping (upnp, external_port_str, protocol.name);
+			if (!entry.targets (address, std::to_string (node.network.endpoint ().port ())))
+			{
+				continue;
+			}
 
 			// Be a good citizen for the router and shut down our mapping
-			auto delete_error_l = UPNP_DeletePortMapping (upnp.urls.controlURL, upnp.data.first.servicetype, external_port_str.c_str (), protocol.name, address_str.c_str ());
+			auto delete_error_l = UPNP_DeletePortMapping (upnp.urls.controlURL, upnp.data.first.servicetype, external_port_str.c_str (), protocol.name, nullptr);
 			if (delete_error_l)
 			{
 				node.logger.warn (nano::log::type::upnp, "UPnP shutdown {} port mapping failed: {} ({})",

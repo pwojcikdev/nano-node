@@ -61,9 +61,25 @@ protected:
 		set_response ("GetSpecificPortMappingEntry", "<NewInternalClient>" + client + "</NewInternalClient><NewInternalPort>" + std::to_string (port) + "</NewInternalPort><NewEnabled>1</NewEnabled><NewLeaseDuration>" + std::to_string (duration) + "</NewLeaseDuration>");
 	}
 
+	std::string last_request (std::string const & action)
+	{
+		std::lock_guard guard{ mutex };
+		return requests[action];
+	}
+
 	bool check ()
 	{
 		return node->port_mapping.check_lost_or_old_mapping ();
+	}
+
+	void refresh ()
+	{
+		node->port_mapping.refresh_mapping ();
+	}
+
+	void shutdown ()
+	{
+		node->port_mapping.shutdown ();
 	}
 
 	nano::test::system system;
@@ -87,6 +103,7 @@ private:
 				http::response<http::string_body> response{ http::status::ok, 11 };
 				{
 					std::lock_guard guard{ mutex };
+					requests[action] = request.body ();
 					response.body () = "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:" + action + "Response xmlns:u=\"" + service + "\">" + responses[action] + "</u:" + action + "Response></s:Body></s:Envelope>";
 				}
 				response.prepare_payload ();
@@ -102,6 +119,7 @@ private:
 	std::thread server;
 	std::mutex mutex;
 	std::map<std::string, std::string> responses;
+	std::map<std::string, std::string> requests;
 };
 
 TEST_F (port_mapping_fixture, mapping_must_target_node)
@@ -117,5 +135,32 @@ TEST_F (port_mapping_fixture, mapping_must_target_node)
 	set_entry ("127.0.0.1", port == 1 ? 2 : port - 1);
 	ASSERT_FALSE (check ());
 	EXPECT_EQ (0, node->port_mapping.external_address ().port ());
+}
+
+TEST_F (port_mapping_fixture, removes_own_wildcard_mapping)
+{
+	auto const port = node->network.endpoint ().port ();
+	set_entry ("127.0.0.1", port, 30);
+	ASSERT_TRUE (check ());
+	refresh ();
+	auto const add = last_request ("AddPortMapping");
+	ASSERT_NE (std::string::npos, add.find ("<NewRemoteHost></NewRemoteHost>"));
+	ASSERT_NE (std::string::npos, add.find ("<NewInternalPort>" + std::to_string (port) + "</NewInternalPort>"));
+	shutdown ();
+	auto const removed = last_request ("DeletePortMapping");
+	EXPECT_NE (std::string::npos, removed.find ("<NewRemoteHost></NewRemoteHost>"));
+	EXPECT_NE (std::string::npos, removed.find ("<NewExternalPort>4100</NewExternalPort>"));
+}
+
+TEST_F (port_mapping_fixture, retains_reassigned_mapping_on_shutdown)
+{
+	auto const port = node->network.endpoint ().port ();
+	set_entry ("127.0.0.1", port);
+	ASSERT_FALSE (check ());
+	ASSERT_EQ (node->config.external_port, node->port_mapping.external_address ().port ());
+	refresh ();
+	set_entry ("127.0.0.2", port);
+	shutdown ();
+	EXPECT_TRUE (last_request ("DeletePortMapping").empty ());
 }
 }
