@@ -81,11 +81,11 @@ void encode_balance (std::ostream & stream, Value balance, Value scale, int prec
 	auto int_part = balance / scale;
 	auto frac_part = balance % scale;
 	auto prec_scale = scale;
-	for (int i = 0; i < precision; i++)
+	for (int i = 0; i < precision && prec_scale > 1; i++)
 	{
 		prec_scale /= 10;
 	}
-	if (int_part == 0 && frac_part > 0 && frac_part / prec_scale == 0)
+	if (int_part == 0 && frac_part > 0 && frac_part < prec_scale)
 	{
 		stream << "< ";
 		if (precision > 0)
