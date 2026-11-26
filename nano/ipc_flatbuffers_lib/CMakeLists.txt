@@ -45,7 +45,7 @@ foreach(file ${files})
 
   configure_file(
     ${file}
-    ${PROJECT_BINARY_DIR}/${CMAKE_BUILD_TYPE}/api/flatbuffers/${flatbuffers_filename}.fbs
+    ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api/flatbuffers/${flatbuffers_filename}.fbs
     COPYONLY)
 
   add_custom_command(

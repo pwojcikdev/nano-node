@@ -4,8 +4,9 @@
 #include <nano/node/ipc/ipc_config.hpp>
 #include <nano/node/ipc/ipc_server.hpp>
 
-#include <boost/dll.hpp>
+#include <boost/dll/runtime_symbol_info.hpp>
 
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -36,11 +37,22 @@ std::string make_error_response (std::string const & error_message)
 std::optional<std::filesystem::path> get_api_path ()
 {
 	std::filesystem::path const fb_path = "api/flatbuffers";
-	if (!std::filesystem::exists (fb_path))
+	std::error_code ec;
+	if (std::filesystem::is_regular_file (fb_path / "nanoapi.fbs", ec))
 	{
-		return std::nullopt;
+		return fb_path;
 	}
-	return fb_path;
+	boost::system::error_code location_error;
+	auto const executable = boost::dll::program_location (location_error);
+	if (!location_error)
+	{
+		auto const installed = std::filesystem::path{ executable.native () }.parent_path () / fb_path;
+		if (std::filesystem::is_regular_file (installed / "nanoapi.fbs", ec))
+		{
+			return installed;
+		}
+	}
+	return std::nullopt;
 }
 }
 
