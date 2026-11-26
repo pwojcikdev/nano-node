@@ -938,18 +938,19 @@ void nano::json_handler::accounts_balances ()
 {
 	boost::property_tree::ptree balances;
 	boost::property_tree::ptree errors;
-	auto transaction = node.store.tx_begin_read ();
+	auto const include_only_confirmed = request.get<bool> ("include_only_confirmed", true);
+	auto const transaction = node.ledger.tx_begin_read ();
 	for (auto & account_from_request : request.get_child ("accounts"))
 	{
 		boost::property_tree::ptree entry;
 		auto account = account_impl (account_from_request.second.data ());
 		if (!ec)
 		{
-			bool const include_only_confirmed = request.get<bool> ("include_only_confirmed", true);
-			auto balance = node.balance_pending (account, include_only_confirmed);
-			entry.put ("balance", balance.first.convert_to<std::string> ());
-			entry.put ("pending", balance.second.convert_to<std::string> ());
-			entry.put ("receivable", balance.second.convert_to<std::string> ());
+			auto const balance = include_only_confirmed ? node.ledger.cemented.account_balance (transaction, account) : node.ledger.any.account_balance (transaction, account);
+			auto const receivable = node.ledger.account_receivable (transaction, account, include_only_confirmed);
+			entry.put ("balance", balance.value_or (0).to_string_dec ());
+			entry.put ("pending", receivable.convert_to<std::string> ());
+			entry.put ("receivable", receivable.convert_to<std::string> ());
 			balances.put_child (account_from_request.second.data (), entry);
 			continue;
 		}
