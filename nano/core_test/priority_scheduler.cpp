@@ -18,6 +18,27 @@
 
 using namespace std::chrono_literals;
 
+TEST (priority_scheduler, disabled_ignores_backlog_scan)
+{
+	std::atomic<bool> scanned{ false };
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.backlog_scan->enable = false; // Trigger one scan after the send is in the ledger.
+	nano::node_flags flags;
+	flags.disable_elections = true;
+	auto & node = *system.add_node (config, flags);
+	auto const blocks = nano::test::setup_chain (system, node, 1, nano::dev::genesis_key, false);
+	node.backlog_scan.batch_activated.add ([&scanned] (auto const & batch) {
+		if (!batch.empty ())
+		{
+			scanned = true;
+		}
+	});
+	node.backlog_scan.trigger ();
+	ASSERT_TIMELY (5s, scanned.load ());
+	ASSERT_FALSE (node.scheduler.contains (blocks.front ()->hash ()));
+}
+
 /*
  * Verifies that the priority scheduler:
  * 1) Activates the best-available block from multiple buckets in a single run loop

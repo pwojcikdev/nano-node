@@ -127,6 +127,11 @@ bool nano::scheduler::priority::activate (secure::transaction const & transactio
 
 bool nano::scheduler::priority::activate (secure::transaction const & transaction, nano::account const & account, nano::account_info const & account_info, nano::confirmation_height_info const & conf_info)
 {
+	if (!config.enable)
+	{
+		return false;
+	}
+
 	debug_assert (conf_info.frontier != account_info.head);
 
 	auto const hash = conf_info.height == 0 ? account_info.open_block : ledger.any.block_successor (transaction, conf_info.frontier).value_or (0);
