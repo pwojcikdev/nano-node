@@ -612,6 +612,19 @@ bool nano::uint128_union::decode_dec (std::string const & text, bool decimal)
 	if (!error)
 	{
 		std::stringstream stream (text);
+		if (decimal)
+		{
+			if (text.empty () || text.find_first_not_of ("0123456789") != std::string::npos)
+			{
+				return true;
+			}
+			// Boost reads integers with a leading zero as octal. The caller keeps the full fractional length for scaling.
+			auto const first = text.find_first_not_of ('0');
+			if (first != std::string::npos)
+			{
+				stream.seekg (first);
+			}
+		}
 		stream << std::dec << std::noshowbase;
 		boost::multiprecision::checked_uint128_t number_l;
 		try

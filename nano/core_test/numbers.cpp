@@ -336,6 +336,18 @@ TEST (numbers, uint128_union_decode_decimal)
 	ASSERT_EQ (1230 * nano::Knano_ratio, amount.number ());
 }
 
+TEST (numbers, fractional_amounts_with_leading_zeros)
+{
+	nano::amount amount;
+	ASSERT_FALSE (amount.decode_dec ("0.012", nano::nano_ratio));
+	ASSERT_EQ (12 * nano::nano_ratio / 1000, amount.number ());
+	ASSERT_FALSE (amount.decode_dec ("2.0089", nano::nano_ratio));
+	ASSERT_EQ (2 * nano::nano_ratio + 89 * nano::nano_ratio / 10000, amount.number ());
+	ASSERT_FALSE (amount.decode_dec ("1.000", nano::nano_ratio));
+	ASSERT_EQ (nano::nano_ratio, amount.number ());
+	ASSERT_TRUE (amount.decode_dec ("0.0 2", nano::nano_ratio));
+}
+
 TEST (numbers, uint256_union_key_encryption)
 {
 	nano::keypair key1;
