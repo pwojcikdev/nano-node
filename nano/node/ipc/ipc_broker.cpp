@@ -38,6 +38,7 @@ void nano::ipc::broker::start ()
 
 				auto confirmation (std::make_shared<nanoapi::EventConfirmationT> ());
 
+				confirmation->hash = status.winner->hash ().to_string ();
 				confirmation->account = confirmation_a.account.to_account ();
 				confirmation->amount = confirmation_a.amount.to_string_dec ();
 				switch (confirmation_a.type)

@@ -222,6 +222,7 @@ public:
 		auto const * confirmation = nanoapi::GetEnvelope (data)->message_as_EventConfirmation ();
 		ASSERT_NE (nullptr, confirmation);
 		blocks.push_back (confirmation->block_type ());
+		hashes.push_back (confirmation->hash () ? confirmation->hash ()->str () : std::string{});
 	}
 
 	uint64_t get_id () const override
@@ -241,6 +242,7 @@ public:
 	}
 
 	std::vector<nanoapi::Block> blocks;
+	std::vector<std::string> hashes;
 };
 }
 
@@ -271,4 +273,22 @@ TEST (ipc, filtered_confirmation_without_block)
 	EXPECT_EQ ((std::vector{ nanoapi::Block_NONE }), destination->blocks);
 	EXPECT_TRUE (unrelated->blocks.empty ());
 	EXPECT_EQ ((std::vector{ nanoapi::Block_BlockState }), full->blocks);
+}
+
+TEST (ipc, confirmation_hash_without_block)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes.front ();
+	auto const send = nano::test::setup_chain (system, node, 1).front ();
+	auto broker = std::make_shared<nano::ipc::broker> (node);
+	broker->start ();
+
+	auto client = std::make_shared<confirmation_subscriber> ();
+	auto topic = std::make_shared<nanoapi::TopicConfirmationT> ();
+	topic->options = std::make_unique<nanoapi::TopicConfirmationOptionsT> ();
+	topic->options->include_block = false;
+	broker->subscribe (client, topic);
+
+	node.observers.block_confirmed.notify ({ .status = { .winner = send }, .type = nano::confirmation_type::inactive_confirmation_height, .account = nano::dev::genesis_key.pub, .amount = 1, .is_state_send = true });
+	EXPECT_EQ ((std::vector{ send->hash ().to_string () }), client->hashes);
 }
