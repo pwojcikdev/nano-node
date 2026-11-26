@@ -1,3 +1,4 @@
+#include <nano/lib/blockbuilders.hpp>
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/ipc_client.hpp>
 #include <nano/lib/tomlconfig.hpp>
@@ -246,6 +247,17 @@ public:
 	std::vector<nanoapi::TopicConfirmationType> types;
 	std::vector<std::string> hashes;
 };
+
+std::shared_ptr<confirmation_subscriber> watch_account (nano::ipc::broker & broker, nano::account const & account, bool include_block)
+{
+	auto client = std::make_shared<confirmation_subscriber> ();
+	auto topic = std::make_shared<nanoapi::TopicConfirmationT> ();
+	topic->options = std::make_unique<nanoapi::TopicConfirmationOptionsT> ();
+	topic->options->accounts.push_back (account.to_account ());
+	topic->options->include_block = include_block;
+	broker.subscribe (client, topic);
+	return client;
+}
 }
 
 TEST (ipc, filtered_confirmation_without_block)
@@ -255,20 +267,11 @@ TEST (ipc, filtered_confirmation_without_block)
 	auto const send = nano::test::setup_chain (system, node, 1).front ();
 	auto broker = std::make_shared<nano::ipc::broker> (node);
 	broker->start ();
-	auto subscribe = [&] (nano::account const & account, bool include_block) {
-		auto client = std::make_shared<confirmation_subscriber> ();
-		auto topic = std::make_shared<nanoapi::TopicConfirmationT> ();
-		topic->options = std::make_unique<nanoapi::TopicConfirmationOptionsT> ();
-		topic->options->accounts.push_back (account.to_account ());
-		topic->options->include_block = include_block;
-		broker->subscribe (client, topic);
-		return client;
-	};
 
-	auto sender = subscribe (nano::dev::genesis_key.pub, false);
-	auto destination = subscribe (send->destination (), false);
-	auto unrelated = subscribe (nano::keypair{}.pub, false);
-	auto full = subscribe (send->destination (), true);
+	auto sender = watch_account (*broker, nano::dev::genesis_key.pub, false);
+	auto destination = watch_account (*broker, send->destination (), false);
+	auto unrelated = watch_account (*broker, nano::keypair{}.pub, false);
+	auto full = watch_account (*broker, send->destination (), true);
 
 	node.observers.block_confirmed.notify ({ .status = { .winner = send }, .type = nano::confirmation_type::inactive_confirmation_height, .account = nano::dev::genesis_key.pub, .amount = 1, .is_state_send = true });
 	EXPECT_EQ ((std::vector{ nanoapi::Block_NONE }), sender->blocks);
@@ -325,4 +328,33 @@ TEST (ipc, confirmation_type_filters)
 	EXPECT_EQ ((std::vector{ nanoapi::TopicConfirmationType_active_quorum }), quorum->types);
 	EXPECT_EQ ((std::vector{ nanoapi::TopicConfirmationType_active_confirmation_height }), height->types);
 	EXPECT_EQ ((std::vector{ nanoapi::TopicConfirmationType_inactive }), inactive->types);
+}
+
+TEST (ipc, legacy_confirmation_accounts)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes.front ();
+	auto const & genesis = nano::dev::genesis_key;
+	nano::keypair recipient;
+	auto const previous = nano::dev::genesis->hash ();
+	auto send = nano::send_block_builder{}
+				.previous (previous)
+				.destination (recipient.pub)
+				.balance (nano::dev::constants.genesis_amount - 1)
+				.sign (genesis.prv, genesis.pub)
+				.work (*system.work.generate (previous))
+				.build ();
+	ASSERT_EQ (nano::block_status::progress, node.process (send));
+
+	auto broker = std::make_shared<nano::ipc::broker> (node);
+	broker->start ();
+	auto owner = watch_account (*broker, genesis.pub, false);
+	auto destination = watch_account (*broker, recipient.pub, false);
+	auto unrelated = watch_account (*broker, nano::keypair{}.pub, false);
+
+	node.observers.block_confirmed.notify ({ .status = { .winner = nano::dev::genesis }, .type = nano::confirmation_type::inactive_confirmation_height, .account = genesis.pub, .amount = nano::dev::constants.genesis_amount });
+	node.observers.block_confirmed.notify ({ .status = { .winner = send }, .type = nano::confirmation_type::inactive_confirmation_height, .account = genesis.pub, .amount = 1 });
+	EXPECT_EQ ((std::vector{ nano::dev::genesis->hash ().to_string (), send->hash ().to_string () }), owner->hashes);
+	EXPECT_EQ ((std::vector{ send->hash ().to_string () }), destination->hashes);
+	EXPECT_TRUE (unrelated->hashes.empty ());
 }

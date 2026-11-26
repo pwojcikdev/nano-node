@@ -116,12 +116,24 @@ void nano::ipc::broker::broadcast (std::shared_ptr<nanoapi::EventConfirmationT> 
 	using Filter = nanoapi::TopicConfirmationTypeFilter;
 	decltype (confirmation_a->election_info) election_info;
 	nanoapi::BlockUnion block;
+
+	// Match legacy sends by destination and other legacy blocks by the confirmed account.
+	auto linked_account = confirmation_a->account;
+	if (auto const * state = confirmation_a->block.AsBlockState ())
+	{
+		linked_account = state->link_as_account;
+	}
+	else if (auto const * send = confirmation_a->block.AsBlockSend ())
+	{
+		linked_account = send->destination;
+	}
+
 	auto itr (confirmation_subscribers->begin ());
 	while (itr != confirmation_subscribers->end ())
 	{
 		if (auto subscriber_l = itr->subscriber.lock ())
 		{
-			auto should_filter = [this, &itr, confirmation_a] () {
+			auto should_filter = [this, &itr, &linked_account, &confirmation_a] () {
 				debug_assert (itr->topic->options != nullptr);
 				auto const filter = itr->topic->options->confirmation_type_filter;
 				auto const type = confirmation_a->confirmation_type;
@@ -137,32 +149,17 @@ void nano::ipc::broker::broadcast (std::shared_ptr<nanoapi::EventConfirmationT> 
 					return true;
 				}
 
-				bool should_filter_account_l (itr->topic->options->all_local_accounts || !itr->topic->options->accounts.empty ());
-				auto state (confirmation_a->block.AsBlockState ());
-				if (state)
+				auto const & options = *itr->topic->options;
+				if (!options.all_local_accounts && options.accounts.empty ())
 				{
-					if (itr->topic->options->all_local_accounts)
-					{
-						nano::account source_l{};
-						nano::account destination_l{};
-						auto decode_source_ok_l (!source_l.decode_account (state->account));
-						auto decode_destination_ok_l (!destination_l.decode_account (state->link_as_account));
-						(void)decode_source_ok_l;
-						(void)decode_destination_ok_l;
-						debug_assert (decode_source_ok_l && decode_destination_ok_l);
-						if (this->node.wallets.exists_any (source_l, destination_l))
-						{
-							should_filter_account_l = false;
-						}
-					}
-
-					if (std::find (itr->topic->options->accounts.begin (), itr->topic->options->accounts.end (), state->account) != itr->topic->options->accounts.end () || std::find (itr->topic->options->accounts.begin (), itr->topic->options->accounts.end (), state->link_as_account) != itr->topic->options->accounts.end ())
-					{
-						should_filter_account_l = false;
-					}
+					return false;
 				}
-
-				return should_filter_account_l;
+				if (options.all_local_accounts && node.wallets.exists_any (nano::account::from_account (confirmation_a->account), nano::account::from_account (linked_account)))
+				{
+					return false;
+				}
+				return std::find (options.accounts.begin (), options.accounts.end (), confirmation_a->account) == options.accounts.end ()
+				&& std::find (options.accounts.begin (), options.accounts.end (), linked_account) == options.accounts.end ();
 			};
 			auto const & options = itr->topic->options;
 			if (!options || !should_filter ())
