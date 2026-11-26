@@ -54,6 +54,13 @@ grep -q 'monitor.interval' "$DATADIR/monitor.err"
 printf 'enable = false\n' >> "$DATADIR/config-node.toml"
 "$NANO_NODE_EXE" --update_config --data_path "$DATADIR" > /dev/null
 
+# Manual backlog scans also need a nonempty batch when ongoing scanning is disabled.
+printf '[node.backlog_scan]\nenable = false\nbatch_size = 0\n' > "$DATADIR/config-node.toml"
+expect_failure --update_config > /dev/null 2> "$DATADIR/scan-error"
+grep -Fq 'backlog_scan.batch_size' "$DATADIR/scan-error"
+printf '[node.backlog_scan]\nbatch_size = 1\n' > "$DATADIR/config-node.toml"
+"$NANO_NODE_EXE" --update_config --data_path "$DATADIR" > /dev/null
+
 # a node config that cannot be parsed fails the commands that read it
 echo "[node" > $DATADIR/config-node.toml
 expect_failure --database_info

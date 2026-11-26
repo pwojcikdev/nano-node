@@ -165,7 +165,7 @@ nano::container_info nano::backlog_scan::container_info () const
 nano::error nano::backlog_scan_config::serialize (nano::tomlconfig & toml) const
 {
 	toml.put ("enable", enable, "Control if ongoing backlog population is enabled. If not, backlog population can still be triggered by RPC \ntype:bool");
-	toml.put ("batch_size", batch_size, "Size of a single batch. Larger batches reduce overhead, but may put more pressure on other node components. \ntype:uint");
+	toml.put ("batch_size", batch_size, "Number of accounts in a single batch (at least 1). Larger batches reduce overhead, but may put more pressure on other node components. \ntype:uint");
 	toml.put ("rate_limit", rate_limit, "Number of accounts per second to process when doing backlog population scan. Increasing this value will help unconfirmed frontiers get into election prioritization queue faster. Use 0 to process as fast as possible, but be aware that it may consume a lot of resources. \ntype:uint");
 
 	return toml.get_error ();
@@ -176,6 +176,10 @@ nano::error nano::backlog_scan_config::deserialize (nano::tomlconfig & toml)
 	toml.get ("enable", enable);
 	toml.get ("batch_size", batch_size);
 	toml.get ("rate_limit", rate_limit);
+	if (batch_size == 0)
+	{
+		toml.get_error ().set ("backlog_scan.batch_size must be at least one account");
+	}
 
 	return toml.get_error ();
 }
