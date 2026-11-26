@@ -110,8 +110,8 @@ public:
 				nano::opencl_work_func_t opencl_work_func;
 				if (opencl)
 				{
-					opencl_work_func = [&opencl] (nano::work_version const version_a, nano::root const & root_a, uint64_t difficulty_a, std::atomic<int> &) {
-						return opencl->generate_work (version_a, root_a, difficulty_a);
+					opencl_work_func = [&opencl] (nano::work_version const version_a, nano::root const & root_a, uint64_t difficulty_a, std::atomic<int> & ticket_a) {
+						return opencl->generate_work (version_a, root_a, difficulty_a, ticket_a);
 					};
 				}
 				nano::work_pool work{ config.node.network_params.network, config.node.work_threads, config.node.pow_sleep_interval, opencl_work_func };
