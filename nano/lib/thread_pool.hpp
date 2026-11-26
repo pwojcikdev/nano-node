@@ -66,7 +66,11 @@ public:
 			thread_pool_impl->join ();
 
 			lock.lock ();
-			thread_pool_impl = nullptr;
+			auto discarded = std::move (thread_pool_impl);
+			num_tasks = 0;
+			num_delayed = 0;
+			// Destroy pending handlers outside the lock so their captures can call back into the pool.
+			lock.unlock ();
 		}
 	}
 

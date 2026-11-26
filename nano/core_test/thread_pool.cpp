@@ -94,3 +94,28 @@ TEST (thread_pool, top_execution)
 	ASSERT_EQ (1, value1);
 	ASSERT_EQ (2, value2);
 }
+
+TEST (thread_pool, discard_pending_tasks_on_stop)
+{
+	// Leave both tasks pending until stop releases their captures.
+	nano::thread_pool workers{ 0, nano::thread_role::name::unknown, true };
+	std::future<bool> inspection;
+	bool inspected_during_cleanup{ false };
+	auto inspect = [&] (void *) {
+		inspection = std::async (std::launch::async, [&] { return workers.alive (); });
+		inspected_during_cleanup = inspection.wait_for (std::chrono::seconds{ 5 }) == std::future_status::ready;
+	};
+	auto capture = std::shared_ptr<void>{ nullptr, inspect };
+
+	workers.post ([] {});
+	workers.post_delayed (std::chrono::hours{ 1 }, [capture = std::move (capture)] {});
+	EXPECT_EQ (1, workers.queued_tasks ());
+	EXPECT_EQ (1, workers.delayed_tasks ());
+
+	workers.stop ();
+	ASSERT_TRUE (inspection.valid ());
+	EXPECT_FALSE (inspection.get ());
+	EXPECT_TRUE (inspected_during_cleanup);
+	EXPECT_EQ (0, workers.queued_tasks ());
+	EXPECT_EQ (0, workers.delayed_tasks ());
+}
