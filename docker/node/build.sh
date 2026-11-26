@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eu
 
 network='live'
 
@@ -36,7 +37,4 @@ dev | beta)
 esac
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
-COMMIT_SHA=$(git rev-parse --short HEAD)
-pushd $REPO_ROOT
-docker build --build-arg NETWORK="${network}" -f docker/node/Dockerfile -t nano-node${network_tag}:latest .
-popd
+docker build --build-arg NANO_NETWORK="${network}" -f "$REPO_ROOT/docker/node/Dockerfile" -t "nano-node${network_tag}:latest" "$REPO_ROOT"
