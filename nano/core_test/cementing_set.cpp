@@ -23,7 +23,6 @@
 #include <gtest/gtest.h>
 
 #include <future>
-#include <thread>
 
 using namespace std::chrono_literals;
 
@@ -635,6 +634,8 @@ TEST (cementing_set, stop_during_cementing)
 	config.max_queued_notifications = 1;
 	test_context ctx{ config };
 
+	// An early exit must release the observer before waiting for stop.
+	std::future<void> stopping;
 	std::promise<void> release_promise;
 	auto released = release_promise.get_future ().share ();
 	ctx.cementing_set.batch_cemented.add ([&collector, released] (auto const & batch) {
@@ -648,21 +649,18 @@ TEST (cementing_set, stop_during_cementing)
 	ASSERT_TRUE (ctx.cementing_set.add (blocks.back ()->hash ()));
 	ctx.cementing_set.start ();
 
-	// The first intermediate notification blocks the worker, the second parks cementing in the cooldown
+	// Cooldown counts a queued notification even if the worker has not started it yet.
 	ASSERT_TIMELY (5s, ctx.stats.count (nano::stat::type::cementing_set, nano::stat::detail::cooldown) >= 1);
+	ASSERT_TIMELY_EQ (5s, ctx.stats.count (nano::stat::type::cementing_set, nano::stat::detail::notify), 1);
 
 	// Exactly two intermediate steps of 4 blocks are committed at this point
 	ASSERT_EQ (9, ctx.ledger ().cemented_count ());
 
-	// Release the notification thread shortly after stop is initiated, so stop can join the workers
-	std::thread releaser{ [&release_promise] () {
-		std::this_thread::sleep_for (2s);
-		release_promise.set_value ();
-	} };
-
-	// Stop must return without deadlocking
-	ctx.cementing_set.stop ();
-	releaser.join ();
+	// Once stop interrupts the cooldown, the cementing thread completes its last round.
+	stopping = std::async (std::launch::async, [&ctx] { ctx.cementing_set.stop (); });
+	EXPECT_TIMELY (5s, ctx.stats.count (nano::stat::type::cementing_set, nano::stat::detail::cemented) == 12);
+	release_promise.set_value ();
+	stopping.get ();
 
 	// The interrupted cooldown completes one more cementing round before the stop is noticed at the loop top
 	ASSERT_EQ (13, ctx.ledger ().cemented_count ());
