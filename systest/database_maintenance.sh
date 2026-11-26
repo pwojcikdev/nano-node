@@ -30,6 +30,21 @@ node --vacuum
 test ! -e "$staging/original.ldb"
 node --debug_block_count | grep -q 'Block count: 1'
 
+# A live LMDB daemon can still serve snapshots, but its ledger cannot be replaced.
+ready="$datadir/lmdb-runtime.json"
+"$NANO_NODE_EXE" --data_path "$datadir" --network dev --daemon --runtime_info_file "$ready" --config node.peering_port=0 > "$datadir/lmdb-daemon.log" 2>&1 &
+lmdb_pid=$!
+register_pid "$lmdb_pid"
+wait_for_file "$ready" "$lmdb_pid"
+rm -f "$datadir/snapshot.ldb"
+node --snapshot
+if node --vacuum --peer_clear > "$datadir/vacuum-error" 2>&1; then
+    exit 1
+fi
+grep -q 'Stop the node before vacuuming the LMDB ledger' "$datadir/vacuum-error"
+interrupt_process "$lmdb_pid"
+wait "$lmdb_pid"
+
 # A rejected migration setting must leave the destination available for a corrected retry.
 if node --migrate_database_lmdb_to_rocksdb --config node.rocksdb.write_cache=0 > "$datadir/migration-error" 2>&1; then
     exit 1

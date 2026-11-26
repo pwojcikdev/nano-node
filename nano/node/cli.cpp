@@ -30,6 +30,7 @@
 #include <nano/store/ledger/topology.hpp>
 #include <nano/store/meta.hpp>
 #include <nano/store/rocksdb/backend_rocksdb.hpp>
+#include <nano/wallet/lmdb/wallets_backend_lmdb.hpp>
 
 #include <boost/format.hpp>
 #include <boost/interprocess/sync/file_lock.hpp>
@@ -74,7 +75,7 @@ void nano::add_node_options (boost::program_options::options_description & descr
 	("account_create", "Insert next deterministic key in to <wallet>")
 	("account_get", "Get account number for the <key>")
 	("account_key", "Get the public key for <account>")
-	("vacuum", "Compact the database in data_path or the default data directory. Stop the node before vacuuming RocksDB.")
+	("vacuum", "Compact the database in data_path or the default data directory. Stop the node before vacuuming.")
 	("snapshot", "Write a compact copy of the database. Stop the node before snapshotting RocksDB.")
 	("data_path", boost::program_options::value<std::string> (), "Use the supplied path as the data directory")
 	("network", boost::program_options::value<std::string> (), "Use the supplied network (live, test, beta or dev)")
@@ -330,7 +331,7 @@ void clear_final_votes (nano::store::ledger_store & store, std::optional<nano::q
 	}
 }
 
-std::error_code copy_database (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::filesystem::path const & output_path, bool vacuum_rocksdb = false)
+std::error_code copy_database (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm, std::filesystem::path const & output_path, bool vacuum_rocksdb = false, std::optional<std::filesystem::path> const & lmdb_view = std::nullopt)
 {
 	bool needs_to_write = vm.count ("unchecked_clear") || vm.count ("clear_send_ids") || vm.count ("online_weight_clear") || vm.count ("peer_clear") || vm.count ("confirmation_height_clear") || vm.count ("final_vote_clear");
 
@@ -339,7 +340,7 @@ std::error_code copy_database (std::filesystem::path const & data_path, boost::p
 	node_flags.backup_database = true;
 	nano::update_flags (node_flags, vm);
 
-	nano::inactive_node node (data_path, node_flags);
+	nano::inactive_node node (lmdb_view.value_or (data_path), data_path, node_flags);
 
 	std::optional<nano::qualified_root> root;
 	if (vm.count ("final_vote_clear"))
@@ -372,7 +373,15 @@ std::error_code copy_database (std::filesystem::path const & data_path, boost::p
 	}
 	if (vm.count ("clear_send_ids"))
 	{
-		node.node->wallets.clear_send_ids ();
+		if (lmdb_view)
+		{
+			nano::wallet::lmdb::wallets_backend_lmdb wallets{ data_path / "wallets.ldb", node.node->config.lmdb_config };
+			wallets.send_action_ids_clear (wallets.tx_begin_write ());
+		}
+		else
+		{
+			node.node->wallets.clear_send_ids ();
+		}
 	}
 	if (vm.count ("online_weight_clear"))
 	{
@@ -410,6 +419,14 @@ std::error_code vacuum_lmdb (std::filesystem::path const & data_path, boost::pro
 	{
 		throw std::runtime_error ("Another LMDB vacuum is in progress");
 	}
+	// LMDB holds a shared byte-range lock here for the lifetime of every open environment.
+	auto const live_lock_path = data_path / "data.ldb-lock";
+	std::ofstream{ live_lock_path, std::ios::app }.close ();
+	boost::interprocess::file_lock live_lock{ live_lock_path.c_str () };
+	if (!live_lock.try_lock ())
+	{
+		throw std::runtime_error ("Stop the node before vacuuming the LMDB ledger");
+	}
 	// A missing compact copy alongside a staged original means the last cutover completed.
 	if (std::filesystem::exists (original) && !std::filesystem::exists (compact))
 	{
@@ -421,18 +438,25 @@ std::error_code vacuum_lmdb (std::filesystem::path const & data_path, boost::pro
 	}
 	std::filesystem::remove (compact);
 
-	if (auto error = copy_database (data_path, vm, compact))
+	// Use an independent LMDB lock filename while the canonical one remains exclusively held.
+	auto const view = staging / "view";
+	std::filesystem::remove_all (view);
+	std::filesystem::create_directory (view);
+	auto const input = view / "data.ldb";
+	std::error_code link_error;
+	std::filesystem::create_hard_link (live, input, link_error);
+	if (link_error)
+	{
+		// Some filesystems do not support hard links.
+		std::filesystem::copy_file (live, input);
+	}
+	if (auto error = copy_database (data_path, vm, compact, false, view))
 	{
 		return error;
 	}
 	std::cout << "Finalizing" << std::endl;
-	std::error_code link_error;
-	std::filesystem::create_hard_link (live, original, link_error);
-	if (link_error)
-	{
-		// Some filesystems do not support hard links.
-		std::filesystem::copy_file (live, original);
-	}
+	std::filesystem::rename (input, original);
+	std::filesystem::remove_all (view);
 	// The live pathname always names a complete ledger, including between these renames.
 	std::filesystem::rename (compact, live);
 	std::filesystem::rename (original, backup);

@@ -4,9 +4,27 @@
 #include <nano/store/lmdb/utility.hpp>
 
 #include <boost/format.hpp>
+#include <boost/interprocess/file_mapping.hpp>
 #include <boost/property_tree/ptree.hpp>
 
 #include <lmdb/libraries/liblmdb/lmdb.h>
+
+namespace
+{
+// file_lock opens its file read/write. Open the gate read-only so a copied ledger
+// and its existing maintenance files can still be inspected on a read-only mount.
+boost::interprocess::file_mapping wait_for_vacuum (std::filesystem::path const & gate)
+{
+	using namespace boost::interprocess;
+	file_mapping file{ gate.c_str (), read_only };
+	auto const handle = ipcdetail::file_handle_from_mapping_handle (file.get_mapping_handle ());
+	if (!ipcdetail::acquire_file_lock_sharable (handle))
+	{
+		throw std::runtime_error ("Could not lock the LMDB vacuum gate for reading");
+	}
+	return file;
+}
+}
 
 namespace nano::store::lmdb
 {
@@ -51,7 +69,23 @@ void backend_lmdb::open_impl (column_schema schema, nano::store::open_mode mode)
 				   .set_read_only (read_only);
 
 	// Kept local until every table opens, so a failed open leaves the backend closed and retryable
+	// LMDB opens a read-only data descriptor before acquiring its native lock. Wait
+	// before opening so a vacuum cannot leave that descriptor pointing to the old inode.
+	auto const gate = database_path.parent_path () / ".lmdb-vacuum" / "lock";
+	std::optional<boost::interprocess::file_mapping> opening;
+	if (std::filesystem::exists (gate))
+	{
+		opening = wait_for_vacuum (gate);
+	}
 	auto environment = std::make_unique<nano::store::lmdb::env> (database_path, options);
+	if (!opening && std::filesystem::exists (gate))
+	{
+		// The first vacuum created its gate during this open. Drop the possibly
+		// superseded descriptor, then reopen under the persistent gate.
+		environment.reset ();
+		opening = wait_for_vacuum (gate);
+		environment = std::make_unique<nano::store::lmdb::env> (database_path, options);
+	}
 
 	MDB_txn * mdb_txn{ nullptr };
 	auto status = mdb_txn_begin (*environment, nullptr, read_only ? MDB_RDONLY : 0, &mdb_txn);
