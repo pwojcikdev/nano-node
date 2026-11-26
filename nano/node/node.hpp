@@ -40,8 +40,8 @@ public:
 	void process_active (std::shared_ptr<nano::block> const &);
 	// Processes a locally submitted block and waits for its status, empty if the block was dropped
 	std::optional<nano::block_status> process_local (std::shared_ptr<nano::block> const &);
-	// Queues a locally submitted block for processing
-	void process_local_async (std::shared_ptr<nano::block> const &);
+	// Returns whether the locally submitted block was queued for processing
+	bool process_local_async (std::shared_ptr<nano::block> const &);
 
 	// Queues a vote for full processing in the vote processor
 	void process_active (std::shared_ptr<nano::vote> const &);

@@ -532,9 +532,9 @@ std::optional<nano::block_status> nano::node::process_local (std::shared_ptr<nan
 	return block_processor.add_blocking (block_a, nano::block_source::local);
 }
 
-void nano::node::process_local_async (std::shared_ptr<nano::block> const & block_a)
+bool nano::node::process_local_async (std::shared_ptr<nano::block> const & block_a)
 {
-	block_processor.add (block_a, nano::block_source::local);
+	return block_processor.add (block_a, nano::block_source::local);
 }
 
 void nano::node::start ()

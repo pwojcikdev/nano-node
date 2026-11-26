@@ -1811,6 +1811,9 @@ TEST (rpc, process_block_async)
 		ASSERT_EQ ("1", response.get<std::string> ("started"));
 		ASSERT_TIMELY_EQ (10s, node1->latest (nano::dev::genesis_key.pub), state_send->hash ());
 	}
+	node1->block_processor.stop ();
+	auto response = wait_response (system, rpc_ctx, request);
+	ASSERT_EQ ("0", response.get<std::string> ("started"));
 }
 
 TEST (rpc, process_block_no_work)
