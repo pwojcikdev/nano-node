@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <future>
+#include <iterator>
 #include <numeric>
 #include <set>
 
@@ -328,11 +329,25 @@ auto nano::telemetry_index::cleanup (std::chrono::steady_clock::time_point now) 
 
 std::optional<nano::messages::telemetry_data> nano::telemetry_index::get (nano::endpoint const & endpoint, std::chrono::steady_clock::time_point now) const
 {
-	if (auto it = telemetries.get<tag_endpoint> ().find (endpoint); it != telemetries.get<tag_endpoint> ().end ())
+	auto const [first, last] = telemetries.get<tag_endpoint> ().equal_range (endpoint);
+	if (first != last)
 	{
-		if (check_timeout (*it, now))
+		auto latest = &*first;
+		if (std::next (first) != last)
 		{
-			return it->data;
+			// Match get_all's arrival order even if two channels reported on the same clock tick.
+			for (auto it = telemetries.rbegin (); it != telemetries.rend (); ++it)
+			{
+				if (it->endpoint () == endpoint)
+				{
+					latest = &*it;
+					break;
+				}
+			}
+		}
+		if (check_timeout (*latest, now))
+		{
+			return latest->data;
 		}
 	}
 	return {};

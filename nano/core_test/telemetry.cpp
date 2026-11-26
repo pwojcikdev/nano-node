@@ -643,6 +643,39 @@ TEST (telemetry_index, update)
 	ASSERT_EQ (2, data->block_count);
 }
 
+TEST (telemetry_index, latest_report_for_endpoint)
+{
+	telemetry_index_context ctx{ 4 };
+	auto const now = std::chrono::steady_clock::now ();
+	auto first = ctx.channel ();
+	auto second = ctx.channel ();
+	auto const endpoint = first->get_remote_endpoint ();
+	ASSERT_EQ (endpoint, second->get_remote_endpoint ());
+
+	// More than one channel for the endpoint can be in the cache before cleanup.
+	ctx.index.put (first, telemetry (1), now);
+	ctx.index.put (second, telemetry (2), now + 1s);
+	auto latest = ctx.index.get (endpoint, now + 1s);
+	ASSERT_TRUE (latest);
+	EXPECT_EQ (2, latest->block_count);
+	EXPECT_EQ (2, ctx.index.get_all (now + 1s).at (endpoint).block_count);
+
+	// Reports can arrive on the same clock tick. Both queries should reflect the last update.
+	ctx.index.put (first, telemetry (3), now + 1s);
+	latest = ctx.index.get (endpoint, now + 1s);
+	ASSERT_TRUE (latest);
+	EXPECT_EQ (3, latest->block_count);
+	EXPECT_EQ (3, ctx.index.get_all (now + 1s).at (endpoint).block_count);
+
+	second->close ();
+	ctx.index.put (first, telemetry (4), now + 2s);
+	auto const at = now + 1s + ctx.config.cache_cutoff + 1ms;
+	latest = ctx.index.get (endpoint, at);
+	ASSERT_TRUE (latest);
+	EXPECT_EQ (4, latest->block_count);
+	EXPECT_EQ (4, ctx.index.get_all (at).at (endpoint).block_count);
+}
+
 /*
  * Cleanup erases entries not refreshed within the cache cutoff and entries of closed channels, counting each kind
  */
