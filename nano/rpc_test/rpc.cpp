@@ -6556,6 +6556,46 @@ TEST (rpc, confirmation_history_hash)
 	system.stop ();
 }
 
+TEST (rpc, confirmation_history_hash_outside_list)
+{
+	nano::test::system system;
+	auto node = add_ipc_enabled_node (system);
+	auto & history = node->active.recently_cemented;
+	auto const & genesis = nano::dev::genesis_key;
+	auto previous = nano::dev::genesis->hash ();
+	history.put ({ .winner = nano::dev::genesis, .election_duration = 17ms });
+
+	auto const rpc_ctx = add_rpc (system, node);
+	boost::property_tree::ptree request;
+	request.put ("action", "confirmation_history");
+	auto response = wait_response (system, rpc_ctx, request);
+	EXPECT_EQ (1, response.get<unsigned> ("confirmation_stats.count"));
+	ASSERT_EQ (1, response.get_child ("confirmations").size ());
+	EXPECT_EQ (previous.to_string (), response.get_child ("confirmations").front ().second.get<std::string> ("hash"));
+
+	request.put ("hash", nano::block_hash{}.to_string ());
+	response = wait_response (system, rpc_ctx, request);
+	EXPECT_TRUE (response.get_child ("confirmations").empty ());
+	EXPECT_EQ (0, response.get<unsigned> ("confirmation_stats.count"));
+	EXPECT_FALSE (response.get_optional<unsigned> ("confirmation_stats.average"));
+
+	// Move genesis just beyond the 2,000 most recent confirmations.
+	for (unsigned i = 1; i <= 2000; ++i)
+	{
+		auto send = std::make_shared<nano::send_block> (previous, genesis.pub, nano::dev::constants.genesis_amount - i, genesis.prv, genesis.pub, 0);
+		history.put ({ .winner = send });
+		previous = send->hash ();
+	}
+	ASSERT_EQ (2001, history.size ());
+	request.put ("hash", nano::dev::genesis->hash ().to_string ());
+	response = wait_response (system, rpc_ctx, request);
+	EXPECT_EQ (1, response.get<unsigned> ("confirmation_stats.count"));
+	EXPECT_EQ (17, response.get<unsigned> ("confirmation_stats.average", 0));
+	auto const & matches = response.get_child ("confirmations");
+	ASSERT_EQ (1, matches.size ());
+	EXPECT_EQ (nano::dev::genesis->hash ().to_string (), matches.front ().second.get<std::string> ("hash"));
+}
+
 TEST (rpc, block_confirm)
 {
 	nano::test::system system;

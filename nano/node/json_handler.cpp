@@ -2178,32 +2178,36 @@ void nano::json_handler::confirmation_history ()
 	boost::property_tree::ptree elections;
 	boost::property_tree::ptree confirmation_stats;
 	std::chrono::milliseconds running_total (0);
-	nano::block_hash hash (0);
-	auto hash_text (request.get_optional<std::string> ("hash"));
-	if (hash_text.has_value ())
+	auto append = [&] (nano::election_status const & status) {
+		boost::property_tree::ptree election;
+		election.put ("hash", status.winner->hash ().to_string ());
+		election.put ("duration", status.election_duration.count ());
+		election.put ("time", milliseconds_since_epoch (status.election_end));
+		election.put ("tally", status.tally.to_string_dec ());
+		election.add ("final", status.final_tally.to_string_dec ());
+		election.put ("blocks", std::to_string (status.block_count));
+		election.put ("voters", std::to_string (status.voter_count));
+		election.put ("request_count", std::to_string (status.confirmation_request_count));
+		elections.push_back (std::make_pair ("", election));
+		running_total += status.election_duration;
+	};
+	if (request.get_optional<std::string> ("hash"))
 	{
-		hash = hash_impl ();
+		auto hash = hash_impl ();
+		if (!ec)
+		{
+			if (auto status = node.active.recently_cemented.get (hash))
+			{
+				append (*status);
+			}
+		}
 	}
-	if (!ec)
+	else
 	{
-		// TODO: Allow passing a count parameter to limit the number of results
-		// Default to 2000 for now since it was the previous limit
+		// Preserve the historical response size when listing recent confirmations.
 		for (auto const & status : node.active.recently_cemented.list (2000))
 		{
-			if (hash.is_zero () || status.winner->hash () == hash)
-			{
-				boost::property_tree::ptree election;
-				election.put ("hash", status.winner->hash ().to_string ());
-				election.put ("duration", status.election_duration.count ());
-				election.put ("time", milliseconds_since_epoch (status.election_end));
-				election.put ("tally", status.tally.to_string_dec ());
-				election.add ("final", status.final_tally.to_string_dec ());
-				election.put ("blocks", std::to_string (status.block_count));
-				election.put ("voters", std::to_string (status.voter_count));
-				election.put ("request_count", std::to_string (status.confirmation_request_count));
-				elections.push_back (std::make_pair ("", election));
-				running_total += status.election_duration;
-			}
+			append (status);
 		}
 	}
 	confirmation_stats.put ("count", elections.size ());

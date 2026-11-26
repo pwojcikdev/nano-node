@@ -50,6 +50,17 @@ std::size_t nano::recently_cemented_cache::size () const
 	return entries.size ();
 }
 
+std::optional<nano::election_status> nano::recently_cemented_cache::get (nano::block_hash const & hash) const
+{
+	nano::lock_guard<nano::mutex> guard{ mutex };
+	auto const & by_hash = entries.get<tag_hash> ();
+	if (auto it = by_hash.find (hash); it != by_hash.end ())
+	{
+		return it->status;
+	}
+	return std::nullopt;
+}
+
 bool nano::recently_cemented_cache::contains (const nano::qualified_root & root) const
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };

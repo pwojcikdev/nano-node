@@ -13,6 +13,7 @@
 #include <boost/multi_index_container.hpp>
 
 #include <deque>
+#include <optional>
 
 namespace mi = boost::multi_index;
 
@@ -33,6 +34,7 @@ public:
 
 	// Returns up to max_count most recent entries
 	std::deque<nano::election_status> list (size_t max_count = std::numeric_limits<size_t>::max ()) const;
+	std::optional<nano::election_status> get (nano::block_hash const &) const;
 
 	bool contains (nano::qualified_root const &) const;
 	bool contains (nano::block_hash const &) const;
