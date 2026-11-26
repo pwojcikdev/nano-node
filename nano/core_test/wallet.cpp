@@ -858,6 +858,36 @@ TEST (wallet, precache_opened_deterministic_accounts)
 	}
 }
 
+TEST (wallet, synchronous_actions_use_cached_work)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.work_threads = 0;
+	config.enable_voting = false;
+	config.receive_minimum = 1;
+	auto & node = *system.add_node (config);
+	ASSERT_FALSE (node.work_generation_enabled ());
+	auto wallet = system.wallet (0);
+	auto const & genesis = nano::dev::genesis_key;
+	ASSERT_TRUE (wallet->insert_adhoc (genesis.prv, false));
+
+	auto send = wallet->send_action (genesis.pub, genesis.pub, 1, *system.work.generate (nano::dev::genesis->hash ()), false);
+	ASSERT_NE (nullptr, send);
+	auto receive_work = *system.work.generate (send->hash ());
+	wallet->set_work (genesis.pub, receive_work);
+	EXPECT_FALSE (wallet->receive_sync (send, genesis.pub, 1));
+	EXPECT_EQ (receive_work, node.block (node.latest (genesis.pub))->block_work ());
+	EXPECT_EQ (nano::dev::constants.genesis_amount, node.balance (genesis.pub));
+
+	nano::keypair representative;
+	auto change_work = *system.work.generate (node.latest (genesis.pub));
+	wallet->set_work (genesis.pub, change_work);
+	EXPECT_FALSE (wallet->change_sync (genesis.pub, representative.pub));
+	auto change = node.block (node.latest (genesis.pub));
+	EXPECT_EQ (change_work, change->block_work ());
+	EXPECT_EQ (representative.pub, change->representative_field ());
+}
+
 TEST (wallet, work_generate)
 {
 	nano::test::system system (1);
