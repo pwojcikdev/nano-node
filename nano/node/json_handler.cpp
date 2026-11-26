@@ -4233,6 +4233,10 @@ void nano::json_handler::telemetry ()
 				boost::asio::ip::address address;
 				if (!nano::parse_address (*address_text, address))
 				{
+					if (address.is_v6 () && address.to_v6 ().is_v4_mapped ())
+					{
+						address = boost::asio::ip::make_address_v4 (boost::asio::ip::v4_mapped, address.to_v6 ());
+					}
 					endpoint = { address, port };
 
 					if (address.is_loopback () && port == node.network.endpoint ().port ())

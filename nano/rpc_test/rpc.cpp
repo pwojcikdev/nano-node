@@ -8288,8 +8288,9 @@ TEST (rpc, telemetry_self)
 		ASSERT_TRUE (nano::test::compare_telemetry (data, *node1));
 	}
 
-	request.put ("address", "127.0.0.1");
+	for (auto const * address : { "127.0.0.1", "::ffff:127.0.0.1", "[::ffff:127.0.0.12]" })
 	{
+		request.put ("address", address);
 		auto response (wait_response (system, rpc_ctx, request, 10s));
 		nano::messages::telemetry_data data;
 		nano::jsonconfig config (response);
