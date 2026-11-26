@@ -561,9 +561,13 @@ TEST (block_processor, add_after_stop)
 	// A blocking add returns without a result
 	ASSERT_FALSE (node.block_processor.add_blocking (make_send (), nano::block_source::local).has_value ());
 
-	// Nothing was queued, and both refusals are counted as stopped rather than as overfill
+	auto result = node.block_processor.add_many ({ make_send (), make_send () }, nano::block_source::bootstrap);
+	ASSERT_EQ (0, result.added);
+	ASSERT_EQ (2, result.dropped);
+
+	// All four submissions were refused because the processor was stopped
 	ASSERT_EQ (0, node.block_processor.size ());
-	ASSERT_EQ (2, node.stats.count (nano::stat::type::block_processor, nano::stat::detail::stopped));
+	ASSERT_EQ (4, node.stats.count (nano::stat::type::block_processor, nano::stat::detail::stopped));
 	ASSERT_EQ (0, node.stats.count (nano::stat::type::block_processor, nano::stat::detail::overfill));
 }
 

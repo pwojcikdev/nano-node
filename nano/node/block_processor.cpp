@@ -191,6 +191,11 @@ auto nano::block_processor::add_many (std::deque<std::shared_ptr<nano::block>> c
 	std::size_t overfill = 0;
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
+		if (stopped)
+		{
+			stats.add (nano::stat::type::block_processor, nano::stat::detail::stopped, contexts.size ());
+			return { .added = 0, .dropped = blocks.size () };
+		}
 		for (auto & ctx : contexts)
 		{
 			if (queue.push (std::move (ctx), { source, channel }))

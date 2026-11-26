@@ -83,7 +83,7 @@ public:
 	struct add_many_result
 	{
 		std::size_t added;
-		std::size_t dropped; /// Number of blocks that did not make it into the queue (queue overfill or invalid work)
+		std::size_t dropped; /// Number of blocks that did not make it into the queue (queue overfill, invalid work or a stopped processor)
 	};
 
 	/// Queues multiple blocks under a single lock, attaching the callback to the last valid block
