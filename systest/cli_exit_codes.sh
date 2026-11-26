@@ -61,6 +61,15 @@ grep -Fq 'backlog_scan.batch_size' "$DATADIR/scan-error"
 printf '[node.backlog_scan]\nbatch_size = 1\n' > "$DATADIR/config-node.toml"
 "$NANO_NODE_EXE" --update_config --data_path "$DATADIR" > /dev/null
 
+# Bounded backlog processing requires a positive batch only when it runs.
+printf '[node.bounded_backlog]\nbatch_size = 0\n' > "$DATADIR/config-node.toml"
+expect_failure --update_config > /dev/null 2> "$DATADIR/rollback-error"
+grep -Fq 'bounded_backlog.batch_size' "$DATADIR/rollback-error"
+printf '[node]\nmax_backlog = 0\n[node.bounded_backlog]\nbatch_size = 0\n' > "$DATADIR/config-node.toml"
+"$NANO_NODE_EXE" --update_config --data_path "$DATADIR" > /dev/null
+printf '[node.bounded_backlog]\nenable = false\nbatch_size = 0\n' > "$DATADIR/config-node.toml"
+"$NANO_NODE_EXE" --update_config --data_path "$DATADIR" > /dev/null
+
 # a node config that cannot be parsed fails the commands that read it
 echo "[node" > $DATADIR/config-node.toml
 expect_failure --database_info

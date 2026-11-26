@@ -766,6 +766,10 @@ nano::error nano::node_config::deserialize_toml (nano::tomlconfig & toml)
 		{
 			toml.get_error ().set ("max_pruning_age must be greater than or equal to 5 minutes");
 		}
+		if (max_backlog > 0 && bounded_backlog->enable && bounded_backlog->batch_size == 0)
+		{
+			toml.get_error ().set ("bounded_backlog.batch_size must be at least one block when the bounded backlog is enabled");
+		}
 		if (bootstrap_frontier_request_count < 1024)
 		{
 			toml.get_error ().set ("bootstrap_frontier_request_count must be greater than or equal to 1024");
