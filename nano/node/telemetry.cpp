@@ -197,7 +197,7 @@ void nano::telemetry::run ()
 			last_broadcast = std::chrono::steady_clock::now ();
 		}
 
-		condition.wait_for (lock, std::min (network_params.network.telemetry_request_interval, network_params.network.telemetry_broadcast_interval) / 2);
+		condition.wait_for (lock, std::min (network_params.network.telemetry_request_interval, network_params.network.telemetry_broadcast_interval) / 2, [this] { return stopped || triggered; });
 	}
 }
 

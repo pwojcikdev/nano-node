@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <thread>
 
 using namespace std::chrono_literals;
 
@@ -271,6 +272,32 @@ TEST (telemetry, no_peers)
 
 	auto responses = system.nodes[0]->telemetry.get_all_telemetries ();
 	ASSERT_TRUE (responses.empty ());
+}
+
+TEST (telemetry, trigger_during_broadcast)
+{
+	nano::test::system system{ 2 };
+	auto & node = *system.nodes.front ();
+	nano::network_params params{ nano::network_type::nano_dev_network };
+	params.network.telemetry_request_interval = params.network.telemetry_broadcast_interval = 30s;
+	nano::stats stats{ node.logger };
+	nano::telemetry service{ node.flags, node, node.network, node.observers, params, stats };
+
+	// Hold the channel list while the worker enters its initial broadcast.
+	auto peers = node.network.list (0, [&] (auto const &) {
+		service.start ();
+		auto const deadline = std::chrono::steady_clock::now () + 5s;
+		while (stats.count (nano::stat::type::telemetry, nano::stat::detail::loop) == 0 && std::chrono::steady_clock::now () < deadline)
+		{
+			std::this_thread::sleep_for (1ms);
+		}
+		EXPECT_EQ (1, stats.count (nano::stat::type::telemetry, nano::stat::detail::loop));
+		service.trigger ();
+		return true;
+	});
+	EXPECT_EQ (1, peers.size ());
+	EXPECT_TIMELY (5s, stats.count (nano::stat::type::telemetry, nano::stat::detail::request) == 1);
+	service.stop ();
 }
 
 TEST (telemetry, basic)
