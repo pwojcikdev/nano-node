@@ -87,7 +87,6 @@ private:
 
 	mutable nano::mutex mutex;
 	tcp_channel_queue queue;
-	std::atomic<size_t> allocated_bandwidth{ 0 };
 
 public: // Logging
 	void operator() (nano::object_stream &) const override;

@@ -1,5 +1,7 @@
+#include <nano/messages/asc_pull.hpp>
 #include <nano/node/network.hpp>
 #include <nano/node/nodeconfig.hpp>
+#include <nano/node/transport/tcp_channel.hpp>
 #include <nano/node/transport/tcp_listener.hpp>
 #include <nano/node/transport/tcp_server.hpp>
 #include <nano/node/transport/tcp_socket.hpp>
@@ -297,4 +299,45 @@ TEST (tcp_channels, create_endpoint_in_use)
 	ASSERT_EQ (channel_result::accepted, fourth.result);
 	ASSERT_EQ (fourth.channel, node.network.tcp_channels.find_channel (remote));
 	ASSERT_EQ (1, node.network.tcp_channels.size ());
+}
+
+namespace
+{
+auto make_connected_channel (nano::node & node)
+{
+	asio::ip::tcp::acceptor listener{ node.io_ctx, nano::endpoint{ asio::ip::address_v6::loopback (), 0 } };
+	asio::ip::tcp::socket client{ node.io_ctx };
+	client.connect (listener.local_endpoint ());
+	auto socket = std::make_shared<nano::transport::tcp_socket> (node, std::move (client), nano::transport::socket_endpoint::client);
+	return std::pair{ std::make_shared<nano::transport::tcp_channel> (node, socket, nano::transport::peer_info{}), listener.accept () };
+}
+}
+
+TEST (tcp_channels, outbound_bandwidth_by_message)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes.front ();
+	auto [channel, peer] = make_connected_channel (node);
+
+	using nano::transport::traffic_type;
+	// Each bucket starts with 4 KiB and refills at one byte per second.
+	node.outbound_limiter.reset ({ 1, 4096 }, traffic_type::generic);
+	node.outbound_limiter.reset ({ 1, 4096 }, traffic_type::bootstrap_server);
+	nano::messages::keepalive keepalive{ node.network_params.network };
+	nano::messages::asc_pull_ack reply{ node.network_params.network };
+	reply.type = nano::messages::asc_pull_type::blocks;
+	reply.payload = nano::messages::asc_pull_ack::blocks_payload{};
+	reply.update_header ();
+	auto const keepalive_size = keepalive.to_shared_const_buffer ().size ();
+	auto const reply_size = reply.to_shared_const_buffer ().size ();
+
+	ASSERT_TRUE (channel->send (keepalive, traffic_type::keepalive));
+	ASSERT_TIMELY_EQ (5s, keepalive_size, peer.available ());
+	ASSERT_TRUE (channel->send (reply, traffic_type::bootstrap_server));
+	ASSERT_TIMELY_EQ (5s, keepalive_size + reply_size, peer.available ());
+
+	// Each bucket paid for its own message and has the rest of its burst available to other peers.
+	EXPECT_FALSE (node.outbound_limiter.try_consume (4096, traffic_type::bootstrap_server));
+	EXPECT_TRUE (node.outbound_limiter.try_consume (4096 - reply_size, traffic_type::bootstrap_server));
+	EXPECT_TRUE (node.outbound_limiter.try_consume (4096 - keepalive_size, traffic_type::generic));
 }

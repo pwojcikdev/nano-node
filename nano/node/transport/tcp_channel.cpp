@@ -144,22 +144,12 @@ asio::awaitable<boost::system::error_code> nano::transport::tcp_channel::send_on
 	auto const & [buffer, callback] = item;
 	auto const size = buffer.size ();
 
-	// Wait for bandwidth, allocated in larger chunks to reduce the number of limiter calls
-	const size_t bandwidth_chunk = 128 * 1024; // TODO: Make this configurable
-	while (allocated_bandwidth < size)
+	// Charge this message to its own traffic class before writing it.
+	for (auto result = node.outbound_limiter.consume (size, type); !result; result = node.outbound_limiter.consume (size, type))
 	{
-		if (auto result = node.outbound_limiter.consume (bandwidth_chunk, type))
-		{
-			allocated_bandwidth += bandwidth_chunk;
-		}
-		else
-		{
-			node.stats.inc (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_bandwidth, nano::stat::dir::out);
-			// Cap the wait so channel teardown is not delayed by long refill times
-			co_await nano::async::sleep_for (std::min (result.retry_after, std::chrono::milliseconds{ 100 }));
-		}
+		node.stats.inc (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_bandwidth, nano::stat::dir::out);
+		co_await nano::async::sleep_for (std::min (result.retry_after, std::chrono::milliseconds{ 100 }));
 	}
-	allocated_bandwidth -= size;
 
 	node.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::send, nano::stat::dir::out);
 	node.stats.inc (nano::stat::type::tcp_channel_send, to_stat_detail (type), nano::stat::dir::out);
