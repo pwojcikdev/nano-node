@@ -107,7 +107,7 @@ void nano::port_mapping::shutdown ()
 	nano::lock_guard<nano::mutex> guard_l (mutex);
 	for (auto & protocol : protocols | boost::adaptors::filtered ([] (auto const & p) { return p.enabled; }))
 	{
-		if (protocol.external_port != 0)
+		if (protocol.installed && protocol.external_port != 0)
 		{
 			std::string external_port_str = std::to_string (protocol.external_port);
 			auto const entry = get_mapping (upnp, external_port_str, protocol.name);
@@ -220,7 +220,8 @@ void nano::port_mapping::refresh_mapping ()
 		std::string lease_duration_str = std::to_string (node.network_params.portmapping.lease_duration.count ());
 
 		auto add_port_mapping_error_l = UPNP_AddPortMapping (upnp.urls.controlURL, upnp.data.first.servicetype, config_port_l.c_str (), node_port_l.c_str (), address_str.c_str (), upnp_description.c_str (), protocol.name, nullptr, lease_duration_str.c_str ());
-		if (add_port_mapping_error_l == UPNPCOMMAND_SUCCESS)
+		protocol.installed = add_port_mapping_error_l == UPNPCOMMAND_SUCCESS;
+		if (protocol.installed)
 		{
 			protocol.external_port = static_cast<uint16_t> (std::atoi (config_port_l.data ()));
 
@@ -254,11 +255,17 @@ bool nano::port_mapping::check_lost_or_old_mapping ()
 	{
 		auto const entry = get_mapping (upnp, config_port_l, protocol.name);
 		bool const ours = entry.targets (address, node_port_l);
+		if (!ours)
+		{
+			protocol.installed = false;
+		}
 		protocol.external_port = ours ? static_cast<uint16_t> (std::atoi (config_port_l.c_str ())) : 0;
 		auto remaining_from_port_mapping = std::atoi (entry.duration.data ());
 		auto lease_duration = node.network_params.portmapping.lease_duration.count ();
 		auto lease_duration_divided_by_two = (lease_duration / 2);
-		auto recent_lease = (remaining_from_port_mapping >= lease_duration_divided_by_two);
+		// IGD uses an explicit duration of zero for a permanent mapping.
+		bool const permanent = std::string_view{ entry.duration.data () } == "0";
+		auto recent_lease = permanent || remaining_from_port_mapping >= lease_duration_divided_by_two;
 		if (entry.error != UPNPCOMMAND_SUCCESS)
 		{
 			result_l = true;

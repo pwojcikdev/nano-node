@@ -163,4 +163,13 @@ TEST_F (port_mapping_fixture, retains_reassigned_mapping_on_shutdown)
 	shutdown ();
 	EXPECT_TRUE (last_request ("DeletePortMapping").empty ());
 }
+
+TEST_F (port_mapping_fixture, preserves_existing_permanent_mapping)
+{
+	set_entry ("127.0.0.1", node->network.endpoint ().port (), 0);
+	EXPECT_FALSE (check ());
+	EXPECT_EQ (node->config.external_port, node->port_mapping.external_address ().port ());
+	shutdown ();
+	EXPECT_TRUE (last_request ("DeletePortMapping").empty ());
+}
 }

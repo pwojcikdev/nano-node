@@ -26,6 +26,7 @@ public:
 	boost::asio::ip::address_v4 external_address;
 	uint16_t external_port;
 	bool enabled;
+	bool installed{ false };
 	std::string to_string ();
 };
 
