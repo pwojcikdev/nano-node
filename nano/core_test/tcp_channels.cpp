@@ -7,6 +7,7 @@
 #include <nano/node/transport/tcp_socket.hpp>
 #include <nano/node/transport/transport.hpp>
 #include <nano/test_common/network.hpp>
+#include <nano/test_common/shared_values.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -367,6 +368,80 @@ TEST (tcp_channels, send_while_bootstrap_bandwidth_is_busy)
 	// When its bandwidth comes back, the waiting bootstrap response follows.
 	node.outbound_limiter.reset (nano::rate_limit::unlimited (), traffic_type::bootstrap_server);
 	ASSERT_TIMELY_EQ (5s, size + reply.to_shared_const_buffer ().size (), peer.available ());
+}
+
+TEST (tcp_channels, sends_on_closed_channel)
+{
+	nano::test::system system (2);
+	auto & node = *system.nodes.front ();
+	auto channel = node.network.find_node_id (system.nodes.back ()->get_node_id ());
+	ASSERT_NE (nullptr, channel);
+	channel->close ();
+	ASSERT_FALSE (channel->alive ());
+	nano::messages::keepalive keepalive{ node.network_params.network };
+	ASSERT_FALSE (channel->send (keepalive, nano::transport::traffic_type::keepalive));
+}
+
+TEST (tcp_channels, complete_pending_sends_on_close)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes.front ();
+	auto [channel, peer] = make_connected_channel (node);
+	using nano::transport::traffic_type;
+	node.outbound_limiter.reset ({ 1, 1 }, traffic_type::bootstrap_server);
+	ASSERT_TRUE (node.outbound_limiter.try_consume (256, traffic_type::bootstrap_server));
+	nano::messages::asc_pull_ack reply{ node.network_params.network };
+	reply.type = nano::messages::asc_pull_type::blocks;
+	reply.payload = nano::messages::asc_pull_ack::blocks_payload{};
+	reply.update_header ();
+	nano::test::shared_counter failed;
+	for (unsigned i = 0; i < 12; ++i)
+	{
+		ASSERT_TRUE (channel->send (reply, traffic_type::bootstrap_server, [failed] (auto const & ec, size_t bytes) {
+			EXPECT_TRUE (ec);
+			EXPECT_EQ (0, bytes);
+			failed.inc ();
+		}));
+	}
+	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_bandwidth, nano::stat::dir::out) > 0);
+	channel->close ();
+	ASSERT_EQ (12, failed.value ());
+}
+
+TEST (tcp_channels, only_charge_writes_started_before_disconnect)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes.front ();
+	auto [channel, peer] = make_connected_channel (node);
+	using nano::transport::traffic_type;
+	node.outbound_limiter.reset ({ 1, 4096 }, traffic_type::generic);
+	nano::messages::keepalive keepalive{ node.network_params.network };
+	nano::messages::asc_pull_ack reply{ node.network_params.network };
+	reply.type = nano::messages::asc_pull_type::blocks;
+	reply.payload = nano::messages::asc_pull_ack::blocks_payload{};
+	reply.update_header ();
+
+	nano::test::shared_counter completed;
+	// Queue the entire group on the sender's strand, then close the connection after its first write.
+	ASSERT_TRUE (channel->send (reply, traffic_type::bootstrap_server, [channel, keepalive, completed] (auto const & ec, size_t) {
+		EXPECT_FALSE (ec);
+		for (unsigned i = 0; i < 8; ++i)
+		{
+			EXPECT_TRUE (channel->send (keepalive, traffic_type::keepalive, [channel, completed, i] (auto const &, size_t) {
+				if (i == 0)
+				{
+					channel->close_async ();
+				}
+				completed.inc ();
+			}));
+		}
+	}));
+	ASSERT_TIMELY_EQ (5s, 8, completed.value ());
+	auto const attempted = node.stats.count (nano::stat::type::tcp_channel_send, nano::stat::detail::keepalive, nano::stat::dir::out);
+	ASSERT_GE (attempted, 1);
+	ASSERT_LT (attempted, 8);
+	auto const size = keepalive.to_shared_const_buffer ().size ();
+	ASSERT_TRUE (node.outbound_limiter.try_consume (4096 - attempted * size, traffic_type::generic));
 }
 
 TEST (tcp_channels, preserve_weighted_turn_between_refills)

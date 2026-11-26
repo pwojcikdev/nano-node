@@ -71,7 +71,7 @@ private:
 	void stop ();
 
 	asio::awaitable<void> start_sending (nano::async::condition &);
-	asio::awaitable<void> run_sending (nano::async::condition &);
+	asio::awaitable<void> run_sending (nano::async::condition &, std::optional<tcp_channel_queue::value_t> &);
 	asio::awaitable<boost::system::error_code> send_one (traffic_type, tcp_channel_queue::entry_t const &);
 
 public:
@@ -86,6 +86,7 @@ private:
 
 	mutable nano::mutex mutex;
 	tcp_channel_queue queue;
+	bool stopped{ false };
 
 public: // Logging
 	void operator() (nano::object_stream &) const override;

@@ -48,9 +48,10 @@ void nano::transport::tcp_channel::start ()
 asio::awaitable<void> nano::transport::tcp_channel::start_sending (nano::async::condition & condition)
 {
 	debug_assert (strand.running_in_this_thread ());
+	std::optional<tcp_channel_queue::value_t> current;
 	try
 	{
-		co_await run_sending (condition);
+		co_await run_sending (condition, current);
 	}
 	catch (boost::system::system_error const & ex)
 	{
@@ -63,8 +64,28 @@ asio::awaitable<void> nano::transport::tcp_channel::start_sending (nano::async::
 	}
 	debug_assert (strand.running_in_this_thread ());
 
-	// Ensure socket gets closed if task is stopped
+	// Stop accepting sends before completing any outstanding callbacks.
+	std::deque<callback_t> callbacks;
+	if (current && current->second.second)
+	{
+		callbacks.emplace_back (std::move (current->second.second));
+	}
+	{
+		nano::lock_guard<nano::mutex> lock{ mutex };
+		stopped = true;
+		while (auto item = queue.next ([] (traffic_type, size_t) { return true; }))
+		{
+			if (item->second.second)
+			{
+				callbacks.emplace_back (std::move (item->second.second));
+			}
+		}
+	}
 	close_async ();
+	for (auto const & callback : callbacks)
+	{
+		callback (asio::error::operation_aborted, 0);
+	}
 }
 
 void nano::transport::tcp_channel::stop ()
@@ -79,13 +100,13 @@ void nano::transport::tcp_channel::stop ()
 bool nano::transport::tcp_channel::max_impl (nano::transport::traffic_type traffic_type)
 {
 	nano::lock_guard<nano::mutex> guard{ mutex };
-	return queue.max (traffic_type);
+	return stopped || !alive () || queue.max (traffic_type);
 }
 
 bool nano::transport::tcp_channel::send_buffer_impl (nano::shared_const_buffer const & buffer, nano::transport::traffic_type type, nano::transport::channel::callback_t callback)
 {
 	nano::unique_lock<nano::mutex> lock{ mutex };
-	if (!queue.full (type))
+	if (!stopped && alive () && !queue.full (type))
 	{
 		queue.push (type, { buffer, callback });
 		lock.unlock ();
@@ -107,13 +128,12 @@ bool nano::transport::tcp_channel::send_buffer_impl (nano::shared_const_buffer c
 	return false;
 }
 
-asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::condition & condition)
+asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::condition & condition, std::optional<tcp_channel_queue::value_t> & current)
 {
-	while (!co_await nano::async::cancelled ())
+	while (!co_await nano::async::cancelled () && alive ())
 	{
 		debug_assert (strand.running_in_this_thread ());
 
-		std::optional<tcp_channel_queue::value_t> current;
 		std::optional<std::chrono::milliseconds> retry_after;
 		{
 			nano::lock_guard<nano::mutex> lock{ mutex };
@@ -130,6 +150,7 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 		{
 			auto const & [type, item] = *current;
 			auto ec = co_await send_one (type, item);
+			current.reset ();
 			if (ec)
 			{
 				co_return;
