@@ -12,6 +12,7 @@
 #include <limits>
 #include <map>
 #include <set>
+#include <thread>
 
 namespace
 {
@@ -397,7 +398,7 @@ TEST (vote_cache, entry_keeps_heaviest_voters)
 }
 
 /*
- * A newer vote of a known voter replaces the old one, the tally only changes when the vote becomes final.
+ * A newer vote from the same representative replaces the old vote and preserves its weight in the tally.
  */
 TEST (vote_cache, entry_newer_vote_replaces_older)
 {
@@ -420,6 +421,34 @@ TEST (vote_cache, entry_newer_vote_replaces_older)
 	ASSERT_EQ (final_vote, vote_cache.find (hash)[0]);
 	ASSERT_EQ (7, vote_cache.top (0)[0].tally);
 	ASSERT_EQ (7, vote_cache.top (0)[0].final_tally);
+}
+
+TEST (vote_cache, newer_vote_refreshes_age_and_weight)
+{
+	auto const hash = nano::test::random_hash ();
+	auto const rep = create_rep (7);
+	nano::vote_cache_entry entry{ hash };
+	auto const first = nano::test::make_vote (rep, { hash }, 1024);
+	ASSERT_TRUE (entry.vote (first, 7, 1));
+	auto const first_arrival = entry.last_vote ();
+	std::this_thread::sleep_until (first_arrival + 1ms);
+
+	// A newer vote refreshes the entry even when its tally stays the same.
+	auto const renewed = nano::test::make_vote (rep, { hash }, 2048);
+	EXPECT_FALSE (entry.vote (renewed, 7, 1));
+	auto const renewed_arrival = entry.last_vote ();
+	EXPECT_GT (renewed_arrival, first_arrival);
+
+	// Replaying the same vote leaves the cached weight and arrival time alone.
+	EXPECT_FALSE (entry.vote (renewed, 9, 1));
+	EXPECT_EQ (renewed_arrival, entry.last_vote ());
+	EXPECT_EQ (7, entry.tally ());
+
+	// A subsequent vote counts the representative's updated weight exactly once.
+	EXPECT_TRUE (entry.vote (nano::test::make_vote (rep, { hash }, 3072), 9, 1));
+	EXPECT_EQ (9, entry.tally ());
+	EXPECT_EQ (0, entry.final_tally ());
+	EXPECT_EQ (1, entry.size ());
 }
 
 TEST (vote_cache, age_cutoff)

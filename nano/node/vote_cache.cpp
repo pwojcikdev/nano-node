@@ -28,7 +28,6 @@ bool nano::vote_cache_entry::vote (std::shared_ptr<nano::vote> const & vote, con
 		auto [tally, final_tally] = calculate_tally ();
 		tally_m = tally;
 		final_tally_m = final_tally;
-		last_vote_m = std::chrono::steady_clock::now ();
 	}
 	return updated;
 }
@@ -47,18 +46,16 @@ bool nano::vote_cache_entry::vote_impl (std::shared_ptr<nano::vote> const & vote
 	auto const existing = std::find_if (voters.begin (), voters.end (), [&representative] (auto const & voter) {
 		return voter.representative == representative;
 	});
+	bool tally_changed = true;
 	if (existing != voters.end ())
 	{
-		// We already have a vote from this rep
-		// Update timestamp if newer but tally remains unchanged as we already counted this rep weight
-		// It is not essential to keep tally up to date if rep voting weight changes, elections do tally calculations independently, so in the worst case scenario only our queue ordering will be a bit off
-		if (vote->timestamp () > existing->vote->timestamp ())
+		if (vote->timestamp () <= existing->vote->timestamp ())
 		{
-			bool was_final = existing->vote->is_final ();
-			existing->vote = vote;
-			existing->weight = rep_weight;
-			return !was_final && vote->is_final (); // Tally changed only if the vote became final
+			return false;
 		}
+		tally_changed = existing->weight != rep_weight || existing->vote->is_final () != vote->is_final ();
+		existing->vote = vote;
+		existing->weight = rep_weight;
 	}
 	else
 	{
@@ -86,9 +83,9 @@ bool nano::vote_cache_entry::vote_impl (std::shared_ptr<nano::vote> const & vote
 
 		// Vote from a new representative, add it to the list and update tally
 		voters.push_back ({ representative, rep_weight, vote });
-		return true;
 	}
-	return false; // Tally unchanged
+	last_vote_m = std::chrono::steady_clock::now ();
+	return tally_changed;
 }
 
 std::size_t nano::vote_cache_entry::size () const
