@@ -99,7 +99,7 @@ void nano::timer<UNIT, CLOCK>::start ()
 template <typename UNIT, typename CLOCK>
 UNIT nano::timer<UNIT, CLOCK>::restart ()
 {
-	auto current = ticks;
+	auto current = value ();
 	state = nano::timer_state::started;
 	begin = CLOCK::now ();
 	ticks = UNIT::zero ();
@@ -134,11 +134,7 @@ UNIT nano::timer<UNIT, CLOCK>::stop ()
 template <typename UNIT, typename CLOCK>
 UNIT nano::timer<UNIT, CLOCK>::value ()
 {
-	if (state != nano::timer_state::stopped)
-	{
-		update_ticks ();
-	}
-	return ticks;
+	return state == nano::timer_state::started ? ticks + since_start () : ticks;
 }
 
 template <typename UNIT, typename CLOCK>

@@ -82,3 +82,23 @@ TEST (timer, stop)
 	std::this_thread::sleep_for (50ms);
 	ASSERT_EQ (t1.value (), stop_value);
 }
+
+TEST (timer, sample_running_interval)
+{
+	using namespace std::chrono_literals;
+	nano::timer<> timer{ nano::timer_state::started };
+	std::this_thread::sleep_for (10ms);
+	auto const first = timer.value ();
+	auto const second = timer.value ();
+	EXPECT_GE (second, first);
+	EXPECT_LE (second, timer.since_start ());
+	auto const accumulated = timer.pause ();
+	EXPECT_LE (accumulated, timer.since_start ());
+
+	timer.start ();
+	std::this_thread::sleep_for (10ms);
+	auto const interval = timer.since_start ();
+	EXPECT_GE (timer.restart (), accumulated + interval);
+	auto const fresh = timer.value ();
+	EXPECT_LE (fresh, timer.since_start ());
+}
