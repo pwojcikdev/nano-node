@@ -1,4 +1,5 @@
 #include <nano/lib/files.hpp>
+#include <nano/lib/stats_sinks.hpp>
 #include <nano/test_common/scoped_start.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
@@ -101,25 +102,39 @@ TEST (stats, file_logging_respects_configured_streams)
 	counters.log_counters_filename = (path / "counters.stat").string ();
 	counters.log_samples_filename = (path / "disabled-samples.stat").string ();
 	counters.log_counters_interval = 100ms;
+	counters.log_headers = false;
 	std::ofstream{ counters.log_samples_filename } << "earlier samples";
 	{
 		nano::stats stats{ system.logger, counters };
 		stats.add (nano::stat::type::ledger, nano::stat::detail::test, 7);
 		START (stats);
 		ASSERT_TIMELY (5s, contents (counters.log_counters_filename).find (",ledger,test,in,7") != std::string::npos);
+		nano::stat_json_writer json;
+		stats.log_counters (json);
+		auto report = json.to_ptree ();
+		EXPECT_EQ ("counters", report.get<std::string> ("type", ""));
+		EXPECT_FALSE (report.get<std::string> ("created", "").empty ());
 	}
+	EXPECT_EQ (std::string::npos, contents (counters.log_counters_filename).find ("counters,"));
 	EXPECT_EQ ("earlier samples", contents (counters.log_samples_filename));
 
 	nano::stats_config samples;
 	samples.log_counters_filename = (path / "disabled-counters.stat").string ();
 	samples.log_samples_filename = (path / "samples.stat").string ();
 	samples.log_samples_interval = 100ms;
+	samples.log_headers = false;
 	{
 		nano::stats stats{ system.logger, samples };
 		stats.sample (nano::stat::sample::active_election_duration, 17);
 		START (stats);
 		ASSERT_TIMELY (5s, contents (samples.log_samples_filename).find (",active_election_duration,17") != std::string::npos);
+		nano::stat_json_writer json;
+		stats.log_samples (json);
+		auto report = json.to_ptree ();
+		EXPECT_EQ ("samples", report.get<std::string> ("type", ""));
+		EXPECT_FALSE (report.get<std::string> ("created", "").empty ());
 	}
+	EXPECT_EQ (std::string::npos, contents (samples.log_samples_filename).find ("samples,"));
 	ASSERT_FALSE (std::filesystem::exists (samples.log_counters_filename));
 }
 

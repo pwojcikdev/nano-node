@@ -90,11 +90,14 @@ private:
 /** File sink with rotation support. This writes one counter per line and does not include histogram values. */
 class stat_file_writer : public nano::stat_log_sink
 {
+	bool const headers;
+
 public:
 	std::ofstream log;
 	std::string filename;
 
-	explicit stat_file_writer (std::string const & filename) :
+	explicit stat_file_writer (std::string const & filename, bool headers = true) :
+		headers{ headers },
 		filename (filename)
 	{
 		log.open (filename.c_str (), std::ofstream::out);
@@ -112,6 +115,10 @@ public:
 
 	void write_header (std::string const & header, std::chrono::system_clock::time_point & walltime) override
 	{
+		if (!headers)
+		{
+			return;
+		}
 		std::time_t now = std::chrono::system_clock::to_time_t (walltime);
 		tm tm = *localtime (&now);
 		log << header << "," << boost::format ("%04d.%02d.%02d %02d:%02d:%02d") % (1900 + tm.tm_year) % (tm.tm_mon + 1) % tm.tm_mday % tm.tm_hour % tm.tm_min % tm.tm_sec << std::endl;

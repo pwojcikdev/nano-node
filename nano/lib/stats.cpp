@@ -234,11 +234,8 @@ void nano::stats::log_counters_impl (stat_log_sink & sink, tm & tm)
 		sink.rotate ();
 	}
 
-	if (config.log_headers)
-	{
-		auto walltime (std::chrono::system_clock::now ());
-		sink.write_header ("counters", walltime);
-	}
+	auto walltime = std::chrono::system_clock::now ();
+	sink.write_header ("counters", walltime);
 
 	for (auto dir : magic_enum::enum_values<stat::dir> ())
 	{
@@ -291,11 +288,8 @@ void nano::stats::log_samples_impl (stat_log_sink & sink, tm & tm)
 		sink.rotate ();
 	}
 
-	if (config.log_headers)
-	{
-		auto walltime (std::chrono::system_clock::now ());
-		sink.write_header ("samples", walltime);
-	}
+	auto walltime = std::chrono::system_clock::now ();
+	sink.write_header ("samples", walltime);
 
 	for (auto const & [key, entry] : samplers)
 	{
@@ -326,12 +320,12 @@ void nano::stats::run ()
 	std::optional<stat_file_writer> log_count;
 	if (config.log_counters_interval.count () > 0)
 	{
-		log_count.emplace (config.log_counters_filename);
+		log_count.emplace (config.log_counters_filename, config.log_headers);
 	}
 	std::optional<stat_file_writer> log_sample;
 	if (config.log_samples_interval.count () > 0)
 	{
-		log_sample.emplace (config.log_samples_filename);
+		log_sample.emplace (config.log_samples_filename, config.log_headers);
 	}
 
 	auto next_writeout = [&] {
