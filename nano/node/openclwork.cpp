@@ -437,6 +437,17 @@ nano::opencl_work::~opencl_work ()
 	{
 		clReleaseProgram (program);
 	}
+	for (auto buffer : { attempt_buffer, result_buffer, item_buffer, difficulty_buffer })
+	{
+		if (buffer != nullptr)
+		{
+			clReleaseMemObject (buffer);
+		}
+	}
+	if (queue != nullptr)
+	{
+		clReleaseCommandQueue (queue);
+	}
 	if (context != 0)
 	{
 		clReleaseContext (context);

@@ -24,6 +24,8 @@ public:
 			clGetProgramBuildInfo = reinterpret_cast<decltype (clGetProgramBuildInfo)> (GetProcAddress (opencl_library, "clGetProgramBuildInfo"));
 			clCreateKernel = reinterpret_cast<decltype (clCreateKernel)> (GetProcAddress (opencl_library, "clCreateKernel"));
 			clSetKernelArg = reinterpret_cast<decltype (clSetKernelArg)> (GetProcAddress (opencl_library, "clSetKernelArg"));
+			clReleaseMemObject = reinterpret_cast<decltype (clReleaseMemObject)> (GetProcAddress (opencl_library, "clReleaseMemObject"));
+			clReleaseCommandQueue = reinterpret_cast<decltype (clReleaseCommandQueue)> (GetProcAddress (opencl_library, "clReleaseCommandQueue"));
 			clReleaseKernel = reinterpret_cast<decltype (clReleaseKernel)> (GetProcAddress (opencl_library, "clReleaseKernel"));
 			clReleaseProgram = reinterpret_cast<decltype (clReleaseProgram)> (GetProcAddress (opencl_library, "clReleaseProgram"));
 			clReleaseContext = reinterpret_cast<decltype (clReleaseContext)> (GetProcAddress (opencl_library, "clReleaseContext"));
@@ -55,6 +57,8 @@ public:
 	cl_int (CL_API_CALL * clGetProgramBuildInfo) (cl_program, cl_device_id, cl_program_build_info, std::size_t, void *, std::size_t *);
 	cl_kernel (CL_API_CALL * clCreateKernel) (cl_program, char const *, cl_int *);
 	cl_int (CL_API_CALL * clSetKernelArg) (cl_kernel, cl_uint, std::size_t, void const *);
+	cl_int (CL_API_CALL * clReleaseMemObject) (cl_mem);
+	cl_int (CL_API_CALL * clReleaseCommandQueue) (cl_command_queue);
 	cl_int (CL_API_CALL * clReleaseKernel) (cl_kernel);
 	cl_int (CL_API_CALL * clReleaseProgram) (cl_program);
 	cl_int (CL_API_CALL * clReleaseContext) (cl_context);
@@ -139,6 +143,16 @@ cl_kernel CL_API_CALL clCreateKernel (cl_program program, char const * kernel_na
 cl_int CL_API_CALL clSetKernelArg (cl_kernel kernel, cl_uint arg_index, std::size_t arg_size, void const * arg_value)
 {
 	return opencl_initializer::initializer.clSetKernelArg (kernel, arg_index, arg_size, arg_value);
+}
+
+cl_int CL_API_CALL clReleaseMemObject (cl_mem mem)
+{
+	return opencl_initializer::initializer.clReleaseMemObject (mem);
+}
+
+cl_int CL_API_CALL clReleaseCommandQueue (cl_command_queue queue)
+{
+	return opencl_initializer::initializer.clReleaseCommandQueue (queue);
 }
 
 cl_int CL_API_CALL clReleaseKernel (cl_kernel kernel)

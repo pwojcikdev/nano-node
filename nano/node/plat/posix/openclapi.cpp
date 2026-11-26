@@ -28,6 +28,8 @@ public:
 			clGetProgramBuildInfo = reinterpret_cast<decltype (clGetProgramBuildInfo)> (dlsym (opencl_library, "clGetProgramBuildInfo"));
 			clCreateKernel = reinterpret_cast<decltype (clCreateKernel)> (dlsym (opencl_library, "clCreateKernel"));
 			clSetKernelArg = reinterpret_cast<decltype (clSetKernelArg)> (dlsym (opencl_library, "clSetKernelArg"));
+			clReleaseMemObject = reinterpret_cast<decltype (clReleaseMemObject)> (dlsym (opencl_library, "clReleaseMemObject"));
+			clReleaseCommandQueue = reinterpret_cast<decltype (clReleaseCommandQueue)> (dlsym (opencl_library, "clReleaseCommandQueue"));
 			clReleaseKernel = reinterpret_cast<decltype (clReleaseKernel)> (dlsym (opencl_library, "clReleaseKernel"));
 			clReleaseProgram = reinterpret_cast<decltype (clReleaseProgram)> (dlsym (opencl_library, "clReleaseProgram"));
 			clReleaseContext = reinterpret_cast<decltype (clReleaseContext)> (dlsym (opencl_library, "clReleaseContext"));
@@ -59,6 +61,8 @@ public:
 	cl_int (*clGetProgramBuildInfo) (cl_program, cl_device_id, cl_program_build_info, std::size_t, void *, std::size_t *);
 	cl_kernel (*clCreateKernel) (cl_program, char const *, cl_int *);
 	cl_int (*clSetKernelArg) (cl_kernel, cl_uint, std::size_t, void const *);
+	cl_int (*clReleaseMemObject) (cl_mem);
+	cl_int (*clReleaseCommandQueue) (cl_command_queue);
 	cl_int (*clReleaseKernel) (cl_kernel);
 	cl_int (*clReleaseProgram) (cl_program);
 	cl_int (*clReleaseContext) (cl_context);
@@ -143,6 +147,16 @@ cl_kernel clCreateKernel (cl_program program, char const * kernel_name, cl_int *
 cl_int clSetKernelArg (cl_kernel kernel, cl_uint arg_index, std::size_t arg_size, void const * arg_value)
 {
 	return opencl_initializer::initializer.clSetKernelArg (kernel, arg_index, arg_size, arg_value);
+}
+
+cl_int clReleaseMemObject (cl_mem mem)
+{
+	return opencl_initializer::initializer.clReleaseMemObject (mem);
+}
+
+cl_int clReleaseCommandQueue (cl_command_queue queue)
+{
+	return opencl_initializer::initializer.clReleaseCommandQueue (queue);
 }
 
 cl_int clReleaseKernel (cl_kernel kernel)
