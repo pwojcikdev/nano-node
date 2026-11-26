@@ -208,6 +208,14 @@ set(NANO_OSX_PACKAGE_NAME
     ${CPACK_NSIS_PACKAGE_NAME}
     CACHE STRING "" FORCE)
 
+if(APPLE AND (NANO_GUI OR RAIBLOCKS_GUI))
+  set(NANO_RUNTIME_INSTALL_DIR "${NANO_OSX_PACKAGE_NAME}.app/Contents/MacOS")
+elseif(WIN32)
+  set(NANO_RUNTIME_INSTALL_DIR ".")
+else()
+  set(NANO_RUNTIME_INSTALL_DIR "bin")
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE
       "Release"
@@ -822,10 +830,13 @@ if(NANO_TEST OR RAIBLOCKS_TEST)
   endif()
 endif()
 
+install(TARGETS nano_node nano_rpc
+        RUNTIME DESTINATION ${NANO_RUNTIME_INSTALL_DIR})
+install(FILES ${PROJECT_BINARY_DIR}/config-node.toml.sample
+              ${PROJECT_BINARY_DIR}/config-rpc.toml.sample
+              ${PROJECT_BINARY_DIR}/config-log.toml.sample DESTINATION .)
+
 if(NANO_GUI OR RAIBLOCKS_GUI)
-  install(FILES ${PROJECT_BINARY_DIR}/config-node.toml.sample DESTINATION .)
-  install(FILES ${PROJECT_BINARY_DIR}/config-rpc.toml.sample DESTINATION .)
-  install(FILES ${PROJECT_BINARY_DIR}/config-log.toml.sample DESTINATION .)
   if(WIN32)
     set(PLATFORM_QT_PACKAGES WinExtras)
   else()
@@ -838,6 +849,7 @@ if(NANO_GUI OR RAIBLOCKS_GUI)
 
   add_subdirectory(nano/qt)
   add_subdirectory(nano/nano_wallet)
+  install(TARGETS nano_wallet RUNTIME DESTINATION ${NANO_RUNTIME_INSTALL_DIR})
 
   if(NANO_TEST OR RAIBLOCKS_TEST)
     add_subdirectory(nano/qt_test)
@@ -847,12 +859,6 @@ if(NANO_GUI OR RAIBLOCKS_GUI)
     set(CPACK_GENERATOR "DragNDrop")
     configure_file(${CMAKE_SOURCE_DIR}/Info.plist.in
                    ${CMAKE_SOURCE_DIR}/Info.plist @ONLY)
-    install(TARGETS nano_wallet
-            DESTINATION ${NANO_OSX_PACKAGE_NAME}.app/Contents/MacOS)
-    install(TARGETS nano_node
-            DESTINATION ${NANO_OSX_PACKAGE_NAME}.app/Contents/MacOS)
-    install(TARGETS nano_rpc
-            DESTINATION ${NANO_OSX_PACKAGE_NAME}.app/Contents/MacOS)
     install(FILES Info.plist DESTINATION ${NANO_OSX_PACKAGE_NAME}.app/Contents)
     install(FILES qt.conf
             DESTINATION ${NANO_OSX_PACKAGE_NAME}.app/Contents/Resources)
@@ -897,7 +903,6 @@ if(NANO_GUI OR RAIBLOCKS_GUI)
     get_target_property(Qt5WindowsPlugin Qt5::QWindowsIntegrationPlugin
                         LOCATION)
     get_filename_component(Qt5_bin_DIR ${Qt5_DIR}/../../../bin ABSOLUTE)
-    install(TARGETS nano_wallet DESTINATION .)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${WIN_REDIST} DESTINATION .)
     install(FILES ${Qt5_bin_DIR}/libGLESv2.dll DESTINATION .)
     install(FILES ${Qt5_bin_DIR}/Qt5Core.dll DESTINATION .)
@@ -910,7 +915,6 @@ if(NANO_GUI OR RAIBLOCKS_GUI)
     set(CPACK_DEBIAN_PACKAGE_DEPENDS
         "qt5-default | qtbase5-dev, qtchooser, qt5-qmake, qtbase5-dev-tools")
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "russel@nano.org")
-    install(TARGETS nano_wallet RUNTIME DESTINATION ./bin)
     set(DEBIAN_POSTINST postinst.in)
     set(DEBIAN_POSTRM postrm.in)
 
