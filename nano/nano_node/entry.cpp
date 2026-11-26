@@ -204,6 +204,7 @@ int main (int argc, char * const * argv)
 				auto node_flags = nano::inactive_node_flag_defaults ();
 				nano::update_flags (node_flags, vm);
 				node_flags.generate_cache.reps = true;
+				node_flags.generate_cache.block_count = true;
 				nano::inactive_node inactive_node (data_path, node_flags);
 				auto node = inactive_node.node;
 

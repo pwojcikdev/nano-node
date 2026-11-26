@@ -10,3 +10,10 @@ for network in dev test; do
     test "$status" -eq 1
     grep -Fq "No bootstrap representative weights are available for the $network network" "$datadir/result"
 done
+
+for network in beta live; do
+    ledger=$(new_datadir)
+    "$NANO_NODE_EXE" --network "$network" --data_path "$ledger" --initialize
+    "$NANO_NODE_EXE" --network "$network" --data_path "$ledger" --compare_rep_weights > "$ledger/comparison"
+    grep -Eq '^ledger weight .+ at 1 blocks$' "$ledger/comparison"
+done
