@@ -1,10 +1,14 @@
+#include <nano/lib/blocks.hpp>
 #include <nano/lib/ipc_client.hpp>
 #include <nano/lib/tomlconfig.hpp>
 #include <nano/node/ipc/ipc_access_config.hpp>
+#include <nano/node/ipc/ipc_broker.hpp>
 #include <nano/node/ipc/ipc_config.hpp>
 #include <nano/node/ipc/ipc_server.hpp>
+#include <nano/node/node_observers.hpp>
 #include <nano/node/nodeconfig.hpp>
 #include <nano/rpc/rpc_server.hpp>
+#include <nano/test_common/chains.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -206,4 +210,65 @@ TEST (ipc, invalid_endpoint)
 		call_completed = true;
 	});
 	ASSERT_TIMELY (5s, call_completed);
+}
+
+namespace
+{
+class confirmation_subscriber final : public nano::ipc::subscriber
+{
+public:
+	void async_send_message (uint8_t const * data, std::size_t, std::function<void (nano::error const &)>) override
+	{
+		auto const * confirmation = nanoapi::GetEnvelope (data)->message_as_EventConfirmation ();
+		ASSERT_NE (nullptr, confirmation);
+		blocks.push_back (confirmation->block_type ());
+	}
+
+	uint64_t get_id () const override
+	{
+		return 1;
+	}
+	std::string get_service_name () const override
+	{
+		return {};
+	}
+	void set_service_name (std::string const &) override
+	{
+	}
+	nano::ipc::payload_encoding get_active_encoding () const override
+	{
+		return nano::ipc::payload_encoding::flatbuffers;
+	}
+
+	std::vector<nanoapi::Block> blocks;
+};
+}
+
+TEST (ipc, filtered_confirmation_without_block)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes.front ();
+	auto const send = nano::test::setup_chain (system, node, 1).front ();
+	auto broker = std::make_shared<nano::ipc::broker> (node);
+	broker->start ();
+	auto subscribe = [&] (nano::account const & account, bool include_block) {
+		auto client = std::make_shared<confirmation_subscriber> ();
+		auto topic = std::make_shared<nanoapi::TopicConfirmationT> ();
+		topic->options = std::make_unique<nanoapi::TopicConfirmationOptionsT> ();
+		topic->options->accounts.push_back (account.to_account ());
+		topic->options->include_block = include_block;
+		broker->subscribe (client, topic);
+		return client;
+	};
+
+	auto sender = subscribe (nano::dev::genesis_key.pub, false);
+	auto destination = subscribe (send->destination (), false);
+	auto unrelated = subscribe (nano::keypair{}.pub, false);
+	auto full = subscribe (send->destination (), true);
+
+	node.observers.block_confirmed.notify ({ .status = { .winner = send }, .type = nano::confirmation_type::inactive_confirmation_height, .account = nano::dev::genesis_key.pub, .amount = 1, .is_state_send = true });
+	EXPECT_EQ ((std::vector{ nanoapi::Block_NONE }), sender->blocks);
+	EXPECT_EQ ((std::vector{ nanoapi::Block_NONE }), destination->blocks);
+	EXPECT_TRUE (unrelated->blocks.empty ());
+	EXPECT_EQ ((std::vector{ nanoapi::Block_BlockState }), full->blocks);
 }

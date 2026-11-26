@@ -165,23 +165,23 @@ void nano::ipc::broker::broadcast (std::shared_ptr<nanoapi::EventConfirmationT> 
 
 				return should_filter_conf_type_l || should_filter_account_l;
 			};
-			// Apply any filters
-			auto & options (itr->topic->options);
-			if (options)
-			{
-				if (!options->include_election_info)
-				{
-					election_info = std::move (confirmation_a->election_info);
-					confirmation_a->election_info = nullptr;
-				}
-				if (!options->include_block)
-				{
-					block = confirmation_a->block;
-					confirmation_a->block.Reset ();
-				}
-			}
+			auto const & options = itr->topic->options;
 			if (!options || !should_filter ())
 			{
+				if (options)
+				{
+					if (!options->include_election_info)
+					{
+						election_info = std::move (confirmation_a->election_info);
+						confirmation_a->election_info = nullptr;
+					}
+					if (!options->include_block)
+					{
+						block = confirmation_a->block;
+						confirmation_a->block.Reset ();
+					}
+				}
+
 				auto fb (nano::ipc::flatbuffer_producer::make_buffer (*confirmation_a));
 
 				if (subscriber_l->get_active_encoding () == nano::ipc::payload_encoding::flatbuffers_json)
