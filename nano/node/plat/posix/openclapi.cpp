@@ -9,7 +9,11 @@ class opencl_initializer
 public:
 	opencl_initializer ()
 	{
-		opencl_library = dlopen ("libOpenCL.so", RTLD_NOW);
+		opencl_library = dlopen ("libOpenCL.so.1", RTLD_NOW);
+		if (opencl_library == nullptr)
+		{
+			opencl_library = dlopen ("libOpenCL.so", RTLD_NOW);
+		}
 		if (opencl_library != nullptr)
 		{
 			clGetPlatformIDs = reinterpret_cast<decltype (clGetPlatformIDs)> (dlsym (opencl_library, "clGetPlatformIDs"));

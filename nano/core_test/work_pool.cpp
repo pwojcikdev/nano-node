@@ -13,6 +13,10 @@
 
 #include <gtest/gtest.h>
 
+#if defined(__linux__) || defined(__FreeBSD__)
+#include <dlfcn.h>
+#endif
+
 #include <array>
 #include <future>
 #include <iostream>
@@ -127,6 +131,19 @@ TEST (work, cancel_blocking_generation)
 	release_worker.count_down ();
 	EXPECT_FALSE (result.get ().has_value ());
 }
+
+#if defined(__linux__) || defined(__FreeBSD__)
+TEST (work, opencl_runtime_loader)
+{
+	auto runtime = dlopen ("libOpenCL.so.1", RTLD_NOW);
+	if (runtime == nullptr)
+	{
+		GTEST_SKIP () << "OpenCL runtime loader is unavailable";
+	}
+	dlclose (runtime);
+	ASSERT_TRUE (nano::opencl_loaded);
+}
+#endif
 
 // check that opencl hardware offloading works
 TEST (work, opencl)
