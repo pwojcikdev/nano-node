@@ -216,6 +216,9 @@ jobs:
             -t nano-node:latest \
             .
 
+      - name: Test production entrypoint with custom data directories
+        run: docker run --rm --network none -i --entrypoint bash nano-node:latest -s < docker/tests/node-data-path.sh
+
   docker_test:
     name: Docker [${{ matrix.BACKEND }}]
     timeout-minutes: 120

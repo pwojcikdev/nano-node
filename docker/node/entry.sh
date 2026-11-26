@@ -7,7 +7,7 @@ usage() {
 	cat <<'EOF'
 Usage:
   [daemon] [--vacuum-over <size>] [cli_options]
-    daemon
+    daemon, --daemon
       start as daemon (default mode)
 
     cli_options
@@ -58,8 +58,8 @@ network_suffix() {
 
 ensure_data_directory() {
 	# Move legacy dir if needed, then ensure target exists
-	local legacy_dir="$1" target_dir="$2"
-	if [[ -d "$legacy_dir" && ! -d "$target_dir" ]]; then
+	local legacy_dir="$1" default_dir="$2" target_dir="$3"
+	if [[ -d "$legacy_dir" && ! -d "$target_dir" && "$(realpath -m -- "$target_dir")" == "$(realpath -m -- "$default_dir")" ]]; then
 		log "Renaming legacy directory $legacy_dir to $target_dir"
 		mv -- "$legacy_dir" "$target_dir"
 	fi
@@ -99,7 +99,7 @@ maybe_vacuum() {
 	if ((bytes > limit_bytes)); then
 		local size_gb=$((bytes / 1024 / 1024 / 1024))
 		log "Current ledger size: ${size_gb}GB (${bytes} bytes) is over threshold: ${limit_gb}GB. Vacuuming..."
-		if nano_node --vacuum; then
+		if nano_node --vacuum --data_path "$DATA_DIR" --network "$NETWORK" "${VACUUM_CONFIG[@]}"; then
 			log "Database vacuum completed"
 		elif [[ -f "$db_file" ]]; then
 			log "Database vacuum failed, starting the node anyway"
@@ -113,6 +113,9 @@ maybe_vacuum() {
 DAEMON_MODE=0
 VACUUM_THRESHOLD_GB=0
 EXEC="nano_node" # default executable is nano_node
+NETWORK=''
+DATA_DIR=''
+declare -a VACUUM_CONFIG=()
 declare -a PASSTHROUGH=()
 declare -a CMD=() # filled after we finalize EXEC
 
@@ -145,9 +148,40 @@ parse_args() {
 
 	while (($# > 0)); do
 		case "$1" in
-		daemon)
+		daemon | --daemon)
 			DAEMON_MODE=1
 			CMD+=('--daemon')
+			;;
+		--data_path | --network | --data_path=* | --network=*)
+			local option="${1%%=*}" value
+			if [[ "$1" == *=* ]]; then
+				value="${1#*=}"
+			else
+				shift
+				value="${1:-}"
+			fi
+			[[ -n "$value" ]] || die "Missing value for $option"
+			if [[ "$option" == --data_path ]]; then
+				[[ -z "$DATA_DIR" ]] || die "Duplicate $option"
+				DATA_DIR="$value"
+			else
+				[[ -z "$NETWORK" ]] || die "Duplicate $option"
+				NETWORK="${value,,}"
+				case "$NETWORK" in
+				live | beta | dev | test) ;;
+				*) die "Invalid network '$value'" ;;
+				esac
+			fi
+			PASSTHROUGH+=("$option=$value")
+			;;
+		--config | --config=*)
+			PASSTHROUGH+=("$1")
+			VACUUM_CONFIG+=("$1")
+			while (( $# > 1 )) && [[ "$2" != -* && "$2" == *=* ]]; do
+				shift
+				PASSTHROUGH+=("$1")
+				VACUUM_CONFIG+=("$1")
+			done
 			;;
 		--vacuum-over | -v)
 			shift
@@ -180,13 +214,15 @@ parse_args() {
 
 parse_args "$@"
 
-NETWORK="$(read_network)"
+NETWORK="${NETWORK:-$(read_network)}"
 SUFFIX="$(network_suffix "$NETWORK")"
-LEGACY_DIR="${HOME}/RaiBlocks${SUFFIX}"
-DATA_DIR="${HOME}/Nano${SUFFIX}"
+# The node uses the current user's account home when NANO_APP_PATH is unset.
+APP_PATH="${NANO_APP_PATH-$(getent passwd "$(id -u)" | cut -d: -f6 || printf '%s' "${HOME-}")}"
+DEFAULT_DIR="${APP_PATH:+$APP_PATH/}Nano${SUFFIX}"
+DATA_DIR="${DATA_DIR:-$DEFAULT_DIR}"
 DB_FILE="${DATA_DIR}/data.ldb"
 
-ensure_data_directory "$LEGACY_DIR" "$DATA_DIR"
+ensure_data_directory "${APP_PATH:+$APP_PATH/}RaiBlocks${SUFFIX}" "$DEFAULT_DIR" "$DATA_DIR"
 ensure_configs "$DATA_DIR"
 maybe_vacuum "$VACUUM_THRESHOLD_GB" "$DB_FILE"
 
