@@ -541,7 +541,19 @@ TEST (qt_wallet, create_send)
 	QTest::keyClicks (wallet->block_creation.amount, "100000000000000000000");
 	QTest::keyClicks (wallet->block_creation.destination, key.pub.to_account ().c_str ());
 	QTest::mouseClick (wallet->block_creation.create, Qt::LeftButton);
-	std::string json (wallet->block_creation.block->toPlainText ().toStdString ());
+	auto & creator = wallet->block_creation;
+	ASSERT_FALSE (creator.block->toPlainText ().isEmpty ());
+
+	// Replacing an unsubmitted payment with a bad destination must discard its signed JSON.
+	creator.destination->setText ("invalid");
+	QTest::mouseClick (creator.create, Qt::LeftButton);
+	EXPECT_EQ ("Unable to decode destination", creator.status->text ().toStdString ());
+	EXPECT_TRUE (creator.block->toPlainText ().isEmpty ());
+
+	nano::keypair retry_destination;
+	creator.destination->setText (QString::fromStdString (retry_destination.pub.to_account ()));
+	QTest::mouseClick (creator.create, Qt::LeftButton);
+	std::string json (creator.block->toPlainText ().toStdString ());
 	ASSERT_FALSE (json.empty ());
 	boost::property_tree::ptree tree1;
 	std::stringstream istream (json);
@@ -549,6 +561,7 @@ TEST (qt_wallet, create_send)
 	bool error (false);
 	auto send = std::make_shared<nano::state_block> (error, tree1);
 	ASSERT_FALSE (error);
+	ASSERT_EQ (retry_destination.pub, send->hashables.link.as_account ());
 	ASSERT_EQ (nano::block_status::progress, system.nodes[0]->process (send));
 	ASSERT_EQ (nano::block_status::old, system.nodes[0]->process (send));
 }

@@ -2424,6 +2424,7 @@ nano_qt::block_creation::block_creation (nano_qt::wallet & wallet_a) :
 		}
 	});
 	QObject::connect (create, &QPushButton::released, [this] () {
+		block->clear ();
 		switch (group->checkedId ())
 		{
 			case 0:
