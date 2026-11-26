@@ -1259,8 +1259,9 @@ TEST (active_elections, fork_replacement_tally)
 	// send_last replaces the lowest-weight rep fork and is voted by genesis, leaving 8 retained representative forks
 	ASSERT_TIMELY_EQ (10s, count_rep_votes_in_election (), 8);
 
-	auto votes2 (election->votes ());
-	ASSERT_TRUE (votes2.find (nano::dev::genesis_key.pub) != votes2.end ());
+	// Admission of the replacement queues its cached vote for asynchronous processing.
+	ASSERT_TIMELY (5s, election->votes ().contains (nano::dev::genesis_key.pub));
+	ASSERT_EQ (send_last->hash (), election->votes ().at (nano::dev::genesis_key.pub).hash);
 }
 
 // Blocks that won an election must always be seen as confirming or cemented
