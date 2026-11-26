@@ -333,6 +333,11 @@ nano::uint128_t nano::online_reps::trended () const
 	return std::max (cached_trended, config.online_weight_minimum.number ());
 }
 
+nano::uint128_t nano::online_reps::trended (nano::store::transaction const & transaction) const
+{
+	return std::max (calculate_trended (transaction).trended, config.online_weight_minimum.number ());
+}
+
 nano::online_stake nano::online_reps::online_stake () const
 {
 	// The minimum derives from the same reading, so the pair never mixes two samples

@@ -49,6 +49,8 @@ public:
 
 	/** Returns the trended online stake */
 	nano::uint128_t trended () const;
+	/** Read the trend from the samples in a specific ledger snapshot */
+	nano::uint128_t trended (nano::store::transaction const &) const;
 	/** Returns the current online stake */
 	nano::uint128_t online () const;
 	/** Returns the quorum required for confirmation*/

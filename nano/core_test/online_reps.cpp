@@ -43,6 +43,24 @@ TEST (online_reps, basic)
 	ASSERT_EQ (nano::dev::constants.genesis_amount, node1.online_reps.trended ());
 }
 
+TEST (online_reps, stored_trend)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.online_weight_minimum = 10;
+	auto node = std::make_shared<nano::node> (nano::unique_path (), config, system.work, nano::node_flags{});
+	system.register_node (node);
+	auto & store = node->store;
+	ASSERT_EQ (10, node->online_reps.trended (store.tx_begin_read ()));
+	{
+		auto transaction = store.tx_begin_write ();
+		store.online_weight.put (transaction, 1, 3);
+		store.online_weight.put (transaction, 2, 20);
+		store.online_weight.put (transaction, 3, 90);
+	}
+	ASSERT_EQ (20, node->online_reps.trended (store.tx_begin_read ()));
+}
+
 TEST (online_reps, expired_weight_is_excluded_from_sample)
 {
 	nano::test::system system;

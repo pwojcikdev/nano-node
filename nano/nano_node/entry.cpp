@@ -430,9 +430,8 @@ int main (int argc, char * const * argv)
 		{
 			auto inactive_node = nano::default_inactive_node (data_path, vm);
 			auto node = inactive_node->node;
-			auto current (node->online_reps.trended ());
-			std::cout << boost::str (boost::format ("Trended Weight %1%\n") % current);
-			auto transaction (node->store.tx_begin_read ());
+			auto transaction = node->store.tx_begin_read ();
+			std::cout << "Trended Weight " << node->online_reps.trended (transaction) << '\n';
 			for (auto i (node->store.online_weight.begin (transaction)), n (node->store.online_weight.end (transaction)); i != n; ++i)
 			{
 				using time_point = std::chrono::system_clock::time_point;
