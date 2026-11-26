@@ -965,7 +965,7 @@ nano::messages::telemetry_data nano::node::local_telemetry () const
 	telemetry_data.node_id = node_id.pub;
 	telemetry_data.block_count = ledger.block_count ();
 	telemetry_data.cemented_count = ledger.cemented_count ();
-	telemetry_data.bandwidth_cap = config.bandwidth_limit;
+	telemetry_data.bandwidth_cap = outbound_limiter.get_limit ().rate;
 	telemetry_data.protocol_version = network_params.network.protocol_version;
 	telemetry_data.uptime = std::chrono::duration_cast<std::chrono::seconds> (std::chrono::steady_clock::now () - startup_time).count ();
 	telemetry_data.unchecked_count = unchecked.count ();

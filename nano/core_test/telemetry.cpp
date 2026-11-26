@@ -489,6 +489,18 @@ TEST (telemetry, legacy_rocksdb_backend)
 	ASSERT_EQ (nano::messages::telemetry_database_backend::rocksdb, node.local_telemetry ().database_backend);
 }
 
+TEST (telemetry, super_rebroadcaster_bandwidth_cap)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.bandwidth_limit = 1024 * 1024;
+	nano::node_flags flags;
+	flags.super_rebroadcaster = true;
+	auto & node = *system.add_node (config, flags);
+
+	EXPECT_EQ (0, node.local_telemetry ().bandwidth_cap);
+}
+
 TEST (telemetry, bootstrap_waiting_for_send)
 {
 	nano::test::system system;
