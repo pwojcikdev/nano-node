@@ -172,11 +172,14 @@ int main (int argc, char * const * argv)
 		nano::set_active_network (parsed.value ());
 	}
 
+	std::optional<std::filesystem::path> pid_file;
 	if (auto existing = vm.find ("pid_file"); existing != vm.end ())
 	{
-		auto pid_filepath = std::filesystem::path (existing->second.as<std::string> ());
-		nano::runtime_files::create_pid_file (pid_filepath);
-		std::cerr << "PID file created: " << pid_filepath << std::endl;
+		pid_file = existing->second.as<std::string> ();
+		if (!vm.count ("daemon"))
+		{
+			nano::runtime_files::create_pid_file (*pid_file);
+		}
 	}
 
 	nano::network_params network_params{ nano::get_active_network () };
@@ -190,7 +193,7 @@ int main (int argc, char * const * argv)
 			nano::daemon daemon;
 			nano::node_flags flags;
 			nano::update_flags (flags, vm);
-			daemon.run (data_path, flags);
+			daemon.run (data_path, flags, pid_file);
 		}
 		else if (vm.count ("compare_rep_weights"))
 		{

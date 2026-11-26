@@ -62,11 +62,30 @@ void install_abort_signal_handler ()
 }
 }
 
-void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flags const & flags)
+void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flags const & flags, std::optional<std::filesystem::path> const & pid_file)
 {
 	nano::logger::initialize (nano::log_config::daemon_default (), data_path, flags.config_overrides);
 
 	install_abort_signal_handler ();
+
+	std::atomic stopped{ false }; // Outlives the signal manager and stop callbacks on the node's IO threads
+	auto signal_handler = [this, &stopped] (int signum) {
+		logger.warn (nano::log::type::daemon, "Interrupt signal received ({}), stopping...", to_signal_name (signum));
+		stopped = true;
+		stopped.notify_all ();
+	};
+
+	nano::signal_manager sigman;
+	// keep trapping Ctrl-C to avoid a second Ctrl-C interrupting tasks started by the first
+	sigman.register_signal_handler (SIGINT, signal_handler, true);
+	// sigterm is less likely to come in bunches so only trap it once
+	sigman.register_signal_handler (SIGTERM, signal_handler, false);
+
+	// A supervisor may signal the process as soon as the PID file is published.
+	if (pid_file)
+	{
+		nano::runtime_files::create_pid_file (*pid_file);
+	}
 
 	logger.info (nano::log::type::daemon, "Daemon started");
 	logger.info (nano::log::type::daemon, "Version: {}", NANO_VERSION_STRING);
@@ -98,6 +117,11 @@ void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flag
 		std::exit (1);
 	}
 
+	if (stopped)
+	{
+		return;
+	}
+
 	nano::set_use_memory_pools (config.node.use_memory_pools);
 
 	auto opencl = nano::opencl_work::create (config.opencl_enable, config.opencl, logger, config.node.network_params.work);
@@ -127,7 +151,6 @@ void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flag
 			config.node.peering_port = network_params.network.default_node_port;
 		}
 
-		std::atomic stopped{ false }; // Outlives stop callbacks on the node's IO threads
 		// Use a scope guard to ensure node->stop() is called while we still hold a shared_ptr (even in case of exceptions)
 		nano::node_scope_guard node{ std::make_shared<nano::node> (data_path, config.node, opencl_work, flags) };
 
@@ -186,18 +209,6 @@ void nano::daemon::run (std::filesystem::path const & data_path, nano::node_flag
 			nano::runtime_files::create_runtime_info (*flags.runtime_info_file, info);
 			std::cerr << "Runtime info file created: " << *flags.runtime_info_file << std::endl;
 		}
-
-		auto signal_handler = [this, &stopped] (int signum) {
-			logger.warn (nano::log::type::daemon, "Interrupt signal received ({}), stopping...", to_signal_name (signum));
-			stopped = true;
-			stopped.notify_all ();
-		};
-
-		nano::signal_manager sigman;
-		// keep trapping Ctrl-C to avoid a second Ctrl-C interrupting tasks started by the first
-		sigman.register_signal_handler (SIGINT, signal_handler, true);
-		// sigterm is less likely to come in bunches so only trap it once
-		sigman.register_signal_handler (SIGTERM, signal_handler, false);
 
 		// Keep running until stopped flag is set
 		stopped.wait (false);

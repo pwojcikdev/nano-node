@@ -86,6 +86,7 @@ void nano::runtime_files::create_pid_file (std::filesystem::path const & path)
 {
 	auto pid = boost::this_process::get_id ();
 	nano::runtime_files::create (path, std::to_string (pid));
+	std::cerr << "PID file created: " << path << std::endl;
 }
 
 void nano::runtime_files::create_runtime_info (std::filesystem::path const & path, runtime_info const & info)
