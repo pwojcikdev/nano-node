@@ -11,6 +11,7 @@
 #include <nano/secure/common.hpp>
 #include <nano/secure/ledger.hpp>
 #include <nano/test_common/chains.hpp>
+#include <nano/test_common/scoped_start.hpp>
 #include <nano/test_common/system.hpp>
 #include <nano/test_common/testutil.hpp>
 
@@ -898,4 +899,59 @@ TEST (block_processor, forced_rollback_in_batch)
 	ASSERT_FALSE (node.block_or_pruned_exists (epoch->hash ()));
 	ASSERT_EQ (0, node.stats.count (nano::stat::type::block_processor_result, nano::stat::detail::bad_signature));
 	ASSERT_EQ (node.ledger.block_count (), 2);
+}
+
+TEST (block_processor, replay_waits_for_unchecked_queue_space)
+{
+	nano::test::system source_system;
+	auto source = source_system.add_node ();
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.block_processor->max_system_queue = 1;
+	auto node = system.add_node (config);
+	std::deque<std::shared_ptr<nano::block>> sends;
+	std::deque<std::shared_ptr<nano::block>> opens;
+	for (unsigned i = 0; i < 8; ++i)
+	{
+		nano::keypair recipient;
+		auto [send, open] = nano::test::setup_new_account (source_system, *source, 1, nano::dev::genesis_key, recipient, recipient.pub, false);
+		sends.push_back (send);
+		opens.push_back (open);
+	}
+	// Deliver all the opens first. Their source sends then release them in one processing batch.
+	ASSERT_EQ (opens.size (), node->block_processor.add_many (opens, nano::block_source::live).added);
+	ASSERT_TIMELY_EQ (5s, opens.size (), node->unchecked.count ());
+	ASSERT_EQ (sends.size (), node->block_processor.add_many (sends, nano::block_source::live).added);
+	ASSERT_TIMELY_EQ (5s, source->ledger.block_count (), node->ledger.block_count ());
+	for (auto const & open : opens)
+	{
+		ASSERT_TIMELY (5s, node->block_or_pruned_exists (open->hash ()));
+	}
+	ASSERT_EQ (0, node->unchecked.count ());
+}
+
+TEST (block_processor, stop_unchecked_waiting_for_queue_space)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.block_processor->max_system_queue = 1;
+	auto node = system.add_node (config);
+	auto blocks = nano::test::setup_chain (system, *node, 2);
+	idle_block_processor idle{ *node };
+	START (idle.unchecked);
+
+	auto const dependency = nano::dev::genesis->hash ();
+	for (auto const & block : blocks)
+	{
+		idle.unchecked.put (dependency, block);
+	}
+	idle.unchecked.trigger (dependency);
+	ASSERT_TIMELY_EQ (5s, 2, node->stats.count (nano::stat::type::unchecked, nano::stat::detail::satisfied));
+	ASSERT_EQ (1, idle.processor.size (nano::block_source::unchecked));
+
+	auto stopping = std::async (std::launch::async, [&] { idle.unchecked.stop (); });
+	auto const status = stopping.wait_for (5s);
+	idle.processor.stop ();
+	stopping.get ();
+	ASSERT_EQ (std::future_status::ready, status);
 }

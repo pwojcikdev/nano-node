@@ -34,6 +34,7 @@ void nano::unchecked_map::stop ()
 		nano::lock_guard<nano::mutex> lock{ mutex };
 		stopped = true;
 	}
+	stopping.notify ();
 	condition.notify_all ();
 
 	if (thread.joinable ())
@@ -162,18 +163,29 @@ void nano::unchecked_map::run ()
 
 void nano::unchecked_map::query_impl (nano::block_hash const & hash)
 {
-	std::deque<nano::unchecked_key> delete_queue;
-	for_each (hash, [this, &delete_queue] (nano::unchecked_key const & key, nano::unchecked_info const & info) {
-		delete_queue.push_back (key);
+	std::vector<nano::unchecked_info> ready;
+	{
+		nano::lock_guard<std::recursive_mutex> lock{ entries_mutex };
+		auto & by_key = entries.get<tag_root> ();
+		for (auto it = by_key.lower_bound (nano::unchecked_key{ hash, 0 }); it != by_key.end () && it->key.key () == hash;)
+		{
+			ready.push_back (it->info);
+			if (disable_delete)
+			{
+				++it;
+			}
+			else
+			{
+				it = by_key.erase (it);
+			}
+		}
+	}
+
+	// Replay may wait for processor capacity. The processor can still store new gaps while it drains its queue.
+	for (auto const & info : ready)
+	{
 		stats.inc (nano::stat::type::unchecked, nano::stat::detail::satisfied);
 		satisfied.notify (info);
-	});
-	if (!disable_delete)
-	{
-		for (auto const & key : delete_queue)
-		{
-			del (key);
-		}
 	}
 }
 

@@ -51,6 +51,7 @@ public:
 
 public: // Events
 	nano::observer_set<nano::unchecked_info const &> satisfied;
+	nano::observer_set<> stopping;
 
 private:
 	void run ();

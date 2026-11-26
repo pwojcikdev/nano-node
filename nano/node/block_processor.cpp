@@ -64,7 +64,14 @@ nano::block_processor::block_processor (nano::node_config const & node_config_a,
 
 	// Requeue blocks that could not be immediately processed
 	unchecked.satisfied.add ([this] (nano::unchecked_info const & info) {
-		add (info.block, nano::block_source::unchecked);
+		add_async ({ info.block, nano::block_source::unchecked }, nullptr, true);
+	});
+	unchecked.stopping.add ([this] {
+		{
+			nano::lock_guard<nano::mutex> guard{ mutex };
+			unchecked_stopped = true;
+		}
+		condition.notify_all ();
 	});
 }
 
@@ -130,15 +137,20 @@ std::size_t nano::block_processor::size (nano::block_source source, std::shared_
 
 bool nano::block_processor::add (std::shared_ptr<nano::block> const & block, block_source const source, std::shared_ptr<nano::transport::channel> const & channel, std::function<void (nano::block_status)> callback, std::any tag)
 {
-	if (network_params.work.validate_entry (*block)) // true => error
+	return add_async ({ block, source, std::move (callback), std::move (tag) }, channel, false);
+}
+
+bool nano::block_processor::add_async (nano::block_context ctx, std::shared_ptr<nano::transport::channel> const & channel, bool wait_for_unchecked_space)
+{
+	if (network_params.work.validate_entry (*ctx.block)) // true => error
 	{
 		stats.inc (nano::stat::type::block_processor, nano::stat::detail::insufficient_work);
 		return false; // Not added
 	}
 
-	logger.debug (nano::log::type::block_processor, "Processing block (async): {} (source: {} {})", block->hash (), source, channel);
+	logger.debug (nano::log::type::block_processor, "Processing block (async): {} (source: {} {})", ctx.block->hash (), ctx.source, channel);
 
-	bool added = add_impl ({ block, source, std::move (callback), std::move (tag) }, channel);
+	bool added = add_impl (std::move (ctx), channel, wait_for_unchecked_space);
 	if (added)
 	{
 		stats.inc (nano::stat::type::block_processor, nano::stat::detail::process);
@@ -268,15 +280,22 @@ void nano::block_processor::force (std::shared_ptr<nano::block> const & block)
 	}
 }
 
-bool nano::block_processor::add_impl (nano::block_context ctx, std::shared_ptr<nano::transport::channel> const & channel)
+bool nano::block_processor::add_impl (nano::block_context ctx, std::shared_ptr<nano::transport::channel> const & channel, bool wait_for_unchecked_space)
 {
 	auto const source = ctx.source;
 	bool added = false;
 	{
-		nano::lock_guard<nano::mutex> guard{ mutex };
+		nano::unique_lock<nano::mutex> guard{ mutex };
+		if (wait_for_unchecked_space && config.max_system_queue > 0)
+		{
+			debug_assert (source == nano::block_source::unchecked && !channel);
+			condition.wait (guard, [&] {
+				return stopped || unchecked_stopped || queue.size ({ source }) < config.max_system_queue;
+			});
+		}
 
 		// Checked under the lock stop () takes, so a blocking add is either refused here or queued before stop () drops the queue
-		if (stopped)
+		if (stopped || (wait_for_unchecked_space && unchecked_stopped))
 		{
 			stats.inc (nano::stat::type::block_processor, nano::stat::detail::stopped);
 			return false;
@@ -461,6 +480,7 @@ void nano::block_processor::process_batch (nano::unique_lock<nano::mutex> & lock
 	auto batch = next_batch (config.batch_size);
 
 	lock.unlock ();
+	condition.notify_all (); // The unchecked worker may be waiting for a freed slot
 
 	// Verify signatures before taking the ledger writer, so other writers only wait for the ledger updates themselves
 	nano::timer<std::chrono::milliseconds> verification_timer;

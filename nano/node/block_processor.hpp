@@ -139,8 +139,9 @@ private:
 	/// Rolls back the ledger block occupying the same qualified root, together with its dependents
 	void rollback_competitor (secure::write_transaction &, nano::block const & block);
 
-	/// Pushes a block context onto the queue and notifies the processing thread, returns false on overfill or once the processor is stopped
-	bool add_impl (nano::block_context, std::shared_ptr<nano::transport::channel> const & channel = nullptr);
+	bool add_async (nano::block_context, std::shared_ptr<nano::transport::channel> const &, bool wait_for_unchecked_space);
+	/// Pushes a block context onto the queue and notifies the processing thread. Only the unchecked worker waits for capacity.
+	bool add_impl (nano::block_context, std::shared_ptr<nano::transport::channel> const & channel = nullptr, bool wait_for_unchecked_space = false);
 
 	/// Throttles processing when the ledger backlog exceeds the configured threshold
 	void wait_backlog (nano::unique_lock<nano::mutex> &);
@@ -156,6 +157,7 @@ private:
 	nano::signature_verifier verifier;
 
 	bool stopped{ false };
+	bool unchecked_stopped{ false };
 	nano::condition_variable condition;
 	mutable nano::mutex mutex{ mutex_identifier (mutexes::block_processor) };
 	boost::thread thread;
