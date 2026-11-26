@@ -18,6 +18,15 @@ test -f "$datadir/backup.vacuum.ldb"
 node --debug_block_count | grep -q 'Block count: 1'
 cp "$datadir/data.ldb" "$datadir/reference.ldb"
 
+# A rejected migration setting must leave the destination available for a corrected retry.
+if node --migrate_database_lmdb_to_rocksdb --config node.rocksdb.write_cache=0 > "$datadir/migration-error" 2>&1; then
+    exit 1
+fi
+grep -q 'write_cache' "$datadir/migration-error"
+test ! -e "$datadir/rocksdb"
+node --migrate_database_lmdb_to_rocksdb --config node.rocksdb.write_cache=4
+test -f "$datadir/rocksdb/CURRENT"
+
 printf '[node]\ndatabase_backend = "rocksdb"\n' > "$datadir/config-node.toml"
 node --initialize
 # The first RocksDB vacuum must create its nested destination even without a prior snapshot.
