@@ -93,12 +93,8 @@ void nano::rep_tiers::calculate_tiers ()
 	decltype (representatives_3) representatives_3_l;
 
 	int ignored = 0;
-	for (auto const & rep_amount : rep_amounts)
+	for (auto const & [representative, weight] : rep_amounts)
 	{
-		nano::account const & representative = rep_amount.first;
-
-		// Using ledger weight here because it takes preconfigured bootstrap weights into account
-		auto weight = ledger.weight (representative);
 		switch (nano::calculate_rep_tier (weight, stake))
 		{
 			case nano::rep_tier::tier_3:
