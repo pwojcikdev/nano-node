@@ -18,6 +18,18 @@ test -f "$datadir/backup.vacuum.ldb"
 node --debug_block_count | grep -q 'Block count: 1'
 cp "$datadir/data.ldb" "$datadir/reference.ldb"
 
+# Retry interrupted LMDB vacuum before and after replacement of the live pathname.
+staging="$datadir/.lmdb-vacuum"
+printf 'unfinished' > "$staging/vacuumed.ldb"
+printf 'unfinished' > "$staging/original.ldb"
+node --vacuum
+test ! -e "$staging/vacuumed.ldb"
+test ! -e "$staging/original.ldb"
+cp "$datadir/backup.vacuum.ldb" "$staging/original.ldb"
+node --vacuum
+test ! -e "$staging/original.ldb"
+node --debug_block_count | grep -q 'Block count: 1'
+
 # A rejected migration setting must leave the destination available for a corrected retry.
 if node --migrate_database_lmdb_to_rocksdb --config node.rocksdb.write_cache=0 > "$datadir/migration-error" 2>&1; then
     exit 1

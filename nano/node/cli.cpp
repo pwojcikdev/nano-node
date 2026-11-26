@@ -31,6 +31,7 @@
 #include <nano/store/meta.hpp>
 
 #include <boost/format.hpp>
+#include <boost/interprocess/sync/file_lock.hpp>
 
 #include <fmt/chrono.h>
 
@@ -383,6 +384,51 @@ std::error_code copy_database (std::filesystem::path const & data_path, boost::p
 	node.node->copy_with_compaction (output_path);
 	return {};
 }
+
+std::error_code vacuum_lmdb (std::filesystem::path const & data_path, boost::program_options::variables_map const & vm)
+{
+	auto const live = data_path / "data.ldb";
+	auto const backup = data_path / "backup.vacuum.ldb";
+	auto const staging = data_path / ".lmdb-vacuum";
+	auto const compact = staging / "vacuumed.ldb";
+	auto const original = staging / "original.ldb";
+
+	std::filesystem::create_directory (staging);
+	auto const lock_path = staging / "lock";
+	std::ofstream{ lock_path, std::ios::app }.close ();
+	boost::interprocess::file_lock lock{ lock_path.c_str () };
+	if (!lock.try_lock ())
+	{
+		throw std::runtime_error ("Another LMDB vacuum is in progress");
+	}
+	// A missing compact copy alongside a staged original means the last cutover completed.
+	if (std::filesystem::exists (original) && !std::filesystem::exists (compact))
+	{
+		std::filesystem::rename (original, backup);
+	}
+	else
+	{
+		std::filesystem::remove (original);
+	}
+	std::filesystem::remove (compact);
+
+	if (auto error = copy_database (data_path, vm, compact))
+	{
+		return error;
+	}
+	std::cout << "Finalizing" << std::endl;
+	std::error_code link_error;
+	std::filesystem::create_hard_link (live, original, link_error);
+	if (link_error)
+	{
+		// Some filesystems do not support hard links.
+		std::filesystem::copy_file (live, original);
+	}
+	// The live pathname always names a complete ledger, including between these renames.
+	std::filesystem::rename (compact, live);
+	std::filesystem::rename (original, backup);
+	return {};
+}
 }
 
 std::error_code nano::handle_node_options (boost::program_options::variables_map const & vm)
@@ -500,45 +546,27 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 			auto using_rocksdb = is_using_rocksdb (data_path, vm, ec);
 			if (!ec)
 			{
-				std::cout << "Vacuuming database copy in ";
-				std::filesystem::path source_path;
-				std::filesystem::path backup_path;
-				std::filesystem::path vacuum_path;
-				if (using_rocksdb)
-				{
-					source_path = data_path / "rocksdb";
-					backup_path = source_path / "backup";
-					vacuum_path = backup_path / "vacuumed";
-					std::cout << source_path << "\n";
-				}
-				else
-				{
-					source_path = data_path / "data.ldb";
-					backup_path = data_path / "backup.vacuum.ldb";
-					vacuum_path = data_path / "vacuumed.ldb";
-					std::cout << data_path << "\n";
-				}
+				auto const source_path = using_rocksdb ? data_path / "rocksdb" : data_path;
+				std::cout << "Vacuuming database copy in " << source_path << "\n";
 				std::cout << "This may take a while..." << std::endl;
 
-				if (auto error = copy_database (data_path, vm, vacuum_path))
-				{
-					return error;
-				}
-
-				// Note that these throw on failure
-				std::cout << "Finalizing" << std::endl;
 				if (using_rocksdb)
 				{
+					auto const backup_path = source_path / "backup";
+					auto const vacuum_path = backup_path / "vacuumed";
+					if (auto error = copy_database (data_path, vm, vacuum_path))
+					{
+						return error;
+					}
+					std::cout << "Finalizing" << std::endl;
 					nano::remove_all_files_in_dir (backup_path);
 					nano::move_all_files_to_dir (source_path, backup_path);
 					nano::move_all_files_to_dir (vacuum_path, source_path);
 					std::filesystem::remove_all (vacuum_path);
 				}
-				else
+				else if (auto error = vacuum_lmdb (data_path, vm))
 				{
-					std::filesystem::remove (backup_path);
-					std::filesystem::rename (source_path, backup_path);
-					std::filesystem::rename (vacuum_path, source_path);
+					return error;
 				}
 				std::cout << "Vacuum completed" << std::endl;
 			}
