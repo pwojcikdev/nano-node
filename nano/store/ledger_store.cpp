@@ -137,7 +137,7 @@ ledger_store::ledger_store (std::unique_ptr<nano::store::backend> backend_a, nan
 	}
 	else
 	{
-		if (require_current_version)
+		if (params.require_existing || require_current_version)
 		{
 			throw std::runtime_error ("No ledger found at " + backend.get_database_path ());
 		}

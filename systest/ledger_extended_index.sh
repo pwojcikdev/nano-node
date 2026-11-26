@@ -9,6 +9,16 @@ source "$(dirname "$0")/lib/common.sh"
 
 DATADIR=$(new_datadir)
 
+# A mistyped data path must not create a new ledger or report successful maintenance.
+for option in --upgrade_database --populate_topo_index --drop_topo_index --populate_extended_ledger_indices --drop_extended_ledger_indices; do
+    status=0
+    "$NANO_NODE_EXE" "$option" --data_path "$DATADIR" --network dev > "$DATADIR/maintenance-error" 2>&1 || status=$?
+    test "$status" -eq 1
+    grep -Fq 'No ledger found at' "$DATADIR/maintenance-error"
+    test ! -e "$DATADIR/data.ldb"
+    test ! -e "$DATADIR/rocksdb/CURRENT"
+done
+
 $NANO_NODE_EXE --initialize --data_path "$DATADIR" --network dev
 
 info() {

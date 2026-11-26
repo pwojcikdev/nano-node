@@ -266,6 +266,13 @@ void database_write_lock_error (std::error_code & ec)
 	ec = nano::error_cli::database_write_error;
 }
 
+std::unique_ptr<nano::store::ledger_store> open_maintenance_store (nano::logger & logger, nano::stats & stats, std::filesystem::path const & path, nano::node_config const & config)
+{
+	auto backend = nano::make_backend (logger, path, /* add_db_postfix */ true, config);
+	nano::store::ledger_store_params params{ .backup_before_upgrade = config.backup_before_upgrade, .require_existing = true };
+	return std::make_unique<nano::store::ledger_store> (std::move (backend), nano::store::open_mode::read_write, stats, logger, params);
+}
+
 std::error_code clear_confirmation_heights (nano::node & node, std::string const & account_str)
 {
 	auto & store = node.store;
@@ -702,7 +709,7 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 			{
 				auto & logger = nano::default_logger ();
 				nano::stats stats{ logger };
-				auto store = nano::make_store (logger, stats, data_path, network_params.ledger, false, true, daemon_config.node);
+				auto store = open_maintenance_store (logger, stats, data_path, daemon_config.node);
 				std::cout << "Database upgrade completed successfully" << std::endl;
 				std::cout << "Database version: " << store->get_version () << " (" << store->get_vendor () << ")" << std::endl;
 			}
@@ -815,7 +822,7 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 			{
 				auto & logger = nano::default_logger ();
 				nano::stats stats{ logger };
-				auto store = nano::make_store (logger, stats, data_path, network_params.ledger, false, true, daemon_config.node);
+				auto store = open_maintenance_store (logger, stats, data_path, daemon_config.node);
 				nano::ledger ledger{ *store, network_params, stats, logger };
 
 				if (ledger.flags.topo_index)
@@ -853,7 +860,7 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 			{
 				auto & logger = nano::default_logger ();
 				nano::stats stats{ logger };
-				auto store = nano::make_store (logger, stats, data_path, network_params.ledger, false, true, daemon_config.node);
+				auto store = open_maintenance_store (logger, stats, data_path, daemon_config.node);
 				// Skip cache generation and load-time consistency checks so a corrupted store can still be recovered
 				nano::ledger ledger{ *store, network_params, stats, logger, nano::ledger_options{ .generate_cache = nano::generate_cache_flags::all_disabled () } };
 
@@ -893,7 +900,7 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 			{
 				auto & logger = nano::default_logger ();
 				nano::stats stats{ logger };
-				auto store = nano::make_store (logger, stats, data_path, network_params.ledger, false, true, daemon_config.node);
+				auto store = open_maintenance_store (logger, stats, data_path, daemon_config.node);
 				nano::ledger ledger{ *store, network_params, stats, logger };
 
 				if (!ledger.flags.all_extended_ledger_indices_enabled ())
@@ -931,7 +938,7 @@ std::error_code nano::handle_node_options (boost::program_options::variables_map
 			{
 				auto & logger = nano::default_logger ();
 				nano::stats stats{ logger };
-				auto store = nano::make_store (logger, stats, data_path, network_params.ledger, false, true, daemon_config.node);
+				auto store = open_maintenance_store (logger, stats, data_path, daemon_config.node);
 				// Skip cache generation and load-time consistency checks so corrupted index state can still be dropped
 				nano::ledger ledger{ *store, network_params, stats, logger, nano::ledger_options{ .generate_cache = nano::generate_cache_flags::all_disabled () } };
 
