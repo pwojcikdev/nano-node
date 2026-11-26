@@ -123,25 +123,23 @@ void nano::ipc::broker::broadcast (std::shared_ptr<nanoapi::EventConfirmationT> 
 		{
 			auto should_filter = [this, &itr, confirmation_a] () {
 				debug_assert (itr->topic->options != nullptr);
-				auto conf_filter (itr->topic->options->confirmation_type_filter);
-
-				bool should_filter_conf_type_l (true);
-				bool all_filter = conf_filter == Filter::TopicConfirmationTypeFilter_all;
-				bool inactive_filter = conf_filter == Filter::TopicConfirmationTypeFilter_inactive;
-				bool active_filter = conf_filter == Filter::TopicConfirmationTypeFilter_active || conf_filter == Filter::TopicConfirmationTypeFilter_active_quorum || conf_filter == Filter::TopicConfirmationTypeFilter_active_confirmation_height;
-
-				if ((confirmation_a->confirmation_type == nanoapi::TopicConfirmationType::TopicConfirmationType_active_quorum || confirmation_a->confirmation_type == nanoapi::TopicConfirmationType::TopicConfirmationType_active_confirmation_height) && (all_filter || active_filter))
+				auto const filter = itr->topic->options->confirmation_type_filter;
+				auto const type = confirmation_a->confirmation_type;
+				bool const quorum = type == nanoapi::TopicConfirmationType_active_quorum;
+				bool const height = type == nanoapi::TopicConfirmationType_active_confirmation_height;
+				bool const matches_type = filter == Filter::TopicConfirmationTypeFilter_all
+				|| (filter == Filter::TopicConfirmationTypeFilter_active && (quorum || height))
+				|| (filter == Filter::TopicConfirmationTypeFilter_active_quorum && quorum)
+				|| (filter == Filter::TopicConfirmationTypeFilter_active_confirmation_height && height)
+				|| (filter == Filter::TopicConfirmationTypeFilter_inactive && type == nanoapi::TopicConfirmationType_inactive);
+				if (!matches_type)
 				{
-					should_filter_conf_type_l = false;
-				}
-				else if (confirmation_a->confirmation_type == nanoapi::TopicConfirmationType::TopicConfirmationType_inactive && (all_filter || inactive_filter))
-				{
-					should_filter_conf_type_l = false;
+					return true;
 				}
 
 				bool should_filter_account_l (itr->topic->options->all_local_accounts || !itr->topic->options->accounts.empty ());
 				auto state (confirmation_a->block.AsBlockState ());
-				if (state && !should_filter_conf_type_l)
+				if (state)
 				{
 					if (itr->topic->options->all_local_accounts)
 					{
@@ -164,7 +162,7 @@ void nano::ipc::broker::broadcast (std::shared_ptr<nanoapi::EventConfirmationT> 
 					}
 				}
 
-				return should_filter_conf_type_l || should_filter_account_l;
+				return should_filter_account_l;
 			};
 			auto const & options = itr->topic->options;
 			if (!options || !should_filter ())
