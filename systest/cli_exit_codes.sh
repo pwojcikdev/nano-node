@@ -47,6 +47,13 @@ key=$(printf '%064x' 1)
 expect_failure --account_key --account "${account%?}1" > "$DATADIR/account_key.out"
 [ ! -s "$DATADIR/account_key.out" ]
 
+# An enabled monitor needs a positive interval to calculate rates.
+printf '[node.monitor]\ninterval = 0\n' > "$DATADIR/config-node.toml"
+expect_failure --update_config > "$DATADIR/monitor.out" 2> "$DATADIR/monitor.err"
+grep -q 'monitor.interval' "$DATADIR/monitor.err"
+printf 'enable = false\n' >> "$DATADIR/config-node.toml"
+"$NANO_NODE_EXE" --update_config --data_path "$DATADIR" > /dev/null
+
 # a node config that cannot be parsed fails the commands that read it
 echo "[node" > $DATADIR/config-node.toml
 expect_failure --database_info
