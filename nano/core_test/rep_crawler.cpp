@@ -315,6 +315,34 @@ TEST (rep_crawler, two_reps_one_node)
 	// check that the reps are correct
 	ASSERT_TRUE (nano::dev::genesis_key.pub == reps[0].account || nano::dev::genesis_key.pub == reps[1].account);
 	ASSERT_TRUE (second_rep.pub == reps[0].account || second_rep.pub == reps[1].account);
+
+	// Both voting accounts share one broadcast destination.
+	ASSERT_EQ (reps[0].channel, reps[1].channel);
+	auto const channels = node2.network.list_pr ();
+	ASSERT_EQ (1, channels.size ());
+	EXPECT_EQ (reps[0].channel, channels.front ());
+}
+
+TEST (rep_crawler, shared_channel_tracks_principal_weight)
+{
+	nano::test::system system;
+	nano::node_flags flags;
+	flags.disable_rep_crawler = true;
+	auto & node = *system.add_node (flags);
+	auto const & genesis = nano::dev::genesis_key;
+	auto const other = nano::test::setup_rep (system, node, node.minimum_principal_weight () / 2);
+	auto channel = nano::test::fake_channel (node);
+	node.rep_crawler.force_add_rep (genesis.pub, channel);
+	node.rep_crawler.force_add_rep (other.pub, channel);
+	EXPECT_TRUE (node.rep_crawler.is_pr (channel));
+
+	// The peer remains principal when the delegation moves to its other representative.
+	auto wallet = system.wallet (0);
+	ASSERT_TRUE (wallet->insert_adhoc (genesis.prv, false));
+	ASSERT_NE (nullptr, wallet->change_action (genesis.pub, other.pub, 0, false));
+	ASSERT_EQ (0, node.ledger.weight (genesis.pub));
+	ASSERT_GT (node.ledger.weight (other.pub), node.minimum_principal_weight ());
+	EXPECT_TRUE (node.rep_crawler.is_pr (channel));
 }
 
 /*

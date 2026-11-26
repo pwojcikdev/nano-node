@@ -398,12 +398,15 @@ void nano::rep_crawler::query (std::shared_ptr<nano::transport::channel> const &
 bool nano::rep_crawler::is_pr (std::shared_ptr<nano::transport::channel> const & channel) const
 {
 	nano::lock_guard<nano::mutex> lock{ mutex };
-	auto existing = reps.get<tag_channel> ().find (channel);
-	if (existing != reps.get<tag_channel> ().end ())
+	auto const [begin, end] = reps.get<tag_channel> ().equal_range (channel);
+	if (begin == end)
 	{
-		return node.ledger.weight (existing->account) >= node.minimum_principal_weight ();
+		return false;
 	}
-	return false;
+	auto const minimum = node.minimum_principal_weight ();
+	return std::any_of (begin, end, [&] (auto const & rep) {
+		return node.ledger.weight (rep.account) >= minimum;
+	});
 }
 
 bool nano::rep_crawler::process (std::shared_ptr<nano::vote> const & vote, std::shared_ptr<nano::transport::channel> const & channel)
@@ -491,9 +494,10 @@ nano::transport::channel_list nano::rep_crawler::principal_channels () const
 
 	nano::transport::channel_list result;
 	nano::lock_guard<nano::mutex> lock{ mutex };
-	for (auto const & rep : reps.get<tag_account> ())
+	// The channel index groups accounts on the same connection together.
+	for (auto const & rep : reps.get<tag_channel> ())
 	{
-		if (node.ledger.weight (rep.account) >= minimum_weight && rep.channel->get_network_version () >= version_min)
+		if ((result.empty () || result.back () != rep.channel) && node.ledger.weight (rep.account) >= minimum_weight && rep.channel->get_network_version () >= version_min)
 		{
 			result.push_back (rep.channel);
 		}
