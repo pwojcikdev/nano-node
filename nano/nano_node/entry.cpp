@@ -1909,12 +1909,13 @@ int main (int argc, char * const * argv)
 		}
 		else if (vm.count ("debug_sys_logging"))
 		{
-			auto inactive_node = nano::default_inactive_node (data_path, vm);
-			inactive_node->node->logger.critical ({}, "Testing system logger (CRITICAL)");
-			inactive_node->node->logger.error ({}, "Testing system logger (ERROR)");
-			inactive_node->node->logger.warn ({}, "Testing system logger (WARN)");
-			inactive_node->node->logger.info ({}, "Testing system logger (INFO)");
-			inactive_node->node->logger.debug ({}, "Testing system logger (DEBUG)");
+			nano::logger::initialize (nano::log_config::daemon_default (), data_path, nano::config_overrides (vm));
+			nano::logger logger;
+			logger.critical ({}, "Testing system logger (CRITICAL)");
+			logger.error ({}, "Testing system logger (ERROR)");
+			logger.warn ({}, "Testing system logger (WARN)");
+			logger.info ({}, "Testing system logger (INFO)");
+			logger.debug ({}, "Testing system logger (DEBUG)");
 		}
 		else if (vm.count ("debug_account_versions"))
 		{

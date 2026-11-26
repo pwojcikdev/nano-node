@@ -9,6 +9,19 @@ DATADIR=$(new_datadir)
 $NANO_NODE_EXE --key_create --data_path $DATADIR > /dev/null
 $NANO_NODE_EXE --generate_config node --data_path $DATADIR > /dev/null
 
+# The logging diagnostic uses the daemon's sinks and severity settings before a ledger exists.
+(
+    unset NANO_LOG NANO_LOG_LEVELS
+    logdir=$(new_datadir)
+    printf '[log]\ndefault_level = "warn"\n[log.console]\nenable = false\n' > "$logdir/config-log.toml"
+    "$NANO_NODE_EXE" --debug_sys_logging --network dev --data_path "$logdir" --config 'log.default_level="info"' > "$logdir/console" 2>&1
+    if grep -Fq 'Testing system logger' "$logdir/console"; then exit 1; fi
+    for severity in CRITICAL ERROR WARN INFO; do
+        grep -Fq "Testing system logger ($severity)" "$logdir"/log/*.log
+    done
+    if grep -Fq 'Testing system logger (DEBUG)' "$logdir"/log/*.log; then exit 1; fi
+)
+
 # commands that print an error exit with 1, any other status such as a crash fails the test
 expect_failure() {
     local status=0
