@@ -16,7 +16,7 @@ frontier_scan_index::frontier_scan_index (frontier_scan_config const & config_a,
 	{
 		// Start at 1 to avoid the burn account
 		nano::uint256_t start = (i == 0) ? 1 : i * range_size;
-		nano::uint256_t end = (i == config.head_parallelism - 1) ? max_account : start + range_size;
+		nano::uint256_t end = (i == config.head_parallelism - 1) ? max_account : (i + 1) * range_size;
 
 		heads.emplace_back (frontier_head{ nano::account{ start }, nano::account{ end } });
 	}

@@ -135,6 +135,27 @@ TEST (bootstrap_frontier_scan, delayed_reply_after_advance)
 	EXPECT_EQ (4, scan.next ());
 }
 
+TEST (bootstrap_frontier_scan, adjacent_head_boundary)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 2;
+	config.consideration_count = 1;
+	test_context ctx{ config };
+	auto & scan = ctx.frontier_scan;
+
+	auto first = scan.next ();
+	auto second = scan.next ();
+	ASSERT_NE (first, second);
+
+	// A page that reaches the next head's start completes the first head's range.
+	ASSERT_TRUE (scan.process (first, { { second, 1 } }));
+	ASSERT_EQ (first, scan.next ());
+
+	nano::account next{ second.number () + 1 };
+	ASSERT_TRUE (scan.process (second, { { second, 1 }, { next, 2 } }));
+	ASSERT_EQ (next, scan.next ());
+}
+
 TEST (bootstrap_frontier_scan, cooldown)
 {
 	nano::frontier_scan_config config;
