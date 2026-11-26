@@ -248,12 +248,12 @@ public:
 	std::vector<std::string> hashes;
 };
 
-std::shared_ptr<confirmation_subscriber> watch_account (nano::ipc::broker & broker, nano::account const & account, bool include_block)
+std::shared_ptr<confirmation_subscriber> watch_account (nano::ipc::broker & broker, std::string const & account, bool include_block)
 {
 	auto client = std::make_shared<confirmation_subscriber> ();
 	auto topic = std::make_shared<nanoapi::TopicConfirmationT> ();
 	topic->options = std::make_unique<nanoapi::TopicConfirmationOptionsT> ();
-	topic->options->accounts.push_back (account.to_account ());
+	topic->options->accounts.push_back (account);
 	topic->options->include_block = include_block;
 	broker.subscribe (client, topic);
 	return client;
@@ -268,10 +268,10 @@ TEST (ipc, filtered_confirmation_without_block)
 	auto broker = std::make_shared<nano::ipc::broker> (node);
 	broker->start ();
 
-	auto sender = watch_account (*broker, nano::dev::genesis_key.pub, false);
-	auto destination = watch_account (*broker, send->destination (), false);
-	auto unrelated = watch_account (*broker, nano::keypair{}.pub, false);
-	auto full = watch_account (*broker, send->destination (), true);
+	auto sender = watch_account (*broker, nano::dev::genesis_key.pub.to_account (), false);
+	auto destination = watch_account (*broker, send->destination ().to_account (), false);
+	auto unrelated = watch_account (*broker, nano::keypair{}.pub.to_account (), false);
+	auto full = watch_account (*broker, send->destination ().to_account (), true);
 
 	node.observers.block_confirmed.notify ({ .status = { .winner = send }, .type = nano::confirmation_type::inactive_confirmation_height, .account = nano::dev::genesis_key.pub, .amount = 1, .is_state_send = true });
 	EXPECT_EQ ((std::vector{ nanoapi::Block_NONE }), sender->blocks);
@@ -296,6 +296,23 @@ TEST (ipc, confirmation_hash_without_block)
 
 	node.observers.block_confirmed.notify ({ .status = { .winner = send }, .type = nano::confirmation_type::inactive_confirmation_height, .account = nano::dev::genesis_key.pub, .amount = 1, .is_state_send = true });
 	EXPECT_EQ ((std::vector{ send->hash ().to_string () }), client->hashes);
+}
+
+TEST (ipc, confirmation_account_prefixes)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes.front ();
+	auto send = nano::test::setup_chain (system, node, 1).front ();
+	auto broker = std::make_shared<nano::ipc::broker> (node);
+	broker->start ();
+
+	auto sender = watch_account (*broker, nano::dev::genesis_key.pub.to_account ().replace (0, 4, "xrb"), false);
+	auto destination = watch_account (*broker, send->destination ().to_account ().replace (0, 4, "xrb"), true);
+	auto invalid = watch_account (*broker, "invalid", false);
+	node.observers.block_confirmed.notify ({ .status = { .winner = send }, .type = nano::confirmation_type::inactive_confirmation_height, .account = nano::dev::genesis_key.pub, .amount = 1, .is_state_send = true });
+	EXPECT_EQ ((std::vector{ nanoapi::Block_NONE }), sender->blocks);
+	EXPECT_EQ ((std::vector{ nanoapi::Block_BlockState }), destination->blocks);
+	EXPECT_TRUE (invalid->blocks.empty ());
 }
 
 TEST (ipc, confirmation_type_filters)
@@ -348,9 +365,9 @@ TEST (ipc, legacy_confirmation_accounts)
 
 	auto broker = std::make_shared<nano::ipc::broker> (node);
 	broker->start ();
-	auto owner = watch_account (*broker, genesis.pub, false);
-	auto destination = watch_account (*broker, recipient.pub, false);
-	auto unrelated = watch_account (*broker, nano::keypair{}.pub, false);
+	auto owner = watch_account (*broker, genesis.pub.to_account (), false);
+	auto destination = watch_account (*broker, recipient.pub.to_account (), false);
+	auto unrelated = watch_account (*broker, nano::keypair{}.pub.to_account (), false);
 
 	node.observers.block_confirmed.notify ({ .status = { .winner = nano::dev::genesis }, .type = nano::confirmation_type::inactive_confirmation_height, .account = genesis.pub, .amount = nano::dev::constants.genesis_amount });
 	node.observers.block_confirmed.notify ({ .status = { .winner = send }, .type = nano::confirmation_type::inactive_confirmation_height, .account = genesis.pub, .amount = 1 });

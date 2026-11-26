@@ -108,6 +108,18 @@ void subscribe_or_unsubscribe (nano::logger & logger, COLL & subscriber_collecti
 void nano::ipc::broker::subscribe (std::weak_ptr<nano::ipc::subscriber> const & subscriber_a, std::shared_ptr<nanoapi::TopicConfirmationT> const & confirmation_a)
 {
 	auto subscribers = confirmation_subscribers.lock ();
+	if (confirmation_a->options)
+	{
+		// Confirmation events use the canonical spelling even when the subscriber used an older prefix.
+		for (auto & text : confirmation_a->options->accounts)
+		{
+			nano::account account;
+			if (!account.decode_account (text))
+			{
+				text = account.to_account ();
+			}
+		}
+	}
 	subscribe_or_unsubscribe (node.logger, subscribers.get (), subscriber_a, confirmation_a);
 }
 
