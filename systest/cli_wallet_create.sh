@@ -19,6 +19,17 @@ $NANO_NODE_EXE --wallet_decrypt_unsafe --wallet $wallet_id --data_path $DATADIR 
 # list the wallet and check the wallet ID
 $NANO_NODE_EXE --wallet_list --data_path $DATADIR | grep -q "Wallet ID: $wallet_id"
 
+# Changing a representative needs the live wallet action queue.
+account=$(echo "{\"action\":\"account_list\",\"wallet\":\"$wallet_id\"}" | \
+    "$NANO_NODE_EXE" --debug_rpc --data_path "$DATADIR" | jq -er '.accounts[0]')
+status=0
+"$NANO_NODE_EXE" --debug_rpc=1 --data_path "$DATADIR" > "$DATADIR/response" 2> "$DATADIR/error" <<JSON || status=$?
+{"action":"account_representative_set","wallet":"$wallet_id","account":"$account","representative":"$account"}
+JSON
+test "$status" -eq 1
+test ! -s "$DATADIR/response"
+grep -Fq 'Timed out waiting for an offline RPC response' "$DATADIR/error"
+
 # Verify the password written by offline RPC with a separate wallet command.
 "$NANO_NODE_EXE" --debug_rpc --data_path "$DATADIR" <<JSON | jq -e '.changed == "1"' > /dev/null
 {

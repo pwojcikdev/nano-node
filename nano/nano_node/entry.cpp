@@ -51,6 +51,7 @@
 #include <boost/unordered_map.hpp>
 #include <boost/unordered_set.hpp>
 
+#include <future>
 #include <numeric>
 #include <sstream>
 
@@ -121,7 +122,7 @@ int main (int argc, char * const * argv)
 		("debug_profile_votes", "Profile votes processing (only for nano_dev_network)")
 		("debug_profile_frontiers_confirmation", "Profile frontiers confirmation speed (only for nano_dev_network)")
 		("debug_random_feed", "Generates output to RNG test suites")
-		("debug_rpc", "Read an RPC command from stdin and invoke it. Network operations will have no effect.")
+		("debug_rpc", boost::program_options::value<uint32_t> ()->implicit_value (60), "Read an offline RPC command from stdin. Optional argument sets the asynchronous response timeout in seconds (default 60). Network operations will have no effect.")
 		("debug_peers", "Display peer IPv6:port connections")
 		("debug_cemented_block_count", "Displays the number of cemented (confirmed) blocks")
 		("debug_stacktrace", "Display an example stacktrace")
@@ -1338,11 +1339,11 @@ int main (int argc, char * const * argv)
 			std::ostringstream command_l;
 			command_l << std::cin.rdbuf ();
 
-			auto response_handler_l ([] (std::string const & response_a) {
-				std::cout << response_a;
-				// Terminate as soon as we have the result, even if background threads (like work generation) are running.
-				std::exit (0);
-			});
+			std::promise<std::string> response;
+			auto future = response.get_future ();
+			auto response_handler_l = [&response] (std::string const & json) {
+				response.set_value (json);
+			};
 
 			auto node_flags = nano::inactive_node_flag_defaults ();
 			nano::update_flags (node_flags, vm);
@@ -1353,6 +1354,15 @@ int main (int argc, char * const * argv)
 			nano::ipc::ipc_server server (*inactive_node_l.node, config);
 			auto handler_l (std::make_shared<nano::json_handler> (*inactive_node_l.node, config, command_l.str (), response_handler_l));
 			handler_l->process_request ();
+			// Some RPCs depend on services that are only started by a running node.
+			if (future.wait_for (std::chrono::seconds{ vm["debug_rpc"].as<uint32_t> () }) != std::future_status::ready)
+			{
+				std::cerr << "Timed out waiting for an offline RPC response" << std::endl;
+				std::exit (1);
+			}
+			std::cout << future.get () << std::flush;
+			// Work generation and other background jobs may still be running.
+			std::exit (0);
 		}
 		else if (vm.count ("validate_blocks") || vm.count ("debug_validate_blocks"))
 		{
