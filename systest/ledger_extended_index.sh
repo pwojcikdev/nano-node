@@ -42,4 +42,16 @@ info | grep -Eq 'account_block_by_height_index: +disabled'
 # A second drop is a no-op
 $NANO_NODE_EXE --drop_extended_ledger_indices --data_path "$DATADIR" --network dev | grep -q 'not enabled'
 
+# Pruned ledgers reject both populate commands and keep their persisted index flags.
+DATADIR=$(new_datadir)
+$NANO_NODE_EXE --initialize --data_path "$DATADIR" --network dev --enable_pruning --disable_topo_index
+before=$(info)
+for option in --populate_topo_index --populate_extended_ledger_indices; do
+    status=0
+    $NANO_NODE_EXE "$option" --data_path "$DATADIR" --network dev > "$DATADIR/populate-error" 2>&1 || status=$?
+    test "$status" -eq 1
+    grep -Fq 'cannot be populated on a pruned ledger' "$DATADIR/populate-error"
+    test "$(info)" = "$before"
+done
+
 echo "All ledger_extended_index tests passed"

@@ -11,6 +11,7 @@
 #include <nano/store/ledger/pending.hpp>
 
 #include <chrono>
+#include <stdexcept>
 
 // Populate missing extended ledger indices when requested by options; persisted index flags remain authoritative otherwise
 void nano::ledger::initialize_extended_ledger_indices ()
@@ -34,7 +35,10 @@ void nano::ledger::initialize_extended_ledger_indices ()
 
 void nano::ledger::populate_extended_ledger_indices ()
 {
-	release_assert (!flags.pruning, "extended ledger indices cannot be populated on a pruned ledger");
+	if (flags.pruning)
+	{
+		throw std::invalid_argument ("Extended ledger indices cannot be populated on a pruned ledger");
+	}
 
 	logger.info (nano::log::type::ledger_upgrade, "Populating extended ledger indices...");
 
