@@ -2,6 +2,7 @@
 #include <nano/lib/blocks.hpp>
 #include <nano/lib/files.hpp>
 #include <nano/lib/stats.hpp>
+#include <nano/lib/timer.hpp>
 #include <nano/node/active_elections.hpp>
 #include <nano/node/election.hpp>
 #include <nano/node/nodeconfig.hpp>
@@ -77,6 +78,31 @@ TEST (online_reps, expired_weight_is_excluded_from_sample)
 	ASSERT_TIMELY (5s, node->stats.count (nano::stat::type::online_reps, nano::stat::detail::sample_skipped) > 0);
 	ASSERT_EQ (1, node->stats.count (nano::stat::type::online_reps, nano::stat::detail::rep_trim));
 	ASSERT_EQ (0, node->store.online_weight.count (node->store.tx_begin_read ()));
+}
+
+TEST (online_reps, sample_after_clock_moves_back)
+{
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.online_weight_minimum = 10;
+	auto node = std::make_shared<nano::node> (nano::unique_path (), config, system.work, nano::node_flags{});
+	system.register_node (node);
+
+	// Two samples that were recorded before the clock was corrected now lie in the future.
+	auto const now = std::chrono::system_clock::now ();
+	{
+		auto transaction = node->store.tx_begin_write ();
+		auto & samples = node->store.online_weight;
+		samples.put (transaction, nano::seconds_since_epoch (now - config.network_params.node.weight_cutoff - 1min), 100);
+		samples.put (transaction, nano::seconds_since_epoch (now - 1min), 20);
+		samples.put (transaction, nano::seconds_since_epoch (now + 1h), 90);
+		samples.put (transaction, nano::seconds_since_epoch (now + 2h), 110);
+	}
+	node->online_reps.force_online_weight (30);
+	node->online_reps.force_sample ();
+
+	EXPECT_EQ (2, node->store.online_weight.count (node->store.tx_begin_read ()));
+	ASSERT_EQ (30, node->online_reps.trended ());
 }
 
 TEST (online_reps, rep_crawler)

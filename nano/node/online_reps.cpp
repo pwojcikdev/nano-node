@@ -225,6 +225,13 @@ void nano::online_reps::trim_trended (nano::store::write_transaction const & tra
 	auto const now = std::chrono::system_clock::now ();
 	auto const cutoff = now - config.network_params.node.weight_cutoff;
 
+	// A backward wall-clock adjustment can leave previously recorded samples ahead of this one.
+	if (auto newest = ledger.store.online_weight.rbegin (transaction); newest != ledger.store.online_weight.rend (transaction) && nano::from_seconds_since_epoch (newest->first) > now)
+	{
+		sanitize_trended (transaction);
+		return;
+	}
+
 	std::deque<nano::store::ledger::online_weight_view::iterator::value_type> to_remove;
 
 	for (auto it = ledger.store.online_weight.begin (transaction); it != ledger.store.online_weight.end (transaction); ++it)
