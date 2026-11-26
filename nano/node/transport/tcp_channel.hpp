@@ -16,14 +16,13 @@ public:
 	using callback_t = std::function<void (boost::system::error_code const &, std::size_t)>;
 	using entry_t = std::pair<nano::shared_const_buffer, callback_t>;
 	using value_t = std::pair<traffic_type, entry_t>;
-	using batch_t = std::deque<value_t>;
 
 	bool empty () const;
 	size_t size () const;
 	size_t size (traffic_type) const;
 	void push (traffic_type, entry_t);
-	value_t next ();
-	batch_t next_batch (size_t max_count);
+	using permit_t = std::function<bool (traffic_type, size_t)>;
+	std::optional<value_t> next (permit_t const &);
 
 	bool max (traffic_type) const;
 	bool full (traffic_type) const;

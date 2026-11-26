@@ -113,22 +113,32 @@ asio::awaitable<void> nano::transport::tcp_channel::run_sending (nano::async::co
 	{
 		debug_assert (strand.running_in_this_thread ());
 
-		auto next_batch = [this] () {
-			const size_t max_batch = 8; // TODO: Make this configurable
-			nano::lock_guard<nano::mutex> lock{ mutex };
-			return queue.next_batch (max_batch);
-		};
-
-		if (auto batch = next_batch (); !batch.empty ())
+		std::optional<tcp_channel_queue::value_t> current;
+		std::optional<std::chrono::milliseconds> retry_after;
 		{
-			for (auto const & [type, item] : batch)
-			{
-				auto ec = co_await send_one (type, item);
-				if (ec)
+			nano::lock_guard<nano::mutex> lock{ mutex };
+			current = queue.next ([this, &retry_after] (traffic_type type, size_t size) {
+				auto result = node.outbound_limiter.consume (size, type);
+				if (!result)
 				{
-					co_return; // Stop on error
+					retry_after = std::min (retry_after.value_or (std::chrono::milliseconds{ 100 }), result.retry_after);
 				}
+				return result.granted;
+			});
+		}
+		if (current)
+		{
+			auto const & [type, item] = *current;
+			auto ec = co_await send_one (type, item);
+			if (ec)
+			{
+				co_return;
 			}
+		}
+		else if (retry_after)
+		{
+			node.stats.inc (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_bandwidth, nano::stat::dir::out);
+			co_await condition.wait_for (*retry_after);
 		}
 		else
 		{
@@ -143,13 +153,6 @@ asio::awaitable<boost::system::error_code> nano::transport::tcp_channel::send_on
 
 	auto const & [buffer, callback] = item;
 	auto const size = buffer.size ();
-
-	// Charge this message to its own traffic class before writing it.
-	for (auto result = node.outbound_limiter.consume (size, type); !result; result = node.outbound_limiter.consume (size, type))
-	{
-		node.stats.inc (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_bandwidth, nano::stat::dir::out);
-		co_await nano::async::sleep_for (std::min (result.retry_after, std::chrono::milliseconds{ 100 }));
-	}
 
 	node.stats.inc (nano::stat::type::tcp_channel, nano::stat::detail::send, nano::stat::dir::out);
 	node.stats.inc (nano::stat::type::tcp_channel_send, to_stat_detail (type), nano::stat::dir::out);
@@ -248,71 +251,64 @@ void nano::transport::tcp_channel_queue::push (traffic_type type, entry_t entry)
 	++total_size;
 }
 
-auto nano::transport::tcp_channel_queue::next () -> value_t
+auto nano::transport::tcp_channel_queue::next (permit_t const & permit) -> std::optional<value_t>
 {
-	debug_assert (!empty ()); // Should be checked before calling next
-
-	auto should_seek = [&, this] () {
-		if (current == queues.end ())
+	if (empty ())
+	{
+		return std::nullopt;
+	}
+	auto advance = [this] () {
+		if (current == queues.end () || ++current == queues.end ())
 		{
-			return true;
+			current = queues.begin ();
 		}
-		auto & queue = current->second;
-		if (queue.empty ())
-		{
-			return true;
-		}
-		// Allow up to `priority` requests to be processed before moving to the next queue
-		if (counter >= priority (current->first))
-		{
-			return true;
-		}
-		return false;
+		counter = 0;
 	};
 
-	auto seek_next = [&, this] () {
-		counter = 0;
+	auto advance_to_next = [&] () {
 		do
 		{
-			if (current != queues.end ())
-			{
-				++current;
-			}
-			if (current == queues.end ())
-			{
-				current = queues.begin ();
-			}
-			release_assert (current != queues.end ());
+			advance ();
 		} while (current->second.empty ());
 	};
 
-	if (should_seek ())
+	if (current == queues.end () || current->second.empty () || counter >= priority (current->first))
 	{
-		seek_next ();
+		advance_to_next ();
 	}
 
-	release_assert (current != queues.end ());
+	auto take = [&] (queue_t & source) -> std::optional<value_t> {
+		auto & [type, queue] = source;
+		if (queue.empty () || !permit (type, queue.front ().first.size ()))
+		{
+			return std::nullopt;
+		}
+		if (type == current->first)
+		{
+			++counter;
+		}
+		auto entry = std::move (queue.front ());
+		queue.pop_front ();
+		--total_size;
+		return value_t{ type, std::move (entry) };
+	};
 
-	auto & source = current->first;
-	auto & queue = current->second;
-
-	++counter;
-	--total_size;
-
-	release_assert (!queue.empty ());
-	auto entry = std::move (queue.front ());
-	queue.pop_front ();
-	return { source, std::move (entry) };
-}
-
-auto nano::transport::tcp_channel_queue::next_batch (size_t max_count) -> batch_t
-{
-	std::deque<value_t> result;
-	while (!empty () && result.size () < max_count)
+	if (auto entry = take (*current))
 	{
-		result.emplace_back (next ());
+		return entry;
 	}
-	return result;
+	// Preserve a waiting generic class's turn while its shared bucket refills.
+	// Bootstrap replies use their own bucket and can still be served independently.
+	if (current->first != traffic_type::bootstrap_server)
+	{
+		return take (queues.at (traffic_type::bootstrap_server));
+	}
+	if (total_size > current->second.size ())
+	{
+		advance_to_next ();
+		return take (*current);
+	}
+	return std::nullopt;
 }
 
 size_t nano::transport::tcp_channel_queue::priority (traffic_type type) const

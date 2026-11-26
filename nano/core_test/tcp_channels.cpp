@@ -341,3 +341,59 @@ TEST (tcp_channels, outbound_bandwidth_by_message)
 	EXPECT_TRUE (node.outbound_limiter.try_consume (4096 - reply_size, traffic_type::bootstrap_server));
 	EXPECT_TRUE (node.outbound_limiter.try_consume (4096 - keepalive_size, traffic_type::generic));
 }
+
+TEST (tcp_channels, send_while_bootstrap_bandwidth_is_busy)
+{
+	nano::test::system system (1);
+	auto & node = *system.nodes.front ();
+	auto [channel, peer] = make_connected_channel (node);
+
+	using nano::transport::traffic_type;
+	// A prior bootstrap response has used this bucket until it refills.
+	node.outbound_limiter.reset ({ 1, 1 }, traffic_type::bootstrap_server);
+	ASSERT_TRUE (node.outbound_limiter.try_consume (256, traffic_type::bootstrap_server));
+	nano::messages::asc_pull_ack reply{ node.network_params.network };
+	reply.type = nano::messages::asc_pull_type::blocks;
+	reply.payload = nano::messages::asc_pull_ack::blocks_payload{};
+	reply.update_header ();
+	ASSERT_TRUE (channel->send (reply, traffic_type::bootstrap_server));
+	ASSERT_TIMELY (5s, node.stats.count (nano::stat::type::tcp_channel_wait, nano::stat::detail::wait_bandwidth, nano::stat::dir::out) > 0);
+
+	nano::messages::keepalive keepalive{ node.network_params.network };
+	ASSERT_TRUE (channel->send (keepalive, traffic_type::keepalive));
+	auto const size = keepalive.to_shared_const_buffer ().size ();
+	ASSERT_TIMELY_EQ (3s, size, peer.available ());
+
+	// When its bandwidth comes back, the waiting bootstrap response follows.
+	node.outbound_limiter.reset (nano::rate_limit::unlimited (), traffic_type::bootstrap_server);
+	ASSERT_TIMELY_EQ (5s, size + reply.to_shared_const_buffer ().size (), peer.available ());
+}
+
+TEST (tcp_channels, preserve_weighted_turn_between_refills)
+{
+	using nano::transport::traffic_type;
+	nano::transport::tcp_channel_queue queue;
+	for (unsigned i = 0; i < 8; ++i)
+	{
+		for (auto type : { traffic_type::generic, traffic_type::vote, traffic_type::bootstrap_server })
+		{
+			queue.push (type, { nano::shared_const_buffer{ static_cast<uint8_t> (i) }, nullptr });
+		}
+	}
+	// The generic bucket can afford one send per refill. Its two classes get four turns each,
+	// including when bootstrap replies are sent from their independent bucket between refills.
+	for (unsigned i = 0; i < 16; ++i)
+	{
+		auto next = queue.next ([] (traffic_type type, size_t) { return type != traffic_type::bootstrap_server; });
+		ASSERT_TRUE (next);
+		ASSERT_EQ (i % 8 < 4 ? traffic_type::generic : traffic_type::vote, next->first);
+		ASSERT_FALSE (queue.next ([] (traffic_type, size_t) { return false; }));
+		if (i % 2 == 0)
+		{
+			auto bootstrap = queue.next ([] (traffic_type type, size_t) { return type == traffic_type::bootstrap_server; });
+			ASSERT_TRUE (bootstrap);
+			ASSERT_EQ (traffic_type::bootstrap_server, bootstrap->first);
+		}
+	}
+	ASSERT_TRUE (queue.empty ());
+}
