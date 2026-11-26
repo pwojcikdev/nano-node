@@ -22,6 +22,12 @@ expect_failure --key_expand
 expect_failure --key_expand --key invalid
 expect_failure --generate_config invalid
 
+# A full output volume must prevent a caller from installing an incomplete configuration.
+if [ -c /dev/full ]; then
+    expect_failure --generate_config node > /dev/full
+    expect_failure --update_config > /dev/full
+fi
+
 account=nano_1111111111111111111111111111111111111111111111111113b8661hfk
 key=$(printf '%064x' 1)
 [ "$("$NANO_NODE_EXE" --account_key --account "$account" --data_path "$DATADIR")" = "Hex: $key" ]
