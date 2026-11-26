@@ -1603,6 +1603,8 @@ TEST (active_elections, limit_vote_hinted_elections)
 	const int aec_limit = 10;
 	config.backlog_scan->enable = false;
 	config.optimistic_scheduler->enable = false;
+	// Keep the hinting threshold constant when the final genesis vote updates the online weight sample.
+	config.online_weight_minimum = nano::dev::constants.genesis_amount;
 	config.active_elections->size = aec_limit;
 	config.active_elections->hinted_limit_percentage = 10; // Should give us a limit of 1 hinted election
 	auto & node = *system.add_node (config);
