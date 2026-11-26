@@ -2405,6 +2405,7 @@ struct delegators_start
 {
 	std::optional<nano::amount> weight; // absent when the position must be resolved from the account's current weight
 	nano::account account{ 0 };
+	bool weight_only{ false };
 };
 
 /*
@@ -2442,8 +2443,7 @@ std::optional<delegators_start> parse_delegators_start (std::string const & text
 	}
 	if (account_text.empty ())
 	{
-		// Weight-only bound: a virtual maximum account puts the position just above the tie group, making the weight itself inclusive
-		result.account = nano::account{ std::numeric_limits<nano::uint256_t>::max () };
+		result.weight_only = true;
 	}
 	else if (result.account.decode_account (account_text))
 	{
@@ -2464,6 +2464,15 @@ std::optional<nano::account_delegator_by_weight_key> resolve_delegators_start (n
 	{
 		ec = nano::error_common::bad_account_number;
 		return std::nullopt;
+	}
+	if (parsed->weight_only)
+	{
+		// Start just below the next weight to include every account tied at this weight.
+		if (auto next_weight = nano::store::next_key (*parsed->weight))
+		{
+			return nano::account_delegator_by_weight_key{ representative, *next_weight, 0 };
+		}
+		return std::nullopt; // The maximum weight includes the entire representative's slice.
 	}
 	if (parsed->weight.has_value ())
 	{
@@ -2521,7 +2530,9 @@ delegators_page collect_delegators_indexed (nano::node & node, nano::secure::tra
 boost::property_tree::ptree collect_delegators_legacy (nano::node & node, nano::secure::transaction & transaction, nano::account const & representative, delegators_options const & options, nano::account const & start)
 {
 	boost::property_tree::ptree delegators;
-	for (auto i (node.store.account.begin (transaction, nano::inc_sat (start.number ()))), n (node.store.account.end (transaction)); i != n && delegators.size () < options.count; ++i)
+	auto const next = nano::store::next_key (start);
+	auto i = next ? node.store.account.begin (transaction, *next) : node.store.account.end (transaction);
+	for (auto n = node.store.account.end (transaction); i != n && delegators.size () < options.count; ++i)
 	{
 		nano::account_info const & info (i->second);
 		if (info.representative == representative && info.balance.number () >= options.threshold.number ())

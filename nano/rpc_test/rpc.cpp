@@ -4671,6 +4671,56 @@ TEST (rpc, delegators_legacy_order)
 	}
 }
 
+TEST (rpc, delegators_maximum_account)
+{
+	nano::account const account{ std::numeric_limits<nano::uint256_t>::max () };
+	for (bool indexed : { false, true })
+	{
+		SCOPED_TRACE (indexed);
+		nano::test::system system;
+		auto config = system.default_config ();
+		config.extended_ledger_index = indexed;
+		auto node = add_ipc_enabled_node (system, config);
+		nano::block_builder builder;
+		auto send = builder.send ()
+					.previous (nano::dev::genesis->hash ())
+					.destination (account)
+					.balance (nano::dev::constants.genesis_amount - 1)
+					.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					.work (*node->work_generate_blocking (nano::dev::genesis->hash ()))
+					.build ();
+		ASSERT_EQ (nano::block_status::progress, node->process (send));
+		auto open = builder.state ()
+					.account (account)
+					.previous (0)
+					.representative (0)
+					.balance (0)
+					.link (node->ledger.epoch_link (nano::epoch::epoch_1))
+					.sign (nano::dev::genesis_key.prv, nano::dev::genesis_key.pub)
+					.work (*node->work_generate_blocking (account))
+					.build ();
+		ASSERT_EQ (nano::block_status::progress, node->process (open));
+
+		auto const rpc_ctx = add_rpc (system, node);
+		boost::property_tree::ptree request;
+		request.put ("action", "delegators");
+		request.put ("account", nano::account{ 0 }.to_account ());
+		std::vector<std::pair<std::string, std::string>> expected{ { account.to_account (), "0" } };
+		ASSERT_EQ (expected, delegators_of (wait_response (system, rpc_ctx, request)));
+		request.put ("start", account.to_account ());
+		EXPECT_TRUE (delegators_of (wait_response (system, rpc_ctx, request)).empty ());
+		if (indexed)
+		{
+			request.put ("start", "0:");
+			EXPECT_EQ (expected, delegators_of (wait_response (system, rpc_ctx, request)));
+			request.put ("start", nano::amount{ nano::dev::constants.genesis_amount }.to_string_dec () + ":");
+			EXPECT_EQ (expected, delegators_of (wait_response (system, rpc_ctx, request)));
+			request.put ("start", "0:" + account.to_account ());
+			EXPECT_TRUE (delegators_of (wait_response (system, rpc_ctx, request)).empty ());
+		}
+	}
+}
+
 /*
  * Indexed delegators behaviour: weight-descending, account-descending on ties;
  * "start" is a pagination cursor resuming strictly below that account's weight position;
