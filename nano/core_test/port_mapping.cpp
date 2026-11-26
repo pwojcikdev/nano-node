@@ -77,6 +77,11 @@ protected:
 		node->port_mapping.refresh_mapping ();
 	}
 
+	void lose_gateway (int discovery_result)
+	{
+		node->port_mapping.update_gateway (nano::upnp_state{}, discovery_result, "127.0.0.1");
+	}
+
 	void shutdown ()
 	{
 		node->port_mapping.shutdown ();
@@ -171,5 +176,14 @@ TEST_F (port_mapping_fixture, preserves_existing_permanent_mapping)
 	EXPECT_EQ (node->config.external_port, node->port_mapping.external_address ().port ());
 	shutdown ();
 	EXPECT_TRUE (last_request ("DeletePortMapping").empty ());
+}
+
+TEST_F (port_mapping_fixture, withdraws_endpoint_when_gateway_disappears)
+{
+	set_entry ("127.0.0.1", node->network.endpoint ().port ());
+	ASSERT_FALSE (check ());
+	ASSERT_EQ (node->config.external_port, node->port_mapping.external_address ().port ());
+	lose_gateway (0); // No gateway discovered after a router restart.
+	EXPECT_EQ (0, node->port_mapping.external_address ().port ());
 }
 }

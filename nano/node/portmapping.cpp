@@ -176,13 +176,30 @@ void nano::port_mapping::refresh_devices ()
 		node.logger.debug (nano::log::type::upnp, "UPnP device url: {}, st: {}, usn: {}", i->descURL, i->st, i->usn);
 	}
 
-	// Update port mapping
-	nano::lock_guard<nano::mutex> guard_l (mutex);
-	upnp = std::move (upnp_l);
-	if (igd_error_l == 1 || igd_error_l == 2)
+	update_gateway (std::move (upnp_l), igd_error_l, local_address_l.data ());
+}
+
+void nano::port_mapping::update_gateway (upnp_state && gateway, int igd_result, char const * local_address)
+{
+	nano::lock_guard<nano::mutex> guard{ mutex };
+	// Result 2 still identifies an IGD, including gateways behind another NAT.
+	boost::system::error_code ec;
+	auto const local = boost::asio::ip::make_address_v4 (local_address, ec);
+	if ((igd_result == 1 || igd_result == 2) && !ec && !local.is_unspecified ())
 	{
-		boost::system::error_code ec;
-		address = boost::asio::ip::make_address_v4 (local_address_l.data (), ec);
+		upnp = std::move (gateway);
+		address = local;
+	}
+	else
+	{
+		upnp = upnp_state{};
+		address = {};
+		for (auto & protocol : protocols)
+		{
+			protocol.external_port = 0;
+			protocol.external_address = {};
+			protocol.installed = false;
+		}
 	}
 }
 
@@ -317,7 +334,7 @@ void nano::port_mapping::check_mapping ()
 
 	refresh_devices ();
 
-	if (upnp.devices != nullptr)
+	if (upnp.urls.controlURL != nullptr)
 	{
 		// If the mapping is lost, refresh it
 		if (check_lost_or_old_mapping ())

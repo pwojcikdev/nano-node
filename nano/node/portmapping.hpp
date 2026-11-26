@@ -67,6 +67,7 @@ private:
 	void run ();
 
 	void shutdown ();
+	void update_gateway (upnp_state &&, int igd_result, char const * local_address);
 	/** Add port mappings for the node port (not RPC). Refresh when the lease ends. */
 	void refresh_mapping ();
 	/** Check occasionally to refresh in case router loses mapping */
