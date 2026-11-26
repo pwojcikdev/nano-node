@@ -34,17 +34,20 @@ make nano_rpc %{?_smp_mflags}
 
 %install
 if [ ! %{buildroot} = "/" ]; then %{__rm} -rf %{buildroot}; fi
-mkdir -p %{buildroot}/usr/bin
-mkdir -p %{buildroot}/etc/systemd/system/
-cp nano_node %{buildroot}/usr/bin/nano_node
-cp nano_rpc %{buildroot}/usr/bin/nano_rpc
+install -d %{buildroot}%{_bindir} %{buildroot}/etc/systemd/system
+install -d %{buildroot}%{_libexecdir}/%{name}/api/flatbuffers
+install -m 755 nano_node nano_rpc %{buildroot}%{_libexecdir}/%{name}/
+install -m 644 api/flatbuffers/nanoapi.fbs %{buildroot}%{_libexecdir}/%{name}/api/flatbuffers/
+ln -sr %{buildroot}%{_libexecdir}/%{name}/nano_node %{buildroot}%{_bindir}/nano_node
+ln -sr %{buildroot}%{_libexecdir}/%{name}/nano_rpc %{buildroot}%{_bindir}/nano_rpc
 cp etc/systemd/nanocurrency.service %{buildroot}/etc/systemd/system/nanocurrency.service
 
 %clean
 if [ ! %{buildroot} = "/" ]; then %{__rm} -rf %{buildroot}; fi
 
 %files
-%defattr(755,root,root)
+%defattr(-,root,root)
+%{_libexecdir}/%{name}
 %{_bindir}/nano_node
 %{_bindir}/nano_rpc
 %attr(644,root,root) /etc/systemd/system/nanocurrency.service
