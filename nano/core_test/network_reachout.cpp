@@ -198,7 +198,9 @@ TEST (network_reachout, trigger_reaches_out)
 TEST (network_reachout, reconnect_cached)
 {
 	nano::test::system system;
-	auto & node1 = *system.add_node ();
+	auto config = system.default_config ();
+	config.peer_history->check_interval = 10min; // Only an explicit trigger can cache the peer during the test
+	auto & node1 = *system.add_node (config);
 	auto & node2 = *system.add_node ();
 	ASSERT_EQ (1, node1.network.size ());
 	ASSERT_EQ (1, node2.network.size ());

@@ -4,7 +4,6 @@
 #include <nano/node/endpoint.hpp>
 #include <nano/node/fwd.hpp>
 
-#include <atomic>
 #include <chrono>
 #include <thread>
 
@@ -49,7 +48,8 @@ private: // Dependencies
 	nano::stats & stats;
 
 private:
-	std::atomic<bool> stopped{ false };
+	bool stopped{ false };
+	bool triggered{ false };
 	mutable nano::mutex mutex;
 	nano::condition_variable condition;
 	std::thread thread;

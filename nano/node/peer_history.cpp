@@ -59,6 +59,10 @@ size_t nano::peer_history::size () const
 
 void nano::peer_history::trigger ()
 {
+	{
+		nano::lock_guard<nano::mutex> guard{ mutex };
+		triggered = true;
+	}
 	condition.notify_all ();
 }
 
@@ -67,9 +71,10 @@ void nano::peer_history::run ()
 	nano::unique_lock<nano::mutex> lock{ mutex };
 	while (!stopped)
 	{
-		condition.wait_for (lock, config.check_interval, [this] { return stopped.load (); });
+		condition.wait_for (lock, config.check_interval, [this] { return stopped || triggered; });
 		if (!stopped)
 		{
+			triggered = false;
 			stats.inc (nano::stat::type::peer_history, nano::stat::detail::loop);
 
 			lock.unlock ();
