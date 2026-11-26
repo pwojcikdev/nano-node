@@ -1633,6 +1633,51 @@ TEST (block_store, default_database_backend)
 	}
 }
 
+TEST (block_store, rocksdb_copy_with_compaction)
+{
+	if (nano::default_database_backend () != nano::database_backend::rocksdb)
+	{
+		GTEST_SKIP ();
+	}
+	auto const source_path = nano::unique_path ();
+	auto const destination_path = nano::unique_path ();
+	std::filesystem::create_directories (source_path);
+	{
+		::rocksdb::Options options;
+		options.create_if_missing = true;
+		std::unique_ptr<::rocksdb::DB> db;
+		ASSERT_TRUE (::rocksdb::DB::Open (options, source_path.string (), &db).ok ());
+		::rocksdb::ColumnFamilyHandle * raw_meta{ nullptr };
+		ASSERT_TRUE (db->CreateColumnFamily ({}, "meta", &raw_meta).ok ());
+		std::unique_ptr<::rocksdb::ColumnFamilyHandle> meta{ raw_meta };
+
+		ASSERT_TRUE (db->Put ({}, meta.get (), "removed", "old value").ok ());
+		ASSERT_TRUE (db->Flush ({}, meta.get ()).ok ());
+		ASSERT_TRUE (db->Delete ({}, meta.get (), "removed").ok ());
+		ASSERT_TRUE (db->Put ({}, meta.get (), "retained", "current value").ok ());
+		ASSERT_TRUE (db->Flush ({}, meta.get ()).ok ());
+	}
+
+	nano::logger logger;
+	nano::store::rocksdb::backend_rocksdb source{ source_path, {}, logger };
+	source.open (nano::store::backend::schema_meta, nano::store::open_mode::read_only_backup);
+	boost::property_tree::ptree before;
+	source.collect_memory_stats (before);
+	source.copy_with_compaction (destination_path);
+
+	nano::store::rocksdb::backend_rocksdb copy{ destination_path, {}, logger };
+	copy.open (nano::store::backend::schema_meta, nano::store::open_mode::read_only);
+	auto txn = copy.tx_begin_read ();
+	nano::store::db_val value;
+	ASSERT_TRUE (copy.success (copy.get (txn, nano::store::table::meta, "retained", value)));
+	ASSERT_EQ (std::string_view{ "current value" }, std::string_view (static_cast<char const *> (value.data ()), value.size ()));
+	ASSERT_FALSE (copy.exists (txn, nano::store::table::meta, "removed"));
+
+	boost::property_tree::ptree after;
+	copy.collect_memory_stats (after);
+	EXPECT_LT (after.get<uint64_t> ("total_sst_files_size"), before.get<uint64_t> ("total_sst_files_size"));
+}
+
 TEST (block_store, rocksdb_level_file_counts)
 {
 	if (nano::default_database_backend () != nano::database_backend::rocksdb)

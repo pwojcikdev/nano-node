@@ -645,6 +645,17 @@ void backend_rocksdb::copy_with_compaction (std::filesystem::path const & destin
 	// Recover the restored WALs before the caller installs the database files.
 	backend_rocksdb restored (destination_path, config, nano::default_logger ());
 	restored.open (get_schema (), open_mode::read_only_backup);
+	// A physical backup preserves obsolete values and tombstones in its SST files.
+	::rocksdb::CompactRangeOptions options;
+	options.bottommost_level_compaction = ::rocksdb::BottommostLevelCompaction::kForceOptimized;
+	for (auto const & family : restored.handles)
+	{
+		auto const compact_status = restored.db->CompactRange (options, family.get (), nullptr, nullptr);
+		if (!compact_status.ok ())
+		{
+			throw std::runtime_error ("Failed to compact restored column family " + family->GetName () + ": " + compact_status.ToString ());
+		}
+	}
 }
 
 std::string backend_rocksdb::get_vendor () const
