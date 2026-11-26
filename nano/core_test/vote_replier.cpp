@@ -36,6 +36,18 @@ TEST (vote_replier, disabled)
 	ASSERT_EQ (0, node.stats.count (nano::stat::type::vote_replier, nano::stat::detail::request));
 }
 
+TEST (vote_replier, request_after_stop)
+{
+	nano::test::system system;
+	auto & node = *system.add_node ();
+	auto channel = nano::test::fake_channel (node);
+	auto const & genesis = nano::dev::genesis;
+
+	node.vote_replier.stop ();
+	ASSERT_FALSE (node.vote_replier.request ({ { genesis->hash (), genesis->root () } }, channel));
+	ASSERT_TRUE (node.vote_replier.empty ());
+}
+
 TEST (vote_replier, enable_voting_flag)
 {
 	nano::test::system system;

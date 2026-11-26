@@ -101,6 +101,10 @@ bool nano::vote_replier::request (request_type const & request, std::shared_ptr<
 	queue_type::push_evicting_result result;
 	{
 		nano::lock_guard<nano::mutex> guard{ mutex };
+		if (stopped)
+		{
+			return false;
+		}
 		result = queue.push_evicting ({ request, channel }, { nano::no_value{}, channel });
 	}
 	if (result.added)
