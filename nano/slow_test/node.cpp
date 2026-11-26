@@ -34,6 +34,7 @@
 #include <nano/store/ledger/confirmation_height.hpp>
 #include <nano/store/ledger/peer.hpp>
 #include <nano/store/ledger/pruned.hpp>
+#include <nano/test_common/chains.hpp>
 #include <nano/test_common/make_store.hpp>
 #include <nano/test_common/network.hpp>
 #include <nano/test_common/system.hpp>
@@ -105,40 +106,32 @@ TEST (system, generate_mass_activity_long)
 
 TEST (system, receive_while_synchronizing)
 {
-	std::vector<boost::thread> threads;
-	{
-		nano::test::system system;
-		nano::node_config node_config = system.default_config ();
-		node_config.enable_voting = false; // Prevent blocks cementing
-		auto node = system.add_node (node_config);
-		system.wallet (0)->insert_adhoc (nano::dev::genesis_key.prv);
-		uint32_t count (1000);
-		system.generate_mass_activity (count, *system.nodes[0]);
-		nano::keypair key;
-		auto node1 (std::make_shared<nano::node> (system.get_available_port (), nano::unique_path (), system.work, nano::node_flags{}));
-		auto wallet (node1->wallets.create (1));
-		ASSERT_TRUE (wallet->insert_adhoc (nano::dev::genesis_key.prv)); // For voting
-		auto insert_result = wallet->insert_adhoc (key.prv);
-		ASSERT_TRUE (insert_result);
-		ASSERT_EQ (key.pub, insert_result.value ());
-		node1->start ();
-		system.nodes.push_back (node1);
-		ASSERT_NE (nullptr, nano::test::establish_tcp (system, *node1, node->network.endpoint ()));
-		node1->workers.post_delayed (std::chrono::milliseconds (200), ([&system, &key] () {
-			auto hash (system.wallet (0)->send_sync (nano::dev::genesis_key.pub, key.pub, system.nodes[0]->config.receive_minimum.number ()));
-			auto transaction = system.nodes[0]->ledger.tx_begin_read ();
-			auto block = system.nodes[0]->ledger.any.block_get (transaction, hash);
-			std::string block_text;
-			block->serialize_json (block_text);
-		}));
-		ASSERT_TIMELY (10s, !node1->balance (key.pub).is_zero ());
-		node1->stop ();
-		system.stop ();
-	}
-	for (auto i (threads.begin ()), n (threads.end ()); i != n; ++i)
-	{
-		i->join ();
-	}
+	nano::test::system system;
+	auto config = system.default_config ();
+	config.enable_voting = false; // Prevent cementing during random activity
+	auto source = system.add_node (config);
+	auto const & genesis = nano::dev::genesis_key;
+	nano::keypair sender;
+	// Keep the joining node's voting key above quorum even when the random activity changes representatives.
+	auto const reserve = nano::dev::constants.genesis_amount - nano::dev::constants.genesis_amount / 4;
+	nano::test::setup_new_account (system, *source, reserve, genesis, sender, genesis.pub, true);
+	auto const initial_count = source->ledger.block_count ();
+	system.generate_mass_activity (1000, *source);
+	ASSERT_GT (source->ledger.block_count (), initial_count);
+	ASSERT_TRUE (system.wallet (0)->insert_adhoc (sender.prv));
+
+	nano::keypair recipient;
+	auto receiving = std::make_shared<nano::node> (system.get_available_port (), nano::unique_path (), system.work, nano::node_flags{});
+	auto wallet = receiving->wallets.create (1);
+	ASSERT_TRUE (wallet->insert_adhoc (genesis.prv));
+	ASSERT_TRUE (wallet->insert_adhoc (recipient.prv));
+	receiving->start ();
+	system.nodes.push_back (receiving);
+	ASSERT_LT (receiving->ledger.block_count (), source->ledger.block_count ());
+	ASSERT_NE (nullptr, nano::test::establish_tcp (system, *receiving, source->network.endpoint ()));
+	auto const amount = source->config.receive_minimum.number ();
+	ASSERT_FALSE (system.wallet (0)->send_sync (sender.pub, recipient.pub, amount).is_zero ());
+	ASSERT_TIMELY_EQ (10s, receiving->balance (recipient.pub), amount);
 }
 
 TEST (ledger, deep_account_compute)
