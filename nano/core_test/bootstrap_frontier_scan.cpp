@@ -112,6 +112,29 @@ TEST (bootstrap_frontier_scan, range_wrap_around)
 	ASSERT_EQ (next.number (), 1);
 }
 
+TEST (bootstrap_frontier_scan, delayed_reply_after_advance)
+{
+	nano::frontier_scan_config config;
+	config.head_parallelism = 1;
+	config.consideration_count = 1;
+	config.cooldown = 0ms;
+	test_context ctx{ config };
+	auto & scan = ctx.frontier_scan;
+
+	auto first = scan.next ();
+	auto retry = scan.next ();
+	ASSERT_EQ (first, retry);
+	ASSERT_TRUE (scan.process (first, { { 2, 1 }, { 3, 2 } }));
+	auto next = scan.next ();
+	ASSERT_EQ (3, next);
+
+	// A slower peer lists different accounts for the old cursor while the new request is in flight.
+	EXPECT_FALSE (scan.process (retry, { { 20, 3 }, { 30, 4 } }));
+	EXPECT_EQ (next, scan.next ());
+	EXPECT_TRUE (scan.process (next, { { 3, 2 }, { 4, 5 } }));
+	EXPECT_EQ (4, scan.next ());
+}
+
 TEST (bootstrap_frontier_scan, cooldown)
 {
 	nano::frontier_scan_config config;
@@ -230,13 +253,14 @@ TEST (bootstrap_frontier_scan, empty_responses)
 	std::deque<std::pair<nano::account, nano::block_hash>> response;
 	response.push_back ({ nano::account{ start.number () + 1 }, nano::block_hash{ 1 } });
 	ASSERT_TRUE (frontier_scan.process (start, response));
-	ASSERT_EQ (frontier_scan.next (), start.number () + 1);
+	auto next = frontier_scan.next ();
+	ASSERT_EQ (next, start.number () + 1);
 
 	// However, after receiving enough empty responses, head should wrap around to the start
-	ASSERT_FALSE (frontier_scan.process (start, empty_response));
-	ASSERT_FALSE (frontier_scan.process (start, empty_response));
-	ASSERT_FALSE (frontier_scan.process (start, empty_response));
-	ASSERT_EQ (frontier_scan.next (), start.number () + 1);
-	ASSERT_TRUE (frontier_scan.process (start, empty_response));
+	ASSERT_FALSE (frontier_scan.process (next, empty_response));
+	ASSERT_FALSE (frontier_scan.process (next, empty_response));
+	ASSERT_FALSE (frontier_scan.process (next, empty_response));
+	ASSERT_EQ (frontier_scan.next (), next);
+	ASSERT_TRUE (frontier_scan.process (next, empty_response));
 	ASSERT_EQ (frontier_scan.next (), start); // Wraps around
 }

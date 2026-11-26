@@ -76,6 +76,11 @@ bool frontier_scan_index::process (nano::account start, std::deque<std::pair<nan
 	auto it = heads_by_start.upper_bound (start);
 	release_assert (it != heads_by_start.begin ());
 	it = std::prev (it);
+	if (it->next != start)
+	{
+		// A retry from a previous cursor may arrive after this head has advanced.
+		return false;
+	}
 
 	bool done = false;
 	heads_by_start.modify (it, [this, &response, &done] (frontier_head & entry) {
