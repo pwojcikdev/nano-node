@@ -2180,6 +2180,36 @@ TEST (rpc, peers_capabilities)
 	ASSERT_EQ ("topo_index", capabilities.front ());
 }
 
+TEST (rpc, queued_requests_share_one_ipc_connection)
+{
+	nano::test::system system;
+	auto node = add_ipc_enabled_node (system);
+	nano::node_rpc_config node_config;
+	auto server = std::make_shared<nano::ipc::ipc_server> (*node, node_config);
+	auto port = server->listening_tcp_port ();
+	ASSERT_TRUE (port);
+
+	nano::rpc_config config{ node->network_params.network };
+	config.rpc_process.num_ipc_connections = 1;
+	nano::rpc_request_processor processor{ system.io_ctx, config, *port };
+	std::vector<std::string> replies;
+	// Both requests are queued before the test starts running the IPC client's IO context.
+	for (auto i = 0; i < 2; ++i)
+	{
+		processor.add (std::make_shared<nano::rpc_request> ("block_count", R"({"action":"block_count"})", [&replies] (std::string const & reply) {
+			replies.push_back (reply);
+		}));
+	}
+	ASSERT_TIMELY_EQ (5s, replies.size (), 2);
+	for (auto const & reply : replies)
+	{
+		std::stringstream stream{ reply };
+		boost::property_tree::ptree result;
+		boost::property_tree::read_json (stream, result);
+		ASSERT_EQ (1, result.get<unsigned> ("count"));
+	}
+}
+
 TEST (rpc, version)
 {
 	nano::test::system system;

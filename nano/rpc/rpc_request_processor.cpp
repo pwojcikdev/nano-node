@@ -20,9 +20,9 @@ nano::rpc_request_processor::rpc_request_processor (std::shared_ptr<boost::asio:
 		connections.push_back (std::make_shared<nano::ipc_connection> (nano::ipc::ipc_client (io_ctx), false));
 		auto connection = this->connections.back ();
 		connection->client.async_connect (ipc_address, ipc_port,
-		[connection] (nano::error err) {
+		[this, connection] (nano::error err) {
 			// Even if there is an error this needs to be set so that another attempt can be made to connect with the ipc connection
-			connection->is_available = true;
+			make_available (*connection);
 		});
 	}
 }
@@ -85,7 +85,11 @@ void nano::rpc_request_processor::read_payload (std::shared_ptr<nano::ipc_connec
 
 void nano::rpc_request_processor::make_available (nano::ipc_connection & connection)
 {
-	connection.is_available = true; // Allow people to use it now
+	{
+		nano::lock_guard<nano::mutex> lock{ request_mutex };
+		connection.is_available = true;
+	}
+	condition.notify_one ();
 }
 
 // Connection does not exist or has been closed, try to connect to it again and then resend IPC request
@@ -127,59 +131,48 @@ void nano::rpc_request_processor::try_reconnect_and_execute_request (std::shared
 
 void nano::rpc_request_processor::run ()
 {
-	// This should be a conditioned wait
-	nano::unique_lock<nano::mutex> lk (request_mutex);
+	nano::unique_lock<nano::mutex> lk{ request_mutex };
 	while (!stopped)
 	{
-		if (!requests.empty ())
+		auto it = std::find_if (connections.begin (), connections.end (), [] (auto const & connection) {
+			return connection->is_available;
+		});
+		if (requests.empty () || it == connections.end ())
 		{
-			lk.unlock ();
-			nano::unique_lock<nano::mutex> conditions_lk (connections_mutex);
-			// Find the first free ipc_client
-			auto it = std::find_if (connections.begin (), connections.end (), [] (auto connection) -> bool {
-				return connection->is_available;
-			});
+			condition.wait (lk);
+			continue;
+		}
 
-			if (it != connections.cend ())
+		auto connection = *it;
+		connection->is_available = false;
+		auto rpc_request = requests.front ();
+		requests.pop_front ();
+		lk.unlock ();
+
+		auto encoding (rpc_request->rpc_api_version == 1 ? nano::ipc::payload_encoding::json_v1 : nano::ipc::payload_encoding::flatbuffers_json);
+		auto req (nano::ipc::prepare_request (encoding, rpc_request->body));
+		auto res (std::make_shared<std::vector<uint8_t>> ());
+
+		// Have we tried to connect yet?
+		connection->client.async_write (req, [this, connection, req, res, rpc_request] (nano::error err_a, size_t size_a) {
+			if (!err_a)
 			{
-				// Successfully found one
-				lk.lock ();
-				auto rpc_request = requests.front ();
-				requests.pop_front ();
-				lk.unlock ();
-				auto connection = *it;
-				connection->is_available = false; // Make sure no one else can take it
-				conditions_lk.unlock ();
-				auto encoding (rpc_request->rpc_api_version == 1 ? nano::ipc::payload_encoding::json_v1 : nano::ipc::payload_encoding::flatbuffers_json);
-				auto req (nano::ipc::prepare_request (encoding, rpc_request->body));
-				auto res (std::make_shared<std::vector<uint8_t>> ());
-
-				// Have we tried to connect yet?
-				connection->client.async_write (req, [this, connection, req, res, rpc_request] (nano::error err_a, size_t size_a) {
-					if (!err_a)
+				connection->client.async_read (res, sizeof (uint32_t), [this, connection, req, res, rpc_request] (nano::error err_read_a, size_t size_read_a) {
+					if (size_read_a != 0 && !err_read_a)
 					{
-						connection->client.async_read (res, sizeof (uint32_t), [this, connection, req, res, rpc_request] (nano::error err_read_a, size_t size_read_a) {
-							if (size_read_a != 0 && !err_read_a)
-							{
-								this->read_payload (connection, res, rpc_request);
-							}
-							else
-							{
-								this->try_reconnect_and_execute_request (connection, req, res, rpc_request);
-							}
-						});
+						this->read_payload (connection, res, rpc_request);
 					}
 					else
 					{
-						try_reconnect_and_execute_request (connection, req, res, rpc_request);
+						this->try_reconnect_and_execute_request (connection, req, res, rpc_request);
 					}
 				});
 			}
-			lk.lock ();
-		}
-		else
-		{
-			condition.wait (lk);
-		}
+			else
+			{
+				try_reconnect_and_execute_request (connection, req, res, rpc_request);
+			}
+		});
+		lk.lock ();
 	}
 }

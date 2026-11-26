@@ -6,7 +6,6 @@
 #include <nano/lib/rpcconfig.hpp>
 #include <nano/rpc/rpc_server.hpp>
 
-#include <atomic>
 #include <deque>
 
 namespace nano
@@ -19,7 +18,7 @@ struct ipc_connection
 	}
 
 	nano::ipc::ipc_client client;
-	std::atomic<bool> is_available{ false };
+	bool is_available{ false };
 };
 
 struct rpc_request
@@ -63,7 +62,6 @@ private:
 
 	std::vector<std::shared_ptr<nano::ipc_connection>> connections;
 	nano::mutex request_mutex;
-	nano::mutex connections_mutex;
 	bool stopped{ false };
 	std::deque<std::shared_ptr<nano::rpc_request>> requests;
 	nano::condition_variable condition;
