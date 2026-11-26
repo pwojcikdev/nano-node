@@ -79,7 +79,7 @@ void nano::rep_tiers::run ()
 		lock.lock ();
 
 		std::chrono::milliseconds interval = network_params.network.is_dev_network () ? 500ms : 10min;
-		condition.wait_for (lock, interval);
+		condition.wait_for (lock, interval, [this] { return stopped.load (); });
 	}
 }
 
