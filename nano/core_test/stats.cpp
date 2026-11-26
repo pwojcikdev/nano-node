@@ -159,3 +159,64 @@ TEST (stats, file_logging_subsecond_intervals)
 	auto const samples = writeouts (config.log_samples_filename);
 	EXPECT_GE (writeouts (config.log_counters_filename), samples + 2);
 }
+
+TEST (stats, retain_samples_until_file_write_succeeds)
+{
+	nano::test::system system;
+	nano::stats stats{ system.logger };
+	auto const directory = nano::unique_path () / "stats";
+	auto const path = directory / "samples.stat";
+	nano::stat_file_writer file{ path.string (), false };
+	auto const sampler = nano::stat::sample::active_election_duration;
+	auto const other = nano::stat::sample::bootstrap_tag_duration;
+	stats.sample (sampler, 17);
+	stats.sample (other, 9);
+	stats.log_samples (file);
+	EXPECT_FALSE (file.out ());
+	EXPECT_EQ (0, file.entries ());
+	EXPECT_EQ ((std::vector<int64_t>{ 9 }), stats.samples (other));
+
+	std::filesystem::create_directory (directory);
+	stats.sample (sampler, 23);
+	stats.log_samples (file);
+	ASSERT_TRUE (file.out ());
+	std::ifstream input{ path };
+	std::string line;
+	ASSERT_TRUE (std::getline (input, line));
+	EXPECT_TRUE (line.ends_with (",active_election_duration,17,23"));
+	EXPECT_EQ (1, file.entries ());
+	EXPECT_TRUE (stats.samples (sampler).empty ());
+
+	// A stream can also fail while it is writing a sample row.
+	file.log.close ();
+	stats.sample (sampler, 31);
+	stats.sample (other, 47);
+	stats.log_samples (file);
+	EXPECT_FALSE (file.out ());
+	EXPECT_EQ (1, file.entries ());
+	EXPECT_EQ ((std::vector<int64_t>{ 31 }), stats.samples (sampler));
+	EXPECT_EQ ((std::vector<int64_t>{ 47 }), stats.samples (other));
+}
+
+TEST (stats, rotate_after_successful_counter_writes)
+{
+	nano::test::system system;
+	nano::stats_config config;
+	config.log_rotation_count = 2;
+	nano::stats stats{ system.logger, config };
+	auto const directory = nano::unique_path () / "stats";
+	auto const path = directory / "counters.stat";
+	nano::stat_file_writer file{ path.string (), false };
+	stats.add (nano::stat::type::ledger, nano::stat::detail::test, 7);
+	stats.log_counters (file);
+	EXPECT_EQ (0, file.entries ());
+
+	std::filesystem::create_directory (directory);
+	stats.log_counters (file);
+	stats.log_counters (file);
+	std::ifstream input{ path };
+	EXPECT_EQ (2, std::count (std::istreambuf_iterator<char>{ input }, {}, '\n'));
+	stats.log_counters (file);
+	std::ifstream rotated{ path };
+	EXPECT_EQ (1, std::count (std::istreambuf_iterator<char>{ rotated }, {}, '\n'));
+}

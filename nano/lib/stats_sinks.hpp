@@ -113,6 +113,17 @@ public:
 		return log;
 	}
 
+	void begin () override
+	{
+		if (!log)
+		{
+			// Retry on the next writeout, preserving any rows already written.
+			log.close ();
+			log.clear ();
+			log.open (filename, std::ofstream::app);
+		}
+	}
+
 	void write_header (std::string const & header, std::chrono::system_clock::time_point & walltime) override
 	{
 		if (!headers)

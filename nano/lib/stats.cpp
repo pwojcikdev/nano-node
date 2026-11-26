@@ -266,8 +266,11 @@ void nano::stats::log_counters_impl (stat_log_sink & sink, tm & tm)
 		}
 	}
 
-	sink.entries ()++;
 	sink.finalize ();
+	if (sink.out ())
+	{
+		sink.entries ()++;
+	}
 }
 
 void nano::stats::log_samples (stat_log_sink & sink)
@@ -293,13 +296,29 @@ void nano::stats::log_samples_impl (stat_log_sink & sink, tm & tm)
 
 	for (auto const & [key, entry] : samplers)
 	{
+		if (!sink.out ())
+		{
+			break;
+		}
 		std::string sample{ to_string (key.sample) };
-
-		sink.write_sampler_entry (tm, sample, entry->collect (), entry->expected_min_max);
+		auto const values = entry->collect ();
+		sink.write_sampler_entry (tm, sample, values, entry->expected_min_max);
+		if (!sink.out ())
+		{
+			// The statistics mutex excludes new observations while we restore this failed row.
+			for (auto value : values)
+			{
+				entry->add (value);
+			}
+			break;
+		}
 	}
 
-	sink.entries ()++; // TODO: This `++` looks like a hack, needs a redesign
 	sink.finalize ();
+	if (sink.out ())
+	{
+		sink.entries ()++;
+	}
 }
 
 bool nano::stats::should_run () const
