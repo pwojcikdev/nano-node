@@ -30,7 +30,7 @@ In short: under the node's rules no scenario reaches two nodes with different ce
 CHECKS=checks-slow.txt ./check.sh    # the slow ones
 ```
 
-`JAVA`, `TLA2TOOLS`, `WORKERS`, `HEAP` and `LIMIT` in the environment select the Java binary, the tools jar, the worker threads, the heap size and a time limit per check. Logs and the generated configurations go to `.tlc/`. On 14 threads no check in `checks.txt` takes more than about a quarter of an hour and the whole list takes about an hour and a half. `checks-slow.txt` holds the checks that take longer and is meant for a dedicated runner.
+`JAVA`, `TLA2TOOLS`, `WORKERS`, `HEAP` and `LIMIT` in the environment select the Java binary, the tools jar, the worker threads, the heap size and a time limit per check. Logs and the generated configurations go to `.tlc/`. On 14 threads no check in `checks.txt` takes more than about a quarter of an hour and the whole list takes about an hour and a quarter. `checks-slow.txt` holds the checks that take longer and is meant for a dedicated runner.
 
 A scenario's own configuration also runs as it is in the TLA+ Toolbox or the VS Code extension; it checks the properties that must hold. `checks.txt` derives the other checks from it by replacing constants and adding one property.
 
