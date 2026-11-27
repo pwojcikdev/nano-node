@@ -24,4 +24,7 @@ MC_Faults == [expire |-> 0, crash |-> 0, rollback |-> 0, evict |-> 0]
 \* A node restarts
 MC_FaultsCrash == [expire |-> 0, crash |-> 1, rollback |-> 0, evict |-> 0]
 
+\* An election times out and the backlog rolls a block back
+MC_FaultsDrop == [expire |-> 1, crash |-> 0, rollback |-> 1, evict |-> 0]
+
 =============================================================================

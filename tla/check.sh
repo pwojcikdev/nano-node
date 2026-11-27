@@ -4,7 +4,7 @@
 #   ./check.sh                           every check
 #   ./check.sh fork                      the checks whose id contains "fork"
 #   ./check.sh -t fork-split             also print the trace TLC found
-#   CHECKS=checks-long.txt ./check.sh    the checks that take minutes each
+#   CHECKS=checks-slow.txt ./check.sh    the checks that take longer
 #
 # Environment:
 #   CHECKS      list of checks to run (default: checks.txt)

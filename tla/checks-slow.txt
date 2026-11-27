@@ -1,0 +1,10 @@
+# The checks that take longer than the ones in checks.txt, in the same format. They are meant for a dedicated runner.
+
+# Three honest voters, one forked root, with an election timeout and a backlog rollback
+fork-safety-rollback    | MC_Fork         | base                                  | holds    | Faults<-MC_FaultsRollback
+
+# The same with a restart, an election timeout and a cache eviction
+fork-safety-restart     | MC_Fork         | base                                  | holds    | Faults<-MC_FaultsRestart
+
+# Four honest voters, one forked root
+four-voters-safety      | MC_FourVoters   | base                                  | holds    |

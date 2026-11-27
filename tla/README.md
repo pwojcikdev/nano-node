@@ -16,7 +16,7 @@ In short: no scenario reaches two nodes with different cemented blocks at a root
 | `NanoConsensus.tla` | The model: state, steps, the properties checked |
 | `MC_*.tla`, `MC_*.cfg` | One scenario each: accounts, blocks, weights, representatives, bounds |
 | `checks.txt` | The checks: scenario, property, expected outcome |
-| `checks-long.txt` | The checks that take minutes each |
+| `checks-slow.txt` | The checks that take longer, for a dedicated runner |
 | `check.sh` | Runs the checks with TLC and compares outcomes with expectations |
 
 ## Running
@@ -27,10 +27,10 @@ In short: no scenario reaches two nodes with different cemented blocks at a root
 ./check.sh                           # every check in checks.txt
 ./check.sh fork                      # the checks whose id contains "fork"
 ./check.sh -t fork-split             # also print the trace TLC found
-CHECKS=checks-long.txt ./check.sh    # the long ones
+CHECKS=checks-slow.txt ./check.sh    # the slow ones
 ```
 
-`JAVA`, `TLA2TOOLS`, `WORKERS`, `HEAP` and `LIMIT` in the environment select the Java binary, the tools jar, the worker threads, the heap size and a time limit per check. Logs and the generated configurations go to `.tlc/`. `checks.txt` takes around ten minutes on 14 threads.
+`JAVA`, `TLA2TOOLS`, `WORKERS`, `HEAP` and `LIMIT` in the environment select the Java binary, the tools jar, the worker threads, the heap size and a time limit per check. Logs and the generated configurations go to `.tlc/`. On 14 threads no check in `checks.txt` takes more than about a quarter of an hour and the whole list takes around half an hour. `checks-slow.txt` holds the checks that take longer and is meant for a dedicated runner.
 
 A scenario's own configuration also runs as it is in the TLA+ Toolbox or the VS Code extension; it checks the properties that must hold. `checks.txt` derives the other checks from it by replacing constants and adding one property.
 
@@ -114,7 +114,8 @@ A send, its receive and a change of representative move weight between three vot
 | `baseline-safety` | The properties that must hold | hold | 98,875 |
 | `baseline-no-dead-end` | `NoDeadEnd` | holds | 98,875 |
 | `baseline-live` | `EventuallySettled` | holds | 98,875 |
-| `baseline-restart` \* | `NoDeadEnd`, with one node restart | holds | 1,583,508 |
+| `baseline-restart` | `NoDeadEnd`, with one node restart | holds | 1,583,508 |
+| `baseline-dropped` | `NoDeadEnd`, with one election timeout and one backlog rollback | holds | 2,557,377 |
 
 ### A fork between two voters: `MC_Observer`
 
@@ -125,7 +126,7 @@ One account signs two blocks at a root. Two voters of 60 and 40 hold the weight,
 | `observer-safety` | `NoFinalVoteSplit` | holds | 6,609 |
 | `observer-no-dead-end` | `NoDeadEnd` | holds | 6,609 |
 | `observer-live` | `EventuallySettled` | holds | 6,609 |
-| `observer-restart` \* | `NoDeadEnd`, with one restart, election timeout and cache eviction | holds | 1,642,759 |
+| `observer-restart` | `NoDeadEnd`, with one restart, election timeout and cache eviction | holds | 1,642,759 |
 | `observer-rollback` | `NoDeadEnd`, with one election timeout and one backlog rollback | violated | 235,646 |
 
 ### Blocks built on a fork: `MC_Successors`
@@ -218,7 +219,16 @@ Starts where the two voters have their final votes on record for different sends
 | `dependencies-honest` | `HonestNeverStuck` | holds | 2,000 |
 | `dependencies-careless` | The receive is decided at every node | violated | 2,000 |
 
-\* in `checks-long.txt`
+\* in `checks-slow.txt`
+
+### Slow checks: `checks-slow.txt`
+
+These take longer than the checks in `checks.txt`. `fork-safety-rollback` above is one of them and has run to completion. The others have not, so their outcomes in the list are expectations; a check joins the tables above once a run of it finishes.
+
+| Check | Asks |
+|---|---|
+| `four-voters-safety` | The properties that must hold for `MC_FourVoters`: the fork of `MC_Fork` between four honest voters of 25 each, so that quorum takes three of them. A run stopped after 19.5 million states had found no violation. |
+| `fork-safety-restart` | The properties that must hold for `MC_Fork` with one restart, election timeout and cache eviction |
 
 ## Findings
 

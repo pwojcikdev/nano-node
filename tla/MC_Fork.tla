@@ -22,6 +22,9 @@ MC_Faults == [expire |-> 0, crash |-> 0, rollback |-> 0, evict |-> 0]
 \* An election times out and the backlog rolls a block back
 MC_FaultsRollback == [expire |-> 1, crash |-> 0, rollback |-> 1, evict |-> 0]
 
+\* An election times out, a node restarts and a fork drops out of a cache
+MC_FaultsRestart == [expire |-> 1, crash |-> 1, rollback |-> 0, evict |-> 1]
+
 \* The two voters of equal weight are interchangeable
 MC_Symmetry == Permutations({n2, n3})
 
