@@ -263,14 +263,39 @@ No forks, every owner honest. An account under the first voter sends its whole b
 
 ### Weight moving during a fork: `MC_Redelegation`
 
-One account signs two blocks at a root while a balance moves from one of two voters to the other through a change block.
+One account signs two blocks at a root while the honest owner of another account moves its balance to another representative with a change block. Unless a check says otherwise, two voters hold 34 and 33 of their own and 33 move from the first to the second.
 
 | Check | Asks | Outcome | States |
 |---|---|---|---|
-| `redelegation-33-safety` | The properties that must hold, 33 moving | hold | 41,800 |
-| `redelegation-34` | The same, 34 moving | `Agreement` violated | 2,440 |
-| `redelegation-33-split` | `NoFinalVoteSplit`, 33 moving | violated | 14,660 |
-| `redelegation-33-stuck` | `NoDeadEnd`, 33 moving | violated | 31,697 |
+| `redelegation-33-safety` | The properties that must hold, 33 moving | hold | 42,313 |
+| `redelegation-34` | The same, 34 moving between voters of 33 each | `Agreement` violated | 3,198 |
+| `redelegation-rollback` | The same as the first, with one election timeout and one backlog rollback | hold | 1,759,155 |
+| `redelegation-33-split` | `NoFinalVoteSplit`, 33 moving | violated | 14,384 |
+| `redelegation-33-stuck` | `NoDeadEnd`, 33 moving | violated | 33,223 |
+| `redelegation-33-lone` | No dead end with the root cemented at one node only, 33 moving | violated | 33,218 |
+| `redelegation-9-no-split` | `NoFinalVoteSplit`, voters of 60 and 40, 9 of the 60 moving | holds | 8,025 |
+| `redelegation-9-live` | `EventuallySettled`, the same | holds | 8,025 |
+| `redelegation-10-split` | `NoFinalVoteSplit`, voters of 60 and 40, 10 of the 60 moving | violated | 5,239 |
+| `redelegation-1-split` | `NoFinalVoteSplit`, voters of 51 and 49, 1 of the 51 moving | violated | 5,027 |
+
+Without the fork, the balance leaves for a representative that never votes:
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `leaving-33-settles` | `NoDeadEnd`, 33 leaving | holds | 25 |
+| `leaving-34-halts` | `NoDeadEnd`, 34 leaving | violated | 15 |
+| `leaving-34-trend` | The same, online weight tracked, minimum 50 | holds | 75 |
+| `leaving-34-floor` | The same, minimum 70 | violated | 15 |
+| `leaving-34-undone` | `NoDeadEnd`, 34 leaving, and the owner signs a second change block that names a voter | holds | 395 |
+
+With the fork, the balance arrives from a representative that never votes. The voters hold 31 and 14 and the trended weight is the 45 they add up to:
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `arriving-35-static` | The properties that must hold, 35 arriving at the second voter, delta fixed at 30 | `Agreement` violated | 2,824 |
+| `arriving-35-dynamic` | The same, online weight tracked, minimum 40 | hold | 157,814 |
+| `arriving-35-unseen` | The same, and a node may lose sight of a running voter | `Agreement` violated | 29,339 |
+| `arriving-55-dynamic` | The same as the second, 55 arriving | `Agreement` violated | 4,145 |
 
 ### Around a send that cannot be confirmed: `MC_Dependencies`
 
@@ -409,6 +434,10 @@ Delta never falls below 67% of the minimum. Agreement under a partition therefor
 
 `MC_Offline` is the other side of the same rule: with 40 of the weight delegated to a representative that never votes, the remaining 60 confirm nothing until the trended weight has followed the online weight down (`offline-recovers`, `offline-live`), and never if 60 is under the minimum (`offline-halts`).
 
+A change block takes weight out of the voting set the same way. With 34 leaving for a representative that never votes, the change block cannot be confirmed by the weight it leaves behind and neither can anything else (`leaving-34-halts`, against `leaving-33-settles`), until the trended weight follows (`leaving-34-trend`, `leaving-34-floor`). Unlike the sender of a large amount, the owner can undo it alone: a second change block on top of the first goes into the ledgers unconfirmed and brings the weight back (`leaving-34-undone`).
+
+Weight that arrives from a representative that never votes is where delta moving with the online weight helps. With voters of 31 and 14 and a trended weight of 45, a fixed delta of 30 lets 35 arriving at the second voter break agreement: one voter confirms alone in a ledger without the change block, the other in a ledger with it (`arriving-35-static`). With the online weight tracked, the ledger that counts the new weight also counts a higher online weight, and agreement holds (`arriving-35-dynamic`). It stops helping when a node's online set lacks the other voter (`arriving-35-unseen`) or when more arrives than was online (`arriving-55-dynamic`).
+
 ### Elections have to end before a silent representative stops counting
 
 A tally weighs every vote an election has recorded with the ledger weight of its representative, whether or not the node still counts that representative as online. Delta comes from the weight the node does count. Rule 9 keeps the two in step: an election ends after five minutes at most (`election::time_to_live`) and a representative counts for ten minutes after its last vote reached an election (`online_reps::trim`, twice `weight_interval`), so the weight behind every recorded vote is part of delta.
@@ -421,9 +450,13 @@ Only the order of the two timers keeps the byzantine bound at 34 here. If an ele
 
 `MC_Redelegation` moves a balance from one voter to the other with a change block while another account has two blocks at a root. A node that has the change block counts the balance for the new representative, a node that has not counts it for the old one. The owner of the balance signs one valid block and nothing else.
 
-With 34 of the weight moving, each voter reaches quorum alone in its own view and the two cement different blocks (`redelegation-34`); with 33 they cannot (`redelegation-33-safety`). What matters is that the weight moves between the two decisions, not that the change block is unconfirmed: a voter that has cemented the change block and one that has not differ in the same way.
+With 34 of the weight moving, each voter reaches quorum alone in its own view and the two cement different blocks (`redelegation-34`); with 33 they cannot, also across an election timeout and a backlog rollback (`redelegation-33-safety`, `redelegation-rollback`). What matters is that the weight moves between the two decisions, not that the change block is unconfirmed: a voter that has cemented the change block and one that has not differ in the same way.
 
 Far below 34, moving weight costs liveness. Two honest voters with fixed weights never split their final votes (`observer-safety`). With 33 moving they do (`redelegation-33-split`): one ledger weighs them 34 and 66, the other 67 and 33, so each sees the other as the heavier one and moves to the other's block. The other's first vote for that block is still in its ballot, so it sees 100 behind the block and issues its final vote. The two final votes name different blocks and the two voters reach a dead end (`redelegation-33-stuck`).
+
+The threshold for that is the weight that makes two ledgers disagree about which voter is heavier: more than half of their difference, or exactly half where the hash order breaks the tie. Between voters of 60 and 40 it is 10 (`redelegation-10-split`, against `redelegation-9-no-split` and `redelegation-9-live`), between 51 and 49 it is 1 (`redelegation-1-split`).
+
+One node can also decide alone and leave the other behind (`redelegation-33-lone`). The first voter holds 67 in a ledger without the change block and cements A on its own vote. The second holds 66 once it has the change block, has voted for B and stays there, because its own vote outweighs the final vote of the first. `Agreement` holds, and the second node never cements anything at the root.
 
 ## Reading the evidence
 

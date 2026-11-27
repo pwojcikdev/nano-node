@@ -95,11 +95,32 @@ pending-fork-33-safety  | MC_Pending      | base                                
 pending-fork-34-early   | MC_Pending      | base                                  | violated Agreement | Sent=34 BlockDef<-MC_WithFork HashRank<-MC_WithForkRank InitPublished={"A","B"} Owner<-MC_OwnerCareless
 pending-fork-34-honest  | MC_Pending      | base                                  | holds    | Sent=34 BlockDef<-MC_WithFork HashRank<-MC_WithForkRank InitPublished={"A","B"}
 
-# A balance that changes its representative during a fork
+# A fork while a balance moves from one voter to the other: voters of 34 and 33, 33 moving
 redelegation-33-safety  | MC_Redelegation | base                                  | holds    |
-redelegation-34         | MC_Redelegation | base                                  | violated Agreement | Stake=34
+redelegation-34         | MC_Redelegation | base                                  | violated Agreement | W1=33 W2=33
+redelegation-rollback   | MC_Redelegation | base                                  | holds    | Faults<-MC_FaultsRollback
 redelegation-33-split   | MC_Redelegation | invariant NoFinalVoteSplit            | violated |
 redelegation-33-stuck   | MC_Redelegation | invariant NoDeadEnd                   | violated |
+redelegation-33-lone    | MC_Redelegation | invariant MC_CementedByAllOrNone      | violated |
+
+# The same between voters of 60 and 40, and of 51 and 49: how much lets two ledgers disagree about the heavier voter
+redelegation-9-no-split | MC_Redelegation | invariant NoFinalVoteSplit            | holds    | W1=51 W2=40
+redelegation-9-live     | MC_Redelegation | property EventuallySettled            | holds    | W1=51 W2=40
+redelegation-10-split   | MC_Redelegation | invariant NoFinalVoteSplit            | violated | W1=50 W2=40
+redelegation-1-split    | MC_Redelegation | invariant NoFinalVoteSplit            | violated | W1=50 W2=49
+
+# No fork: a balance leaves for a representative that never votes
+leaving-33-settles      | MC_Redelegation | invariant NoDeadEnd                   | holds    | To=other BlockDef<-MC_OnlyMove HashRank<-MC_OnlyMoveRank InitPublished={}
+leaving-34-halts        | MC_Redelegation | invariant NoDeadEnd                   | violated | W1=33 W2=33 To=other BlockDef<-MC_OnlyMove HashRank<-MC_OnlyMoveRank InitPublished={}
+leaving-34-trend        | MC_Redelegation | invariant NoDeadEnd                   | holds    | W1=33 W2=33 To=other BlockDef<-MC_OnlyMove HashRank<-MC_OnlyMoveRank InitPublished={} DynamicQuorum=TRUE MinOnline=50
+leaving-34-floor        | MC_Redelegation | invariant NoDeadEnd                   | violated | W1=33 W2=33 To=other BlockDef<-MC_OnlyMove HashRank<-MC_OnlyMoveRank InitPublished={} DynamicQuorum=TRUE MinOnline=70
+leaving-34-undone       | MC_Redelegation | invariant NoDeadEnd                   | holds    | W1=33 W2=33 To=other BlockDef<-MC_MoveAndBack HashRank<-MC_MoveAndBackRank InitPublished={}
+
+# A fork while a balance arrives from a representative that never votes: voters of 31 and 14, trended weight 45
+arriving-35-static      | MC_Redelegation | base                                  | violated Agreement | W1=31 W2=14 WOther=20 From=other InitTrended=45
+arriving-35-dynamic     | MC_Redelegation | base                                  | holds    | W1=31 W2=14 WOther=20 From=other InitTrended=45 DynamicQuorum=TRUE MinOnline=40
+arriving-35-unseen      | MC_Redelegation | base                                  | violated Agreement | W1=31 W2=14 WOther=20 From=other InitTrended=45 DynamicQuorum=TRUE MinOnline=40 TrimLive=TRUE
+arriving-55-dynamic     | MC_Redelegation | base                                  | violated Agreement | W1=31 W2=14 From=other InitTrended=45 DynamicQuorum=TRUE MinOnline=40
 
 # The accounts around a forked send that can no longer be confirmed
 dependencies-safety     | MC_Dependencies | base                                  | holds    |
