@@ -245,6 +245,22 @@ No forks. 40 of the weight is delegated to a representative that never votes, th
 | `offline-live` | `EventuallySettled`, minimum 50 | holds | 89 |
 | `offline-halts` | `NoDeadEnd`, minimum 70 | violated | 15 |
 
+### An amount in transit: `MC_Pending`
+
+No forks, every owner honest. An account under the first voter sends its whole balance to an account under the second voter, and the two voters share the rest. Between the send and its receive the amount counts for no representative.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `pending-33-settles` | `NoDeadEnd`, 33 sent | holds | 67 |
+| `pending-33-live` | `EventuallySettled`, 33 sent | holds | 67 |
+| `pending-34-halts` | `NoDeadEnd`, 34 sent | violated | 15 |
+| `pending-34-careless` | `NoDeadEnd`, 34 sent, the receiver does not wait for the send to be cemented | holds | 395 |
+| `pending-34-trend` | `NoDeadEnd`, 34 sent, online weight tracked, minimum 50 | holds | 262 |
+| `pending-34-floor` | The same, minimum 70 | violated | 15 |
+| `pending-fork-33-safety` | The properties that must hold next to a fork of another account, 33 sent and received early | hold | 217,985 |
+| `pending-fork-34-early` | The same, 34 sent and received early | `Agreement` violated | 9,598 |
+| `pending-fork-34-honest` | The same, 34 sent, the receiver waits | hold | 20,639 |
+
 ### Weight moving during a fork: `MC_Redelegation`
 
 One account signs two blocks at a root while a balance moves from one of two voters to the other through a change block.
@@ -367,6 +383,16 @@ Weight coming back online settles a split only while the weight bound to the oth
 In `MC_Dependencies` a forked send can no longer be confirmed. The unrelated honest account is always confirmed (`dependencies-honest`). The account that received the send before it was cemented is not: its receive is rolled back at the node that held it when that node's election moves to the other send, no ledger can take it again, and it is neither cemented nor ruled out (`dependencies-careless`). An honest owner never signs that receive, so its chain keeps working.
 
 `MC_ForkedSend` gets to the same place from nothing, with three voters and the receive released while the two sends compete. No two nodes cement different blocks on the way (`forked-send-safety`). The final votes of two voters can split between the sends; every ledger then holds the send that was not received, nothing is cemented, and no ledger can take the receive (`forked-send-receive`).
+
+### An amount in transit votes for nobody
+
+A send takes its amount from the sender's representative as soon as it is in a ledger, and the receive gives it to the receiver's representative later. Delta stays at 67% of the trended weight in between. With 34 in transit the ledgers that hold the send add up to 66, one short of delta: the send cannot be confirmed by the weight it leaves behind, nothing else can be confirmed either, and an honest receiver waits for the send to be cemented before it signs the receive (`pending-34-halts`). That takes seven steps, no fork and no fault, with every owner and representative honest, online and voting. With 33 in transit everything settles (`pending-33-settles`, `pending-33-live`).
+
+Two things get it out: a receive released before the send is cemented (`pending-34-careless`), or the trended weight following the online weight down (`pending-34-trend`), which takes the node more than a week and does not happen while the online weight is under the minimum (`pending-34-floor`). The threshold is not 34 as such. A send halts confirmation when the weight that still votes after it is less than delta, so with part of the weight offline a smaller amount does it.
+
+Next to a fork, a send and an early receive move weight the way a change block does, and 34 of it break agreement (`pending-fork-34-early`, against `pending-fork-33-safety`). With a receiver that waits no amount does (`pending-fork-34-honest`): the receive needs the send cemented, and weight that has only left a ledger cannot give two quorums. Receiving only cemented sends protects agreement, and it is also what turns a large send into a halt.
+
+This is the model's reading of two node rules, the weights in `ledger::weight` and wallets receiving only cemented sends. It has not been tried on a node.
 
 ### The quorum delta is only as good as the trended weight
 

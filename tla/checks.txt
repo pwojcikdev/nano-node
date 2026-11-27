@@ -82,6 +82,19 @@ offline-recovers        | MC_Offline      | invariant NoDeadEnd                 
 offline-live            | MC_Offline      | property EventuallySettled            | holds    |
 offline-halts           | MC_Offline      | invariant NoDeadEnd                   | violated | MinOnline=70
 
+# No fork: a send whose amount belongs to no representative until it is received
+pending-33-settles      | MC_Pending      | invariant NoDeadEnd                   | holds    |
+pending-33-live         | MC_Pending      | property EventuallySettled            | holds    |
+pending-34-halts        | MC_Pending      | invariant NoDeadEnd                   | violated | Sent=34
+pending-34-careless     | MC_Pending      | invariant NoDeadEnd                   | holds    | Sent=34 Owner<-MC_OwnerCareless
+pending-34-trend        | MC_Pending      | invariant NoDeadEnd                   | holds    | Sent=34 DynamicQuorum=TRUE MinOnline=50
+pending-34-floor        | MC_Pending      | invariant NoDeadEnd                   | violated | Sent=34 DynamicQuorum=TRUE MinOnline=70
+
+# The same send next to a fork of another account, received early or by an honest owner
+pending-fork-33-safety  | MC_Pending      | base                                  | holds    | BlockDef<-MC_WithFork HashRank<-MC_WithForkRank InitPublished={"A","B"} Owner<-MC_OwnerCareless
+pending-fork-34-early   | MC_Pending      | base                                  | violated Agreement | Sent=34 BlockDef<-MC_WithFork HashRank<-MC_WithForkRank InitPublished={"A","B"} Owner<-MC_OwnerCareless
+pending-fork-34-honest  | MC_Pending      | base                                  | holds    | Sent=34 BlockDef<-MC_WithFork HashRank<-MC_WithForkRank InitPublished={"A","B"}
+
 # A balance that changes its representative during a fork
 redelegation-33-safety  | MC_Redelegation | base                                  | holds    |
 redelegation-34         | MC_Redelegation | base                                  | violated Agreement | Stake=34
