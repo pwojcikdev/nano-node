@@ -167,6 +167,19 @@ Starts where a representative of weight k has its final vote on record for block
 | `bound-35-stuck` | No node ever cements at the root, k = 35, with restarts, election timeouts and cache evictions | holds | 111,975 |
 | `bound-35-moved` | The same, k = 35, once 20 of it may move to another representative | violated | 157 |
 
+### A split, then offline weight returns: `MC_Returning`
+
+Starts like `MC_Bound`: a representative of weight k has its final vote on record for block B and a second one holding 85 - k has its final vote for block A. A third one holding 15 was offline and comes back. The two running nodes had stopped counting it as online, so their delta is 56, which is 67% of the 85 they see.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `returning-16-settles` | `NoDeadEnd`, k = 16 | holds | 89,296 |
+| `returning-16-live` | `EventuallySettled`, k = 16 | holds | 89,296 |
+| `returning-30-dead-end` | `NoDeadEnd`, k = 30 | violated | 72,474 |
+| `returning-30-ordering` | No node ever cements at the root, k = 30 | violated | 1,580 |
+| `returning-35-stuck` | No node ever cements at the root, k = 35 | holds | 48,425 |
+| `returning-35-fixed` | The same with online weight tracking off, so that delta stays at 56 | violated | 383 |
+
 ### A byzantine representative: `MC_Byzantine`
 
 One account signs two blocks at a root. Two honest voters share the weight a byzantine representative does not hold.
@@ -284,9 +297,20 @@ The node's backlog also leaves a block alone while votes for it are cached or th
 
 - Weight moving away from the representatives bound to the other block. A node counts a change of representative as soon as the block is in its ledger, so the root recovers once enough weight has moved for the rest to lead by delta (`bound-35-moved`).
 - The order in which an election tallies votes, when k is 33 or less (`bound-30-ordering`).
+- Weight that was offline coming back, when k is 16 or less. Above that it does not settle the root; the next section has the cases.
 - Outside the model: the operator of a bound representative removing the final vote record of that root.
 
-Voters that have not voted yet help only as far as they add to the favoured block; where they lift the online weight above the trended weight they raise delta as well.
+### Weight that comes back online
+
+`MC_Returning` adds 15 of weight that was offline during the split and returns. The two running nodes had stopped counting it as online, so before it returns their delta is 56, 67% of the 85 they see. The returning weight counts as online as soon as a node hears its vote, and delta rises to 67 in the same step.
+
+| k | Before the return | After the return | Checks |
+|---|---|---|---|
+| 16 | A has 69 of final votes but leads by 53, short of 56, unless an election tallies them before the vote for B. | A reaches 84 and leads by 68 against a delta of 67. Every node confirms. | `returning-16-settles`, `returning-16-live` |
+| 30 | A has 55 of final votes, one short of 56. | A can reach 70 against a delta of 67, but only in an election that has not recorded the 30 for B. In the trace of `returning-30-dead-end` the two running nodes get there and the returning one does not: it holds 70 of final votes for A and never confirms. | `returning-30-dead-end`, `returning-30-ordering` |
+| 35 | A has 50 of final votes, 6 short of 56. | The returning 15 would have covered that, but delta has risen to 67 with them and A can reach only 65. Nothing is ever cemented. With delta held at 56, a node does cement A. | `returning-35-stuck`, `returning-35-fixed` |
+
+Weight coming back online settles a split only while the weight bound to the other block is small.
 
 ### Only chains built on the unconfirmed block are affected
 

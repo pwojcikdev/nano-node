@@ -73,7 +73,7 @@ make_config () {
         invariant) printf '\nINVARIANT %s\n' "$2" >> "$target" ;;
         property)
             # Liveness needs the fair specification and cannot use symmetry
-            sed -e 's/^SPECIFICATION Spec$/SPECIFICATION FairSpec/' -e '/^SYMMETRY/d' "$target" > "$target.new" && mv "$target.new" "$target"
+            sed -e 's/^SPECIFICATION \(.*\)Spec$/SPECIFICATION \1FairSpec/' -e '/^SYMMETRY/d' "$target" > "$target.new" && mv "$target.new" "$target"
             printf '\nPROPERTY %s\n' "$2" >> "$target"
             ;;
         *) echo "bad check: $check" >&2; return 1 ;;

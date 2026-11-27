@@ -39,6 +39,14 @@ bound-30-ordering       | MC_Bound        | invariant MC_NeverCemented          
 bound-35-stuck          | MC_Bound        | invariant MC_NeverCemented            | holds    | BigWeight=35 Faults<-MC_FaultsRestart
 bound-35-moved          | MC_Bound        | invariant MC_NeverCemented            | violated | BigWeight=35 BlockDef<-MC_ForksAndMove HashRank<-MC_ForkAndMoveRank
 
+# The aftermath of a split with weight that was offline and comes back
+returning-16-settles    | MC_Returning    | invariant NoDeadEnd                   | holds    | BoundWeight=16
+returning-16-live       | MC_Returning    | property EventuallySettled            | holds    | BoundWeight=16
+returning-30-dead-end   | MC_Returning    | invariant NoDeadEnd                   | violated | BoundWeight=30
+returning-30-ordering   | MC_Returning    | invariant MC_NeverCemented            | violated | BoundWeight=30
+returning-35-stuck      | MC_Returning    | invariant MC_NeverCemented            | holds    |
+returning-35-fixed      | MC_Returning    | invariant MC_NeverCemented            | violated | DynamicQuorum=FALSE
+
 # A Byzantine representative next to two honest voters
 byzantine-33-safety     | MC_Byzantine    | base                                  | holds    |
 byzantine-34-agreement  | MC_Byzantine    | base                                  | violated Agreement | ByzWeight=34
