@@ -1,0 +1,5 @@
+# TLC working files, generated configurations and logs
+/.tlc/
+/states/
+*_TTrace_*
+*.old

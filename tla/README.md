@@ -1,0 +1,312 @@
+# Nano confirmation model
+
+A TLA+ model of how Nano nodes confirm blocks through representative votes, together with scenarios that the TLC model checker explores exhaustively. It follows the node at the head of the v29 development line (commit `c3793c96c3`).
+
+The scenarios ask two questions of small networks under any ordering and delay of messages:
+
+- Can two nodes cement different blocks at the same root?
+- Can a released block stay undecided forever, and if so, what gets it out?
+
+In short: no scenario reaches two nodes with different cemented blocks at a root while byzantine weight stays below 34 of 100 and the nodes keep their trended weight. A root that an account forked can stay undecided forever with every representative honest and online. Where enough weight votes, roots without a fork are always decided, and so are chains that do not build on an unconfirmed block of another account. [Findings](#findings) has the details.
+
+## Layout
+
+| File | Content |
+|---|---|
+| `NanoConsensus.tla` | The model: state, steps, the properties checked |
+| `MC_*.tla`, `MC_*.cfg` | One scenario each: accounts, blocks, weights, representatives, bounds |
+| `checks.txt` | The checks: scenario, property, expected outcome |
+| `checks-long.txt` | The checks that take minutes each |
+| `check.sh` | Runs the checks with TLC and compares outcomes with expectations |
+
+## Running
+
+`check.sh` needs Java 11 or later and fetches `tla2tools.jar` on first use.
+
+```bash
+./check.sh                           # every check in checks.txt
+./check.sh fork                      # the checks whose id contains "fork"
+./check.sh -t fork-split             # also print the trace TLC found
+CHECKS=checks-long.txt ./check.sh    # the long ones
+```
+
+`JAVA`, `TLA2TOOLS`, `WORKERS`, `HEAP` and `LIMIT` in the environment select the Java binary, the tools jar, the worker threads, the heap size and a time limit per check. Logs and the generated configurations go to `.tlc/`. `checks.txt` takes around ten minutes on 14 threads.
+
+A scenario's own configuration also runs as it is in the TLA+ Toolbox or the VS Code extension; it checks the properties that must hold. `checks.txt` derives the other checks from it by replacing constants and adding one property.
+
+## What is modelled
+
+Every node keeps a ledger and a set of cemented blocks. Blocks with the same account and the same previous block share a root and are forks of each other; a ledger holds at most one block per root, and everything that block depends on. The network is a set of released blocks and a set of votes that only grow. A node may receive any of them at any time, in any order, any number of times, which covers delay, loss with retransmission, the vote cache, rebroadcasting and solicited replies.
+
+The rules that decide confirmation, as the node implements them:
+
+1. Representative weights follow every block in a node's ledger, cemented or not, so two nodes can weigh the same representative differently.
+2. An election holds the ledger block of its root and the forks the node knows. For every representative it keeps the latest vote, ordered by timestamp and then by block hash. A final vote ranks above every other vote. A vote for a block the election does not hold does not reach it.
+3. A tally weighs the recorded votes with the node's own weights. The winner moves to the heaviest voted block once the recorded votes add up to the node's quorum delta; equal weights go to the higher hash.
+4. An election has quorum when its winner leads every other voted block by the full delta, and final quorum when the final votes for the winner add up to delta.
+5. A voter votes for the winner of its election when that block is in its ledger and everything the block depends on is cemented. The vote is non-final until the election has quorum. At quorum the voter asks for a final vote, which is granted unless a final vote for another block of the root is on record. The record is never removed, and with it on record the voter answers every later request to vote at that root with the recorded final vote.
+6. A voter asked about a block answers with a final vote only: the one on record for the root, or one for the block it has cemented there.
+7. An election confirms its winner when it has quorum and final quorum at once. The node then cements the winner and everything it depends on.
+8. The quorum delta is 67% of the largest of the online weight the node observes, its trended online weight and the configured minimum.
+
+| Model | Node |
+|---|---|
+| `ReceiveBlock` | `block_processor::process_one`, `ledger_processor`, `active_elections::handle_fork`, `fork_cache` |
+| `Started`, `StartElection`, `Activatable` | `active_elections::insert`, `scheduler::priority::activate`, `scheduler::hinted`, `scheduler::optimistic` |
+| `ReceiveVote`, `Supersedes` | `vote_router::vote`, `election::vote`, `election_ballot::vote` |
+| `TallyOf` | `election_ballot::evaluate` |
+| `React` | `election::confirm_if_quorum`, `election::evaluate_locked`, `block_processor::force`, `block_processor::rollback_competitor`, `ledger::rollback`, `cementing_set::run_batch`, `ledger::cement`, `active_elections::block_cemented` |
+| `Reevaluate` | `election::tick`, `election::broadcast_vote_locked` |
+| `VoteNormal` | `vote_generator::process_normal`, `voting_policy::vote` |
+| `ProcessFinal` | `vote_generator::process_final`, `voting_policy::vote_final`, the final vote store |
+| `ReplyFinal` | `vote_replier::process`, `voting_policy::reply_final` |
+| `Weight` | `ledger::weight` |
+| `DeltaOf`, `Observe`, `Trim`, `Sample` | `online_reps::delta`, `online_reps::observe`, `online_reps::trim`, `online_reps::sample`, `rep_crawler` |
+| `Expire` | The time to live in `election::tick`, `scheduler::bucket::cancel_lowest_election` |
+| `EvictFork` | `fork_cache::put` |
+| `Rollback` | `bounded_backlog::perform_rollbacks` |
+| `Crash`, `Recover` | A node restart: the ledger, the cemented blocks, the final votes and the trended weight are stored, everything else is lost |
+
+Account owners are part of a scenario. An honest owner never signs two blocks at one root and receives a send only once it is cemented. An optional one does the same but may never release its blocks. A careless one receives a send as soon as it is released. A byzantine one signs anything at any time. Byzantine representatives have every vote on offer, final and non-final, and choose which node gets which.
+
+## What is left out
+
+- Capacity: the limits on active elections and their priorities, queue overflows and bandwidth limits. Every eligible block can have an election at every node. `Expire` stands in for an election that is dropped.
+- Time: vote cooldown inside a ballot, the pacing of votes, broadcasts and requests, and the passive phase of an election. The model orders steps freely instead.
+- The limit on blocks per ballot and the eviction it causes, the size and age limits of the vote cache.
+- Principal representative thresholds and representative tiers.
+- Wall clock vote timestamps. A voter's non-final timestamps count up from one, and a voter casts a new non-final vote only when its choice changes. `MaxTs` bounds them.
+- The gap between an election asking the block processor or the cementing set for something and its completion. Both run to completion in the step that triggers them. The gap between asking for a final vote and issuing it is modelled.
+- The gap between a voter issuing a vote and its own election counting it.
+- The two week median behind the trended weight. `Sample` moves it to the current online weight in one step, so the model reaches in a step what takes the node more than a week.
+- The conditions under which the bounded backlog leaves a block alone, other than the block having an election: cached votes for it and a place in the scheduler.
+- Bootstrapping, pruning, epochs, signatures and work. Bootstrapping is covered by blocks being receivable at any time.
+
+## Properties
+
+These must hold in every reachable state:
+
+- `Agreement`: no two nodes cement different blocks at one root.
+- `FinalVotesUnique`: a voter never issues final votes for two blocks at one root.
+- `WellFormed`: ledgers hold one block per root with all dependencies, cemented blocks have cemented dependencies, elections only hold what they were given.
+
+These probe for conditions of interest; a violation comes with the shortest trace that leads there:
+
+- `NoFinalVoteSplit`: voters never issue final votes for different blocks at one root.
+- `EveryRootWinnable`: at every root some block can still gather a delta of final votes, counting every voter that has no final vote for another block there.
+- `FinalQuorumConfirms`: an election whose winner has a full delta of final votes can confirm it.
+- `NoDeadEnd`: the nodes never run out of steps while a released block is undecided. A block is decided at a node once it is cemented there, or once a competitor of it or of a block it builds on is.
+- `HonestNeverStuck`: the same for the blocks of honest owners alone.
+- `EventuallySettled`: every fair run decides every released block.
+
+The steps are split into the ones nodes and well behaved owners take on their own (`Protocol`) and the ones left to the adversary, to operators and to the passing of time (`Environment`): node restarts, elections timing out, cache evictions, backlog rollbacks, late or byzantine releases, the delivery of byzantine votes, a running representative dropping out of a node's online set. A dead end is a state where no `Protocol` step is possible. Fairness applies to `Protocol` only.
+
+## Scenarios and results
+
+Weights are out of 100 and delta is 67 unless a scenario moves it. "States" counts the distinct states TLC explored; a check that finds a violation stops at the first one. A violated probe is a result, not a failure of the check: `checks.txt` records the outcome each check is expected to have, and every check below has it.
+
+### No forks: `MC_Baseline`
+
+A send, its receive and a change of representative move weight between three voters (40, 30, 30) while the three blocks are confirmed. Every owner is honest.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `baseline-safety` | The properties that must hold | hold | 98,875 |
+| `baseline-no-dead-end` | `NoDeadEnd` | holds | 98,875 |
+| `baseline-live` | `EventuallySettled` | holds | 98,875 |
+| `baseline-restart` \* | `NoDeadEnd`, with one node restart | holds | 1,583,508 |
+
+### A fork between two voters: `MC_Observer`
+
+One account signs two blocks at a root. Two voters of 60 and 40 hold the weight, a third node only follows.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `observer-safety` | `NoFinalVoteSplit` | holds | 6,609 |
+| `observer-no-dead-end` | `NoDeadEnd` | holds | 6,609 |
+| `observer-live` | `EventuallySettled` | holds | 6,609 |
+| `observer-restart` \* | `NoDeadEnd`, with one restart, election timeout and cache eviction | holds | 1,642,759 |
+| `observer-rollback` | `NoDeadEnd`, with one election timeout and one backlog rollback | violated | 235,646 |
+
+### Blocks built on a fork: `MC_Successors`
+
+The same two voters. The account signs one more block on top of each of its two blocks, and elections also start on blocks whose dependencies are not cemented.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `successors-safety` | The properties that must hold | hold | 1,665 |
+| `successors-no-dead-end` | `NoDeadEnd` | holds | 1,665 |
+| `successors-live` | `EventuallySettled` | holds | 1,665 |
+| `successors-rollback` | The properties that must hold, with one election timeout and one backlog rollback | hold | 52,114 |
+
+### A fork between three voters: `MC_Fork`
+
+One account signs two blocks at a root. Three honest voters (34, 33, 33) stay online.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `fork-safety` | The properties that must hold | hold | 118,646 |
+| `fork-safety-deeper` | The same with four non-final votes per voter instead of two | hold | 288,490 |
+| `fork-safety-rollback` \* | The same with one election timeout and one backlog rollback | hold | 7,176,993 |
+| `fork-split` | `NoFinalVoteSplit` | violated | 22,204 |
+| `fork-hopeless` | `EveryRootWinnable` | violated | 59,911 |
+| `fork-dead-end` | `NoDeadEnd` | violated | 93,820 |
+| `fork-live` | `EventuallySettled` | violated | 221,719 |
+| `fork-blocked-final` | `FinalQuorumConfirms` | violated | 6,390 |
+
+### After a split: `MC_Bound`
+
+Starts where a representative of weight k has its final vote on record for block B, a second one holding 90 - k has its final vote for block A and a third one holding 10 has not voted. Every ledger holds A and every node knows both blocks.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `bound-16-settles` | `NoDeadEnd`, k = 16 | holds | 532 |
+| `bound-30-dead-end` | `NoDeadEnd`, k = 30 | violated | 868 |
+| `bound-30-ordering` | No node ever cements at the root, k = 30 | violated | 210 |
+| `bound-35-stuck` | No node ever cements at the root, k = 35, with restarts, election timeouts and cache evictions | holds | 111,975 |
+| `bound-35-moved` | The same, k = 35, once 20 of it may move to another representative | violated | 157 |
+
+### A byzantine representative: `MC_Byzantine`
+
+One account signs two blocks at a root. Two honest voters share the weight a byzantine representative does not hold.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `byzantine-33-safety` | The properties that must hold, byzantine weight 33 | hold | 17,030 |
+| `byzantine-34-agreement` | The same, byzantine weight 34 | `Agreement` violated | 5,171 |
+| `byzantine-20-dead-end` | `NoDeadEnd`, byzantine weight 20 | violated | 2,179 |
+| `byzantine-20-no-fork` | `NoDeadEnd`, byzantine weight 20, a single block at the root | holds | 164 |
+| `byzantine-2-split` | `NoFinalVoteSplit`, byzantine weight 2 | violated | 6,024 |
+
+### A partition: `MC_Partition`
+
+One account signs two blocks at a root while two voters of 50 each may lose sight of each other. Nodes track the online weight and derive delta from it.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `partition-history` | The properties that must hold, minimum 60, trended weight 100 | hold | 5,136 |
+| `partition-no-history` | The same, minimum 60, no trended weight | `Agreement` violated | 10,907 |
+| `partition-high-minimum` | The same, minimum 77, no trended weight | hold | 20,544 |
+| `partition-low-minimum` | The same, minimum 50, trended weight 100 | `Agreement` violated | 22,058 |
+
+### Weight that never votes: `MC_Offline`
+
+No forks. 40 of the weight is delegated to a representative that never votes, the trended weight still counts it.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `offline-recovers` | `NoDeadEnd`, minimum 50 | holds | 89 |
+| `offline-live` | `EventuallySettled`, minimum 50 | holds | 89 |
+| `offline-halts` | `NoDeadEnd`, minimum 70 | violated | 15 |
+
+### Weight moving during a fork: `MC_Redelegation`
+
+One account signs two blocks at a root while a balance moves from one of two voters to the other through a change block.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `redelegation-33-safety` | The properties that must hold, 33 moving | hold | 41,800 |
+| `redelegation-34` | The same, 34 moving | `Agreement` violated | 2,440 |
+
+### Around a send that cannot be confirmed: `MC_Dependencies`
+
+Starts where the two voters have their final votes on record for different sends of one account. The destination of one send receives it before it is cemented; an unrelated honest account changes its representative.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `dependencies-safety` | The properties that must hold | hold | 2,000 |
+| `dependencies-honest` | `HonestNeverStuck` | holds | 2,000 |
+| `dependencies-careless` | The receive is decided at every node | violated | 2,000 |
+
+\* in `checks-long.txt`
+
+## Findings
+
+### Agreement holds
+
+No scenario with honest voters, less than 34 byzantine weight and an intact trended weight reaches two nodes that cemented different blocks at one root. That covers forks under every message ordering, blocks built on either side of a fork, restarts, election timeouts, backlog rollbacks, weight moving during an election and blocks depending on blocks of other accounts.
+
+### Honest voters can split their final votes
+
+Rule 5 lets a voter issue its final vote when its own election shows the winner leading by delta. That election is one node's view of non-final votes that are still moving, so two voters can each see such a lead for a different block. `fork-split` finds it with three honest voters that stay online (34, 33, 33):
+
+| | n1 (34) | n2 (33) | n3 (33) |
+|---|---|---|---|
+| Blocks arrive | holds B, knows A | holds A, knows B | holds A |
+| First votes | B | A | A |
+| n2 tallies n1: B, n2: A | | 67 took part and B is heavier: switches to B | |
+| n1 tallies n1: B, n2: A, n3: A | A is heavier: switches to A, votes A | | |
+| n1 tallies its own new vote | A at 100: final vote for A | | |
+| n2 votes B, its ballot still holds the first vote of n1 and nothing of n3 | | B at 67, A at 0: final vote for B | |
+
+Once every vote has reached every node, A has 67 (n1 final, n3 non-final) and B has 33 (n2 final). All three ledgers hold A and all three elections name A the winner, but A leads by 34 where quorum needs 67, so n3 never issues a final vote and the final weight behind A stays at 34. `fork-dead-end` shows that no step is left in that state, and `fork-live` that a fair run stays there forever. Nothing in it is byzantine except the account that signed two blocks.
+
+The account cannot get out on its own. Another block at the same root is one more fork, and by rule 5 no voter votes on a block built on either fork while that fork is not cemented.
+
+### What a split leaves behind
+
+Rule 7 asks for quorum as well as final quorum. `fork-blocked-final` reaches an election whose winner has 67 of final weight while another block has 33, and which therefore does not confirm. While the other votes are non-final this passes, because their voters follow the heavier block. Final votes stay where they are.
+
+Let k be the weight whose final votes are on record for blocks other than the one the rest of the weight favours, and W the weight that votes. Nothing can be confirmed when k exceeds W - delta, and the lead of rule 4 is out of reach when k exceeds half of that. With delta at 67 of 100:
+
+| k | What follows | Checks |
+|---|---|---|
+| above 33 | No block can gather a delta of votes any more. Three honest voters get there with one final vote for A and two for B. Restarts, timeouts and forgotten forks change nothing. | `fork-hopeless`, `bound-35-stuck` |
+| 17 to 33 | The favoured block can gather a delta of final votes, but an election that has recorded the votes of the k never has quorum again. A node issues its final vote, or confirms, only if its election tallies the other votes first; each restart of the election is another try. | `bound-30-dead-end`, `bound-30-ordering` |
+| up to 16 | The favoured block leads by delta with everyone else behind it and is confirmed. | `bound-16-settles` |
+
+The same arithmetic lets a byzantine representative with more than 16 of the weight keep a forked root unconfirmed for as long as it likes, by voting for the block the honest voters did not choose (`byzantine-20-dead-end`). Without a second block at the root it has nothing to vote for and the honest 80 confirm (`byzantine-20-no-fork`). A byzantine representative of any weight can also tip evenly divided honest voters into a split (`byzantine-2-split`).
+
+### A voter can turn around after others issued their final votes
+
+A non-final vote binds nothing. `Rollback` stands for the bounded backlog rolling back an uncemented block that has no election at that moment; the node may then take a competing block and vote for it. `observer-rollback` reaches a dead end with two honest voters this way:
+
+1. The heavier voter (60) holds B and votes for it.
+2. The lighter voter (40) follows, sees 100 behind B and issues its final vote for B.
+3. The election of the heavier voter times out and its backlog rolls B back.
+4. The heavier voter receives A first and votes for it.
+
+A now has the 60 of the heavier voter and B the 40 of the lighter one, cast as a final vote. Neither reaches quorum, and the heavier voter never returns to B: by rule 3 its election stays with the heavier block, which its own vote makes A, although B is the only block that could still be confirmed. Without the rollback the same two voters always settle, also across restarts and election timeouts (`observer-no-dead-end`, `observer-live`, `observer-restart`).
+
+The node's backlog also leaves a block alone while votes for it are cached or the scheduler holds it, which the model does not track. The step stands for a node that stayed saturated for long enough that neither applies.
+
+### What gets a root out
+
+- Weight moving away from the representatives bound to the other block. A node counts a change of representative as soon as the block is in its ledger, so the root recovers once enough weight has moved for the rest to lead by delta (`bound-35-moved`).
+- The order in which an election tallies votes, when k is 33 or less (`bound-30-ordering`).
+- Outside the model: the operator of a bound representative removing the final vote record of that root.
+
+Voters that have not voted yet help only as far as they add to the favoured block; where they lift the online weight above the trended weight they raise delta as well.
+
+### Only chains built on the unconfirmed block are affected
+
+In `MC_Dependencies` a forked send can no longer be confirmed. The unrelated honest account is always confirmed (`dependencies-honest`). The account that received the send before it was cemented is not: its receive is rolled back at the node that held it when that node's election moves to the other send, no ledger can take it again, and it is neither cemented nor ruled out (`dependencies-careless`). An honest owner never signs that receive, so its chain keeps working.
+
+### The quorum delta is only as good as the trended weight
+
+`MC_Partition` separates two voters of 50 each.
+
+| Minimum online weight | Trended weight at the start | What follows | Check |
+|---|---|---|---|
+| 60 | 100 | Neither side confirms alone. | `partition-history` |
+| 60 | none | Each side confirms its own block: delta falls to 67% of the minimum, 40. | `partition-no-history` |
+| 77 | none | Neither side confirms alone: 67% of the minimum is more than half of the weight. | `partition-high-minimum` |
+| 50 | 100 | Each side confirms its own block once its trended weight has followed its online weight down to 50. | `partition-low-minimum` |
+
+Delta never falls below 67% of the minimum. Agreement under a partition therefore needs twice that to exceed the weight that can vote, or every node to keep a trended weight from before the partition. The model lets the trended weight move in one step; in the node it is the median of two weeks of samples.
+
+`MC_Offline` is the other side of the same rule: with 40 of the weight delegated to a representative that never votes, the remaining 60 confirm nothing until the trended weight has followed the online weight down (`offline-recovers`, `offline-live`), and never if 60 is under the minimum (`offline-halts`).
+
+### Weight counts before it is confirmed
+
+`MC_Redelegation` moves a balance from one voter to the other with a change block that is released but not confirmed. A node that has the block counts the balance for the new representative, a node that has not counts it for the old one. With 34 of the weight moving, each voter reaches quorum alone in its own view and the two cement different blocks (`redelegation-34`); with 33 they cannot (`redelegation-33-safety`). The owner of a balance has the same power over agreement as a byzantine representative of that weight, without running a representative.
+
+## Reading the evidence
+
+TLC explores every reachable state of each scenario, so "holds" is a statement about that scenario and its bounds: two or three voters, one contested root, `MaxTs` non-final votes per voter and root, and the fault budget given. It is not a proof for larger networks.
+
+The model allows every ordering of messages. A trace shows that an ordering leads somewhere, not how likely the network is to produce it.
+
+## Adding a scenario
+
+A scenario module extends `NanoConsensus` and defines the accounts with their starting balances and representatives, how each owner behaves, and every block that can ever be signed, forks included. Its configuration binds those definitions and the bounds to the constants of the model. A scenario that starts from a state other than the empty one defines its own initial predicate, as `MC_Bound` does. Lines in `checks.txt` then name the properties to check and the outcome to expect.

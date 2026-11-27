@@ -1,0 +1,64 @@
+# id | module | check | expected | constants replaced in the module's configuration
+#
+# check is "base" (the invariants of the configuration), "invariant <name>" or "property <name>" in addition to them.
+# expected is "holds", "violated" (the named invariant or property) or "violated <invariant>" (one of the base ones).
+
+# No forks, weight moving between three voters
+baseline-safety         | MC_Baseline     | base                                  | holds    |
+baseline-no-dead-end    | MC_Baseline     | invariant NoDeadEnd                   | holds    |
+baseline-live           | MC_Baseline     | property EventuallySettled            | holds    |
+
+# A fork between two voters of unequal weight, watched by a node that does not vote
+observer-safety         | MC_Observer     | invariant NoFinalVoteSplit            | holds    |
+observer-no-dead-end    | MC_Observer     | invariant NoDeadEnd                   | holds    |
+observer-live           | MC_Observer     | property EventuallySettled            | holds    |
+observer-rollback       | MC_Observer     | invariant NoDeadEnd                   | violated | Faults<-MC_FaultsRollback
+
+# The same two voters, with a block built on each side of the fork
+successors-safety       | MC_Successors   | base                                  | holds    |
+successors-no-dead-end  | MC_Successors   | invariant NoDeadEnd                   | holds    |
+successors-live         | MC_Successors   | property EventuallySettled            | holds    |
+successors-rollback     | MC_Successors   | base                                  | holds    | Faults<-MC_FaultsRollback
+
+# Three honest voters, one forked root
+fork-safety             | MC_Fork         | base                                  | holds    |
+fork-safety-deeper      | MC_Fork         | base                                  | holds    | MaxTs=4
+fork-split              | MC_Fork         | invariant NoFinalVoteSplit            | violated |
+fork-hopeless           | MC_Fork         | invariant EveryRootWinnable           | violated |
+fork-dead-end           | MC_Fork         | invariant NoDeadEnd                   | violated |
+fork-live               | MC_Fork         | property EventuallySettled            | violated |
+fork-blocked-final      | MC_Fork         | invariant FinalQuorumConfirms         | violated |
+
+# The aftermath of a split: one large representative bound to the other fork
+bound-16-settles        | MC_Bound        | invariant NoDeadEnd                   | holds    | BigWeight=16
+bound-30-dead-end       | MC_Bound        | invariant NoDeadEnd                   | violated |
+bound-30-ordering       | MC_Bound        | invariant MC_NeverCemented            | violated |
+bound-35-stuck          | MC_Bound        | invariant MC_NeverCemented            | holds    | BigWeight=35 Faults<-MC_FaultsRestart
+bound-35-moved          | MC_Bound        | invariant MC_NeverCemented            | violated | BigWeight=35 BlockDef<-MC_ForksAndMove HashRank<-MC_ForkAndMoveRank
+
+# A Byzantine representative next to two honest voters
+byzantine-33-safety     | MC_Byzantine    | base                                  | holds    |
+byzantine-34-agreement  | MC_Byzantine    | base                                  | violated Agreement | ByzWeight=34
+byzantine-20-dead-end   | MC_Byzantine    | invariant NoDeadEnd                   | violated | ByzWeight=20
+byzantine-20-no-fork    | MC_Byzantine    | invariant NoDeadEnd                   | holds    | ByzWeight=20 BlockDef<-MC_OneBlock HashRank<-MC_OneRank InitPublished={"A"}
+byzantine-2-split       | MC_Byzantine    | invariant NoFinalVoteSplit            | violated | ByzWeight=2
+
+# Two voters that lose sight of each other, quorum delta from the online weight
+partition-history       | MC_Partition    | base                                  | holds    |
+partition-no-history    | MC_Partition    | base                                  | violated Agreement | InitTrended=0
+partition-high-minimum  | MC_Partition    | base                                  | holds    | InitTrended=0 MinOnline=77
+partition-low-minimum   | MC_Partition    | base                                  | violated Agreement | MinOnline=50
+
+# Weight delegated to a representative that never votes
+offline-recovers        | MC_Offline      | invariant NoDeadEnd                   | holds    |
+offline-live            | MC_Offline      | property EventuallySettled            | holds    |
+offline-halts           | MC_Offline      | invariant NoDeadEnd                   | violated | MinOnline=70
+
+# A balance that changes its representative during a fork
+redelegation-33-safety  | MC_Redelegation | base                                  | holds    |
+redelegation-34         | MC_Redelegation | base                                  | violated Agreement | Stake=34
+
+# The accounts around a forked send that can no longer be confirmed
+dependencies-safety     | MC_Dependencies | base                                  | holds    |
+dependencies-honest     | MC_Dependencies | invariant HonestNeverStuck            | holds    |
+dependencies-careless   | MC_Dependencies | invariant MC_ReceiveSettles           | violated |

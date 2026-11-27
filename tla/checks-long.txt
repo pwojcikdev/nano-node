@@ -1,0 +1,10 @@
+# The checks that take minutes each, in the format of checks.txt
+
+# The fork between two voters, with restarts
+observer-restart        | MC_Observer     | invariant NoDeadEnd                   | holds    | Faults<-MC_FaultsRestart
+
+# Three honest voters, one forked root, with a backlog rollback
+fork-safety-rollback    | MC_Fork         | base                                  | holds    | Faults<-MC_FaultsRollback
+
+# No forks, with a node restart
+baseline-restart        | MC_Baseline     | invariant NoDeadEnd                   | holds    | Faults<-MC_FaultsCrash
