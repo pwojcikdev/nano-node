@@ -42,6 +42,7 @@ CONSTANTS
     InitTrended,    \* Trended online weight at the start
     DynamicQuorum,  \* Whether nodes track which representatives are online
     TrimLive,       \* Whether a node may drop a running representative from its online set
+    StaleVotes,     \* Whether an election may outlive the online status of a representative it has a vote of
     Optimistic,     \* Whether elections start on account heads with uncemented dependencies
     Faults          \* Budget of disruptive events: [expire, crash, rollback, evict]
 
@@ -517,21 +518,23 @@ Recover(n) ==
 -----------------------------------------------------------------------------
 (* Online weight *)
 
-\* rep_crawler: a representative that answers a probe counts as online
+\* rep_crawler: a representative that answers a probe counts as online, a Byzantine one answers when it likes
 Observe(n, x) ==
     /\ DynamicQuorum
     /\ up[n]
     /\ x \in VotingReps \ online[n]
-    /\ x \in Byzantine \/ up[x]
+    /\ x \in Nodes => up[x]
     /\ online' = [online EXCEPT ![n] = @ \cup {x}]
     /\ UNCHANGED <<published, votes, up, ledger, cemented, forks, finalVote, election, finalReq, trended, budget>>
 
-\* online_reps::trim: a representative not heard from for a while stops counting
+\* online_reps::trim: a representative not heard from for a while stops counting, a Byzantine one falls silent when it likes
 Trim(n, x) ==
     /\ DynamicQuorum
     /\ up[n]
     /\ x \in online[n]
-    /\ TrimLive \/ x \in Byzantine \/ ~up[x]
+    /\ TrimLive \/ (x \in Nodes => ~up[x])
+    \* election::time_to_live is shorter than the wait, so no running election of the node still has a vote of it
+    /\ StaleVotes \/ \A r \in Roots : election[n][r].state = "active" => \A v \in election[n][r].ballot : v.rep # x
     /\ online' = [online EXCEPT ![n] = @ \ {x}]
     /\ UNCHANGED <<published, votes, up, ledger, cemented, forks, finalVote, election, finalReq, trended, budget>>
 

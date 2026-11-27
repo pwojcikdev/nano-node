@@ -7,7 +7,7 @@ The scenarios ask two questions of small networks under any ordering and delay o
 - Can two nodes cement different blocks at the same root?
 - Can a released block stay undecided forever, and if so, what gets it out?
 
-In short: no scenario reaches two nodes with different cemented blocks at a root while byzantine weight stays below 34 of 100 and the nodes keep their trended weight. A root that an account forked can stay undecided forever with every representative honest and online. Where enough weight votes, roots without a fork are always decided, and so are chains that do not build on an unconfirmed block of another account. [Findings](#findings) has the details.
+In short: under the node's rules no scenario reaches two nodes with different cemented blocks at a root while byzantine weight stays below 34 of 100 and the nodes keep their trended weight. A root that an account forked can stay undecided forever with every representative honest and online. Where enough weight votes, roots without a fork are always decided, and so are chains that do not build on an unconfirmed block of another account. [Findings](#findings) has the details.
 
 ## Layout
 
@@ -48,6 +48,7 @@ The rules that decide confirmation, as the node implements them:
 6. A voter asked about a block answers with a final vote only: the one on record for the root, or one for the block it has cemented there.
 7. An election confirms its winner when it has quorum and final quorum at once. The node then cements the winner and everything it depends on.
 8. The quorum delta is 67% of the largest of the online weight the node observes, its trended online weight and the configured minimum.
+9. A representative counts towards the online weight from the moment one of its votes reaches an election of the node, or it answers a probe, until the node has not heard from it for ten minutes. An election ends after five minutes at most, so no election holds the vote of a representative its node has stopped counting.
 
 | Model | Node |
 |---|---|
@@ -61,7 +62,7 @@ The rules that decide confirmation, as the node implements them:
 | `ProcessFinal` | `vote_generator::process_final`, `voting_policy::vote_final`, the final vote store |
 | `ReplyFinal` | `vote_replier::process`, `voting_policy::reply_final` |
 | `Weight` | `ledger::weight` |
-| `DeltaOf`, `Observe`, `Trim`, `Sample` | `online_reps::delta`, `online_reps::observe`, `online_reps::trim`, `online_reps::sample`, `rep_crawler` |
+| `DeltaOf`, `Observe`, `Trim`, `Sample` | `online_reps::delta`, `online_reps::observe`, `online_reps::trim` and its wait against `election::time_to_live`, `online_reps::sample`, `rep_crawler` |
 | `Expire` | The time to live in `election::tick`, `scheduler::bucket::cancel_lowest_election` |
 | `EvictFork` | `fork_cache::put` |
 | `Rollback` | `bounded_backlog::perform_rollbacks` |
@@ -72,7 +73,7 @@ Account owners are part of a scenario. An honest owner never signs two blocks at
 ## What is left out
 
 - Capacity: the limits on active elections and their priorities, queue overflows and bandwidth limits. Every eligible block can have an election at every node. `Expire` stands in for an election that is dropped.
-- Time: vote cooldown inside a ballot, the pacing of votes, broadcasts and requests, and the passive phase of an election. The model orders steps freely instead.
+- Time: vote cooldown inside a ballot, the pacing of votes, broadcasts and requests, and the passive phase of an election. The model orders steps freely instead. The one order between timers it keeps is rule 9: `Trim` leaves a representative alone while a running election of the node holds a vote of it. The constant `StaleVotes` lifts that.
 - The limit on blocks per ballot and the eviction it causes, the size and age limits of the vote cache.
 - Principal representative thresholds and representative tiers.
 - Wall clock vote timestamps. A voter's non-final timestamps count up from one, and a voter casts a new non-final vote only when its choice changes. `MaxTs` bounds them.
@@ -99,7 +100,7 @@ These probe for conditions of interest; a violation comes with the shortest trac
 - `HonestNeverStuck`: the same for the blocks of honest owners alone.
 - `EventuallySettled`: every fair run decides every released block.
 
-The steps are split into the ones nodes and well behaved owners take on their own (`Protocol`) and the ones left to the adversary, to operators and to the passing of time (`Environment`): node restarts, elections timing out, cache evictions, backlog rollbacks, late or byzantine releases, the delivery of byzantine votes, a running representative dropping out of a node's online set. A dead end is a state where no `Protocol` step is possible. Fairness applies to `Protocol` only.
+The steps are split into the ones nodes and well behaved owners take on their own (`Protocol`) and the ones left to the adversary, to operators and to the passing of time (`Environment`): node restarts, elections timing out, cache evictions, backlog rollbacks, late or byzantine releases, the delivery of byzantine votes, a running or byzantine representative dropping out of a node's online set. A dead end is a state where no `Protocol` step is possible. Fairness applies to `Protocol` only.
 
 ## Scenarios and results
 
@@ -201,16 +202,26 @@ One account signs two blocks at a root. Two honest voters share the weight a byz
 | `byzantine-20-no-fork` | `NoDeadEnd`, byzantine weight 20, a single block at the root | holds | 164 |
 | `byzantine-2-split` | `NoFinalVoteSplit`, byzantine weight 2 | violated | 6,024 |
 
+In the checks below the nodes track the online weight with a minimum of 60, and their trended weight at the start is the honest weight alone: the byzantine representative has been away for long enough to drop out of it. It shows up and falls silent as it likes.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `byzantine-33-absent` | The properties that must hold, byzantine weight 33 | hold | 98,744 |
+| `byzantine-33-expiring` | The same with one election timeout | hold | 1,144,088 |
+| `byzantine-14-absent` | The same, byzantine weight 14 | hold | 61,984 |
+| `byzantine-14-stale` | The same, byzantine weight 14, without rule 9 | `Agreement` violated | 59,763 |
+| `byzantine-13-stale` | The same, byzantine weight 13, without rule 9 | hold | 165,424 |
+
 ### A partition: `MC_Partition`
 
 One account signs two blocks at a root while two voters of 50 each may lose sight of each other. Nodes track the online weight and derive delta from it.
 
 | Check | Asks | Outcome | States |
 |---|---|---|---|
-| `partition-history` | The properties that must hold, minimum 60, trended weight 100 | hold | 5,136 |
-| `partition-no-history` | The same, minimum 60, no trended weight | `Agreement` violated | 10,907 |
-| `partition-high-minimum` | The same, minimum 77, no trended weight | hold | 20,544 |
-| `partition-low-minimum` | The same, minimum 50, trended weight 100 | `Agreement` violated | 22,058 |
+| `partition-history` | The properties that must hold, minimum 60, trended weight 100 | hold | 1,492 |
+| `partition-no-history` | The same, minimum 60, no trended weight | `Agreement` violated | 8,580 |
+| `partition-high-minimum` | The same, minimum 77, no trended weight | hold | 5,968 |
+| `partition-low-minimum` | The same, minimum 50, trended weight 100 | `Agreement` violated | 11,327 |
 
 ### Weight that never votes: `MC_Offline`
 
@@ -265,7 +276,7 @@ These take longer than the checks in `checks.txt`. `fork-safety-rollback` above 
 
 ### Agreement holds
 
-No scenario with honest voters, less than 34 byzantine weight and an intact trended weight reaches two nodes that cemented different blocks at one root. That covers forks under every message ordering, blocks built on either side of a fork, restarts, election timeouts, backlog rollbacks, weight moving during an election and blocks depending on blocks of other accounts.
+No scenario with honest voters, less than 34 byzantine weight and an intact trended weight reaches two nodes that cemented different blocks at one root. That covers forks under every message ordering, blocks built on either side of a fork, restarts, election timeouts, backlog rollbacks, weight moving during an election and blocks depending on blocks of other accounts. The one check that gets there with less, `byzantine-14-stale`, switches rule 9 off on purpose.
 
 ### Honest voters can split their final votes
 
@@ -352,6 +363,14 @@ In `MC_Dependencies` a forked send can no longer be confirmed. The unrelated hon
 Delta never falls below 67% of the minimum. Agreement under a partition therefore needs twice that to exceed the weight that can vote, or every node to keep a trended weight from before the partition. The model lets the trended weight move in one step; in the node it is the median of two weeks of samples.
 
 `MC_Offline` is the other side of the same rule: with 40 of the weight delegated to a representative that never votes, the remaining 60 confirm nothing until the trended weight has followed the online weight down (`offline-recovers`, `offline-live`), and never if 60 is under the minimum (`offline-halts`).
+
+### Elections have to end before a silent representative stops counting
+
+A tally weighs every vote an election has recorded with the ledger weight of its representative, whether or not the node still counts that representative as online. Delta comes from the weight the node does count. Rule 9 keeps the two in step: an election ends after five minutes at most (`election::time_to_live`) and a representative counts for ten minutes after its last vote reached an election (`online_reps::trim`, twice `weight_interval`), so the weight behind every recorded vote is part of delta.
+
+`MC_Byzantine` shows what that is worth. The byzantine representative has been away for long enough that the trended weight is the honest weight alone. It returns, gives each of the two honest voters a final vote for a different block and falls silent again. With rule 9 its weight counts towards delta for as long as its votes count, and 33 of it break nothing (`byzantine-33-absent`), also when an election times out, the representative drops out and the election starts again (`byzantine-33-expiring`). Without rule 9, 14 are enough: each honest voter holds 43 and sees 57 behind its own block against a delta of 57, which is 67% of the 86 that remain online (`byzantine-14-stale`). With 13 the same adds up to 57 against 58 (`byzantine-13-stale`).
+
+Only the order of the two timers keeps the byzantine bound at 34 here. If an election could outlive the time a silent representative stays counted, a representative with about 14.5% of the weight (34 / 2.34) could make two halves of the honest weight cement different blocks. It would have to stay away for more than a week first, since the trended weight is a median of two weeks, and the two halves would have to miss each other's votes in the meantime.
 
 ### Weight counts before it is confirmed
 

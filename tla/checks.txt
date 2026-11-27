@@ -58,6 +58,13 @@ byzantine-20-dead-end   | MC_Byzantine    | invariant NoDeadEnd                 
 byzantine-20-no-fork    | MC_Byzantine    | invariant NoDeadEnd                   | holds    | ByzWeight=20 BlockDef<-MC_OneBlock HashRank<-MC_OneRank InitPublished={"A"}
 byzantine-2-split       | MC_Byzantine    | invariant NoFinalVoteSplit            | violated | ByzWeight=2
 
+# The same representative after an absence that took it out of the trended weight, showing up and falling silent
+byzantine-33-absent     | MC_Byzantine    | base                                  | holds    | DynamicQuorum=TRUE MinOnline=60 InitTrended=67
+byzantine-33-expiring   | MC_Byzantine    | base                                  | holds    | DynamicQuorum=TRUE MinOnline=60 InitTrended=67 Faults<-MC_FaultsExpire
+byzantine-14-absent     | MC_Byzantine    | base                                  | holds    | ByzWeight=14 DynamicQuorum=TRUE MinOnline=60 InitTrended=86
+byzantine-14-stale      | MC_Byzantine    | base                                  | violated Agreement | ByzWeight=14 DynamicQuorum=TRUE MinOnline=60 InitTrended=86 StaleVotes=TRUE
+byzantine-13-stale      | MC_Byzantine    | base                                  | holds    | ByzWeight=13 DynamicQuorum=TRUE MinOnline=60 InitTrended=87 StaleVotes=TRUE
+
 # Two voters that lose sight of each other, quorum delta from the online weight
 partition-history       | MC_Partition    | base                                  | holds    |
 partition-no-history    | MC_Partition    | base                                  | violated Agreement | InitTrended=0

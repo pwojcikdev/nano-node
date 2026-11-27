@@ -30,4 +30,7 @@ MC_Owner == [x |-> "byzantine", w1 |-> "honest", w2 |-> "honest", wz |-> "honest
 
 MC_Faults == [expire |-> 0, crash |-> 0, rollback |-> 0, evict |-> 0]
 
+\* An election times out
+MC_FaultsExpire == [expire |-> 1, crash |-> 0, rollback |-> 0, evict |-> 0]
+
 =============================================================================
