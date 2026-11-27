@@ -17,6 +17,3 @@ byzantine-three-safety  | MC_ByzantineThree | base                              
 
 # One account forks twice in a row between three honest voters
 second-fork-safety      | MC_SecondFork   | base                                  | holds    |
-
-# A fork between two voters with one disruption of every kind
-observer-all-faults     | MC_Observer     | base                                  | holds    | Faults<-MC_FaultsAll

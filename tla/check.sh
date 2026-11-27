@@ -118,7 +118,7 @@ while IFS='|' read -r id module check expected overrides; do
         if [ "$1" != invariant ] || [ "$2" != "$violated" ]; then
             outcome="violated $violated"
         fi
-    elif grep -Eq "^Error: Temporal propert(y|ies) .*violated" "$log"; then
+    elif grep -Eq "^Error: (Temporal propert(y|ies) .*violated|Action property .* is violated)" "$log"; then
         outcome="violated"
     elif grep -q "No error has been found" "$log"; then
         outcome="holds"

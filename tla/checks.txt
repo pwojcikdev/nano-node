@@ -18,6 +18,7 @@ observer-live           | MC_Observer     | property EventuallySettled          
 observer-restart        | MC_Observer     | invariant NoDeadEnd                   | holds    | Faults<-MC_FaultsRestart
 observer-restart-live   | MC_Observer     | property EventuallySettled            | holds    | Faults<-MC_FaultsRestart
 observer-rollback       | MC_Observer     | invariant NoDeadEnd                   | violated | Faults<-MC_FaultsRollback
+observer-all-faults     | MC_Observer     | base                                  | holds    | Faults<-MC_FaultsAll
 
 # The same two voters, with a block built on each side of the fork
 successors-safety       | MC_Successors   | base                                  | holds    |

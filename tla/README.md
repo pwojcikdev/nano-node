@@ -30,7 +30,7 @@ In short: under the node's rules no scenario reaches two nodes with different ce
 CHECKS=checks-slow.txt ./check.sh    # the slow ones
 ```
 
-`JAVA`, `TLA2TOOLS`, `WORKERS`, `HEAP` and `LIMIT` in the environment select the Java binary, the tools jar, the worker threads, the heap size and a time limit per check. Logs and the generated configurations go to `.tlc/`. On 14 threads no check in `checks.txt` takes more than about a quarter of an hour and the whole list takes around half an hour. `checks-slow.txt` holds the checks that take longer and is meant for a dedicated runner.
+`JAVA`, `TLA2TOOLS`, `WORKERS`, `HEAP` and `LIMIT` in the environment select the Java binary, the tools jar, the worker threads, the heap size and a time limit per check. Logs and the generated configurations go to `.tlc/`. On 14 threads no check in `checks.txt` takes more than about a quarter of an hour and the whole list takes about an hour and a half. `checks-slow.txt` holds the checks that take longer and is meant for a dedicated runner.
 
 A scenario's own configuration also runs as it is in the TLA+ Toolbox or the VS Code extension; it checks the properties that must hold. `checks.txt` derives the other checks from it by replacing constants and adding one property.
 
@@ -133,6 +133,7 @@ One account signs two blocks at a root. Two voters of 60 and 40 hold the weight,
 | `observer-restart` | `NoDeadEnd`, with one restart, election timeout and cache eviction | holds | 1,642,759 |
 | `observer-restart-live` | `EventuallySettled`, with the same | holds | 1,642,759 |
 | `observer-rollback` | `NoDeadEnd`, with one election timeout and one backlog rollback | violated | 235,646 |
+| `observer-all-faults` | The properties that must hold, with one restart, election timeout, cache eviction and backlog rollback | hold | 10,334,731 |
 
 ### Blocks built on a fork: `MC_Successors`
 
@@ -288,7 +289,6 @@ These take longer than the checks in `checks.txt`. `fork-safety-rollback` above 
 | `four-voters-safety` | The properties that must hold for `MC_FourVoters` | 19.5 million states, 50 minutes |
 | `byzantine-three-safety` | The properties that must hold for `MC_ByzantineThree` with the byzantine representative at 33% | 4.7 million states, 10 minutes |
 | `second-fork-safety` | The properties that must hold for `MC_SecondFork`: the account of `MC_Fork` signs two more blocks on top of the first of its two. Three honest voters (34, 33, 33) stay online, and the second pair has its elections at a node once that node has cemented the block under it. | 5.7 million states, 10 minutes |
-| `observer-all-faults` | The properties that must hold for `MC_Observer` with one restart, election timeout, cache eviction and backlog rollback | 8.3 million states, 10 minutes |
 
 ## Findings
 
