@@ -82,7 +82,6 @@ Account owners are part of a scenario. An honest owner never signs two blocks at
 - The two week median behind the trended weight. `Sample` moves it to the current online weight in one step, so the model reaches in a step what takes the node more than a week.
 - The conditions under which the bounded backlog leaves a block alone, other than the block having an election: cached votes for it and a place in the scheduler.
 - The weight table shipped with a release. `ledger::weight` answers from it until the node has synced past a block count, so such a node ignores the weight that the blocks in its ledger move.
-- The vote a voter casts right after its election switched to another block. The node casts the vote it asked for at the switch without tallying again; the model casts a non-final vote only while a fresh tally still names that block. The two differ only where the switch itself moves weight, as it does when the forked account holds voting weight.
 - Bootstrapping, pruning, epochs, signatures and work. Bootstrapping is covered by blocks being receivable at any time.
 
 ## Properties

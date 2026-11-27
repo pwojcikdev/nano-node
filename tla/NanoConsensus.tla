@@ -402,8 +402,8 @@ WantsNormalVote(n, r) ==
     \* A recorded final vote turns every later vote into that final vote, which is out already
     /\ finalVote[n][r] = NoBlock
     /\ \A v \in mine : v.ts = Cardinality(mine) => v.hash # e.winner
-    \* election::broadcast_vote_locked tallies first and takes the final path at quorum
-    /\ t.winner = e.winner
+    \* election::broadcast_vote_locked takes the final path at quorum.  The vote it asked for at its last tally is
+    \* cast by vote_generator::process_normal although the weights may have moved since
     /\ ~t.quorum
 
 \* vote_generator::broadcast_vote: the vote goes out and into the voter's own election in the same step
