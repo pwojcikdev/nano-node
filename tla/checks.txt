@@ -44,7 +44,24 @@ bound-16-settles        | MC_Bound        | invariant NoDeadEnd                 
 bound-30-dead-end       | MC_Bound        | invariant NoDeadEnd                   | violated |
 bound-30-ordering       | MC_Bound        | invariant MC_NeverCemented            | violated |
 bound-35-stuck          | MC_Bound        | invariant MC_NeverCemented            | holds    | BigWeight=35 Faults<-MC_FaultsRestart
-bound-35-moved          | MC_Bound        | invariant MC_NeverCemented            | violated | BigWeight=35 BlockDef<-MC_ForksAndMove HashRank<-MC_ForkAndMoveRank
+
+# The same aftermath between two voters, 35 bound to the other fork: weight moves away from it to the other voter
+bound-away-19-settles   | MC_BoundMove    | invariant NoDeadEnd                   | holds    | Moved=19
+bound-away-18-dead-end  | MC_BoundMove    | invariant NoDeadEnd                   | violated | Moved=18
+bound-away-2-ordering   | MC_BoundMove    | invariant MC_NeverCemented            | violated | Moved=2
+bound-away-1-stuck      | MC_BoundMove    | invariant MC_NeverCemented            | holds    | Moved=1
+bound-away-rollback     | MC_BoundMove    | invariant NoDeadEnd                   | holds    | Faults<-MC_FaultsRollback
+
+# All of it leaves for a representative that never votes
+bound-gone-stuck        | MC_BoundMove    | invariant MC_NeverCemented            | holds    | Moved=35 To=gone
+
+# 16 bound, and weight moves toward it
+bound-toward-1          | MC_BoundMove    | invariant NoDeadEnd                   | violated | BigWeight=16 Moved=1 From=rest To=big
+bound-toward-18         | MC_BoundMove    | invariant MC_CementedByAllOrNone      | violated | BigWeight=16 Moved=18 From=rest To=big
+
+# With the third voter of MC_Bound, which holds 10 and has not voted
+bound-three-20-settles  | MC_BoundMove    | invariant NoDeadEnd                   | holds    | LateWeight=10 Nodes={big,rest,late} Voters={big,rest,late} InitUp={big,rest,late}
+bound-three-18-dead-end | MC_BoundMove    | invariant NoDeadEnd                   | violated | Moved=18 LateWeight=10 Nodes={big,rest,late} Voters={big,rest,late} InitUp={big,rest,late}
 
 # The aftermath of a split with weight that was offline and comes back
 returning-16-settles    | MC_Returning    | invariant NoDeadEnd                   | holds    | BoundWeight=16

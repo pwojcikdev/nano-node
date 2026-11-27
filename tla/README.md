@@ -179,7 +179,23 @@ Starts where a representative of weight k has its final vote on record for block
 | `bound-30-dead-end` | `NoDeadEnd`, k = 30 | violated | 868 |
 | `bound-30-ordering` | No node ever cements at the root, k = 30 | violated | 210 |
 | `bound-35-stuck` | No node ever cements at the root, k = 35, with restarts, election timeouts and cache evictions | holds | 111,975 |
-| `bound-35-moved` | No node ever cements at the root, k = 35, once 20 of it may move to another representative | violated | 157 |
+
+### After a split, weight moves: `MC_BoundMove`
+
+Starts like `MC_Bound` with two voters: one holding 35 has its final vote on record for block B, the other holding 65 has its final vote for block A. An honest account then moves part of that weight to another representative with a change block.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `bound-away-19-settles` | `NoDeadEnd`, 19 of the 35 move to the other voter | holds | 1,136 |
+| `bound-away-18-dead-end` | `NoDeadEnd`, 18 move | violated | 1,119 |
+| `bound-away-2-ordering` | No node ever cements at the root, 2 move | violated | 75 |
+| `bound-away-1-stuck` | The same, 1 moves | holds | 625 |
+| `bound-away-rollback` | `NoDeadEnd`, 20 move, with one election timeout and one backlog rollback | holds | 40,412 |
+| `bound-gone-stuck` | No node ever cements at the root, all 35 move to a representative that never votes | holds | 375 |
+| `bound-toward-1` | `NoDeadEnd`, 16 bound and 1 more moves to it | violated | 777 |
+| `bound-toward-18` | No dead end with the root cemented at one node only, 16 bound and 18 more move to it | violated | 812 |
+| `bound-three-20-settles` | `NoDeadEnd`, with the third voter of `MC_Bound`, 20 of the 35 move | holds | 1,195,764 |
+| `bound-three-18-dead-end` | The same, 18 move | violated | 549,465 |
 
 ### A split, then offline weight returns: `MC_Returning`
 
@@ -406,10 +422,12 @@ The node's backlog also leaves a block alone while votes for it are cached or th
 
 ### What gets a root out
 
-- Weight moving away from the representatives bound to the other block, to representatives that can still vote for the favoured one. A node counts a change of representative as soon as the block is in its ledger, and with 20 of the 35 moved a node confirms (`bound-35-moved`). The check shows that one node gets there, not that every node does.
+- Weight moving away from the representatives bound to the other block, to representatives that can still vote for the favoured one. A node counts a change of representative as soon as the block is in its ledger, and the table for k then applies to what is left. With 35 bound, 19 or more moved away leave 16 or less and every node confirms (`bound-away-19-settles`, `bound-three-20-settles`), also across a rollback (`bound-away-rollback`). 18 moved leave 17 and the lottery (`bound-away-18-dead-end`, `bound-away-2-ordering`, `bound-three-18-dead-end`), 1 moved leaves 34 and nothing (`bound-away-1-stuck`). Weight that leaves for a representative that never votes frees nothing, however much of it goes, because the favoured block needs a delta of final votes as well as the lead (`bound-gone-stuck`).
 - The order in which an election tallies votes, when k is 33 or less (`bound-30-ordering`).
 - Weight that was offline coming back, when k is 16 or less. Above that it does not settle the root; the next section has the cases.
 - Outside the model: the operator of a bound representative removing the final vote record of that root.
+
+The same rule cuts the other way. Weight moving toward a bound representative stops a root that would have settled (`bound-toward-1`). It can also leave the block cemented at the node that decided before it had the change block and out of reach for the node that has it, which counts 66 of final votes at most (`bound-toward-18`).
 
 ### Weight that comes back online
 

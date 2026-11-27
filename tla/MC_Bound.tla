@@ -5,10 +5,6 @@
 (* record, the representative holding most of the remaining weight has its *)
 (* final vote for block A, a third one has not voted yet.  Every ledger    *)
 (* holds A and every node knows both blocks.                               *)
-(*                                                                         *)
-(* 20 of the weight behind a large enough representative belongs to an     *)
-(* account that may move it away; the configuration leaves that block out  *)
-(* unless a check asks for it.                                             *)
 (***************************************************************************)
 EXTENDS NanoConsensus
 
@@ -21,20 +17,9 @@ MC_Forks ==
 
 MC_ForkRank == [A |-> 1, B |-> 2]
 
-\* Weight behind the large representative that may move away
-MC_Movable == IF BigWeight >= 20 THEN 20 ELSE 0
-
-\* The same with the block that moves that weight to another representative
-MC_ForksAndMove ==
-    [A |-> MC_Forks.A,
-     B |-> MC_Forks.B,
-     D |-> [acct |-> "d", prev |-> NoBlock, kind |-> "change", link |-> NoBlock, rep |-> rest, bal |-> MC_Movable]]
-
-MC_ForkAndMoveRank == [A |-> 1, B |-> 2, D |-> 3]
-
-MC_InitBalance == [x |-> 0, d |-> MC_Movable, w1 |-> BigWeight - MC_Movable, w2 |-> 90 - BigWeight, w3 |-> 10]
-MC_InitRep == [x |-> big, d |-> big, w1 |-> big, w2 |-> rest, w3 |-> late]
-MC_Owner == [x |-> "byzantine", d |-> "optional", w1 |-> "honest", w2 |-> "honest", w3 |-> "honest"]
+MC_InitBalance == [x |-> 0, w1 |-> BigWeight, w2 |-> 90 - BigWeight, w3 |-> 10]
+MC_InitRep == [x |-> big, w1 |-> big, w2 |-> rest, w3 |-> late]
+MC_Owner == [x |-> "byzantine", w1 |-> "honest", w2 |-> "honest", w3 |-> "honest"]
 
 MC_Faults == [expire |-> 0, crash |-> 0, rollback |-> 0, evict |-> 0]
 
