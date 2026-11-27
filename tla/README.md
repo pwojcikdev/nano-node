@@ -7,7 +7,7 @@ The scenarios ask two questions of small networks under any ordering and delay o
 - Can two nodes cement different blocks at the same root?
 - Can a released block stay undecided forever, and if so, what gets it out?
 
-In short: under the node's rules no scenario reaches two nodes with different cemented blocks at a root while byzantine weight stays below 34 of 100, less than 34 changes its representative while a root is contested and the nodes keep their trended weight. A root that an account forked can stay undecided forever with every representative honest and online. Where enough weight votes, roots without a fork are always decided, and so are chains that do not build on an unconfirmed block of another account. [Findings](#findings) has the details.
+In short: under the node's rules no scenario reaches two nodes with different cemented blocks at a root while byzantine weight and weight that changes its representative while a root is contested stay below 34 of 100 together, and the nodes keep their trended weight. A root that an account forked can stay undecided forever with every representative honest and online. Where enough weight votes, roots without a fork are always decided, and so are chains that do not build on an unconfirmed block of another account. [Findings](#findings) has the details.
 
 ## Layout
 
@@ -297,6 +297,26 @@ With the fork, the balance arrives from a representative that never votes. The v
 | `arriving-35-unseen` | The same, and a node may lose sight of a running voter | `Agreement` violated | 29,339 |
 | `arriving-55-dynamic` | The same as the second, 55 arriving | `Agreement` violated | 4,145 |
 
+### A fork that carries the balance: `MC_WeightedFork`
+
+One account signs two change blocks at a root, each naming a different voter, and holds a balance. A node counts that balance for the voter named by the block in its ledger. Two voters, unless a check adds a third one or makes it byzantine.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `weighted-33-safety` | The properties that must hold; voters of 34 and 33, the account holds 33 | hold | 594 |
+| `weighted-34-agreement` | The same; voters of 33 and 33, the account holds 34 | `Agreement` violated | 459 |
+| `weighted-three-safety` | The same; voters of 17, 33 and 17, the account holds 33 | hold | 295,746 |
+| `weighted-three-34` | The same; voters of 17, 33 and 16, the account holds 34 | `Agreement` violated | 16,626 |
+| `weighted-5-settles` | `NoDeadEnd`; voters of 55 and 40, the account holds 5 | holds | 321 |
+| `weighted-5-live` | `EventuallySettled`, the same | holds | 321 |
+| `weighted-20-frozen` | A dead end comes only after a final vote; voters of 40 and 40, the account holds 20 | violated | 209 |
+| `weighted-three-frozen` | The same; voters of 45, 25 and 20, the account holds 10 | violated | 35,630 |
+| `weighted-20-split` | `NoFinalVoteSplit`; voters of 40 and 40, the account holds 20 | violated | 446 |
+| `weighted-byz-17-16` | The properties that must hold; byzantine weight 17, the account holds 16 | hold | 15,389 |
+| `weighted-byz-17-17` | The same; byzantine weight 17, the account holds 17 | `Agreement` violated | 3,572 |
+| `weighted-byz-32-1` | The same; byzantine weight 32, the account holds 1 | hold | 13,511 |
+| `weighted-byz-33-1` | The same; byzantine weight 33, the account holds 1 | `Agreement` violated | 3,379 |
+
 ### Around a send that cannot be confirmed: `MC_Dependencies`
 
 Starts where the two voters have their final votes on record for different sends of one account. The destination of one send receives it before it is cemented; an unrelated honest account changes its representative.
@@ -334,7 +354,7 @@ These take longer than the checks in `checks.txt`. `fork-safety-rollback` above 
 
 ### Agreement holds
 
-No scenario with honest voters, less than 34 byzantine weight, less than 34 of weight that two ledgers count for different representatives and an intact trended weight reaches two nodes that cemented different blocks at one root. That covers forks under every message ordering, blocks built on either side of a fork, restarts, election timeouts, backlog rollbacks, up to 33 of the weight changing its representative during an election and blocks depending on blocks of other accounts. The one check that gets there with less, `byzantine-14-stale`, switches rule 9 off on purpose.
+No scenario with honest voters, an intact trended weight and less than 34 of byzantine weight and weight that two ledgers count for different representatives, taken together, reaches two nodes that cemented different blocks at one root. That covers forks under every message ordering, blocks built on either side of a fork, restarts, election timeouts, backlog rollbacks, up to 33 of the weight changing its representative during an election and blocks depending on blocks of other accounts. The one check that gets there with less, `byzantine-14-stale`, switches rule 9 off on purpose.
 
 At 34 the byzantine representative gets there by giving a final vote for one block to half of the honest weight and one for the other block to the rest. The halves can be one voter each (`byzantine-34-agreement`) or one against two (`byzantine-three-34`). In the second trace the heavier voter first votes for A, moves to B on the byzantine vote and cements it, while the two lighter ones still count its earlier vote for A, reach quorum with the byzantine vote for A and cement that.
 
@@ -457,6 +477,16 @@ Far below 34, moving weight costs liveness. Two honest voters with fixed weights
 The threshold for that is the weight that makes two ledgers disagree about which voter is heavier: more than half of their difference, or exactly half where the hash order breaks the tie. Between voters of 60 and 40 it is 10 (`redelegation-10-split`, against `redelegation-9-no-split` and `redelegation-9-live`), between 51 and 49 it is 1 (`redelegation-1-split`).
 
 One node can also decide alone and leave the other behind (`redelegation-33-lone`). The first voter holds 67 in a ledger without the change block and cements A on its own vote. The second holds 66 once it has the change block, has voted for B and stays there, because its own vote outweighs the final vote of the first. `Agreement` holds, and the second node never cements anything at the root.
+
+### A fork whose blocks carry the balance
+
+The cheapest way to move weight during a fork is for the forked account to hold it. In `MC_WeightedFork` one account signs two change blocks at a root, each naming a different voter. A node counts the balance for the voter named by the block in its ledger, and its weights move when its election switches to the other block.
+
+For agreement this is `MC_Redelegation` again at a hundredth of the cost: 33 hold and 34 break it, with two voters and with three (`weighted-33-safety`, `weighted-34-agreement`, `weighted-three-safety`, `weighted-three-34`). Next to a byzantine representative the two add up. Byzantine weight plus the weight that two ledgers count for different representatives has to stay under 34: 17 and 17 break agreement and so do 33 and 1, while 17 and 16 or 32 and 1 do not (`weighted-byz-17-17`, `weighted-byz-33-1`, `weighted-byz-17-16`, `weighted-byz-32-1`).
+
+It also gives a dead end that no final vote led to (`weighted-20-frozen`, `weighted-three-frozen`). With voters of 40 each and 20 on the account, each voter holds the block that names itself, so each ledger makes its own block the heavier one, 60 against 40. Nobody switches, nobody reaches quorum and no final vote is ever cast, so removing final vote records would not help. It takes a balance larger than the difference between the two camps: with 5 between voters of 55 and 40 the root always settles (`weighted-5-settles`, `weighted-5-live`).
+
+When the blocks arrive the other way round, each voter starts on the block that names the other one. Each election then switches, the switch moves the balance, and each voter votes for the block it switched to. The other's first vote for that block is still in its ballot, so the voter sees 100 behind it and issues its final vote. The two final votes name different blocks (`weighted-20-split`).
 
 ## Reading the evidence
 

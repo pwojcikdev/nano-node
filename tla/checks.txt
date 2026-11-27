@@ -122,6 +122,25 @@ arriving-35-dynamic     | MC_Redelegation | base                                
 arriving-35-unseen      | MC_Redelegation | base                                  | violated Agreement | W1=31 W2=14 WOther=20 From=other InitTrended=45 DynamicQuorum=TRUE MinOnline=40 TrimLive=TRUE
 arriving-55-dynamic     | MC_Redelegation | base                                  | violated Agreement | W1=31 W2=14 From=other InitTrended=45 DynamicQuorum=TRUE MinOnline=40
 
+# A fork whose two blocks name different voters for the balance of the account that signed them
+weighted-33-safety      | MC_WeightedFork | base                                  | holds    |
+weighted-34-agreement   | MC_WeightedFork | base                                  | violated Agreement | W1=33 W2=33
+weighted-5-settles      | MC_WeightedFork | invariant NoDeadEnd                   | holds    | W1=55 W2=40
+weighted-5-live         | MC_WeightedFork | property EventuallySettled            | holds    | W1=55 W2=40
+weighted-20-frozen      | MC_WeightedFork | invariant MC_NoDeadEndWithoutFinal    | violated | W1=40 W2=40
+weighted-20-split       | MC_WeightedFork | invariant NoFinalVoteSplit            | violated | W1=40 W2=40
+
+# The same fork between three voters
+weighted-three-safety   | MC_WeightedFork | base                                  | holds    | W1=17 W2=33 W3=17 Nodes={n1,n2,n3} Voters={n1,n2,n3} InitUp={n1,n2,n3}
+weighted-three-34       | MC_WeightedFork | base                                  | violated Agreement | W1=17 W2=33 W3=16 Nodes={n1,n2,n3} Voters={n1,n2,n3} InitUp={n1,n2,n3}
+weighted-three-frozen   | MC_WeightedFork | invariant MC_NoDeadEndWithoutFinal    | violated | W1=45 W2=25 W3=20 Nodes={n1,n2,n3} Voters={n1,n2,n3} InitUp={n1,n2,n3}
+
+# The same fork next to a Byzantine representative: Byzantine weight and the balance add up
+weighted-byz-17-16      | MC_WeightedFork | base                                  | holds    | W1=34 W2=33 W3=17 Byzantine={n3} ByzNormalTs={1}
+weighted-byz-17-17      | MC_WeightedFork | base                                  | violated Agreement | W1=33 W2=33 W3=17 Byzantine={n3} ByzNormalTs={1}
+weighted-byz-32-1       | MC_WeightedFork | base                                  | holds    | W1=34 W2=33 W3=32 Byzantine={n3} ByzNormalTs={1}
+weighted-byz-33-1       | MC_WeightedFork | base                                  | violated Agreement | W1=33 W2=33 W3=33 Byzantine={n3} ByzNormalTs={1}
+
 # The accounts around a forked send that can no longer be confirmed
 dependencies-safety     | MC_Dependencies | base                                  | holds    |
 dependencies-honest     | MC_Dependencies | invariant HonestNeverStuck            | holds    |
