@@ -84,6 +84,8 @@ offline-halts           | MC_Offline      | invariant NoDeadEnd                 
 # A balance that changes its representative during a fork
 redelegation-33-safety  | MC_Redelegation | base                                  | holds    |
 redelegation-34         | MC_Redelegation | base                                  | violated Agreement | Stake=34
+redelegation-33-split   | MC_Redelegation | invariant NoFinalVoteSplit            | violated |
+redelegation-33-stuck   | MC_Redelegation | invariant NoDeadEnd                   | violated |
 
 # The accounts around a forked send that can no longer be confirmed
 dependencies-safety     | MC_Dependencies | base                                  | holds    |

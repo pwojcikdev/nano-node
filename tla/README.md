@@ -7,7 +7,7 @@ The scenarios ask two questions of small networks under any ordering and delay o
 - Can two nodes cement different blocks at the same root?
 - Can a released block stay undecided forever, and if so, what gets it out?
 
-In short: under the node's rules no scenario reaches two nodes with different cemented blocks at a root while byzantine weight stays below 34 of 100 and the nodes keep their trended weight. A root that an account forked can stay undecided forever with every representative honest and online. Where enough weight votes, roots without a fork are always decided, and so are chains that do not build on an unconfirmed block of another account. [Findings](#findings) has the details.
+In short: under the node's rules no scenario reaches two nodes with different cemented blocks at a root while byzantine weight stays below 34 of 100, less than 34 changes its representative while a root is contested and the nodes keep their trended weight. A root that an account forked can stay undecided forever with every representative honest and online. Where enough weight votes, roots without a fork are always decided, and so are chains that do not build on an unconfirmed block of another account. [Findings](#findings) has the details.
 
 ## Layout
 
@@ -81,6 +81,8 @@ Account owners are part of a scenario. An honest owner never signs two blocks at
 - The gap between a voter issuing a vote and its own election counting it.
 - The two week median behind the trended weight. `Sample` moves it to the current online weight in one step, so the model reaches in a step what takes the node more than a week.
 - The conditions under which the bounded backlog leaves a block alone, other than the block having an election: cached votes for it and a place in the scheduler.
+- The weight table shipped with a release. `ledger::weight` answers from it until the node has synced past a block count, so such a node ignores the weight that the blocks in its ledger move.
+- The vote a voter casts right after its election switched to another block. The node casts the vote it asked for at the switch without tallying again; the model casts a non-final vote only while a fresh tally still names that block. The two differ only where the switch itself moves weight, as it does when the forked account holds voting weight.
 - Bootstrapping, pruning, epochs, signatures and work. Bootstrapping is covered by blocks being receivable at any time.
 
 ## Properties
@@ -177,7 +179,7 @@ Starts where a representative of weight k has its final vote on record for block
 | `bound-30-dead-end` | `NoDeadEnd`, k = 30 | violated | 868 |
 | `bound-30-ordering` | No node ever cements at the root, k = 30 | violated | 210 |
 | `bound-35-stuck` | No node ever cements at the root, k = 35, with restarts, election timeouts and cache evictions | holds | 111,975 |
-| `bound-35-moved` | The same, k = 35, once 20 of it may move to another representative | violated | 157 |
+| `bound-35-moved` | No node ever cements at the root, k = 35, once 20 of it may move to another representative | violated | 157 |
 
 ### A split, then offline weight returns: `MC_Returning`
 
@@ -251,6 +253,8 @@ One account signs two blocks at a root while a balance moves from one of two vot
 |---|---|---|---|
 | `redelegation-33-safety` | The properties that must hold, 33 moving | hold | 41,800 |
 | `redelegation-34` | The same, 34 moving | `Agreement` violated | 2,440 |
+| `redelegation-33-split` | `NoFinalVoteSplit`, 33 moving | violated | 14,660 |
+| `redelegation-33-stuck` | `NoDeadEnd`, 33 moving | violated | 31,697 |
 
 ### Around a send that cannot be confirmed: `MC_Dependencies`
 
@@ -290,7 +294,7 @@ These take longer than the checks in `checks.txt`. `fork-safety-rollback` above 
 
 ### Agreement holds
 
-No scenario with honest voters, less than 34 byzantine weight and an intact trended weight reaches two nodes that cemented different blocks at one root. That covers forks under every message ordering, blocks built on either side of a fork, restarts, election timeouts, backlog rollbacks, weight moving during an election and blocks depending on blocks of other accounts. The one check that gets there with less, `byzantine-14-stale`, switches rule 9 off on purpose.
+No scenario with honest voters, less than 34 byzantine weight, less than 34 of weight that two ledgers count for different representatives and an intact trended weight reaches two nodes that cemented different blocks at one root. That covers forks under every message ordering, blocks built on either side of a fork, restarts, election timeouts, backlog rollbacks, up to 33 of the weight changing its representative during an election and blocks depending on blocks of other accounts. The one check that gets there with less, `byzantine-14-stale`, switches rule 9 off on purpose.
 
 At 34 the byzantine representative gets there by giving a final vote for one block to half of the honest weight and one for the other block to the rest. The halves can be one voter each (`byzantine-34-agreement`) or one against two (`byzantine-three-34`). In the second trace the heavier voter first votes for A, moves to B on the byzantine vote and cements it, while the two lighter ones still count its earlier vote for A, reach quorum with the byzantine vote for A and cement that.
 
@@ -342,7 +346,7 @@ The node's backlog also leaves a block alone while votes for it are cached or th
 
 ### What gets a root out
 
-- Weight moving away from the representatives bound to the other block. A node counts a change of representative as soon as the block is in its ledger, so the root recovers once enough weight has moved for the rest to lead by delta (`bound-35-moved`).
+- Weight moving away from the representatives bound to the other block, to representatives that can still vote for the favoured one. A node counts a change of representative as soon as the block is in its ledger, and with 20 of the 35 moved a node confirms (`bound-35-moved`). The check shows that one node gets there, not that every node does.
 - The order in which an election tallies votes, when k is 33 or less (`bound-30-ordering`).
 - Weight that was offline coming back, when k is 16 or less. Above that it does not settle the root; the next section has the cases.
 - Outside the model: the operator of a bound representative removing the final vote record of that root.
@@ -388,9 +392,13 @@ A tally weighs every vote an election has recorded with the ledger weight of its
 
 Only the order of the two timers keeps the byzantine bound at 34 here. If an election could outlive the time a silent representative stays counted, a representative with about 14.5% of the weight (34 / 2.34) could make two halves of the honest weight cement different blocks. It would have to stay away for more than a week first, since the trended weight is a median of two weeks, and the two halves would have to miss each other's votes in the meantime.
 
-### Weight counts before it is confirmed
+### Weight that moves during a fork
 
-`MC_Redelegation` moves a balance from one voter to the other with a change block that is released but not confirmed. A node that has the block counts the balance for the new representative, a node that has not counts it for the old one. With 34 of the weight moving, each voter reaches quorum alone in its own view and the two cement different blocks (`redelegation-34`); with 33 they cannot (`redelegation-33-safety`). The owner of a balance has the same power over agreement as a byzantine representative of that weight, without running a representative.
+`MC_Redelegation` moves a balance from one voter to the other with a change block while another account has two blocks at a root. A node that has the change block counts the balance for the new representative, a node that has not counts it for the old one. The owner of the balance signs one valid block and nothing else.
+
+With 34 of the weight moving, each voter reaches quorum alone in its own view and the two cement different blocks (`redelegation-34`); with 33 they cannot (`redelegation-33-safety`). What matters is that the weight moves between the two decisions, not that the change block is unconfirmed: a voter that has cemented the change block and one that has not differ in the same way.
+
+Far below 34, moving weight costs liveness. Two honest voters with fixed weights never split their final votes (`observer-safety`). With 33 moving they do (`redelegation-33-split`): one ledger weighs them 34 and 66, the other 67 and 33, so each sees the other as the heavier one and moves to the other's block. The other's first vote for that block is still in its ballot, so it sees 100 behind the block and issues its final vote. The two final votes name different blocks and the two voters reach a dead end (`redelegation-33-stuck`).
 
 ## Reading the evidence
 

@@ -24,7 +24,7 @@ MC_InitBalance ==
      w1 |-> (100 - Stake) - (100 - Stake) \div 2,
      w2 |-> (100 - Stake) \div 2]
 MC_InitRep == [x |-> n1, p |-> n1, w1 |-> n1, w2 |-> n2]
-MC_Owner == [x |-> "byzantine", p |-> "byzantine", w1 |-> "honest", w2 |-> "honest"]
+MC_Owner == [x |-> "byzantine", p |-> "honest", w1 |-> "honest", w2 |-> "honest"]
 
 MC_Faults == [expire |-> 0, crash |-> 0, rollback |-> 0, evict |-> 0]
 
