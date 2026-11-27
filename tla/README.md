@@ -155,6 +155,15 @@ One account signs two blocks at a root. Three honest voters (34, 33, 33) stay on
 | `fork-live` | `EventuallySettled` | violated | 221,719 |
 | `fork-blocked-final` | `FinalQuorumConfirms` | violated | 6,390 |
 
+### A fork between four voters: `MC_FourVoters`
+
+The same fork between four honest voters of 25 each, so that quorum takes three of them.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `four-voters-split` | `NoFinalVoteSplit` | violated | 96,063 |
+| `four-voters-hopeless` | `EveryRootWinnable` | violated | 2,496,867 |
+
 ### After a split: `MC_Bound`
 
 Starts where a representative of weight k has its final vote on record for block B, a second one holding 90 - k has its final vote for block A and a third one holding 10 has not voted. Every ledger holds A and every node knows both blocks.
@@ -232,6 +241,15 @@ Starts where the two voters have their final votes on record for different sends
 | `dependencies-honest` | `HonestNeverStuck` | holds | 2,000 |
 | `dependencies-careless` | The receive is decided at every node | violated | 2,000 |
 
+### A forked send and its receive: `MC_ForkedSend`
+
+Starts from nothing. One account signs two sends at a root, to different accounts, and the destination of one receives it as soon as it is released. Three honest voters (34, 33, 33) stay online. The balance sent carries no voting weight, and elections also start on blocks whose dependencies are not cemented.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `forked-send-safety` | The properties that must hold | hold | 1,329,382 |
+| `forked-send-receive` | The receive is decided at every node | violated | 534,500 |
+
 \* in `checks-slow.txt`
 
 ### Slow checks: `checks-slow.txt`
@@ -240,7 +258,7 @@ These take longer than the checks in `checks.txt`. `fork-safety-rollback` above 
 
 | Check | Asks |
 |---|---|
-| `four-voters-safety` | The properties that must hold for `MC_FourVoters`: the fork of `MC_Fork` between four honest voters of 25 each, so that quorum takes three of them. A run stopped after 19.5 million states had found no violation. |
+| `four-voters-safety` | The properties that must hold for `MC_FourVoters`. A run stopped after 19.5 million states had found no violation. |
 | `fork-safety-restart` | The properties that must hold for `MC_Fork` with one restart, election timeout and cache eviction |
 
 ## Findings
@@ -265,6 +283,8 @@ Rule 5 lets a voter issue its final vote when its own election shows the winner 
 Once every vote has reached every node, A has 67 (n1 final, n3 non-final) and B has 33 (n2 final). All three ledgers hold A and all three elections name A the winner, but A leads by 34 where quorum needs 67, so n3 never issues a final vote and the final weight behind A stays at 34. `fork-dead-end` shows that no step is left in that state, and `fork-live` that a fair run stays there forever. Nothing in it is byzantine except the account that signed two blocks.
 
 The account cannot get out on its own. Another block at the same root is one more fork, and by rule 5 no voter votes on a block built on either fork while that fork is not cemented.
+
+More voters do not prevent it. Four honest voters of 25 each split as well (`four-voters-split`) and can end with two final votes on each side of the fork, after which neither block can gather a delta (`four-voters-hopeless`).
 
 ### What a split leaves behind
 
@@ -316,6 +336,8 @@ Weight coming back online settles a split only while the weight bound to the oth
 
 In `MC_Dependencies` a forked send can no longer be confirmed. The unrelated honest account is always confirmed (`dependencies-honest`). The account that received the send before it was cemented is not: its receive is rolled back at the node that held it when that node's election moves to the other send, no ledger can take it again, and it is neither cemented nor ruled out (`dependencies-careless`). An honest owner never signs that receive, so its chain keeps working.
 
+`MC_ForkedSend` gets to the same place from nothing, with three voters and the receive released while the two sends compete. No two nodes cement different blocks on the way (`forked-send-safety`). The final votes of two voters can split between the sends; every ledger then holds the send that was not received, nothing is cemented, and no ledger can take the receive (`forked-send-receive`).
+
 ### The quorum delta is only as good as the trended weight
 
 `MC_Partition` separates two voters of 50 each.
@@ -337,7 +359,7 @@ Delta never falls below 67% of the minimum. Agreement under a partition therefor
 
 ## Reading the evidence
 
-TLC explores every reachable state of each scenario, so "holds" is a statement about that scenario and its bounds: two or three voters, one contested root, `MaxTs` non-final votes per voter and root, and the fault budget given. It is not a proof for larger networks.
+TLC explores every reachable state of each scenario, so "holds" is a statement about that scenario and its bounds: two to four voters, one contested root, `MaxTs` non-final votes per voter and root, and the fault budget given. It is not a proof for larger networks.
 
 The model allows every ordering of messages. A trace shows that an ordering leads somewhere, not how likely the network is to produce it.
 

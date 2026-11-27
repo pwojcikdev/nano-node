@@ -32,6 +32,10 @@ fork-dead-end           | MC_Fork         | invariant NoDeadEnd                 
 fork-live               | MC_Fork         | property EventuallySettled            | violated |
 fork-blocked-final      | MC_Fork         | invariant FinalQuorumConfirms         | violated |
 
+# Four honest voters, one forked root
+four-voters-split       | MC_FourVoters   | invariant NoFinalVoteSplit            | violated |
+four-voters-hopeless    | MC_FourVoters   | invariant EveryRootWinnable           | violated |
+
 # The aftermath of a split: one large representative bound to the other fork
 bound-16-settles        | MC_Bound        | invariant NoDeadEnd                   | holds    | BigWeight=16
 bound-30-dead-end       | MC_Bound        | invariant NoDeadEnd                   | violated |
@@ -73,3 +77,7 @@ redelegation-34         | MC_Redelegation | base                                
 dependencies-safety     | MC_Dependencies | base                                  | holds    |
 dependencies-honest     | MC_Dependencies | invariant HonestNeverStuck            | holds    |
 dependencies-careless   | MC_Dependencies | invariant MC_ReceiveSettles           | violated |
+
+# A forked send between three voters, received before it is confirmed
+forked-send-safety      | MC_ForkedSend   | base                                  | holds    |
+forked-send-receive     | MC_ForkedSend   | invariant MC_ReceiveSettles           | violated |
