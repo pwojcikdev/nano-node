@@ -116,6 +116,7 @@ A send, its receive and a change of representative move weight between three vot
 | `baseline-no-dead-end` | `NoDeadEnd` | holds | 98,875 |
 | `baseline-live` | `EventuallySettled` | holds | 98,875 |
 | `baseline-restart` | `NoDeadEnd`, with one node restart | holds | 1,583,508 |
+| `baseline-restart-live` | `EventuallySettled`, with one node restart | holds | 1,583,508 |
 | `baseline-dropped` | `NoDeadEnd`, with one election timeout and one backlog rollback | holds | 2,557,377 |
 
 ### A fork between two voters: `MC_Observer`
@@ -128,6 +129,7 @@ One account signs two blocks at a root. Two voters of 60 and 40 hold the weight,
 | `observer-no-dead-end` | `NoDeadEnd` | holds | 6,609 |
 | `observer-live` | `EventuallySettled` | holds | 6,609 |
 | `observer-restart` | `NoDeadEnd`, with one restart, election timeout and cache eviction | holds | 1,642,759 |
+| `observer-restart-live` | `EventuallySettled`, with the same | holds | 1,642,759 |
 | `observer-rollback` | `NoDeadEnd`, with one election timeout and one backlog rollback | violated | 235,646 |
 
 ### Blocks built on a fork: `MC_Successors`
@@ -212,6 +214,14 @@ In the checks below the nodes track the online weight with a minimum of 60, and 
 | `byzantine-14-stale` | The same, byzantine weight 14, without rule 9 | `Agreement` violated | 59,763 |
 | `byzantine-13-stale` | The same, byzantine weight 13, without rule 9 | hold | 165,424 |
 
+### A byzantine representative next to three voters: `MC_ByzantineThree`
+
+The same fork with three honest voters. With the byzantine representative at 33% they hold 34%, 16.5% and 16.5%, so the heaviest one confirms with the byzantine weight alone and the two lighter ones cannot. Balances are in half percents, which puts delta at 134 of 200.
+
+| Check | Asks | Outcome | States |
+|---|---|---|---|
+| `byzantine-three-34` | The properties that must hold, byzantine weight 34% | `Agreement` violated | 1,331,920 |
+
 ### A partition: `MC_Partition`
 
 One account signs two blocks at a root while two voters of 50 each may lose sight of each other. Nodes track the online weight and derive delta from it.
@@ -265,18 +275,24 @@ Starts from nothing. One account signs two sends at a root, to different account
 
 ### Slow checks: `checks-slow.txt`
 
-These take longer than the checks in `checks.txt`. `fork-safety-rollback` above is one of them and has run to completion. The others have not, so their outcomes in the list are expectations; a check joins the tables above once a run of it finishes.
+These take longer than the checks in `checks.txt`. `fork-safety-rollback` above is one of them and has run to completion. The others have not, so their outcomes in the list are expectations; a check joins the tables above once a run of it finishes. Each was stopped where the last column says, without a violation by then.
 
-| Check | Asks |
-|---|---|
-| `four-voters-safety` | The properties that must hold for `MC_FourVoters`. A run stopped after 19.5 million states had found no violation. |
-| `fork-safety-restart` | The properties that must hold for `MC_Fork` with one restart, election timeout and cache eviction |
+| Check | Asks | Stopped at |
+|---|---|---|
+| `fork-rollback-deeper` | The properties that must hold for `MC_Fork` with one election timeout, one backlog rollback and four non-final votes per voter instead of two | 5.8 million states, 10 minutes |
+| `fork-safety-restart` | The properties that must hold for `MC_Fork` with one restart, election timeout and cache eviction | 8.4 million states, 10 minutes |
+| `four-voters-safety` | The properties that must hold for `MC_FourVoters` | 19.5 million states, 50 minutes |
+| `byzantine-three-safety` | The properties that must hold for `MC_ByzantineThree` with the byzantine representative at 33% | 4.7 million states, 10 minutes |
+| `second-fork-safety` | The properties that must hold for `MC_SecondFork`: the account of `MC_Fork` signs two more blocks on top of the first of its two. Three honest voters (34, 33, 33) stay online, and the second pair has its elections at a node once that node has cemented the block under it. | 5.7 million states, 10 minutes |
+| `observer-all-faults` | The properties that must hold for `MC_Observer` with one restart, election timeout, cache eviction and backlog rollback | 8.3 million states, 10 minutes |
 
 ## Findings
 
 ### Agreement holds
 
 No scenario with honest voters, less than 34 byzantine weight and an intact trended weight reaches two nodes that cemented different blocks at one root. That covers forks under every message ordering, blocks built on either side of a fork, restarts, election timeouts, backlog rollbacks, weight moving during an election and blocks depending on blocks of other accounts. The one check that gets there with less, `byzantine-14-stale`, switches rule 9 off on purpose.
+
+At 34 the byzantine representative gets there by giving a final vote for one block to half of the honest weight and one for the other block to the rest. The halves can be one voter each (`byzantine-34-agreement`) or one against two (`byzantine-three-34`). In the second trace the heavier voter first votes for A, moves to B on the byzantine vote and cements it, while the two lighter ones still count its earlier vote for A, reach quorum with the byzantine vote for A and cement that.
 
 ### Honest voters can split their final votes
 
@@ -320,7 +336,7 @@ A non-final vote binds nothing. `Rollback` stands for the bounded backlog rollin
 3. The election of the heavier voter times out and its backlog rolls B back.
 4. The heavier voter receives A first and votes for it.
 
-A now has the 60 of the heavier voter and B the 40 of the lighter one, cast as a final vote. Neither reaches quorum, and the heavier voter never returns to B: by rule 3 its election stays with the heavier block, which its own vote makes A, although B is the only block that could still be confirmed. Without the rollback the same two voters always settle, also across restarts and election timeouts (`observer-no-dead-end`, `observer-live`, `observer-restart`).
+A now has the 60 of the heavier voter and B the 40 of the lighter one, cast as a final vote. Neither reaches quorum, and the heavier voter never returns to B: by rule 3 its election stays with the heavier block, which its own vote makes A, although B is the only block that could still be confirmed. Without the rollback the same two voters always settle, also across restarts and election timeouts (`observer-no-dead-end`, `observer-live`, `observer-restart`, `observer-restart-live`).
 
 The node's backlog also leaves a block alone while votes for it are cached or the scheduler holds it, which the model does not track. The step stands for a node that stayed saturated for long enough that neither applies.
 

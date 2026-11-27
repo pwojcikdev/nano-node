@@ -27,4 +27,7 @@ MC_FaultsRestart == [expire |-> 1, crash |-> 1, rollback |-> 0, evict |-> 1]
 \* An election times out and the backlog rolls a block back
 MC_FaultsRollback == [expire |-> 1, crash |-> 0, rollback |-> 1, evict |-> 0]
 
+\* One disruption of every kind
+MC_FaultsAll == [expire |-> 1, crash |-> 1, rollback |-> 1, evict |-> 1]
+
 =============================================================================

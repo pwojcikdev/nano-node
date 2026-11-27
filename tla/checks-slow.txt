@@ -3,8 +3,20 @@
 # Three honest voters, one forked root, with an election timeout and a backlog rollback
 fork-safety-rollback    | MC_Fork         | base                                  | holds    | Faults<-MC_FaultsRollback
 
-# The same with a restart, an election timeout and a cache eviction
+# The same with four non-final votes per voter instead of two
+fork-rollback-deeper    | MC_Fork         | base                                  | holds    | MaxTs=4 Faults<-MC_FaultsRollback
+
+# The same fork with a restart, an election timeout and a cache eviction
 fork-safety-restart     | MC_Fork         | base                                  | holds    | Faults<-MC_FaultsRestart
 
 # Four honest voters, one forked root
 four-voters-safety      | MC_FourVoters   | base                                  | holds    |
+
+# A Byzantine representative at 33% next to three honest voters
+byzantine-three-safety  | MC_ByzantineThree | base                                | holds    |
+
+# One account forks twice in a row between three honest voters
+second-fork-safety      | MC_SecondFork   | base                                  | holds    |
+
+# A fork between two voters with one disruption of every kind
+observer-all-faults     | MC_Observer     | base                                  | holds    | Faults<-MC_FaultsAll

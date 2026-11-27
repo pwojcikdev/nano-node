@@ -8,6 +8,7 @@ baseline-safety         | MC_Baseline     | base                                
 baseline-no-dead-end    | MC_Baseline     | invariant NoDeadEnd                   | holds    |
 baseline-live           | MC_Baseline     | property EventuallySettled            | holds    |
 baseline-restart        | MC_Baseline     | invariant NoDeadEnd                   | holds    | Faults<-MC_FaultsCrash
+baseline-restart-live   | MC_Baseline     | property EventuallySettled            | holds    | Faults<-MC_FaultsCrash
 baseline-dropped        | MC_Baseline     | invariant NoDeadEnd                   | holds    | Faults<-MC_FaultsDrop
 
 # A fork between two voters of unequal weight, watched by a node that does not vote
@@ -15,6 +16,7 @@ observer-safety         | MC_Observer     | invariant NoFinalVoteSplit          
 observer-no-dead-end    | MC_Observer     | invariant NoDeadEnd                   | holds    |
 observer-live           | MC_Observer     | property EventuallySettled            | holds    |
 observer-restart        | MC_Observer     | invariant NoDeadEnd                   | holds    | Faults<-MC_FaultsRestart
+observer-restart-live   | MC_Observer     | property EventuallySettled            | holds    | Faults<-MC_FaultsRestart
 observer-rollback       | MC_Observer     | invariant NoDeadEnd                   | violated | Faults<-MC_FaultsRollback
 
 # The same two voters, with a block built on each side of the fork
@@ -64,6 +66,9 @@ byzantine-33-expiring   | MC_Byzantine    | base                                
 byzantine-14-absent     | MC_Byzantine    | base                                  | holds    | ByzWeight=14 DynamicQuorum=TRUE MinOnline=60 InitTrended=86
 byzantine-14-stale      | MC_Byzantine    | base                                  | violated Agreement | ByzWeight=14 DynamicQuorum=TRUE MinOnline=60 InitTrended=86 StaleVotes=TRUE
 byzantine-13-stale      | MC_Byzantine    | base                                  | holds    | ByzWeight=13 DynamicQuorum=TRUE MinOnline=60 InitTrended=87 StaleVotes=TRUE
+
+# A Byzantine representative next to three honest voters
+byzantine-three-34      | MC_ByzantineThree | base                                | violated Agreement | ByzWeight=34
 
 # Two voters that lose sight of each other, quorum delta from the online weight
 partition-history       | MC_Partition    | base                                  | holds    |
